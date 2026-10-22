@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using Windows.Globalization;
@@ -97,7 +98,7 @@ public sealed class TextGrabberModule : ITweakModule
                 return;
             }
 
-            context.Notify($"Panoya kopyalandı · {text.Length} karakter");
+            context.Notify(Preview(text));
             context.Log.Info($"OCR: {width}x{height} bölge, {text.Length} karakter.");
         }
         catch (Exception ex)
@@ -109,6 +110,12 @@ public sealed class TextGrabberModule : ITweakModule
         {
             _busy = false;
         }
+    }
+
+    private static string Preview(string text)
+    {
+        var flat = Regex.Replace(text, @"\s+", " ").Trim();
+        return flat.Length <= 160 ? flat : flat[..160].TrimEnd() + "…";
     }
 
     private static async Task<string> RecognizeAsync(byte[] bgra, int width, int height)

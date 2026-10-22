@@ -5,7 +5,8 @@ public enum SettingKind
     Toggle,
     Number,
     Text,
-    Choice
+    Choice,
+    Action
 }
 
 public sealed class SettingDescriptor
@@ -19,6 +20,7 @@ public sealed class SettingDescriptor
     public int Min { get; init; }
     public int Max { get; init; } = 100;
     public string[] Options { get; init; } = Array.Empty<string>();
+    public Action? Execute { get; init; }
 }
 
 public interface IModuleSettings

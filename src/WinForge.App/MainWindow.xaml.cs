@@ -9,6 +9,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using WinForge.Core;
 
@@ -60,6 +61,7 @@ public partial class MainWindow : Window
     private bool FilterModule(object item)
     {
         if (item is not ModuleVm vm) return false;
+        if (ActiveOnlyToggle?.IsChecked == true && !vm.IsActive) return false;
 
         if (_category != "Tümü" &&
             !string.Equals(vm.Category, _category, StringComparison.CurrentCultureIgnoreCase))
@@ -69,7 +71,8 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(query)) return true;
 
         return vm.Name.Contains(query, StringComparison.CurrentCultureIgnoreCase)
-               || vm.Description.Contains(query, StringComparison.CurrentCultureIgnoreCase);
+               || vm.Description.Contains(query, StringComparison.CurrentCultureIgnoreCase)
+               || vm.Category.Contains(query, StringComparison.CurrentCultureIgnoreCase);
     }
 
     private void OnCategoryChanged(object sender, SelectionChangedEventArgs e)
@@ -77,23 +80,14 @@ public partial class MainWindow : Window
         if (CategoryList.SelectedItem is not string category) return;
 
         _category = category;
-        _showingAppearance = false;
-        UpdateHeader();
-
-        _view?.Refresh();
-
-        if (_view?.IsEmpty == true)
-        {
-            _selected = null;
-            RenderDetail();
-        }
+        RefreshModules();
     }
 
     private void UpdateHeader()
     {
         PageTitle.Text = _category == "Tümü" ? "Tüm modüller" : _category;
         PageSubtitle.Text = _category == "Tümü"
-            ? "Windows'unu kendi akışına göre şekillendir."
+            ? "Windows'u çalışma biçimine uyarla."
             : $"{_category} kategorisindeki modüller.";
     }
 
@@ -102,7 +96,61 @@ public partial class MainWindow : Window
         if (SearchHint is not null)
             SearchHint.Visibility = string.IsNullOrEmpty(SearchBox.Text) ? Visibility.Visible : Visibility.Collapsed;
 
-        _view?.Refresh();
+        if (ClearSearchButton is not null)
+            ClearSearchButton.Visibility = string.IsNullOrEmpty(SearchBox.Text) ? Visibility.Collapsed : Visibility.Visible;
+
+        RefreshModules();
+    }
+
+    private void RefreshModules()
+    {
+        if (_view is null) return;
+        var previous = ModuleList.SelectedItem;
+        _showingAppearance = false;
+        _view.Refresh();
+        ModuleList.SelectedItem = previous is not null && _view.Contains(previous)
+            ? previous
+            : _view.Cast<ModuleVm>().FirstOrDefault();
+        _selected = ModuleList.SelectedItem as ModuleVm;
+        EmptyState.Visibility = _view.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
+        UpdateHeader();
+        UpdateStatus();
+        RenderDetail();
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (_selected is not null) ModuleList.ScrollIntoView(_selected);
+        }));
+    }
+
+    private void OnActiveFilterChanged(object sender, RoutedEventArgs e) => RefreshModules();
+
+    private void OnClearSearch(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Clear();
+        SearchBox.Focus();
+    }
+
+    private void OnResetFilters(object sender, RoutedEventArgs e)
+    {
+        ActiveOnlyToggle.IsChecked = false;
+        SearchBox.Clear();
+        CategoryList.SelectedIndex = 0;
+        RefreshModules();
+    }
+
+    private void OnWindowKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape && SearchBox.IsKeyboardFocusWithin)
+        {
+            SearchBox.Clear();
+            e.Handled = true;
+        }
     }
 
     private void OnModuleSelected(object sender, SelectionChangedEventArgs e)
@@ -112,6 +160,7 @@ public partial class MainWindow : Window
         {
             _showingAppearance = false;
             UpdateHeader();
+            ModuleList.ScrollIntoView(_selected);
         }
 
         RenderDetail();
@@ -142,14 +191,14 @@ public partial class MainWindow : Window
         }
 
         vm.Refresh();
-        UpdateStatus();
-
-        if (ReferenceEquals(vm, _selected)) RenderDetail();
+        toggle.GetBindingExpression(CheckBox.IsCheckedProperty)?.UpdateTarget();
+        RefreshModules();
     }
 
     private void RenderDetail()
     {
         DetailPanel.Children.Clear();
+        DetailScrollViewer.ScrollToTop();
         _detailStatus = null;
         _errorBox = null;
         _errorText = null;
@@ -197,6 +246,7 @@ public partial class MainWindow : Window
             Margin = new Thickness(12, 0, 0, 0)
         };
         toggle.Click += (_, _) => ToggleFromDetail(vm, toggle.IsChecked == true);
+        AutomationProperties.SetName(toggle, module.Name);
         Grid.SetColumn(toggle, 1);
         header.Children.Add(toggle);
         DetailPanel.Children.Add(header);
@@ -300,7 +350,34 @@ public partial class MainWindow : Window
             case SettingKind.Choice:
                 AddChoiceSetting(module, descriptor);
                 break;
+            case SettingKind.Action:
+                AddActionSetting(descriptor);
+                break;
         }
+    }
+
+    private void AddActionSetting(SettingDescriptor descriptor)
+    {
+        var button = new Button
+        {
+            Style = StyleOf("GhostButton"),
+            Content = descriptor.Label,
+            ToolTip = descriptor.Description,
+            Margin = new Thickness(0, 6, 0, 6),
+            Padding = new Thickness(12, 8, 12, 8),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        AutomationProperties.SetName(button, descriptor.Label);
+        button.Click += (_, _) =>
+        {
+            try { descriptor.Execute?.Invoke(); }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, exception.Message, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            RefreshModules();
+        };
+        DetailPanel.Children.Add(button);
     }
 
     private void AddToggleSetting(ITweakModule module, SettingDescriptor descriptor)
@@ -336,6 +413,7 @@ public partial class MainWindow : Window
             settings.Set(descriptor.Key, toggle.IsChecked == true);
             ApplyModule(module);
         };
+        AutomationProperties.SetName(toggle, descriptor.Label);
 
         grid.Children.Add(labels);
         Grid.SetColumn(toggle, 1);
@@ -375,6 +453,7 @@ public partial class MainWindow : Window
             TickFrequency = 1,
             Margin = new Thickness(0, 8, 0, 0)
         };
+        AutomationProperties.SetName(slider, descriptor.Label);
 
         slider.ValueChanged += (_, _) =>
         {
@@ -385,6 +464,17 @@ public partial class MainWindow : Window
         };
 
         wrapper.Children.Add(slider);
+        if (!string.IsNullOrWhiteSpace(descriptor.Description))
+        {
+            wrapper.Children.Add(new TextBlock
+            {
+                Text = descriptor.Description,
+                Foreground = BrushOf("MutedBrush"),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0)
+            });
+        }
         DetailPanel.Children.Add(wrapper);
     }
 
@@ -400,6 +490,7 @@ public partial class MainWindow : Window
             Text = settings.GetString(descriptor.Key, descriptor.Default as string ?? ""),
             Margin = new Thickness(0, 8, 0, 0)
         };
+        AutomationProperties.SetName(box, descriptor.Label);
 
         void Commit()
         {
@@ -459,6 +550,30 @@ public partial class MainWindow : Window
         }
 
         var current = settings.GetString(descriptor.Key, descriptor.Default as string ?? descriptor.Options.FirstOrDefault() ?? "");
+        if (descriptor.Options.Length > 6)
+        {
+            var options = descriptor.Options.Contains(current) ? descriptor.Options : descriptor.Options.Append(current).ToArray();
+            var combo = new ComboBox
+            {
+                ItemsSource = options,
+                SelectedItem = current,
+                Foreground = Brushes.Black,
+                Background = Brushes.White,
+                Margin = new Thickness(0, 8, 0, 0),
+                Padding = new Thickness(8, 5, 8, 5),
+                MaxDropDownHeight = 280
+            };
+            AutomationProperties.SetName(combo, descriptor.Label);
+            combo.SelectionChanged += (_, _) =>
+            {
+                if (combo.SelectedItem is not string selected) return;
+                settings.Set(descriptor.Key, selected);
+                ApplyModule(module);
+            };
+            wrapper.Children.Add(combo);
+            DetailPanel.Children.Add(wrapper);
+            return;
+        }
         var panel = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
 
         foreach (var option in descriptor.Options)
@@ -525,14 +640,14 @@ public partial class MainWindow : Window
         }
 
         vm.Refresh();
-        UpdateStatus();
-        RenderDetail();
+        RefreshModules();
     }
 
     private void UpdateStatus()
     {
         var active = _modules.Count(m => m.IsActive);
-        StatusBar.Text = $"{active} etkin · {_modules.Count} modül";
+        var visible = _view?.Cast<ModuleVm>().Count() ?? _modules.Count;
+        StatusBar.Text = $"{visible} / {_modules.Count} modül · {active} etkin";
         EngineStatus.Text = active > 0 ? $"{active} modül etkin" : "Hazır";
     }
 
@@ -680,6 +795,7 @@ public partial class MainWindow : Window
     private void ApplyAppearance()
     {
         Appearance.Apply();
+        UpdateTitleBar();
 
         if (GlowLayer is not null)
         {
@@ -767,8 +883,14 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
 
+        UpdateTitleBar();
+    }
+
+    private void UpdateTitleBar()
+    {
         var handle = new WindowInteropHelper(this).Handle;
-        var enabled = 1;
+        if (handle == IntPtr.Zero) return;
+        var enabled = Appearance.ToneName == "Açık" ? 0 : 1;
         DwmSetWindowAttribute(handle, 20, ref enabled, sizeof(int));
         DwmSetWindowAttribute(handle, 19, ref enabled, sizeof(int));
     }

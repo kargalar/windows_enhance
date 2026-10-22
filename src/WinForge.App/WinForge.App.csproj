@@ -21,6 +21,9 @@
     <ProjectReference Include="..\WinForge.Modules.AlwaysOnTop\WinForge.Modules.AlwaysOnTop.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.TextGrabber\WinForge.Modules.TextGrabber.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.NetSpeed\WinForge.Modules.NetSpeed.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinForge.Modules.Tiling\WinForge.Modules.Tiling.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinForge.Modules.Extras\WinForge.Modules.Extras.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinForge.Modules.AltSnap\WinForge.Modules.AltSnap.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <Target Name="CopyModules" AfterTargets="Build">

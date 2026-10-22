@@ -103,6 +103,7 @@ public sealed class OsdWindow : Window
         Left = area.Left + (area.Width - ActualWidth) / 2;
         Top = area.Bottom - ActualHeight - 72;
 
+        _timer.Interval = TimeSpan.FromMilliseconds(Math.Clamp(1400 + message.Length * 28, 1800, 6000));
         _timer.Stop();
         _timer.Start();
     }

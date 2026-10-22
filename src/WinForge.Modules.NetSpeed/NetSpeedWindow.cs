@@ -2,7 +2,6 @@ using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
-using System.Windows.Media.Effects;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinForge.Core;
@@ -11,15 +10,20 @@ namespace WinForge.Modules.NetSpeed;
 
 public sealed class NetSpeedWindow : Window
 {
+    public const string AboveTaskbar = "Görev çubuğunun üstünde";
+    public const string InsideTaskbar = "Görev çubuğunun içinde";
+
     private readonly TextBlock _download;
     private readonly TextBlock _upload;
     private readonly StackPanel _panel;
+    private readonly Border _gap;
     private long _lastReceived;
     private long _lastSent;
     private DateTime _lastSample = DateTime.UtcNow;
     private readonly DispatcherTimer _timer;
-    private int _rightOffset = 190;
-    private int _bottomOffset = 6;
+    private int _trayGap = 10;
+    private string _unit = "Otomatik";
+    private string _position = AboveTaskbar;
 
     public NetSpeedWindow()
     {
@@ -50,21 +54,18 @@ public sealed class NetSpeedWindow : Window
             Foreground = new SolidColorBrush(Color.FromRgb(200, 208, 220))
         };
 
-        _panel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
+        _panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        _gap = new Border { Width = 10 };
         _panel.Children.Add(_download);
+        _panel.Children.Add(_gap);
         _panel.Children.Add(_upload);
 
-        Content = new Border
-        {
-            Child = _panel,
-            Effect = new DropShadowEffect
-            {
-                BlurRadius = 8,
-                ShadowDepth = 1,
-                Opacity = 0.65,
-                Color = Colors.Black
-            }
-        };
+        Content = new Border { Child = _panel, Padding = new Thickness(2, 0, 2, 0) };
 
         SourceInitialized += (_, _) =>
         {
@@ -78,14 +79,22 @@ public sealed class NetSpeedWindow : Window
         _timer.Tick += (_, _) => Tick();
     }
 
-    public void ApplyOptions(double fontSize, bool showDownload, bool showUpload, int rightOffset, int gap)
+    public void ApplyOptions(double fontSize, bool showDownload, bool showUpload, int trayGap,
+        string unit, int intervalMs, string position)
     {
         _download.FontSize = fontSize;
         _upload.FontSize = fontSize;
         _download.Visibility = showDownload ? Visibility.Visible : Visibility.Collapsed;
-        _rightOffset = rightOffset;
-        _bottomOffset = gap;
         _upload.Visibility = showUpload ? Visibility.Visible : Visibility.Collapsed;
+        _gap.Visibility = showDownload && showUpload ? Visibility.Visible : Visibility.Collapsed;
+        _panel.Visibility = showDownload || showUpload ? Visibility.Visible : Visibility.Collapsed;
+        _trayGap = trayGap;
+        _unit = unit;
+        _position = position;
+
+        var interval = TimeSpan.FromMilliseconds(Math.Clamp(intervalMs, 250, 3000));
+        if (_timer.Interval != interval) _timer.Interval = interval;
+
         Reposition();
     }
 
@@ -107,8 +116,10 @@ public sealed class NetSpeedWindow : Window
         var width = rect.Right - rect.Left;
         var height = rect.Bottom - rect.Top;
 
-        if (width < 8 || height < 8)
+        if (width < 8 || height < 8 ||
+            rect.Left < 0 || rect.Top < 0 || rect.Right > screenWidth || rect.Bottom > screenHeight)
         {
+            // Auto-hide slides the taskbar off-screen; hide the indicator with it.
             if (IsVisible) Hide();
             return;
         }
@@ -120,33 +131,50 @@ public sealed class NetSpeedWindow : Window
         var ownHeight = ActualHeight;
         if (ownWidth <= 0 || ownHeight <= 0) return;
 
-        // Auto-hide slides the taskbar off-screen; clamp to the screen edge so the
-        // indicator stays visible right above where the taskbar would pop up.
-        var edgeLeft = Math.Min(rect.Left, screenWidth);
-        var edgeRight = Math.Min(rect.Right, screenWidth);
-        var edgeTop = Math.Min(rect.Top, screenHeight);
-        var edgeBottom = Math.Min(rect.Bottom, screenHeight);
+        var tray = Native.FindWindowEx(taskbar, IntPtr.Zero, "TrayNotifyWnd", null);
+        var trayRect = rect;
+        if (tray != IntPtr.Zero) Native.GetWindowRect(tray, out trayRect);
 
         double left;
         double top;
+        var inside = string.Equals(_position, InsideTaskbar, StringComparison.CurrentCultureIgnoreCase);
+        var screenCenterX = screenWidth / 2.0;
+        var screenCenterY = screenHeight / 2.0;
 
         if (width >= height)
         {
-            left = edgeRight / scale - ownWidth - _rightOffset;
-            top = edgeTop > screenHeight / 2
-                ? edgeTop / scale - ownHeight - _bottomOffset
-                : edgeBottom / scale + _bottomOffset;
+            left = trayRect.Left / scale - ownWidth - _trayGap;
+
+            if (inside)
+            {
+                top = rect.Top / scale + (height / scale - ownHeight) / 2;
+            }
+            else if ((rect.Top + rect.Bottom) / 2.0 > screenCenterY)
+            {
+                top = rect.Top / scale - ownHeight - 2;
+            }
+            else
+            {
+                top = rect.Bottom / scale + 2;
+            }
         }
         else
         {
-            left = edgeLeft > screenWidth / 2
-                ? edgeLeft / scale - ownWidth - _bottomOffset
-                : edgeRight / scale + _bottomOffset;
-            top = edgeBottom / scale - ownHeight - _rightOffset;
+            left = (rect.Left + rect.Right) / 2.0 < screenCenterX
+                ? rect.Right / scale + 2
+                : rect.Left / scale - ownWidth - 2;
+
+            top = inside
+                ? rect.Top / scale + (height / scale - ownHeight) / 2
+                : trayRect.Top / scale - ownHeight - _trayGap;
         }
 
-        Left = left;
-        Top = top;
+        Left = Math.Max(0, left);
+        Top = Math.Max(0, top);
+
+        var handle = new WindowInteropHelper(this).Handle;
+        Native.SetWindowPos(handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
     }
 
     public void Start()
@@ -186,10 +214,19 @@ public sealed class NetSpeedWindow : Window
         (_lastReceived, _lastSent) = ReadTotals();
     }
 
-    private static string Format(double bytesPerSecond)
+    private string Format(double bytesPerSecond)
     {
-        var mb = bytesPerSecond / 1024d / 1024d;
-        return string.Create(System.Globalization.CultureInfo.CurrentCulture, $"{mb:0.00} MB/s");
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+
+        if (string.Equals(_unit, "Mbit/s", StringComparison.CurrentCultureIgnoreCase))
+            return string.Create(culture, $"{bytesPerSecond * 8d / 1_000_000d:0.00} Mbit/s");
+
+        if (string.Equals(_unit, "MB/s", StringComparison.CurrentCultureIgnoreCase))
+            return string.Create(culture, $"{bytesPerSecond / 1024d / 1024d:0.00} MB/s");
+
+        if (bytesPerSecond >= 1024d * 1024d) return string.Create(culture, $"{bytesPerSecond / 1024d / 1024d:0.00} MB/s");
+        if (bytesPerSecond >= 1024d) return string.Create(culture, $"{bytesPerSecond / 1024d:0.0} KB/s");
+        return string.Create(culture, $"{bytesPerSecond:0} B/s");
     }
 
     private static (long Received, long Sent) ReadTotals()

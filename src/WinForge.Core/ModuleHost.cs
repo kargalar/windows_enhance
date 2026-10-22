@@ -33,6 +33,7 @@ public sealed class ModuleHost
     {
         _modules.Clear();
         _settings.Clear();
+        _errors.Clear();
 
         if (!Directory.Exists(_modulesDirectory))
         {
@@ -88,6 +89,7 @@ public sealed class ModuleHost
             {
                 _errors[module.Id] = ex.Message;
                 _log.Error($"Modül etkinleştirilemedi: {module.Id}", ex);
+                CleanupFailedActivation(module);
             }
         }
     }
@@ -119,22 +121,23 @@ public sealed class ModuleHost
             _errors[module.Id] = ex.Message;
             _log.Error($"Modül değiştirilemedi: {module.Id}", ex);
 
-            // Roll back to a consistent state.
-            try
-            {
-                if (module.IsActive)
-                {
-                    module.Deactivate();
-                    _store.Enabled.Remove(module.Id);
-                }
-            }
-            catch (Exception rollback)
-            {
-                _log.Error($"Geri alma başarısız: {module.Id}", rollback);
-            }
+            if (enabled) CleanupFailedActivation(module);
+
+            if (module.IsActive) _store.Enabled.Add(module.Id);
+            else _store.Enabled.Remove(module.Id);
 
             _store.Save();
             throw;
+        }
+    }
+
+    private void CleanupFailedActivation(ITweakModule module)
+    {
+        // Activation may allocate resources before it sets IsActive.
+        try { module.Deactivate(); }
+        catch (Exception rollback)
+        {
+            _log.Error($"Geri alma başarısız: {module.Id}", rollback);
         }
     }
 

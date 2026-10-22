@@ -59,7 +59,8 @@ public partial class App : Application
         Host.StartEnabled();
 
         MainView = new MainWindow();
-        MainView.Show();
+        if (!e.Args.Any(arg => arg.Equals("--startup", StringComparison.OrdinalIgnoreCase)))
+            MainView.Show();
 
         _tray = new TrayIcon(ShowMain, ExitApp);
         _tray.Initialize();

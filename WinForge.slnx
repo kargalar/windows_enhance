@@ -8,5 +8,13 @@
     </Project>
     <Project Path="src/WinForge.Modules.Taskbar/WinForge.Modules.Taskbar.csproj" />
     <Project Path="src/WinForge.Modules.TextGrabber/WinForge.Modules.TextGrabber.csproj" />
+    <Project Path="src/WinForge.Modules.Tiling/WinForge.Modules.Tiling.csproj" />
+    <Project Path="src/WinForge.Modules.Extras/WinForge.Modules.Extras.csproj" />
+    <Project Path="src/WinForge.Modules.AltSnap/WinForge.Modules.AltSnap.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/WinForge.RegressionTests/WinForge.RegressionTests.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
 </Solution>

@@ -47,11 +47,13 @@ public sealed class SettingsStore
             var data = JsonSerializer.Deserialize<Persisted>(File.ReadAllText(FilePath), JsonOptions);
             if (data is null) return;
 
-            foreach (var id in data.Enabled) Enabled.Add(id);
-            foreach (var (id, values) in data.Values)
+            foreach (var id in data.Enabled ?? [])
+                if (!string.IsNullOrWhiteSpace(id)) Enabled.Add(id);
+            foreach (var (id, values) in data.Values ?? [])
             {
+                if (values is null) continue;
                 var target = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var (key, value) in values) target[key] = value;
+                foreach (var (key, value) in values) target[key] = value ?? "";
                 Values[id] = target;
             }
         }
@@ -103,7 +105,9 @@ internal sealed class ModuleSettings : IModuleSettings
     {
         if (!_values.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw)) return fallback;
         if (bool.TryParse(raw, out var parsed)) return parsed;
-        return raw == "1" || raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
+        if (raw == "1" || raw.Equals("yes", StringComparison.OrdinalIgnoreCase)) return true;
+        if (raw == "0" || raw.Equals("no", StringComparison.OrdinalIgnoreCase)) return false;
+        return fallback;
     }
 
     public int GetInt(string key, int fallback = 0)

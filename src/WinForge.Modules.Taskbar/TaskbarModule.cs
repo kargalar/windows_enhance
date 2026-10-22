@@ -10,6 +10,8 @@ public sealed class TaskbarModule : ITweakModule
     private const string AdvancedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     private const string InternationalKey = @"Control Panel\International";
     private const string SearchKey = @"Software\Microsoft\Windows\CurrentVersion\Search";
+    private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+    private const string ExplorerKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer";
 
     private const string OriginalSecondsKey = "__original-show-seconds";
     private const string OriginalFormatKey = "__original-short-time";
@@ -18,9 +20,17 @@ public sealed class TaskbarModule : ITweakModule
     private const string OriginalWidgetsKey = "__original-widgets";
     private const string OriginalCopilotKey = "__original-copilot";
     private const string OriginalCombineKey = "__original-combine";
+    private const string OriginalAlignKey = "__original-align";
+    private const string OriginalEndTaskKey = "__original-end-task";
+    private const string OriginalIconSizeKey = "__original-icon-size";
+    private const string OriginalTransparencyKey = "__original-transparency";
+    private const string OriginalAccentTaskbarKey = "__original-accent-taskbar";
+    private const string OriginalAutoTrayKey = "__original-auto-tray";
 
     private static readonly string[] SearchOptions = { "Gizli", "Simge", "Kutu", "Simge ve etiket" };
     private static readonly string[] CombineOptions = { "Birleştir", "Dolduğunda birleştir", "Asla birleştir" };
+    private static readonly string[] IconSizeOptions = { "Küçük", "Orta", "Büyük" };
+    private static readonly string[] AlignOptions = { "Orta", "Sol" };
 
     private static IModuleContext? _context;
     private GlobalMouseHook? _hook;
@@ -130,6 +140,62 @@ public sealed class TaskbarModule : ITweakModule
             Default = "Birleştir",
             Section = "Pencere düğmeleri",
             Description = "Aynı uygulamanın pencerelerinin taskbar'da tek düğmede toplanmasını kontrol eder."
+        },
+        new SettingDescriptor
+        {
+            Key = "align",
+            Label = "Görev çubuğu hizası",
+            Kind = SettingKind.Choice,
+            Options = AlignOptions,
+            Default = "Orta",
+            Section = "Yerleşim",
+            Description = "Windows 11'de görev çubuğu düğmelerini ortalar veya sola yaslar."
+        },
+        new SettingDescriptor
+        {
+            Key = "icon-size",
+            Label = "Görev çubuğu simge boyutu",
+            Kind = SettingKind.Choice,
+            Options = IconSizeOptions,
+            Default = "Orta",
+            Section = "Görünüm",
+            Description = "Görev çubuğu simgelerini küçültür, normal boyutta bırakır veya büyütür. Explorer yeniden başlatılınca uygulanır."
+        },
+        new SettingDescriptor
+        {
+            Key = "transparency",
+            Label = "Görev çubuğu saydamlığı",
+            Kind = SettingKind.Toggle,
+            Default = true,
+            Section = "Görünüm",
+            Description = "Windows saydamlık efektlerini açar veya kapatır."
+        },
+        new SettingDescriptor
+        {
+            Key = "accent-taskbar",
+            Label = "Vurgu rengini görev çubuğunda kullan",
+            Kind = SettingKind.Toggle,
+            Default = false,
+            Section = "Görünüm",
+            Description = "Windows vurgu rengini görev çubuğu ve Başlat menüsünde gösterir."
+        },
+        new SettingDescriptor
+        {
+            Key = "show-all-tray",
+            Label = "Tüm sistem simgelerini göster",
+            Kind = SettingKind.Toggle,
+            Default = false,
+            Section = "Görünüm",
+            Description = "Bildirim alanındaki gizli simgeleri her zaman gösterir. Windows 11'de tek tek simge seçimi için 'Sistem Tepsisi Simgeleri' modülünü kullanın."
+        },
+        new SettingDescriptor
+        {
+            Key = "end-task",
+            Label = "Görev çubuğunda 'Görevi sonlandır'",
+            Kind = SettingKind.Toggle,
+            Default = false,
+            Section = "Yerleşim",
+            Description = "Görev çubuğu düğmesine sağ tıklayınca uygulamayı kapatma seçeneği gösterir."
         }
     };
 
@@ -144,6 +210,7 @@ public sealed class TaskbarModule : ITweakModule
         CaptureOriginals();
         ApplyClock();
         ApplyVisibility();
+        ApplyAppearance();
 
         _hook = new GlobalMouseHook();
         _hook.MiddleButtonUp += OnMiddleButtonUp;
@@ -167,6 +234,7 @@ public sealed class TaskbarModule : ITweakModule
 
         RestoreClock();
         RestoreVisibility();
+        RestoreAppearance();
     }
 
     public void Apply()
@@ -174,6 +242,7 @@ public sealed class TaskbarModule : ITweakModule
         ReadSettings();
         ApplyClock();
         ApplyVisibility();
+        ApplyAppearance();
     }
 
     private void ReadSettings()
@@ -284,6 +353,36 @@ public sealed class TaskbarModule : ITweakModule
         var combine = IndexOf(CombineOptions, settings.GetString("combine-mode", CombineOptions[0]));
         WriteDword(AdvancedKey, "TaskbarGlomLevel", combine);
 
+        var align = IndexOf(AlignOptions, settings.GetString("align", AlignOptions[0]));
+        WriteDword(AdvancedKey, "TaskbarAl", align == 0 ? 1 : 0);
+        WriteDword(AdvancedKey, "TaskbarEndTask", settings.GetBool("end-task") ? 1 : 0);
+
+        BroadcastSettingChange();
+    }
+
+    private void ApplyAppearance()
+    {
+        var settings = _context!.Settings;
+
+        var iconSize = IndexOf(IconSizeOptions, settings.GetString("icon-size", IconSizeOptions[1]));
+        WriteDword(AdvancedKey, "TaskbarSi", iconSize);
+
+        WriteDword(PersonalizeKey, "EnableTransparency", settings.GetBool("transparency", true) ? 1 : 0);
+        WriteDword(PersonalizeKey, "ColorPrevalence", settings.GetBool("accent-taskbar") ? 1 : 0);
+        WriteDword(ExplorerKey, "EnableAutoTray", settings.GetBool("show-all-tray") ? 0 : 1);
+
+        BroadcastSettingChange();
+    }
+
+    private void RestoreAppearance()
+    {
+        var settings = _context?.Settings;
+        if (settings is null) return;
+
+        RestoreValue(settings, OriginalIconSizeKey, AdvancedKey, "TaskbarSi");
+        RestoreValue(settings, OriginalTransparencyKey, PersonalizeKey, "EnableTransparency");
+        RestoreValue(settings, OriginalAccentTaskbarKey, PersonalizeKey, "ColorPrevalence");
+        RestoreValue(settings, OriginalAutoTrayKey, ExplorerKey, "EnableAutoTray");
         BroadcastSettingChange();
     }
 
@@ -314,6 +413,27 @@ public sealed class TaskbarModule : ITweakModule
             var combine = ReadDword(AdvancedKey, "TaskbarGlomLevel") ?? 0;
             settings.Set("combine-mode", CombineOptions[Math.Clamp(combine, 0, 2)]);
         }
+
+        if (settings.GetString("align").Length == 0)
+            settings.Set("align", (ReadDword(AdvancedKey, "TaskbarAl") ?? 1) == 0 ? AlignOptions[1] : AlignOptions[0]);
+
+        if (settings.GetString("end-task").Length == 0)
+            settings.Set("end-task", (ReadDword(AdvancedKey, "TaskbarEndTask") ?? 0) == 1);
+
+        if (settings.GetString("icon-size").Length == 0)
+        {
+            var size = ReadDword(AdvancedKey, "TaskbarSi") ?? 1;
+            settings.Set("icon-size", IconSizeOptions[Math.Clamp(size, 0, 2)]);
+        }
+
+        if (settings.GetString("transparency").Length == 0)
+            settings.Set("transparency", (ReadDword(PersonalizeKey, "EnableTransparency") ?? 1) == 1);
+
+        if (settings.GetString("accent-taskbar").Length == 0)
+            settings.Set("accent-taskbar", (ReadDword(PersonalizeKey, "ColorPrevalence") ?? 0) == 1);
+
+        if (settings.GetString("show-all-tray").Length == 0)
+            settings.Set("show-all-tray", (ReadDword(ExplorerKey, "EnableAutoTray") ?? 1) == 0);
     }
 
     private void CaptureOriginals()
@@ -323,6 +443,12 @@ public sealed class TaskbarModule : ITweakModule
         Capture(settings, OriginalWidgetsKey, AdvancedKey, "TaskbarDa");
         Capture(settings, OriginalCopilotKey, AdvancedKey, "ShowCopilotButton");
         Capture(settings, OriginalCombineKey, AdvancedKey, "TaskbarGlomLevel");
+        Capture(settings, OriginalAlignKey, AdvancedKey, "TaskbarAl");
+        Capture(settings, OriginalEndTaskKey, AdvancedKey, "TaskbarEndTask");
+        Capture(settings, OriginalIconSizeKey, AdvancedKey, "TaskbarSi");
+        Capture(settings, OriginalTransparencyKey, PersonalizeKey, "EnableTransparency");
+        Capture(settings, OriginalAccentTaskbarKey, PersonalizeKey, "ColorPrevalence");
+        Capture(settings, OriginalAutoTrayKey, ExplorerKey, "EnableAutoTray");
     }
 
     private void RestoreVisibility()
@@ -335,6 +461,8 @@ public sealed class TaskbarModule : ITweakModule
         RestoreValue(settings, OriginalWidgetsKey, AdvancedKey, "TaskbarDa");
         RestoreValue(settings, OriginalCopilotKey, AdvancedKey, "ShowCopilotButton");
         RestoreValue(settings, OriginalCombineKey, AdvancedKey, "TaskbarGlomLevel");
+        RestoreValue(settings, OriginalAlignKey, AdvancedKey, "TaskbarAl");
+        RestoreValue(settings, OriginalEndTaskKey, AdvancedKey, "TaskbarEndTask");
         BroadcastSettingChange();
     }
 
@@ -411,6 +539,7 @@ public sealed class TaskbarModule : ITweakModule
     private static void BroadcastSettingChange()
     {
         Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, "TraySettings", Native.SMTO_ABORTIFHUNG, 1000, out _);
+        Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, "ImmersiveColorSet", Native.SMTO_ABORTIFHUNG, 1000, out _);
         Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, "intl", Native.SMTO_ABORTIFHUNG, 1000, out _);
     }
 }

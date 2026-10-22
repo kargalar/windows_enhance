@@ -2,19 +2,16 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <SolidColorBrush x:Key="BgBrush" Color="#0B0E14" />
-    <SolidColorBrush x:Key="SidebarBrush" Color="#0F131B" />
     <SolidColorBrush x:Key="CardBrush" Color="#151A24" />
     <SolidColorBrush x:Key="BorderBrush" Color="#232C3A" />
     <SolidColorBrush x:Key="HoverBrush" Color="#1B2230" />
     <SolidColorBrush x:Key="PanelBrush" Color="#121821" />
     <SolidColorBrush x:Key="InputBrush" Color="#0D1219" />
     <SolidColorBrush x:Key="SelectedCardBrush" Color="#17202B" />
-    <SolidColorBrush x:Key="IconBorderBrush" Color="#23485C" />
     <SolidColorBrush x:Key="TextBrush" Color="#EDF2FA" />
     <SolidColorBrush x:Key="MutedBrush" Color="#8C98AB" />
     <SolidColorBrush x:Key="AccentBrush" Color="#4CC2FF" />
     <SolidColorBrush x:Key="AccentSoftBrush" Color="#12303F" />
-    <SolidColorBrush x:Key="VioletBrush" Color="#8B8CFF" />
     <SolidColorBrush x:Key="WarnBrush" Color="#FFC857" />
     <SolidColorBrush x:Key="DangerBrush" Color="#FF6B6B" />
     <SolidColorBrush x:Key="SwitchTrackBrush" Color="#2B3442" />
@@ -25,25 +22,57 @@
     <SolidColorBrush x:Key="PillBrush" Color="#10141C" />
     <SolidColorBrush x:Key="RingBrush" Color="#2D3644" />
     <SolidColorBrush x:Key="RingHoverBrush" Color="#4B5460" />
-    <SolidColorBrush x:Key="IconBorderHoverBrush" Color="#23445B" />
     <SolidColorBrush x:Key="SliderTrackBrush" Color="#2D3644" />
     <SolidColorBrush x:Key="SliderThumbRingBrush" Color="#0D1219" />
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#2D3644" />
 
-    <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
-        <GradientStop Color="#5FD0FF" Offset="0" />
-        <GradientStop Color="#4C9BFF" Offset="0.55" />
-        <GradientStop Color="#8B8CFF" Offset="1" />
-    </LinearGradientBrush>
-
     <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <Style x:Key="KeyboardFocus" TargetType="Control">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2" CornerRadius="6" Margin="-3" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="CategoryItem" TargetType="ListBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="Margin" Value="0,0,6,6" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="bg" Background="Transparent" CornerRadius="7" Padding="{TemplateBinding Padding}"
+                            BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource HoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <Style x:Key="SwitchStyle" TargetType="CheckBox">
         <Setter Property="Width" Value="44" />
         <Setter Property="Height" Value="25" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="CheckBox">
@@ -80,7 +109,7 @@
         <Setter Property="Padding" Value="11,8" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -106,7 +135,7 @@
         <Setter Property="FontSize" Value="11.5" />
         <Setter Property="Margin" Value="0,0,7,7" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
@@ -135,7 +164,7 @@
         <Setter Property="Height" Value="34" />
         <Setter Property="Margin" Value="0,0,8,8" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
@@ -163,47 +192,13 @@
         </Setter>
     </Style>
 
-    <Style x:Key="NavItem" TargetType="ListBoxItem">
-        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="Margin" Value="0,1" />
-        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="ListBoxItem">
-                    <Grid>
-                        <Border x:Name="bg" CornerRadius="8" Padding="{TemplateBinding Padding}"
-                                Background="Transparent" BorderThickness="1" BorderBrush="Transparent">
-                            <ContentPresenter />
-                        </Border>
-                        <Border x:Name="bar" Width="3" Height="16" CornerRadius="2"
-                                HorizontalAlignment="Left" Background="{DynamicResource AccentBrush}"
-                                Visibility="Collapsed" />
-                    </Grid>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource HoverBrush}" />
-                        </Trigger>
-                        <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
-                            <Setter TargetName="bg" Property="BorderBrush" Value="{DynamicResource IconBorderHoverBrush}" />
-                            <Setter TargetName="bar" Property="Visibility" Value="Visible" />
-                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
-
     <Style x:Key="ModuleItem" TargetType="ListBoxItem">
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="0" />
+        <Setter Property="MaxWidth" Value="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollContentPresenter}}" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
@@ -221,7 +216,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="11,8" />
         <Setter Property="FontSize" Value="12.5" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
@@ -256,7 +251,7 @@
 
     <Style x:Key="DarkSlider" TargetType="Slider">
         <Setter Property="Height" Value="24" />
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
@@ -295,7 +290,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
                     <Grid Background="Transparent">
-                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="{TemplateBinding Orientation}">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False" />
                             </Track.DecreaseRepeatButton>
@@ -319,6 +314,41 @@
     </Style>
 
     <Style TargetType="ScrollBar" BasedOn="{StaticResource DarkScrollBar}" />
+
+    <Style x:Key="VerticalScroller" TargetType="ScrollViewer">
+        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollViewer">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" Margin="{TemplateBinding Padding}"
+                                                Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                CanContentScroll="{TemplateBinding CanContentScroll}" />
+                        <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1" Orientation="Vertical"
+                                   Style="{StaticResource DarkScrollBar}" Minimum="0" Maximum="{TemplateBinding ScrollableHeight}"
+                                   ViewportSize="{TemplateBinding ViewportHeight}"
+                                   Value="{Binding VerticalOffset, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}"
+                                   Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ModuleListStyle" TargetType="ListBox">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <ScrollViewer x:Name="PART_ScrollViewer" Style="{StaticResource VerticalScroller}"
+                                  Focusable="False" CanContentScroll="True">
+                        <ItemsPresenter />
+                    </ScrollViewer>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{DynamicResource HoverBrush}" />

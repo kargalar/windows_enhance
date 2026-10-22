@@ -22,6 +22,11 @@ public sealed class ModuleVm : INotifyPropertyChanged
         "Verimlilik" => "\uE945",
         "Sistem" => "\uE713",
         "Uygulamalar" => "\uE71D",
+        "Fare" => "\uE962",
+        "Görünüm" => "\uE790",
+        "Gezgin" => "\uE8B7",
+        "Başlat" => "\uE80F",
+        "Arama" => "\uE721",
         _ => "\uE713"
     };
 

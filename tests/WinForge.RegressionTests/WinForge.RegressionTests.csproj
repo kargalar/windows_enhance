@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/WinForge.App/WinForge.App.csproj" />
+    <ProjectReference Include="../../src/WinForge.Modules.AltSnap/WinForge.Modules.AltSnap.csproj" />
+  </ItemGroup>
+  <Target Name="CopyTestModules" AfterTargets="Build">
+    <ItemGroup>
+      <TestModules Include="../../src/WinForge.App/bin/$(Configuration)/$(TargetFramework)/modules/*.dll" />
+      <TestModules Include="../../src/WinForge.App/bin/x64/$(Configuration)/$(TargetFramework)/modules/*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TestModules)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

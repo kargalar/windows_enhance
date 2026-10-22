@@ -10,7 +10,7 @@ public sealed class NetSpeedModule : ITweakModule
     public string Id => "net-speed";
     public string Name => "İnternet Hızı";
     public string Category => "Taskbar";
-    public string Description => "Taskbar'ın hemen üstünde anlık indirme ve yükleme hızını gösterir.";
+    public string Description => "İndirme ve yükleme hızını görev çubuğunun üstünde, bildirim alanına hizalı gösterir.";
     public string? Warning => null;
     public bool IsActive { get; private set; }
 
@@ -41,23 +41,40 @@ public sealed class NetSpeedModule : ITweakModule
         },
         new SettingDescriptor
         {
-            Key = "right-offset",
-            Label = "Sağdan uzaklık (px)",
-            Kind = SettingKind.Number,
-            Default = 190,
-            Min = 0,
-            Max = 900,
-            Description = "Bildirim alanındaki ikonlarla çakışmayı önlemek için sağa doğru boşluk bırakır."
+            Key = "position",
+            Label = "Gösterim konumu",
+            Kind = SettingKind.Choice,
+            Options = new[] { NetSpeedWindow.AboveTaskbar, NetSpeedWindow.InsideTaskbar },
+            Default = NetSpeedWindow.AboveTaskbar,
+            Description = "Gösterge görev çubuğunun üstünde veya içinde, bildirim alanının solunda durur."
         },
         new SettingDescriptor
         {
-            Key = "bottom-offset",
-            Label = "Taskbar'dan boşluk (px)",
+            Key = "right-offset",
+            Label = "Bildirim alanından uzaklık (px)",
             Kind = SettingKind.Number,
-            Default = 6,
+            Default = 10,
             Min = 0,
             Max = 200,
-            Description = "Gösterge taskbar ile birlikte hareket eder; bu değer taskbar ile arasındaki boşluktur."
+            Description = "Gösterge ile bildirim alanı ikonları arasındaki boşluk."
+        },
+        new SettingDescriptor
+        {
+            Key = "unit",
+            Label = "Hız birimi",
+            Kind = SettingKind.Choice,
+            Options = new[] { "Otomatik", "MB/s", "Mbit/s" },
+            Default = "Otomatik",
+            Description = "Otomatik, hıza göre B/s, KB/s ve MB/s arasında geçiş yapar."
+        },
+        new SettingDescriptor
+        {
+            Key = "interval",
+            Label = "Yenileme aralığı (ms)",
+            Kind = SettingKind.Number,
+            Default = 1000,
+            Min = 250,
+            Max = 3000
         }
     };
 
@@ -89,7 +106,9 @@ public sealed class NetSpeedModule : ITweakModule
             settings.GetInt("font-size", 11),
             settings.GetBool("show-download", true),
             settings.GetBool("show-upload", true),
-            settings.GetInt("right-offset", 190),
-            settings.GetInt("bottom-offset", 6));
+            settings.GetInt("right-offset", 10),
+            settings.GetString("unit", "Otomatik"),
+            settings.GetInt("interval", 1000),
+            settings.GetString("position", NetSpeedWindow.AboveTaskbar));
     }
 }
