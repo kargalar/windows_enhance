@@ -1,0 +1,13 @@
+param(
+    [string]$Configuration = "Release"
+)
+
+$ErrorActionPreference = "Stop"
+$root = Split-Path $PSScriptRoot -Parent
+
+Write-Host "WinForge derleniyor ($Configuration)..." -ForegroundColor Cyan
+dotnet build (Join-Path $root "WinForge.slnx") -c $Configuration
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$output = Join-Path $root "src\WinForge.App\bin\$Configuration\net10.0-windows10.0.19041.0"
+Write-Host "Hazır: $output\WinForge.exe" -ForegroundColor Green

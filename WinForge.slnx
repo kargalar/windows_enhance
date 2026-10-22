@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/WinForge.App/WinForge.App.csproj" />
+    <Project Path="src/WinForge.Core/WinForge.Core.csproj" />
+    <Project Path="src/WinForge.Modules.AlwaysOnTop/WinForge.Modules.AlwaysOnTop.csproj" />
+    <Project Path="src/WinForge.Modules.NetSpeed/WinForge.Modules.NetSpeed.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.Taskbar/WinForge.Modules.Taskbar.csproj" />
+    <Project Path="src/WinForge.Modules.TextGrabber/WinForge.Modules.TextGrabber.csproj" />
+  </Folder>
+</Solution>
