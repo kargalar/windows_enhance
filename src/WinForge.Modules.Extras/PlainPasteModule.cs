@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using WinForge.Core;
 
@@ -6,12 +5,11 @@ namespace WinForge.Modules.Extras;
 
 public sealed class PlainPasteModule : ITweakModule
 {
-    private const byte VkControl = 0x11;
     private const byte VkV = 0x56;
-    private const uint KeyEventKeyUp = 0x0002;
 
     private IModuleContext? _context;
     private IDisposable? _hotkey;
+    private CancellationTokenSource? _pendingPaste;
 
     public string Id => "plain-paste";
     public string Name => "Düz Metin Yapıştır";
@@ -42,6 +40,7 @@ public sealed class PlainPasteModule : ITweakModule
     public void Deactivate()
     {
         IsActive = false;
+        CancelPendingPaste();
         _hotkey?.Dispose();
         _hotkey = null;
     }
@@ -49,6 +48,7 @@ public sealed class PlainPasteModule : ITweakModule
     public void Apply()
     {
         if (!IsActive) return;
+        CancelPendingPaste();
 
         _hotkey?.Dispose();
         _hotkey = null;
@@ -65,51 +65,49 @@ public sealed class PlainPasteModule : ITweakModule
         context.Log.Info("Düz metin yapıştırma kısayolu kaydedildi (Win+Ctrl+Alt+V).");
     }
 
-    private void Paste()
+    private void Paste() => _ = PasteAsync();
+
+    private async Task PasteAsync()
     {
         var context = _context;
-        if (context is null) return;
-
-        string? text = null;
-        try
-        {
-            if (Clipboard.ContainsText()) text = Clipboard.GetText();
-        }
-        catch
-        {
-            // Clipboard can be locked by another process for a moment.
-        }
-
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            context.Notify("Panoda metin yok");
-            return;
-        }
+        if (context is null || !IsActive) return;
+        var target = Native.GetForegroundWindow();
+        CancelPendingPaste();
+        var cancellation = new CancellationTokenSource();
+        _pendingPaste = cancellation;
 
         try
         {
-            Clipboard.SetText(text);
+            var text = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+            if (string.IsNullOrEmpty(text))
+            {
+                context.Notify("Panoda metin yok");
+                return;
+            }
+
+            var completed = await PasteOperation.ExecuteAsync(target, () =>
+            {
+                Clipboard.SetText(text);
+                KeyboardInputSender.PasteShortcut();
+            }, cancellation.Token);
+            context.Notify(completed ? "Düz metin yapıştırılıyor" : "Yapıştırma iptal edildi.");
         }
-        catch
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
         {
-            context.Notify("Panoya yazılamadı");
-            return;
+            context.Log.Error("Düz metin yapıştırılamadı.", exception);
+            context.Notify("Yapıştırılamadı: " + exception.Message);
         }
-
-        context.Notify("Düz metin yapıştırılıyor");
-
-        // Let the hotkey modifiers go before synthesizing Ctrl+V.
-        Task.Delay(160).ContinueWith(_ => SendCtrlV(), TaskScheduler.Default);
+        finally
+        {
+            if (ReferenceEquals(_pendingPaste, cancellation)) _pendingPaste = null;
+            cancellation.Dispose();
+        }
     }
 
-    private static void SendCtrlV()
+    private void CancelPendingPaste()
     {
-        keybd_event(VkControl, 0, 0, UIntPtr.Zero);
-        keybd_event(VkV, 0, 0, UIntPtr.Zero);
-        keybd_event(VkV, 0, KeyEventKeyUp, UIntPtr.Zero);
-        keybd_event(VkControl, 0, KeyEventKeyUp, UIntPtr.Zero);
+        var pending = Interlocked.Exchange(ref _pendingPaste, null);
+        pending?.Cancel();
     }
-
-    [DllImport("user32.dll")]
-    private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
 }

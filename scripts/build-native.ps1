@@ -1,0 +1,38 @@
+param([string]$Configuration = 'Release')
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSScriptRoot -Parent
+$source = Join-Path $root 'native/WinForge.Shell'
+$output = Join-Path $source "bin/x64/$Configuration"
+$developerCommands = @('18', '2022') | ForEach-Object {
+    Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/$_/BuildTools/Common7/Tools/VsDevCmd.bat"
+} | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (!$developerCommands) { throw 'Visual Studio C++ Build Tools bulunamadı. Microsoft C++ araçlarını ve Windows SDK kurun.' }
+New-Item -ItemType Directory -Path $output -Force | Out-Null
+$common = '/nologo /std:c++20 /EHsc /W4 /WX /MT /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN'
+$libraries = 'windowsapp.lib runtimeobject.lib ole32.lib oleaut32.lib user32.lib uuid.lib'
+foreach ($target in @(@{ Source = 'ShellTap.cpp'; Name = 'WinForge.ShellTap.dll'; Mode = '/LD' }, @{ Source = 'ShellHost.cpp'; Name = 'WinForge.ShellHost.exe'; Mode = '' }, @{ Source = 'ShellFixture.cpp'; Name = 'WinForge.ShellFixture.exe'; Mode = '' }, @{ Source = 'TaskbarGeometryFixture.cpp'; Name = 'WinForge.TaskbarGeometryFixture.exe'; Mode = '' })) {
+    $sourceFile = Join-Path $source $target.Source
+    $outputFile = Join-Path $output $target.Name
+    $objectFile = Join-Path $output ([IO.Path]::ChangeExtension($target.Source, '.obj'))
+    $inputs = @(Get-Item -LiteralPath $sourceFile, (Join-Path $source 'BridgeProtocol.h'))
+    if ($target.Source -in @('ShellTap.cpp', 'TaskbarGeometryFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'TaskbarGeometry.h') }
+    if ($target.Source -eq 'ShellHost.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'PdfPreviewRenderer.h') }
+    if ($target.Mode -eq '/LD') { $inputs += Get-Item -LiteralPath (Join-Path $source 'ShellTap.def') }
+    if ($target.Source -eq 'ShellFixture.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'ShellFixture.manifest') }
+    if ((Test-Path -LiteralPath $outputFile) -and !($inputs | Where-Object { $_.LastWriteTimeUtc -gt (Get-Item -LiteralPath $outputFile).LastWriteTimeUtc })) { continue }
+    $exports = if ($target.Mode -eq '/LD') { ' /DEF:"' + (Join-Path $source 'ShellTap.def') + '"' } else { '' }
+    if ($target.Source -eq 'ShellFixture.cpp') { $exports += ' /MANIFEST:EMBED /MANIFESTINPUT:"' + (Join-Path $source 'ShellFixture.manifest') + '"' }
+    $targetLibraries = $libraries
+    if ($target.Source -eq 'ShellHost.cpp') { $targetLibraries += ' d3d11.lib dxgi.lib d2d1.lib windowscodecs.lib windows.data.pdf.lib' }
+    $batchFile = Join-Path $output 'compile.cmd'
+    [IO.File]::WriteAllLines($batchFile, @(
+        '@echo off',
+        ('call "' + $developerCommands + '" -arch=x64 -host_arch=x64 >nul'),
+        'if errorlevel 1 exit /b %errorlevel%',
+        ('cl ' + $common + ' ' + $target.Mode + ' "' + $sourceFile + '" /Fo"' + $objectFile + '" /Fe"' + $outputFile + '" /link ' + $targetLibraries + $exports),
+        'exit /b %errorlevel%'
+    ))
+    & $env:ComSpec /d /c "call `"$batchFile`""
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+Write-Output "WinForge native shell: $output"

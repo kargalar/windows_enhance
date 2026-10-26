@@ -15,6 +15,7 @@ public sealed class GlobalKeyboardHook : IDisposable
     private long _lastControlUp = -DoublePressWindowMs;
 
     public event Action? DoubleControlPressed;
+    public event Action<uint, bool>? KeyStateChanged;
 
     public bool IsInstalled => _hook != IntPtr.Zero;
 
@@ -34,6 +35,8 @@ public sealed class GlobalKeyboardHook : IDisposable
         {
             var message = wParam.ToInt64();
             var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN) NotifyKeyStateChanged(info.vkCode, isDown: true);
+            else if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
 
             if (info.vkCode is VkControl or VkLeftControl or VkRightControl)
             {
@@ -72,6 +75,15 @@ public sealed class GlobalKeyboardHook : IDisposable
         }
 
         return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
+    }
+
+    private void NotifyKeyStateChanged(uint virtualKey, bool isDown)
+    {
+        try { KeyStateChanged?.Invoke(virtualKey, isDown); }
+        catch
+        {
+            // A hook callback must never take the message loop down.
+        }
     }
 
     public void Dispose()

@@ -10,13 +10,18 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/WinForge.App/WinForge.App.csproj" />
-    <ProjectReference Include="../../src/WinForge.Modules.AltSnap/WinForge.Modules.AltSnap.csproj" />
+    <ProjectReference Include="../../src/WinForge.Modules.WindowControl/WinForge.Modules.WindowControl.csproj" />
   </ItemGroup>
   <Target Name="CopyTestModules" AfterTargets="Build">
+    <MSBuild Projects="../../src/WinForge.App/WinForge.App.csproj" Targets="GetModuleFiles" Properties="Configuration=$(Configuration);Platform=$(Platform)">
+      <Output TaskParameter="TargetOutputs" ItemName="TestModules" />
+    </MSBuild>
     <ItemGroup>
-      <TestModules Include="../../src/WinForge.App/bin/$(Configuration)/$(TargetFramework)/modules/*.dll" />
-      <TestModules Include="../../src/WinForge.App/bin/x64/$(Configuration)/$(TargetFramework)/modules/*.dll" />
+      <RetiredTestFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
+      <NativeShellTestFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellHost.exe;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellTap.dll;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellFixture.exe" />
     </ItemGroup>
+    <Delete Files="@(RetiredTestFiles)" />
     <Copy SourceFiles="@(TestModules)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NativeShellTestFiles)" DestinationFolder="$(OutDir)native" SkipUnchangedFiles="true" />
   </Target>
 </Project>

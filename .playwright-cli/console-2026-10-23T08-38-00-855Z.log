@@ -1,0 +1,3 @@
+[     346ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://i.ytimg.com/vi/video/hqdefault.jpg:0
+[     352ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8768/favicon.ico:0
+[    1562ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8768/watch?v=video:0

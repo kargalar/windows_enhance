@@ -7,8 +7,7 @@ public sealed class MouseTweaksModule : ITweakModule
 {
     private const uint SpiGetMouse = 0x0003;
     private const uint SpiSetMouse = 0x0004;
-    private const uint SpiGetDoubleClickTime = 0x0020;
-    private const uint SpiSetDoubleClickTime = 0x0021;
+    private const uint SpiSetDoubleClickTime = 0x0020;
     private const uint SpiGetWheelScrollLines = 0x0068;
     private const uint SpiSetWheelScrollLines = 0x0069;
     private const uint SpifUpdateIniFile = 0x01;
@@ -18,6 +17,19 @@ public sealed class MouseTweaksModule : ITweakModule
     private int[] _originalMouse = { 0, 0, 0 };
     private int _originalWheel = 3;
     private int _originalDoubleClick = 500;
+    private bool _hasOriginalSettings;
+    private readonly SystemParametersHandler _systemParameters;
+    private readonly Func<uint> _readDoubleClickTime;
+
+    internal delegate bool SystemParametersHandler(uint action, uint parameter, IntPtr data, uint flags);
+
+    public MouseTweaksModule() : this(SystemParametersInfo, GetDoubleClickTime) { }
+
+    internal MouseTweaksModule(SystemParametersHandler systemParameters, Func<uint> readDoubleClickTime)
+    {
+        _systemParameters = systemParameters;
+        _readDoubleClickTime = readDoubleClickTime;
+    }
 
     public string Id => "mouse-tweaks";
     public string Name => "Fare Ayarları";
@@ -61,9 +73,11 @@ public sealed class MouseTweaksModule : ITweakModule
 
     public void Activate()
     {
+        if (IsActive) return;
         _originalMouse = ReadMouse();
-        _originalWheel = ReadInt(SpiGetWheelScrollLines, 3);
-        _originalDoubleClick = ReadInt(SpiGetDoubleClickTime, 500);
+        _originalWheel = ReadInt(SpiGetWheelScrollLines);
+        _originalDoubleClick = checked((int)_readDoubleClickTime());
+        _hasOriginalSettings = true;
 
         var settings = _context!.Settings;
         if (settings.GetString("scroll-lines").Length == 0) settings.Set("scroll-lines", _originalWheel);
@@ -78,11 +92,14 @@ public sealed class MouseTweaksModule : ITweakModule
 
     public void Deactivate()
     {
+        if (_hasOriginalSettings)
+        {
+            WriteMouse(_originalMouse);
+            WriteInt(SpiSetWheelScrollLines, _originalWheel);
+            WriteInt(SpiSetDoubleClickTime, _originalDoubleClick);
+            _hasOriginalSettings = false;
+        }
         IsActive = false;
-
-        WriteMouse(_originalMouse);
-        WriteInt(SpiSetWheelScrollLines, _originalWheel);
-        WriteInt(SpiSetDoubleClickTime, _originalDoubleClick);
     }
 
     public void Apply()
@@ -95,13 +112,13 @@ public sealed class MouseTweaksModule : ITweakModule
         WriteInt(SpiSetDoubleClickTime, Math.Clamp(settings.GetInt("double-click", _originalDoubleClick), 200, 900));
     }
 
-    private static int[] ReadMouse()
+    private int[] ReadMouse()
     {
         var values = new int[3];
         var handle = GCHandle.Alloc(values, GCHandleType.Pinned);
         try
         {
-            if (!SystemParametersInfo(SpiGetMouse, 0, handle.AddrOfPinnedObject(), 0)) return new[] { 0, 0, 0 };
+            Check(_systemParameters(SpiGetMouse, 0, handle.AddrOfPinnedObject(), 0));
             return values;
         }
         finally
@@ -110,12 +127,12 @@ public sealed class MouseTweaksModule : ITweakModule
         }
     }
 
-    private static void WriteMouse(int[] values)
+    private void WriteMouse(int[] values)
     {
         var handle = GCHandle.Alloc(values, GCHandleType.Pinned);
         try
         {
-            SystemParametersInfo(SpiSetMouse, 0, handle.AddrOfPinnedObject(), SpifUpdateIniFile | SpifSendChange);
+            Check(_systemParameters(SpiSetMouse, 0, handle.AddrOfPinnedObject(), SpifUpdateIniFile | SpifSendChange));
         }
         finally
         {
@@ -123,12 +140,12 @@ public sealed class MouseTweaksModule : ITweakModule
         }
     }
 
-    private static int ReadInt(uint action, int fallback)
+    private int ReadInt(uint action)
     {
         var buffer = Marshal.AllocHGlobal(sizeof(int));
         try
         {
-            if (!SystemParametersInfo(action, 0, buffer, 0)) return fallback;
+            Check(_systemParameters(action, 0, buffer, 0));
             return Marshal.ReadInt32(buffer);
         }
         finally
@@ -137,9 +154,17 @@ public sealed class MouseTweaksModule : ITweakModule
         }
     }
 
-    private static void WriteInt(uint action, int value) =>
-        SystemParametersInfo(action, (uint)value, IntPtr.Zero, SpifUpdateIniFile | SpifSendChange);
+    private void WriteInt(uint action, int value) =>
+        Check(_systemParameters(action, (uint)value, IntPtr.Zero, SpifUpdateIniFile | SpifSendChange));
+
+    private static void Check(bool succeeded)
+    {
+        if (!succeeded) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Windows fare ayarı okunamadı veya uygulanamadı.");
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SystemParametersInfo(uint action, uint param, IntPtr data, uint winIni);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDoubleClickTime();
 }

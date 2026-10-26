@@ -22,16 +22,44 @@
     <ProjectReference Include="..\WinForge.Modules.TextGrabber\WinForge.Modules.TextGrabber.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.NetSpeed\WinForge.Modules.NetSpeed.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.Tiling\WinForge.Modules.Tiling.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinForge.Modules.Launcher\WinForge.Modules.Launcher.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.Extras\WinForge.Modules.Extras.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\WinForge.Modules.AltSnap\WinForge.Modules.AltSnap.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WinForge.Modules.WindowControl\WinForge.Modules.WindowControl.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="BuildNativeShell" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-native.ps1&quot; -Configuration &quot;$(Configuration)&quot;" />
+    <ItemGroup>
+      <NativeShellFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellHost.exe;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellTap.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NativeShellFiles)" DestinationFolder="$(OutDir)native" SkipUnchangedFiles="true" />
+  </Target>
 
   <Target Name="CopyModules" AfterTargets="Build">
     <ItemGroup>
-      <ModuleFiles Include="$(MSBuildThisFileDirectory)..\WinForge.Modules.*\bin\$(Configuration)\$(TargetFramework)\WinForge.Modules.*.dll" />
-      <ModuleFiles Include="$(MSBuildThisFileDirectory)..\WinForge.Modules.*\bin\x64\$(Configuration)\$(TargetFramework)\WinForge.Modules.*.dll" />
+      <ModuleProjects Include="@(ProjectReference)" Condition="'%(ProjectReference.ReferenceOutputAssembly)' == 'false'" />
+      <RetiredFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
     </ItemGroup>
+    <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />
+    </MSBuild>
+    <Delete Files="@(RetiredFiles)" />
     <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
   </Target>
+
+  <Target Name="IncludeModulesInPublish" AfterTargets="ComputeFilesToPublish" DependsOnTargets="CopyModules">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(ModuleFiles)">
+        <RelativePath>modules/%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(NativeShellFiles)">
+        <RelativePath>native/%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="GetModuleFiles" DependsOnTargets="CopyModules" Returns="@(ModuleFiles)" />
 
 </Project>

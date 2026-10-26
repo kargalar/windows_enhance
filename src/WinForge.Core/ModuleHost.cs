@@ -12,6 +12,7 @@ public sealed class ModuleHost
     private readonly List<ITweakModule> _modules = new();
     private readonly Dictionary<string, IModuleSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IQuickActionService _quickActions;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify)
     {
@@ -20,6 +21,7 @@ public sealed class ModuleHost
         _hotkeys = hotkeys;
         _modulesDirectory = modulesDirectory;
         _notify = notify;
+        _quickActions = new QuickActionService(() => _modules, _log, _notify);
     }
 
     public IReadOnlyList<ITweakModule> Modules => _modules;
@@ -55,7 +57,7 @@ public sealed class ModuleHost
                     var module = (ITweakModule)Activator.CreateInstance(type)!;
                     var settings = new ModuleSettings(_store.For(module.Id), _store.Save);
                     _settings[module.Id] = settings;
-                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify));
+                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, TryPlaceWindowInZone));
                     _modules.Add(module);
                     _log.Info($"Modül yüklendi: {module.Id} ({module.Name})");
                 }
@@ -171,22 +173,84 @@ public sealed class ModuleHost
         }
     }
 
-    private sealed class ModuleContext : IModuleContext
+    private bool TryPlaceWindowInZone(IntPtr window, POINT point)
+    {
+        foreach (var module in _modules.Where(module => module.IsActive))
+            if (module is IWindowZoneProvider provider && provider.TryPlaceWindowInZone(window, point)) return true;
+        return false;
+    }
+
+    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext
     {
         private readonly Action<string> _notify;
+        private readonly Func<IntPtr, POINT, bool> _placeWindow;
 
-        public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify)
+        public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
+            IQuickActionService quickActions, Func<IntPtr, POINT, bool> placeWindow)
         {
             Settings = settings;
             Log = log;
             Hotkeys = hotkeys;
+            QuickActions = quickActions;
             _notify = notify;
+            _placeWindow = placeWindow;
         }
 
         public IModuleSettings Settings { get; }
         public ILogger Log { get; }
         public IHotkeyService Hotkeys { get; }
+        public IQuickActionService QuickActions { get; }
 
         public void Notify(string message) => _notify(message);
+        public bool TryPlaceWindowInZone(IntPtr window, POINT point) => _placeWindow(window, point);
+    }
+
+    private sealed class QuickActionService(Func<IEnumerable<ITweakModule>> modules, ILogger log, Action<string> notify)
+        : IQuickActionService
+    {
+        private const int MaximumActionsPerProvider = 40;
+
+        public IReadOnlyList<QuickAction> Search(string query)
+        {
+            var actions = new List<QuickAction>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var module in modules().Where(module => module.IsActive))
+            {
+                if (module is not IQuickActionProvider provider) continue;
+                var moduleId = module.Id;
+                try
+                {
+                    foreach (var action in provider.GetQuickActions(query).Take(MaximumActionsPerProvider))
+                    {
+                        if (action is null || string.IsNullOrWhiteSpace(action.Id) || string.IsNullOrWhiteSpace(action.Name) ||
+                            action.Execute is null) continue;
+                        var key = moduleId + ":" + action.Id.Trim();
+                        if (!seen.Add(key)) continue;
+                        actions.Add(action with
+                        {
+                            Name = action.Name.Trim(),
+                            SearchTerms = string.IsNullOrWhiteSpace(action.SearchTerms) ? action.Name.Trim() : action.SearchTerms.Trim(),
+                            Execute = () => ExecuteAction(moduleId, action)
+                        });
+                    }
+                }
+                catch (Exception exception)
+                {
+                    log.Error($"Hızlı eylem sağlayıcısı başarısız: {moduleId}", exception);
+                    notify($"‘{module.Name}’ hızlı eylemleri yüklenemedi.");
+                }
+            }
+            return actions;
+        }
+
+        private void ExecuteAction(string moduleId, QuickAction action)
+        {
+            try { action.Execute(); }
+            catch (Exception exception)
+            {
+                log.Error($"Hızlı eylem çalıştırılamadı: {moduleId}/{action.Id}", exception);
+                notify($"‘{action.Name}’ eylemi çalıştırılamadı.");
+            }
+        }
     }
 }

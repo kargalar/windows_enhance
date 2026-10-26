@@ -1,0 +1,9 @@
+<Project>
+  <Target Name="EnforceNativeDependencyPolicy" BeforeTargets="CollectPackageReferences;ResolveReferences">
+    <ItemGroup>
+      <ExternalPackages Include="@(PackageReference)" Condition="'%(PackageReference.IsImplicitlyDefined)' != 'true'" />
+    </ItemGroup>
+    <Error Condition="'@(ExternalPackages)' != ''"
+           Text="WinForge kendi altyapısını kullanır; doğrudan NuGet bağımlılıkları eklenemez: @(ExternalPackages, ', '). Windows/.NET SDK platform referansları kullanılabilir." />
+  </Target>
+</Project>

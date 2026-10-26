@@ -56,11 +56,28 @@ public sealed class SettingsStore
                 foreach (var (key, value) in values) target[key] = value ?? "";
                 Values[id] = target;
             }
+
+            MigrateWindowControl();
         }
         catch
         {
             // Corrupt settings must never prevent the app from starting.
         }
+    }
+
+    private void MigrateWindowControl()
+    {
+        const string legacyModule = "altsnap";
+        const string currentModule = "window-control";
+        if (Enabled.Remove(legacyModule)) Enabled.Add(currentModule);
+        if (Values.Remove(legacyModule, out var legacy))
+        {
+            var current = For(currentModule);
+            foreach (var (key, value) in legacy)
+                if (!key.StartsWith("__native-", StringComparison.OrdinalIgnoreCase)) current.TryAdd(key, value);
+        }
+        Enabled.Remove("windhawk-taskbar");
+        Values.Remove("windhawk-taskbar");
     }
 
     public void Save()

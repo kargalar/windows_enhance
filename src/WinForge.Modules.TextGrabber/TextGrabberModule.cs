@@ -1,10 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using Windows.Globalization;
-using Windows.Graphics.Imaging;
-using Windows.Media.Ocr;
-using Windows.Security.Cryptography;
 using WinForge.Core;
 
 namespace WinForge.Modules.TextGrabber;
@@ -118,18 +115,9 @@ public sealed class TextGrabberModule : ITweakModule
         return flat.Length <= 160 ? flat : flat[..160].TrimEnd() + "…";
     }
 
-    private static async Task<string> RecognizeAsync(byte[] bgra, int width, int height)
-    {
-        var buffer = CryptographicBuffer.CreateFromByteArray(bgra);
-        var bitmap = SoftwareBitmap.CreateCopyFromBuffer(buffer, BitmapPixelFormat.Bgra8, width, height, BitmapAlphaMode.Premultiplied);
-
-        var engine = OcrEngine.TryCreateFromUserProfileLanguages()
-                     ?? OcrEngine.TryCreateFromLanguage(new Language("en-US"))
-                     ?? throw new InvalidOperationException("OCR motoru kullanılamıyor.");
-
-        var result = await engine.RecognizeAsync(bitmap);
-        return string.Join(Environment.NewLine, result.Lines.Select(line => line.Text).Where(line => !string.IsNullOrWhiteSpace(line)));
-    }
+    private static Task<string> RecognizeAsync(byte[] bgra, int width, int height) =>
+        OcrRecognitionService.RecognizeAsync(BitmapSource.Create(width, height, 96, 96,
+            PixelFormats.Bgra32, null, bgra, checked(width * 4)));
 
     private static bool TryCopyToClipboard(string text)
     {

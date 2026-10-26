@@ -20,6 +20,7 @@ public sealed class SettingDescriptor
     public int Min { get; init; }
     public int Max { get; init; } = 100;
     public string[] Options { get; init; } = Array.Empty<string>();
+    public IReadOnlyDictionary<string, string> OptionLabels { get; init; } = new Dictionary<string, string>();
     public Action? Execute { get; init; }
 }
 
@@ -51,6 +52,36 @@ public interface IModuleContext
     void Notify(string message);
 }
 
+/// <summary>A searchable action contributed by an active module.</summary>
+public sealed record QuickAction(string Id, string Name, string SearchTerms, Action Execute);
+
+/// <summary>Contributes lightweight searchable actions to the quick launcher.</summary>
+public interface IQuickActionProvider
+{
+    IEnumerable<QuickAction> GetQuickActions(string query);
+}
+
+/// <summary>Available only to modules hosted by an application that supports quick actions.</summary>
+public interface IQuickActionContext
+{
+    IQuickActionService QuickActions { get; }
+}
+
+public interface IQuickActionService
+{
+    IReadOnlyList<QuickAction> Search(string query);
+}
+
+public interface IWindowPlacementContext : IModuleContext
+{
+    bool TryPlaceWindowInZone(IntPtr window, POINT point);
+}
+
+public interface IWindowZoneProvider
+{
+    bool TryPlaceWindowInZone(IntPtr window, POINT point);
+}
+
 public interface ITweakModule
 {
     string Id { get; }
@@ -68,6 +99,12 @@ public interface ITweakModule
 
     /// <summary>Settings changed; re-read them and apply live.</summary>
     void Apply();
+}
+
+/// <summary>Handles a small, validated command forwarded to the running application.</summary>
+public interface IAppCommandModule
+{
+    bool HandleCommand(string command, IReadOnlyList<string> arguments);
 }
 
 public static class HotkeyModifiers

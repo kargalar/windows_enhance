@@ -9,11 +9,22 @@ namespace WinForge.Modules.Extras;
 public sealed class TrayIconsModule : ITweakModule
 {
     private const string SettingsKey = @"Control Panel\NotifyIconSettings";
+    private const string PromotionValue = "IsPromoted";
 
     private readonly List<SettingDescriptor> _settings = new();
     private readonly List<TrayGroup> _groups = new();
-    private readonly Dictionary<string, object?> _originals = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PromotionSnapshot> _originals = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, EntryIdentity> _identities = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IReadOnlySet<string>? _includedSubKeys;
     private IModuleContext? _context;
+
+    public TrayIconsModule() { }
+
+    internal TrayIconsModule(IReadOnlySet<string> includedSubKeys)
+    {
+        ArgumentNullException.ThrowIfNull(includedSubKeys);
+        _includedSubKeys = new HashSet<string>(includedSubKeys, StringComparer.OrdinalIgnoreCase);
+    }
 
     public string Id => "tray-icons";
     public string Name => "Sistem Tepsisi Simgeleri";
@@ -32,30 +43,46 @@ public sealed class TrayIconsModule : ITweakModule
 
     public void Activate()
     {
+        if (IsActive) return;
+        if (_context is null) throw new InvalidOperationException("Tepsi simgesi modülü henüz başlatılmadı.");
         _originals.Clear();
         foreach (var group in _groups)
         {
             foreach (var subKey in group.SubKeys)
-                _originals[subKey] = Reg.ReadValue($@"{SettingsKey}\{subKey}", "IsPromoted");
+            {
+                using var key = OpenMatchingEntry(subKey, writable: false);
+                if (key is not null) _originals[subKey] = PromotionSnapshot.Read(key);
+            }
         }
 
         IsActive = true;
-        Apply();
+        try { Apply(); }
+        catch
+        {
+            Deactivate();
+            throw;
+        }
         _context?.Log.Info($"Tepsi simgesi ayarları uygulandı ({_groups.Count} uygulama).");
     }
 
     public void Deactivate()
     {
-        foreach (var (subKey, value) in _originals)
+        if (!IsActive && _originals.Count == 0) return;
+        var failures = new List<Exception>();
+        foreach (var (subKey, snapshot) in _originals)
         {
-            var path = $@"{SettingsKey}\{subKey}";
-            if (value is int promoted) Reg.WriteDword(path, "IsPromoted", promoted);
-            else Reg.DeleteValue(path, "IsPromoted");
+            try
+            {
+                using var key = OpenMatchingEntry(subKey, writable: true);
+                if (key is not null) snapshot.Restore(key);
+            }
+            catch (Exception exception) { failures.Add(exception); }
         }
 
+        Reg.Broadcast("TraySettings");
+        if (failures.Count != 0) throw new AggregateException("Tepsi simgesi tercihleri tamamen geri yüklenemedi.", failures);
         _originals.Clear();
         IsActive = false;
-        Reg.Broadcast("TraySettings");
     }
 
     public void Apply()
@@ -68,11 +95,13 @@ public sealed class TrayIconsModule : ITweakModule
             var promoted = _context!.Settings.GetBool(group.Key, group.Promoted);
             foreach (var subKey in group.SubKeys)
             {
-                if (Reg.ReadValue($@"{SettingsKey}\{subKey}", "IsPromoted") is int current &&
+                using var key = OpenMatchingEntry(subKey, writable: true);
+                if (key is null || !_originals.ContainsKey(subKey)) continue;
+                if (key.GetValue(PromotionValue) is int current &&
                     (current == 1) == promoted)
                     continue;
 
-                Reg.WriteDword($@"{SettingsKey}\{subKey}", "IsPromoted", promoted ? 1 : 0);
+                key.SetValue(PromotionValue, promoted ? 1 : 0, RegistryValueKind.DWord);
                 changed = true;
             }
         }
@@ -84,6 +113,7 @@ public sealed class TrayIconsModule : ITweakModule
     {
         _settings.Clear();
         _groups.Clear();
+        _identities.Clear();
 
         Dictionary<string, TrayGroup> groups;
         try
@@ -95,6 +125,7 @@ public sealed class TrayIconsModule : ITweakModule
 
             foreach (var subKeyName in root.GetSubKeyNames())
             {
+                if (_includedSubKeys is not null && !_includedSubKeys.Contains(subKeyName)) continue;
                 using var sub = root.OpenSubKey(subKeyName);
                 if (sub?.GetValue("ExecutablePath") is not string executable ||
                     string.IsNullOrWhiteSpace(executable))
@@ -115,7 +146,8 @@ public sealed class TrayIconsModule : ITweakModule
                 }
 
                 group.SubKeys.Add(subKeyName);
-                group.Promoted |= sub.GetValue("IsPromoted") is int promoted && promoted == 1;
+                _identities[subKeyName] = EntryIdentity.Read(sub);
+                group.Promoted |= sub.GetValue(PromotionValue) is int promoted && promoted == 1;
             }
         }
         catch (Exception ex)
@@ -143,6 +175,47 @@ public sealed class TrayIconsModule : ITweakModule
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(fileName.ToLowerInvariant() + "\n" + tooltip));
         return "tray-" + Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
+    }
+
+    private RegistryKey? OpenMatchingEntry(string subKey, bool writable)
+    {
+        var key = Registry.CurrentUser.OpenSubKey($@"{SettingsKey}\{subKey}", writable);
+        if (key is null) return null;
+        if (_identities.TryGetValue(subKey, out var identity) && identity == EntryIdentity.Read(key)) return key;
+        key.Dispose();
+        return null;
+    }
+
+    private sealed record EntryIdentity(string Executable, string Tooltip, string Guid)
+    {
+        internal static EntryIdentity Read(RegistryKey key)
+        {
+            var guid = key.GetValue("IconGuid") switch
+            {
+                byte[] bytes when bytes.Length == 16 => new System.Guid(bytes).ToString("D"),
+                string text when System.Guid.TryParse(text, out var value) => value.ToString("D"),
+                object value => value.ToString() ?? "",
+                _ => ""
+            };
+            return new((key.GetValue("ExecutablePath") as string ?? "").ToUpperInvariant(),
+                key.GetValue("InitialTooltip") as string ?? "", guid);
+        }
+    }
+
+    private sealed record PromotionSnapshot(bool Present, object? Value, RegistryValueKind Kind)
+    {
+        internal static PromotionSnapshot Read(RegistryKey key)
+        {
+            var present = key.GetValueNames().Contains(PromotionValue, StringComparer.OrdinalIgnoreCase);
+            return new(present, present ? key.GetValue(PromotionValue, null, RegistryValueOptions.DoNotExpandEnvironmentNames) : null,
+                present ? key.GetValueKind(PromotionValue) : RegistryValueKind.Unknown);
+        }
+
+        internal void Restore(RegistryKey key)
+        {
+            if (Present) key.SetValue(PromotionValue, Value!, Kind);
+            else key.DeleteValue(PromotionValue, throwOnMissingValue: false);
+        }
     }
 
     private sealed class TrayGroup

@@ -1,0 +1,4 @@
+[     289ms] TypeError: Cannot read properties of undefined (reading 'local')
+    at http://127.0.0.1:8989/extensions/WinForgeYouTube/options.js:72:18
+    at http://127.0.0.1:8989/extensions/WinForgeYouTube/options.js:223:3
+[     300ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8989/favicon.ico:0

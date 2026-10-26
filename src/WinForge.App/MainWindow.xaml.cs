@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Input;
@@ -17,6 +18,8 @@ namespace WinForge.App;
 
 public partial class MainWindow : Window
 {
+    private sealed record ChoiceOption(string Value, string Label);
+
     private readonly ObservableCollection<ModuleVm> _modules = new();
     private readonly ICollectionView _view;
     private string _category = "Tümü";
@@ -351,12 +354,12 @@ public partial class MainWindow : Window
                 AddChoiceSetting(module, descriptor);
                 break;
             case SettingKind.Action:
-                AddActionSetting(descriptor);
+                AddActionSetting(module, descriptor);
                 break;
         }
     }
 
-    private void AddActionSetting(SettingDescriptor descriptor)
+    private void AddActionSetting(ITweakModule module, SettingDescriptor descriptor)
     {
         var button = new Button
         {
@@ -367,7 +370,7 @@ public partial class MainWindow : Window
             Padding = new Thickness(12, 8, 12, 8),
             HorizontalAlignment = HorizontalAlignment.Left
         };
-        AutomationProperties.SetName(button, descriptor.Label);
+        SetSettingAutomation(button, module, descriptor);
         button.Click += (_, _) =>
         {
             try { descriptor.Execute?.Invoke(); }
@@ -413,12 +416,19 @@ public partial class MainWindow : Window
             settings.Set(descriptor.Key, toggle.IsChecked == true);
             ApplyModule(module);
         };
-        AutomationProperties.SetName(toggle, descriptor.Label);
+        SetSettingAutomation(toggle, module, descriptor);
 
         grid.Children.Add(labels);
         Grid.SetColumn(toggle, 1);
         grid.Children.Add(toggle);
         DetailPanel.Children.Add(grid);
+    }
+
+    private static void SetSettingAutomation(DependencyObject control, ITweakModule module, SettingDescriptor descriptor)
+    {
+        AutomationProperties.SetName(control, descriptor.Label);
+        AutomationProperties.SetAutomationId(control, module.Id + "." + descriptor.Key);
+        AutomationProperties.SetHelpText(control, descriptor.Section ?? "");
     }
 
     private void AddNumberSetting(ITweakModule module, SettingDescriptor descriptor)
@@ -453,15 +463,36 @@ public partial class MainWindow : Window
             TickFrequency = 1,
             Margin = new Thickness(0, 8, 0, 0)
         };
-        AutomationProperties.SetName(slider, descriptor.Label);
+        SetSettingAutomation(slider, module, descriptor);
 
+        var saveTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(180)
+        };
+        var hasPendingChange = false;
+
+        void CommitChange()
+        {
+            saveTimer.Stop();
+            if (!hasPendingChange) return;
+
+            hasPendingChange = false;
+            settings.Set(descriptor.Key, (int)Math.Round(slider.Value));
+            ApplyModule(module);
+        }
+
+        saveTimer.Tick += (_, _) => CommitChange();
         slider.ValueChanged += (_, _) =>
         {
             var current = (int)Math.Round(slider.Value);
             value.Text = current.ToString();
-            settings.Set(descriptor.Key, current);
-            ApplyModule(module);
+            hasPendingChange = true;
+            saveTimer.Stop();
+            saveTimer.Start();
         };
+        slider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler((_, _) => CommitChange()));
+        slider.LostKeyboardFocus += (_, _) => CommitChange();
+        slider.Unloaded += (_, _) => CommitChange();
 
         wrapper.Children.Add(slider);
         if (!string.IsNullOrWhiteSpace(descriptor.Description))
@@ -490,7 +521,7 @@ public partial class MainWindow : Window
             Text = settings.GetString(descriptor.Key, descriptor.Default as string ?? ""),
             Margin = new Thickness(0, 8, 0, 0)
         };
-        AutomationProperties.SetName(box, descriptor.Label);
+        SetSettingAutomation(box, module, descriptor);
 
         void Commit()
         {
@@ -553,20 +584,32 @@ public partial class MainWindow : Window
         if (descriptor.Options.Length > 6)
         {
             var options = descriptor.Options.Contains(current) ? descriptor.Options : descriptor.Options.Append(current).ToArray();
+            var hasLabels = descriptor.OptionLabels.Count > 0;
             var combo = new ComboBox
             {
-                ItemsSource = options,
-                SelectedItem = current,
+                ItemsSource = hasLabels
+                    ? options.Select(option => new ChoiceOption(option, descriptor.OptionLabels.GetValueOrDefault(option, option))).ToArray()
+                    : options,
+                SelectedItem = hasLabels ? null : current,
+                SelectedValuePath = hasLabels ? nameof(ChoiceOption.Value) : null,
+                DisplayMemberPath = hasLabels ? nameof(ChoiceOption.Label) : null,
+                SelectedValue = hasLabels ? current : null,
                 Foreground = Brushes.Black,
                 Background = Brushes.White,
                 Margin = new Thickness(0, 8, 0, 0),
                 Padding = new Thickness(8, 5, 8, 5),
                 MaxDropDownHeight = 280
             };
-            AutomationProperties.SetName(combo, descriptor.Label);
+            SetSettingAutomation(combo, module, descriptor);
             combo.SelectionChanged += (_, _) =>
             {
-                if (combo.SelectedItem is not string selected) return;
+                var selected = combo.SelectedItem switch
+                {
+                    ChoiceOption item => item.Value,
+                    string option => option,
+                    _ => null
+                };
+                if (selected is null) return;
                 settings.Set(descriptor.Key, selected);
                 ApplyModule(module);
             };
@@ -581,7 +624,7 @@ public partial class MainWindow : Window
             var radio = new RadioButton
             {
                 Style = StyleOf("PillOption"),
-                Content = option,
+                Content = descriptor.OptionLabels.GetValueOrDefault(option, option),
                 GroupName = module.Id + ":" + descriptor.Key,
                 IsChecked = string.Equals(option, current, StringComparison.CurrentCultureIgnoreCase)
             };

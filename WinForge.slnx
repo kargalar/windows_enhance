@@ -1,16 +1,38 @@
 <Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
   <Folder Name="/src/">
-    <Project Path="src/WinForge.App/WinForge.App.csproj" />
-    <Project Path="src/WinForge.Core/WinForge.Core.csproj" />
-    <Project Path="src/WinForge.Modules.AlwaysOnTop/WinForge.Modules.AlwaysOnTop.csproj" />
+    <Project Path="src/WinForge.App/WinForge.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Core/WinForge.Core.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.AlwaysOnTop/WinForge.Modules.AlwaysOnTop.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/WinForge.Modules.NetSpeed/WinForge.Modules.NetSpeed.csproj">
       <Platform Project="x64" />
     </Project>
-    <Project Path="src/WinForge.Modules.Taskbar/WinForge.Modules.Taskbar.csproj" />
-    <Project Path="src/WinForge.Modules.TextGrabber/WinForge.Modules.TextGrabber.csproj" />
-    <Project Path="src/WinForge.Modules.Tiling/WinForge.Modules.Tiling.csproj" />
-    <Project Path="src/WinForge.Modules.Extras/WinForge.Modules.Extras.csproj" />
-    <Project Path="src/WinForge.Modules.AltSnap/WinForge.Modules.AltSnap.csproj" />
+    <Project Path="src/WinForge.Modules.Taskbar/WinForge.Modules.Taskbar.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.TextGrabber/WinForge.Modules.TextGrabber.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.Tiling/WinForge.Modules.Tiling.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.Launcher/WinForge.Modules.Launcher.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.Extras/WinForge.Modules.Extras.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/WinForge.Modules.WindowControl/WinForge.Modules.WindowControl.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/WinForge.RegressionTests/WinForge.RegressionTests.csproj">

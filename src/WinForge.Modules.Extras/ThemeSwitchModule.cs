@@ -1,3 +1,4 @@
+using System.Globalization;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -10,9 +11,11 @@ public sealed class ThemeSwitchModule : ITweakModule
 
     private IModuleContext? _context;
     private IDisposable? _hotkey;
+    private Timer? _scheduleTimer;
     private RegSnapshot? _apps;
     private RegSnapshot? _system;
     private bool _light;
+    private int _scheduleBusy;
 
     public string Id => "theme-switch";
     public string Name => "Açık / Koyu Tema";
@@ -37,6 +40,30 @@ public sealed class ThemeSwitchModule : ITweakModule
             Kind = SettingKind.Choice,
             Options = Targets,
             Default = Targets[0]
+        },
+        new SettingDescriptor
+        {
+            Key = "schedule-enabled",
+            Label = "Temayı saate göre değiştir",
+            Kind = SettingKind.Toggle,
+            Default = false,
+            Description = "Yerel saate göre açık ve koyu temayı otomatik uygular."
+        },
+        new SettingDescriptor
+        {
+            Key = "light-time",
+            Label = "Açık tema saati (HH:mm)",
+            Kind = SettingKind.Text,
+            Default = "07:00",
+            Description = "Bu saatten koyu tema saatine kadar açık tema kullanılır."
+        },
+        new SettingDescriptor
+        {
+            Key = "dark-time",
+            Label = "Koyu tema saati (HH:mm)",
+            Kind = SettingKind.Text,
+            Default = "19:00",
+            Description = "Açık tema saatinden önceki zaman aralığında koyu tema kullanılır."
         }
     };
 
@@ -50,11 +77,14 @@ public sealed class ThemeSwitchModule : ITweakModule
 
         IsActive = true;
         RegisterHotkey();
+        RestartSchedule();
     }
 
     public void Deactivate()
     {
         IsActive = false;
+        _scheduleTimer?.Dispose();
+        _scheduleTimer = null;
         _hotkey?.Dispose();
         _hotkey = null;
 
@@ -73,6 +103,7 @@ public sealed class ThemeSwitchModule : ITweakModule
         _hotkey = null;
         RegisterHotkey();
         _light = ReadLight();
+        RestartSchedule();
     }
 
     private void RegisterHotkey()
@@ -86,8 +117,60 @@ public sealed class ThemeSwitchModule : ITweakModule
 
     private void Toggle()
     {
-        _light = !_light;
-        var value = _light ? 1 : 0;
+        ApplyTheme(!_light);
+        _context?.Notify(_light ? "Açık tema" : "Koyu tema");
+    }
+
+    private void RestartSchedule()
+    {
+        _scheduleTimer?.Dispose();
+        _scheduleTimer = null;
+        if (!IsActive || !(_context?.Settings.GetBool("schedule-enabled", false) ?? false)) return;
+
+        _scheduleTimer = new Timer(_ => ApplyScheduledTheme(), null, TimeSpan.Zero, TimeSpan.FromMinutes(1));
+    }
+
+    private void ApplyScheduledTheme()
+    {
+        if (!IsActive || Interlocked.Exchange(ref _scheduleBusy, 1) != 0) return;
+        try
+        {
+            var settings = _context?.Settings;
+            if (settings is null || !settings.GetBool("schedule-enabled", false)) return;
+
+            var lightStart = ReadScheduleTime(settings.GetString("light-time", "07:00"), new TimeOnly(7, 0), "light-time");
+            var darkStart = ReadScheduleTime(settings.GetString("dark-time", "19:00"), new TimeOnly(19, 0), "dark-time");
+            ApplyTheme(IsLightPeriod(TimeOnly.FromDateTime(DateTime.Now), lightStart, darkStart));
+        }
+        catch (Exception exception)
+        {
+            _context?.Log.Error("Zamanlanmış tema uygulanamadı.", exception);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _scheduleBusy, 0);
+        }
+    }
+
+    private TimeOnly ReadScheduleTime(string value, TimeOnly fallback, string settingKey)
+    {
+        var time = ParseScheduleTime(value);
+        if (time.HasValue) return time.Value;
+
+        _context?.Log.Error($"{settingKey} değeri HH:mm biçiminde değil; {fallback:HH:mm} kullanılıyor.");
+        return fallback;
+    }
+
+    internal static TimeOnly? ParseScheduleTime(string value) =>
+        TimeOnly.TryParseExact(value, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+            ? time
+            : null;
+
+    private void ApplyTheme(bool light)
+    {
+        if (_light == light) return;
+
+        var value = light ? 1 : 0;
         var target = _context?.Settings.GetString("target", Targets[0]) ?? Targets[0];
 
         if (!string.Equals(target, Targets[2], StringComparison.CurrentCultureIgnoreCase))
@@ -96,8 +179,16 @@ public sealed class ThemeSwitchModule : ITweakModule
         if (!string.Equals(target, Targets[1], StringComparison.CurrentCultureIgnoreCase))
             Reg.WriteDword(Personalize, "SystemUsesLightTheme", value);
 
+        _light = light;
         Reg.Broadcast("ImmersiveColorSet");
-        _context?.Notify(_light ? "Açık tema" : "Koyu tema");
+    }
+
+    internal static bool IsLightPeriod(TimeOnly now, TimeOnly lightStart, TimeOnly darkStart)
+    {
+        if (lightStart == darkStart) return true;
+        return lightStart < darkStart
+            ? now >= lightStart && now < darkStart
+            : now >= lightStart || now < darkStart;
     }
 
     private bool ReadLight()

@@ -1,0 +1,687 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: W
+      - generic [ref=e5]:
+        - strong [ref=e6]: WinForge for YouTube
+        - generic [ref=e7]: YouTube deneyimini kendi akışına göre düzenle
+    - generic [ref=e8]:
+      - button "Ayarları dışa aktar" [ref=e9] [cursor=pointer]
+      - generic [ref=e10] [cursor=pointer]:
+        - text: İçe aktar
+        - button "İçe aktar" [ref=e11]
+      - button "Varsayılana dön" [ref=e12] [cursor=pointer]
+  - main [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - paragraph [ref=e16]: KİŞİSELLEŞTİRME
+        - heading "YouTube'u kendi düzenine göre kur." [level=1] [ref=e17]
+        - paragraph [ref=e18]: Değişiklikler kaydedilir ve açık YouTube sekmelerine hemen uygulanır. Seçenekler bu tarayıcıda yerel olarak saklanır.
+      - generic [ref=e19]:
+        - checkbox "Eklenti etkin Tüm WinForge ayarlarını açıp kapat" [ref=e20] [cursor=pointer]
+        - generic [ref=e21]:
+          - generic [ref=e22]: Eklenti etkin
+          - generic [ref=e23]: Tüm WinForge ayarlarını açıp kapat
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - paragraph [ref=e26]: HAZIR PROFİLLER
+        - heading "Tek tıkla görünüm değiştir" [level=2] [ref=e27]
+        - paragraph [ref=e28]: Kendi ayarlarını profil olarak kaydedip sonra yeniden kullan.
+      - generic [ref=e29]:
+        - generic [ref=e30]:
+          - button "◉ Odak Shorts ve dikkat dağıtıcıları gizle" [ref=e31] [cursor=pointer]:
+            - generic [ref=e32]: ◉
+            - generic [ref=e33]: Odak
+            - generic [ref=e34]: Shorts ve dikkat dağıtıcıları gizle
+          - button "▣ Sinema Geniş oynatıcı, sade sayfa" [ref=e35] [cursor=pointer]:
+            - generic [ref=e36]: ▣
+            - generic [ref=e37]: Sinema
+            - generic [ref=e38]: Geniş oynatıcı, sade sayfa
+          - button "◌ Varsayılan YouTube'un standart akışı" [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]: ◌
+            - generic [ref=e41]: Varsayılan
+            - generic [ref=e42]: YouTube'un standart akışı
+        - generic [ref=e43]:
+          - textbox "Yeni profil adı" [ref=e44]
+          - button "Mevcut ayarları kaydet" [ref=e45] [cursor=pointer]
+          - combobox "Kaydedilmiş profiller" [ref=e46]:
+            - option "Kaydedilmiş profil seç" [selected]
+          - button "Uygula" [ref=e47] [cursor=pointer]
+          - button "Sil" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e51]:
+          - generic [ref=e52]: ⌕
+          - generic [ref=e53]:
+            - heading "Akış ve içerik" [level=2] [ref=e54]
+            - paragraph [ref=e55]: Görmek istemediğin bölümleri filtrele.
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - generic [ref=e58]: Shorts
+            - generic [ref=e59]: Shorts sekmesini, raflarını ve bağlantılarını gizle.
+          - checkbox "Shorts Shorts sekmesini, raflarını ve bağlantılarını gizle." [ref=e60] [cursor=pointer]
+        - generic [ref=e61]:
+          - generic [ref=e62]:
+            - generic [ref=e63]: Ana sayfa önerileri
+            - generic [ref=e64]: Ana sayfadaki video öneri ızgarasını kaldır.
+          - checkbox "Ana sayfa önerileri Ana sayfadaki video öneri ızgarasını kaldır." [ref=e65] [cursor=pointer]
+        - generic [ref=e66]:
+          - generic [ref=e67]:
+            - generic [ref=e68]: Mix ve otomatik listeler
+            - generic [ref=e69]: YouTube Mix ve radyo listelerini gizle.
+          - checkbox "Mix ve otomatik listeler YouTube Mix ve radyo listelerini gizle." [ref=e70] [cursor=pointer]
+        - generic [ref=e71]:
+          - generic [ref=e72]:
+            - generic [ref=e73]: Canlı yayınlar
+            - generic [ref=e74]: Akış ve arama sonuçlarındaki canlı yayınları gizle.
+          - checkbox "Canlı yayınlar Akış ve arama sonuçlarındaki canlı yayınları gizle." [ref=e75] [cursor=pointer]
+        - generic [ref=e76]:
+          - generic [ref=e77]:
+            - generic [ref=e78]: Yaklaşan yayınlar
+            - generic [ref=e79]: Henüz başlamamış yayınları gizle.
+          - checkbox "Yaklaşan yayınlar Henüz başlamamış yayınları gizle." [ref=e80] [cursor=pointer]
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - generic [ref=e83]: İzlenen videolar
+            - generic [ref=e84]: İlerleme çubuğu olan video kartlarını gizle.
+          - checkbox "İzlenen videolar İlerleme çubuğu olan video kartlarını gizle." [ref=e85] [cursor=pointer]
+        - generic [ref=e86]:
+          - generic [ref=e87]:
+            - generic [ref=e88]: İzlenen videoları soluklaştır
+            - generic [ref=e89]: İzleme ilerlemesi bulunan kartları daha az öne çıkar.
+          - checkbox "İzlenen videoları soluklaştır İzleme ilerlemesi bulunan kartları daha az öne çıkar." [ref=e90] [cursor=pointer]
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: Topluluk gönderileri
+            - generic [ref=e94]: Video akışındaki topluluk gönderilerini gizle.
+          - checkbox "Topluluk gönderileri Video akışındaki topluluk gönderilerini gizle." [ref=e95] [cursor=pointer]
+        - generic [ref=e96]:
+          - generic [ref=e97]:
+            - generic [ref=e98]: Ürün ve tanıtım rafları
+            - generic [ref=e99]: Mağaza ve kanal tanıtım bölümlerini gizle.
+          - checkbox "Ürün ve tanıtım rafları Mağaza ve kanal tanıtım bölümlerini gizle." [ref=e100] [cursor=pointer]
+        - generic [ref=e101]:
+          - generic [ref=e102]:
+            - generic [ref=e103]: Gizlenecek video kelimeleri
+            - generic [ref=e104]: Başlıkta geçen eşleşmeleri gizle. Her satıra bir kelime veya ifade yaz.
+          - textbox "Gizlenecek video kelimeleri Başlıkta geçen eşleşmeleri gizle. Her satıra bir kelime veya ifade yaz." [ref=e105]:
+            - /placeholder: "spoiler\ninceleme"
+        - generic [ref=e106]:
+          - generic [ref=e107]:
+            - generic [ref=e108]: Gizlenecek kanallar
+            - generic [ref=e109]: Kanal adının tamamını veya bir bölümünü yaz; her satıra bir kanal ekle.
+          - textbox "Gizlenecek kanallar Kanal adının tamamını veya bir bölümünü yaz; her satıra bir kanal ekle." [ref=e110]:
+            - /placeholder: "Kanal adı\n@kanal"
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - generic [ref=e113]: ▤
+          - generic [ref=e114]:
+            - heading "Sayfa düzeni" [level=2] [ref=e115]
+            - paragraph [ref=e116]: Gezinmeyi sadeleştir ve kartları ayarla.
+        - generic [ref=e117]:
+          - generic [ref=e118]:
+            - generic [ref=e119]: Önerilen videolar
+            - generic [ref=e120]: Oynatıcı yanındaki öneri listesini gizle.
+          - checkbox "Önerilen videolar Oynatıcı yanındaki öneri listesini gizle." [ref=e121] [cursor=pointer]
+        - generic [ref=e122]:
+          - generic [ref=e123]:
+            - generic [ref=e124]: Yorumlar
+            - generic [ref=e125]: Video yorum bölümünü gizle.
+          - checkbox "Yorumlar Video yorum bölümünü gizle." [ref=e126] [cursor=pointer]
+        - generic [ref=e127]:
+          - generic [ref=e128]:
+            - generic [ref=e129]: Canlı sohbet
+            - generic [ref=e130]: Canlı yayın sohbet panelini gizle.
+          - checkbox "Canlı sohbet Canlı yayın sohbet panelini gizle." [ref=e131] [cursor=pointer]
+        - generic [ref=e132]:
+          - generic [ref=e133]:
+            - generic [ref=e134]: Bitiş ekranı kartları
+            - generic [ref=e135]: Video sonundaki öneri ve bilgi kartlarını gizle.
+          - checkbox "Bitiş ekranı kartları Video sonundaki öneri ve bilgi kartlarını gizle." [ref=e136] [cursor=pointer]
+        - generic [ref=e137]:
+          - generic [ref=e138]:
+            - generic [ref=e139]: Gezinme çubuğunu daralt
+            - generic [ref=e140]: Üst çubuğun yüksekliğini azalt.
+          - checkbox "Gezinme çubuğunu daralt Üst çubuğun yüksekliğini azalt." [ref=e141] [cursor=pointer]
+        - generic [ref=e142]:
+          - generic [ref=e143]:
+            - generic [ref=e144]: Kenar çubuğunu sıkıştır
+            - generic [ref=e145]: Sol menüdeki satır aralıklarını azalt.
+          - checkbox "Kenar çubuğunu sıkıştır Sol menüdeki satır aralıklarını azalt." [ref=e146] [cursor=pointer]
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - generic [ref=e149]: Tam video başlıkları
+            - generic [ref=e150]: Kart başlıklarındaki satır kısaltmasını kaldır.
+          - checkbox "Tam video başlıkları Kart başlıklarındaki satır kısaltmasını kaldır." [ref=e151] [cursor=pointer]
+        - generic [ref=e152]:
+          - generic [ref=e153]:
+            - generic [ref=e154]: Üzerine gelince oynatmayı kapat
+            - generic [ref=e155]: Kart önizlemelerinin otomatik başlamasını engelle.
+          - checkbox "Üzerine gelince oynatmayı kapat Kart önizlemelerinin otomatik başlamasını engelle." [ref=e156] [cursor=pointer]
+        - generic [ref=e157]:
+          - generic [ref=e158]:
+            - generic [ref=e159]: Izgara sütun sayısı
+            - generic [ref=e160]: Otomatik, 2–6 video kartı
+          - combobox "Izgara sütun sayısı Otomatik, 2–6 video kartı" [ref=e161]:
+            - option "Otomatik" [selected]
+            - option "2 sütun"
+            - option "3 sütun"
+            - option "4 sütun"
+            - option "5 sütun"
+            - option "6 sütun"
+      - generic [ref=e162]:
+        - generic [ref=e163]:
+          - generic [ref=e164]: ◐
+          - generic [ref=e165]:
+            - heading "Stil ve renk" [level=2] [ref=e166]
+            - paragraph [ref=e167]: Sayfanın tonunu ve oynatıcı görünümünü seç.
+        - generic [ref=e168]:
+          - generic [ref=e169]:
+            - generic [ref=e170]: Renk teması
+            - generic [ref=e171]: Sayfa, kartlar ve oynatıcı çevresinin renk paleti
+          - combobox "Renk teması Sayfa, kartlar ve oynatıcı çevresinin renk paleti" [ref=e172]:
+            - option "YouTube varsayılanı" [selected]
+            - option "Gece mavisi"
+            - option "Sıcak sepya"
+            - option "Orman yeşili"
+            - option "OLED siyahı"
+            - option "Lavanta"
+            - option "Yüksek kontrast"
+            - option "Derin okyanus"
+            - option "Arduvaz"
+            - option "Grafit"
+            - option "Gül kurusu"
+            - option "Gün batımı"
+            - option "Nane"
+            - option "Nord buz"
+            - option "Solarized"
+            - option "Neon"
+        - generic [ref=e173]:
+          - generic [ref=e174]:
+            - generic [ref=e175]: Vurgu rengi
+            - generic [ref=e176]: İlerleme çubuğu, bağlantılar ve etkileşim vurguları
+          - textbox "Vurgu rengi İlerleme çubuğu, bağlantılar ve etkileşim vurguları" [ref=e177] [cursor=pointer]: "#000000"
+        - generic [ref=e178]:
+          - generic [ref=e179]:
+            - generic [ref=e180]: Kart köşeleri
+            - generic [ref=e181]: Video küçük resimlerinin yuvarlaklığı · 0–24 px
+          - slider "Kart köşeleri Video küçük resimlerinin yuvarlaklığı · 0–24 px" [ref=e182]: "12"
+          - status
+        - generic [ref=e183]:
+          - generic [ref=e184]:
+            - generic [ref=e185]: Kart aralığı
+            - generic [ref=e186]: Video ızgarasındaki kartlar arası boşluk · 4–32 px
+          - slider "Kart aralığı Video ızgarasındaki kartlar arası boşluk · 4–32 px" [ref=e187]: "18"
+          - status
+        - generic [ref=e188]:
+          - generic [ref=e189]:
+            - generic [ref=e190]: Izgara yoğunluğu
+            - generic [ref=e191]: Kartların dikey boşluklarını ayarla.
+          - combobox "Izgara yoğunluğu Kartların dikey boşluklarını ayarla." [ref=e192]:
+            - option "Geniş" [selected]
+            - option "Rahat"
+            - option "Sıkı"
+        - generic [ref=e193]:
+          - generic [ref=e194]:
+            - generic [ref=e195]: Kart üzerine gelme
+            - generic [ref=e196]: İşaretçi kartın üzerindeyken uygulanacak efekt
+          - combobox "Kart üzerine gelme İşaretçi kartın üzerindeyken uygulanacak efekt" [ref=e197]:
+            - option "Hafif yükselme" [selected]
+            - option "Vurgu parıltısı"
+            - option "Efekt yok"
+        - generic [ref=e198]:
+          - generic [ref=e199]:
+            - generic [ref=e200]: Kart gölgesi
+            - generic [ref=e201]: Video kartlarının derinlik hissini ayarla.
+          - combobox "Kart gölgesi Video kartlarının derinlik hissini ayarla." [ref=e202]:
+            - option "Gölgesiz" [selected]
+            - option "Yumuşak"
+            - option "Belirgin"
+        - generic [ref=e203]:
+          - generic [ref=e204]:
+            - generic [ref=e205]: Animasyonlar
+            - generic [ref=e206]: Hover ve geçiş efektlerinin yoğunluğu
+          - combobox "Animasyonlar Hover ve geçiş efektlerinin yoğunluğu" [ref=e207]:
+            - option "Kapalı" [selected]
+            - option "Hafif"
+            - option "Akıcı"
+        - generic [ref=e208]:
+          - generic [ref=e209]:
+            - generic [ref=e210]: Sinema görünümünü varsayılan yap
+            - generic [ref=e211]: Video açıldığında geniş sinema moduna geç.
+          - checkbox "Sinema görünümünü varsayılan yap Video açıldığında geniş sinema moduna geç." [ref=e212] [cursor=pointer]
+        - generic [ref=e213]:
+          - generic [ref=e214]:
+            - generic [ref=e215]: Kaydırırken oynatıcıyı sabitle
+            - generic [ref=e216]: Video görünümden çıkınca küçük pencerede tut.
+          - checkbox "Kaydırırken oynatıcıyı sabitle Video görünümden çıkınca küçük pencerede tut." [ref=e217] [cursor=pointer]
+        - generic [ref=e218]:
+          - generic [ref=e219]:
+            - generic [ref=e220]: Yalnızca oynarken sabitle
+            - generic [ref=e221]: Duraklatınca sabitlenmiş oynatıcıyı kapat.
+          - checkbox "Yalnızca oynarken sabitle Duraklatınca sabitlenmiş oynatıcıyı kapat." [ref=e222] [cursor=pointer]
+        - generic [ref=e223]:
+          - generic [ref=e224]:
+            - generic [ref=e225]: Oynatıcı kontrolleri
+            - generic [ref=e226]: Kontrolleri sürekli göster, gizle veya yalnızca ilerleme çubuğunu bırak.
+          - combobox "Oynatıcı kontrolleri Kontrolleri sürekli göster, gizle veya yalnızca ilerleme çubuğunu bırak." [ref=e227]:
+            - option "YouTube varsayılanı" [selected]
+            - option "Sürekli görünür"
+            - option "Gizli"
+            - option "Yalnızca ilerleme çubuğu"
+        - generic [ref=e228]:
+          - generic [ref=e229]:
+            - generic [ref=e230]: Temiz oynatıcı
+            - generic [ref=e231]: Filigran, kartlar, bitiş ekranı ve bazı kaplamaları gizle.
+          - checkbox "Temiz oynatıcı Filigran, kartlar, bitiş ekranı ve bazı kaplamaları gizle." [ref=e232] [cursor=pointer]
+        - generic [ref=e233]:
+          - generic [ref=e234]:
+            - generic [ref=e235]: Oynatıcı animasyonları
+            - generic [ref=e236]: Ses ve hız değişimindeki büyük gösterge animasyonlarını gizle.
+          - checkbox "Oynatıcı animasyonları Ses ve hız değişimindeki büyük gösterge animasyonlarını gizle." [ref=e237] [cursor=pointer]
+        - generic [ref=e238]:
+          - generic [ref=e239]:
+            - generic [ref=e240]: Shorts kaplamalarını gizle
+            - generic [ref=e241]: Shorts oynatıcısındaki üst ve alt bilgi alanlarını soluklaştır.
+          - checkbox "Shorts kaplamalarını gizle Shorts oynatıcısındaki üst ve alt bilgi alanlarını soluklaştır." [ref=e242] [cursor=pointer]
+        - generic [ref=e243]:
+          - generic [ref=e244]:
+            - generic [ref=e245]: İnce kaydırma çubukları
+            - generic [ref=e246]: Sayfa ve iletişim kutularındaki çubukları daralt.
+          - checkbox "İnce kaydırma çubukları Sayfa ve iletişim kutularındaki çubukları daralt." [ref=e247] [cursor=pointer]
+        - generic [ref=e248]:
+          - generic [ref=e249]:
+            - generic [ref=e250]: Oynatma bilgisi
+            - generic [ref=e251]: Süre, kalan zaman, hız ve ses düzeyini ayarlanabilir bir göstergeyle sun.
+          - checkbox "Oynatma bilgisi Süre, kalan zaman, hız ve ses düzeyini ayarlanabilir bir göstergeyle sun." [ref=e252] [cursor=pointer]
+        - generic [ref=e253]:
+          - generic [ref=e254]:
+            - generic [ref=e255]: Bilgi göstergesi şablonu
+            - generic [ref=e256]: "%current%, %duration%, %remaining%, %speed% ve %volume% yer tutucularını kullan."
+          - textbox "Bilgi göstergesi şablonu %current%, %duration%, %remaining%, %speed% ve %volume% yer tutucularını kullan." [ref=e257]:
+            - /placeholder: "%current% / %duration% · −%remaining% · %speed%× · %volume%%"
+        - generic [ref=e258]:
+          - generic [ref=e259]:
+            - generic [ref=e260]: Bilgi göstergesi konumu
+            - generic [ref=e261]: Oynatıcı sayfasındaki sabit konum
+          - combobox "Bilgi göstergesi konumu Oynatıcı sayfasındaki sabit konum" [ref=e262]:
+            - option "Sol üst" [selected]
+            - option "Sağ üst"
+            - option "Sol alt"
+            - option "Sağ alt"
+        - generic [ref=e263]:
+          - generic [ref=e264]:
+            - generic [ref=e265]: Bilgi göstergesi saydamlığı
+            - generic [ref=e266]: Yüzde · 20–100
+          - slider "Bilgi göstergesi saydamlığı Yüzde · 20–100" [ref=e267]: "60"
+          - status
+        - generic [ref=e268]:
+          - generic [ref=e269]:
+            - generic [ref=e270]: Bilgi göstergesi boyutu
+            - generic [ref=e271]: Yazı büyüklüğü
+          - combobox "Bilgi göstergesi boyutu Yazı büyüklüğü" [ref=e272]:
+            - option "Küçük" [selected]
+            - option "Orta"
+            - option "Büyük"
+        - generic [ref=e273]:
+          - generic [ref=e274]:
+            - generic [ref=e275]: Yerel video özeti
+            - generic [ref=e276]: Açık transkriptten öne çıkanları çıkar; desteklenirse cihaz içi AI özeti de üret. Metin dışarı gönderilmez.
+          - checkbox "Yerel video özeti Açık transkriptten öne çıkanları çıkar; desteklenirse cihaz içi AI özeti de üret. Metin dışarı gönderilmez." [ref=e277] [cursor=pointer]
+        - generic [ref=e278]:
+          - generic [ref=e279]:
+            - generic [ref=e280]: Başa dön düğmesi
+            - generic [ref=e281]: Sayfayı kaydırınca hızlıca en üste çık.
+          - checkbox "Başa dön düğmesi Sayfayı kaydırınca hızlıca en üste çık." [ref=e282] [cursor=pointer]
+        - generic [ref=e283]:
+          - generic [ref=e284]:
+            - generic [ref=e285]: Reklam atla düğmesine tıkla
+            - generic [ref=e286]: YouTube'un gösterdiği “Reklamı atla” düğmesine otomatik tıklar.
+          - checkbox "Reklam atla düğmesine tıkla YouTube'un gösterdiği “Reklamı atla” düğmesine otomatik tıklar." [ref=e287] [cursor=pointer]
+        - generic [ref=e288]:
+          - generic [ref=e289]:
+            - generic [ref=e290]: Parlaklık
+            - generic [ref=e291]: Video görüntüsü · yüzde
+          - combobox "Parlaklık Video görüntüsü · yüzde" [ref=e292]:
+            - option "50" [selected]
+            - option "75"
+            - option "90"
+            - option "100"
+            - option "110"
+            - option "125"
+            - option "150"
+        - generic [ref=e293]:
+          - generic [ref=e294]:
+            - generic [ref=e295]: Kontrast
+            - generic [ref=e296]: Video görüntüsü · yüzde
+          - combobox "Kontrast Video görüntüsü · yüzde" [ref=e297]:
+            - option "50" [selected]
+            - option "75"
+            - option "90"
+            - option "100"
+            - option "110"
+            - option "125"
+            - option "150"
+        - generic [ref=e298]:
+          - generic [ref=e299]:
+            - generic [ref=e300]: Doygunluk
+            - generic [ref=e301]: Video görüntüsü · yüzde
+          - combobox "Doygunluk Video görüntüsü · yüzde" [ref=e302]:
+            - option "0" [selected]
+            - option "50"
+            - option "75"
+            - option "90"
+            - option "100"
+            - option "110"
+            - option "125"
+            - option "150"
+            - option "200"
+        - generic [ref=e303]:
+          - generic [ref=e304]:
+            - generic [ref=e305]: Yakınlaştırma
+            - generic [ref=e306]: Video ölçeği · yüzde
+          - combobox "Yakınlaştırma Video ölçeği · yüzde" [ref=e307]:
+            - option "50" [selected]
+            - option "75"
+            - option "90"
+            - option "100"
+            - option "110"
+            - option "125"
+            - option "150"
+            - option "175"
+            - option "200"
+        - generic [ref=e308]:
+          - generic [ref=e309]:
+            - generic [ref=e310]: Döndürme
+            - generic [ref=e311]: Video yönünü çeyrek tur adımlarıyla değiştir.
+          - combobox "Döndürme Video yönünü çeyrek tur adımlarıyla değiştir." [ref=e312]:
+            - option "0°" [selected]
+            - option "90°"
+            - option "180°"
+            - option "270°"
+        - generic [ref=e313]:
+          - generic [ref=e314]:
+            - generic [ref=e315]: Yatay çevir
+            - generic [ref=e316]: Görüntüyü aynala.
+          - checkbox "Yatay çevir Görüntüyü aynala." [ref=e317] [cursor=pointer]
+        - generic [ref=e318]:
+          - generic [ref=e319]:
+            - generic [ref=e320]: Dikey çevir
+            - generic [ref=e321]: Görüntüyü baş aşağı çevir.
+          - checkbox "Dikey çevir Görüntüyü baş aşağı çevir." [ref=e322] [cursor=pointer]
+        - generic [ref=e323]:
+          - generic [ref=e324]:
+            - generic [ref=e325]: Özel CSS
+            - generic [ref=e326]: YouTube arayüzünün öğelerini kendi CSS kurallarınla biçimlendir.
+          - textbox "Özel CSS YouTube arayüzünün öğelerini kendi CSS kurallarınla biçimlendir." [ref=e327]:
+            - /placeholder: "/* Örnek: oynatıcı köşelerini yuvarla */\n.html5-video-player { border-radius: 14px; overflow: hidden; }"
+      - generic [ref=e328]:
+        - generic [ref=e329]:
+          - generic [ref=e330]: ▶
+          - generic [ref=e331]:
+            - heading "Oynatıcı" [level=2] [ref=e332]
+            - paragraph [ref=e333]: Yeni videoların başlangıç davranışını ayarla.
+        - generic [ref=e334]:
+          - generic [ref=e335]:
+            - generic [ref=e336]: Başlangıç hızı
+            - generic [ref=e337]: 0,25× ile 4× arasında
+          - combobox "Başlangıç hızı 0,25× ile 4× arasında" [ref=e338]:
+            - option "0.25" [selected]
+            - option "0.5"
+            - option "0.75"
+            - option "1"
+            - option "1.25"
+            - option "1.5"
+            - option "1.75"
+            - option "2"
+            - option "2.5"
+            - option "3"
+            - option "4"
+        - generic [ref=e339]:
+          - generic [ref=e340]:
+            - generic [ref=e341]: Tercih edilen çözünürlük
+            - generic [ref=e342]: Oynatıcı menüsünde varsa her videoda uygula.
+          - combobox "Tercih edilen çözünürlük Oynatıcı menüsünde varsa her videoda uygula." [ref=e343]:
+            - option "Otomatik" [selected]
+            - option "4320p · 8K"
+            - option "2160p · 4K"
+            - option "1440p"
+            - option "1080p"
+            - option "720p"
+            - option "480p"
+            - option "360p"
+            - option "240p"
+            - option "144p"
+        - generic [ref=e344]:
+          - generic [ref=e345]:
+            - generic [ref=e346]: Kanal başına hız
+            - generic [ref=e347]: "Her satıra kanal adı=hız yaz; örnek: Kanal Adı=1.5"
+          - 'textbox "Kanal başına hız Her satıra kanal adı=hız yaz; örnek: Kanal Adı=1.5" [ref=e348]':
+            - /placeholder: "Kanal Adı=1.5\nBaşka Kanal=1.25"
+        - generic [ref=e349]:
+          - generic [ref=e350]:
+            - generic [ref=e351]: Başlangıç ses düzeyi
+            - generic [ref=e352]: Yeni videolar için varsayılan yüzde
+          - combobox "Başlangıç ses düzeyi Yeni videolar için varsayılan yüzde" [ref=e353]:
+            - option "0" [selected]
+            - option "10"
+            - option "20"
+            - option "30"
+            - option "40"
+            - option "50"
+            - option "60"
+            - option "70"
+            - option "80"
+            - option "90"
+            - option "100"
+        - generic [ref=e354]:
+          - generic [ref=e355]:
+            - generic [ref=e356]: Sesi dengele
+            - generic [ref=e357]: Daha tutarlı ses düzeyi için dinamik kompresör ve hafif kazanç kullan; etkinleştirmek için oynatıcıya tıkla.
+          - checkbox "Sesi dengele Daha tutarlı ses düzeyi için dinamik kompresör ve hafif kazanç kullan; etkinleştirmek için oynatıcıya tıkla." [ref=e358] [cursor=pointer]
+        - generic [ref=e359]:
+          - generic [ref=e360]:
+            - generic [ref=e361]: Mono ses
+            - generic [ref=e362]: Sol ve sağ kanalı birleştir; ses işleme için oynatıcıya bir kez tıkla.
+          - checkbox "Mono ses Sol ve sağ kanalı birleştir; ses işleme için oynatıcıya bir kez tıkla." [ref=e363] [cursor=pointer]
+        - generic [ref=e364]:
+          - generic [ref=e365]:
+            - generic [ref=e366]: Bas filtresi
+            - generic [ref=e367]: 100 Hz altındaki uğultuyu azaltan yüksek geçiren filtre uygula; etkinleştirmek için oynatıcıya tıkla.
+          - checkbox "Bas filtresi 100 Hz altındaki uğultuyu azaltan yüksek geçiren filtre uygula; etkinleştirmek için oynatıcıya tıkla." [ref=e368] [cursor=pointer]
+        - generic [ref=e369]:
+          - generic [ref=e370]:
+            - generic [ref=e371]: Ses yükseltme
+            - generic [ref=e372]: Özgün ses seviyesinin üstüne çık · etkinleştirmek için oynatıcıya tıkla.
+          - combobox "Ses yükseltme Özgün ses seviyesinin üstüne çık · etkinleştirmek için oynatıcıya tıkla." [ref=e373]:
+            - option "100" [selected]
+            - option "125"
+            - option "150"
+            - option "200"
+            - option "300"
+            - option "400"
+        - generic [ref=e374]:
+          - generic [ref=e375]:
+            - generic [ref=e376]: Başlangıç oynatması
+            - generic [ref=e377]: Yeni video açıldığında YouTube davranışını kullan veya oynatmayı seç.
+          - combobox "Başlangıç oynatması Yeni video açıldığında YouTube davranışını kullan veya oynatmayı seç." [ref=e378]:
+            - option "YouTube davranışı" [selected]
+            - option "Oynat"
+            - option "Duraklat"
+        - generic [ref=e379]:
+          - generic [ref=e380]:
+            - generic [ref=e381]: Altyazı başlangıç durumu
+            - generic [ref=e382]: Yeni videoda altyazıları otomatik ayarla.
+          - combobox "Altyazı başlangıç durumu Yeni videoda altyazıları otomatik ayarla." [ref=e383]:
+            - option "YouTube ayarı" [selected]
+            - option "Açık"
+            - option "Kapalı"
+        - generic [ref=e384]:
+          - generic [ref=e385]:
+            - generic [ref=e386]: Yeni videoları sessiz başlat
+            - generic [ref=e387]: Başlangıç ses düzeyinden bağımsız olarak sesi kapat.
+          - checkbox "Yeni videoları sessiz başlat Başlangıç ses düzeyinden bağımsız olarak sesi kapat." [ref=e388] [cursor=pointer]
+        - generic [ref=e389]:
+          - generic [ref=e390]:
+            - generic [ref=e391]: Başlangıç bölümünü atla
+            - generic [ref=e392]: Yeni videoda saniye cinsinden ileri sar.
+          - combobox "Başlangıç bölümünü atla Yeni videoda saniye cinsinden ileri sar." [ref=e393]:
+            - option "0" [selected]
+            - option "5"
+            - option "10"
+            - option "15"
+            - option "30"
+            - option "60"
+        - generic [ref=e394]:
+          - generic [ref=e395]:
+            - generic [ref=e396]: Video sonunu atla
+            - generic [ref=e397]: Son kısma gelince videoyu bitir.
+          - combobox "Video sonunu atla Son kısma gelince videoyu bitir." [ref=e398]:
+            - option "0" [selected]
+            - option "5"
+            - option "10"
+            - option "15"
+            - option "30"
+        - generic [ref=e399]:
+          - generic [ref=e400]:
+            - generic [ref=e401]: Videoyu döngüye al
+            - generic [ref=e402]: Her yeni videoda tekrar oynatmayı etkinleştir.
+          - checkbox "Videoyu döngüye al Her yeni videoda tekrar oynatmayı etkinleştir." [ref=e403] [cursor=pointer]
+        - generic [ref=e404]:
+          - generic [ref=e405]:
+            - generic [ref=e406]: Shorts döngüsü
+            - generic [ref=e407]: Shorts videolarını sürekli tekrar oynat.
+          - checkbox "Shorts döngüsü Shorts videolarını sürekli tekrar oynat." [ref=e408] [cursor=pointer]
+        - generic [ref=e409]:
+          - generic [ref=e410]:
+            - generic [ref=e411]: Shorts bağlantılarını normal oynatıcıda aç
+            - generic [ref=e412]: /shorts sayfasını standart YouTube video oynatıcısına yönlendir.
+          - checkbox "Shorts bağlantılarını normal oynatıcıda aç /shorts sayfasını standart YouTube video oynatıcısına yönlendir." [ref=e413] [cursor=pointer]
+        - generic [ref=e414]:
+          - generic [ref=e415]:
+            - generic [ref=e416]: Biten Shorts'tan sonrakine geç
+            - generic [ref=e417]: Shorts oynatımı bitince sonraki Short'a geçmeyi dene.
+          - checkbox "Biten Shorts'tan sonrakine geç Shorts oynatımı bitince sonraki Short'a geçmeyi dene." [ref=e418] [cursor=pointer]
+        - generic [ref=e419]:
+          - generic [ref=e420]:
+            - generic [ref=e421]: Oynatma listesindeki otomatik geçişi kapat
+            - generic [ref=e422]: YouTube oynatıcıdaki otomatik sonraki video anahtarını kapat.
+          - checkbox "Oynatma listesindeki otomatik geçişi kapat YouTube oynatıcıdaki otomatik sonraki video anahtarını kapat." [ref=e423] [cursor=pointer]
+        - generic [ref=e424]:
+          - generic [ref=e425]:
+            - generic [ref=e426]: Sekme değişince PiP
+            - generic [ref=e427]: Oynayan ve sesi açık videoyu sekmeden ayrılınca küçük pencerede göster.
+          - checkbox "Sekme değişince PiP Oynayan ve sesi açık videoyu sekmeden ayrılınca küçük pencerede göster." [ref=e428] [cursor=pointer]
+        - generic [ref=e429]:
+          - generic [ref=e430]:
+            - generic [ref=e431]: Oynatıcı tekerleği
+            - generic [ref=e432]: Fare tekerleğiyle video üstünde ayar yap.
+          - combobox "Oynatıcı tekerleği Fare tekerleğiyle video üstünde ayar yap." [ref=e433]:
+            - option "Kapalı" [selected]
+            - option "Videoda sar"
+            - option "Ses düzeyi"
+            - option "Oynatma hızı"
+        - generic [ref=e434]:
+          - generic [ref=e435]:
+            - generic [ref=e436]: Tekerlek adımı
+            - generic [ref=e437]: Sarma saniyesi veya ses/hız değişim yüzdesi
+          - combobox "Tekerlek adımı Sarma saniyesi veya ses/hız değişim yüzdesi" [ref=e438]:
+            - option "1" [selected]
+            - option "2"
+            - option "5"
+            - option "10"
+            - option "15"
+        - generic [ref=e439]:
+          - generic [ref=e440]:
+            - generic [ref=e441]: Özel fare eylemleri
+            - generic [ref=e442]: "Her satıra bir eşleme yaz. Örnekler: wheel-up=volume:+5, right=toggle-play, ctrl+wheel-up=set-speed:1.5, shorts-right=seek:-5, miniplayer-middle=pip. Eylemler: seek, seek-percent, seek-frame, volume, set-volume, volume-boost, speed, set-speed, reset-speed, quality, zoom, set-zoom, rotate, flip-horizontal, flip-vertical, reset-video-view, next-chapter, previous-chapter, play, pause, restart, skip-intro, skip-outro, toggle-play, toggle-mute, toggle-loop, set-loop, toggle-subtitles, toggle-audio-mono, toggle-audio-filter, toggle-audio-autogain, fullscreen, theater, pip, snapshot, next-video, previous-video, copy-link, scroll-top, focus-search, toggle-comments, summary-toggle, transcript-toggle. Shorts ve mini oynatıcı için shorts- veya miniplayer- öneki ekle. Bölüm çubuğunda orta/sağ tık veya çift tık bölümü seçer."
+          - 'textbox "Özel fare eylemleri Her satıra bir eşleme yaz. Örnekler: wheel-up=volume:+5, right=toggle-play, ctrl+wheel-up=set-speed:1.5, shorts-right=seek:-5, miniplayer-middle=pip. Eylemler: seek, seek-percent, seek-frame, volume, set-volume, volume-boost, speed, set-speed, reset-speed, quality, zoom, set-zoom, rotate, flip-horizontal, flip-vertical, reset-video-view, next-chapter, previous-chapter, play, pause, restart, skip-intro, skip-outro, toggle-play, toggle-mute, toggle-loop, set-loop, toggle-subtitles, toggle-audio-mono, toggle-audio-filter, toggle-audio-autogain, fullscreen, theater, pip, snapshot, next-video, previous-video, copy-link, scroll-top, focus-search, toggle-comments, summary-toggle, transcript-toggle. Shorts ve mini oynatıcı için shorts- veya miniplayer- öneki ekle. Bölüm çubuğunda orta/sağ tık veya çift tık bölümü seçer." [ref=e443]':
+            - /placeholder: "wheel-up=volume:+5\nctrl+wheel-up=set-speed:1.5\nshorts-right=seek:-5\nminiplayer-middle=pip"
+        - generic [ref=e444]:
+          - generic [ref=e445]:
+            - generic [ref=e446]: Özel klavye kısayolları
+            - generic [ref=e447]: "Her satıra bir eşleme yaz: Alt+ArrowLeft=seek:-30 veya Ctrl+Shift+M=toggle-mute."
+          - 'textbox "Özel klavye kısayolları Her satıra bir eşleme yaz: Alt+ArrowLeft=seek:-30 veya Ctrl+Shift+M=toggle-mute." [ref=e448]':
+            - /placeholder: "Alt+ArrowLeft=seek:-30\nAlt+ArrowRight=seek:+30\nCtrl+Shift+M=toggle-mute"
+        - generic [ref=e449]:
+          - generic [ref=e450]:
+            - generic [ref=e451]: Sekmeden ayrılınca duraklat
+            - generic [ref=e452]: Başka sekmeye geçince oynatmayı durdur.
+          - checkbox "Sekmeden ayrılınca duraklat Başka sekmeye geçince oynatmayı durdur." [ref=e453] [cursor=pointer]
+        - generic [ref=e454]:
+          - generic [ref=e455]:
+            - generic [ref=e456]: Açıklamayı genişlet
+            - generic [ref=e457]: Video açıklamasındaki “Daha fazla” düğmesini aç.
+          - checkbox "Açıklamayı genişlet Video açıklamasındaki “Daha fazla” düğmesini aç." [ref=e458] [cursor=pointer]
+        - generic [ref=e459]:
+          - generic [ref=e460]:
+            - generic [ref=e461]: Yorumları genişlet
+            - generic [ref=e462]: Yorumlar alanındaki daraltılmış metinleri aç.
+          - checkbox "Yorumları genişlet Yorumlar alanındaki daraltılmış metinleri aç." [ref=e463] [cursor=pointer]
+        - paragraph [ref=e464]: "Kısayollar: Shift + ←/→ 10 sn sar · Shift + ↑/↓ ses · Shift + L döngü · Shift + M sessiz · Shift + P PiP · Shift + T sinema · Shift + F tam ekran · Shift + N sonraki video · Shift + +/- hız · Shift + Home başa dön"
+        - paragraph [ref=e465]:
+          - text: Global tuşları
+          - code [ref=e466]: chrome://extensions/shortcuts
+          - text: sayfasından ayarla. PiP, döngü, önceki/sonraki video, tam ekran, sinema, hız, altyazı ve ekran görüntüsü komutları da atanabilir.
+      - generic [ref=e467]:
+        - generic [ref=e468]:
+          - generic [ref=e469]: ◷
+          - generic [ref=e470]:
+            - heading "Odak oturumu" [level=2] [ref=e471]
+            - paragraph [ref=e472]: Dikkat dağıtıcıları azalt ve süreli oturum başlat.
+        - generic [ref=e473]:
+          - generic [ref=e474]:
+            - generic [ref=e475]: Odak görünümü
+            - generic [ref=e476]: Akış bölümlerini soluklaştır, üzerine gelince göster.
+          - checkbox "Odak görünümü Akış bölümlerini soluklaştır, üzerine gelince göster." [ref=e477] [cursor=pointer]
+        - generic [ref=e478]:
+          - generic [ref=e479]:
+            - generic [ref=e480]: Odak planında YouTube'u engelle
+            - generic [ref=e481]: Planlı ya da süreli oturumda sayfanın tamamını kapat.
+          - checkbox "Odak planında YouTube'u engelle Planlı ya da süreli oturumda sayfanın tamamını kapat." [ref=e482] [cursor=pointer]
+        - generic [ref=e483]:
+          - generic [ref=e484]:
+            - generic [ref=e485]: Oturum uzunluğu (dakika)
+            - generic [ref=e486]: 1–1440 dakika arasında özel süre seç.
+          - spinbutton "Oturum uzunluğu (dakika) 1–1440 dakika arasında özel süre seç." [ref=e487]
+        - generic [ref=e488]:
+          - generic [ref=e489]:
+            - generic [ref=e490]: Planlı odak görünümü
+            - generic [ref=e491]: Seçili gün ve saatlerde otomatik olarak etkinleşir.
+          - checkbox "Planlı odak görünümü Seçili gün ve saatlerde otomatik olarak etkinleşir." [ref=e492] [cursor=pointer]
+        - group "Planın uygulanacağı günler" [ref=e493]:
+          - generic [ref=e495]:
+            - checkbox "Pzt" [ref=e496]
+            - text: Pzt
+          - generic [ref=e497]:
+            - checkbox "Sal" [ref=e498]
+            - text: Sal
+          - generic [ref=e499]:
+            - checkbox "Çar" [ref=e500]
+            - text: Çar
+          - generic [ref=e501]:
+            - checkbox "Per" [ref=e502]
+            - text: Per
+          - generic [ref=e503]:
+            - checkbox "Cum" [ref=e504]
+            - text: Cum
+          - generic [ref=e505]:
+            - checkbox "Cmt" [ref=e506]
+            - text: Cmt
+          - generic [ref=e507]:
+            - checkbox "Paz" [ref=e508]
+            - text: Paz
+        - generic [ref=e509]:
+          - generic [ref=e510]:
+            - generic [ref=e511]: Başlangıç
+            - generic [ref=e512]: Yerel saat
+          - textbox "Başlangıç Yerel saat" [ref=e513]
+        - generic [ref=e514]:
+          - generic [ref=e515]:
+            - generic [ref=e516]: Bitiş
+            - generic [ref=e517]: Gece yarısını geçen aralık desteklenir
+          - textbox "Bitiş Gece yarısını geçen aralık desteklenir" [ref=e518]
+        - generic [ref=e519]:
+          - button "Odak oturumunu başlat" [ref=e520] [cursor=pointer]
+          - button "Oturumu bitir" [ref=e521] [cursor=pointer]
+    - generic [ref=e522]: WinForge for YouTube · Ayarlar cihazında saklanır; tarama geçmişi toplanmaz.

@@ -16,7 +16,14 @@ public sealed class WindowTweaksModule : ITweakModule
     private RegSnapshot? _menuDelay;
     private RegSnapshot? _taskbarAnimations;
     private RegSnapshot? _shake;
-    private int _originalAnimation = 1;
+    private int? _originalAnimation;
+    private readonly SystemParametersHandler _systemParameters;
+
+    internal delegate bool SystemParametersHandler(uint action, uint parameter, IntPtr data, uint flags);
+
+    public WindowTweaksModule() : this(SystemParametersInfo) { }
+
+    internal WindowTweaksModule(SystemParametersHandler systemParameters) => _systemParameters = systemParameters;
 
     public string Id => "window-tweaks";
     public string Name => "Arayüz İnce Ayarları";
@@ -64,6 +71,7 @@ public sealed class WindowTweaksModule : ITweakModule
 
     public void Activate()
     {
+        if (IsActive) return;
         _menuDelay = new RegSnapshot(Desktop, "MenuShowDelay");
         _taskbarAnimations = new RegSnapshot(Advanced, "TaskbarAnimations");
         _shake = new RegSnapshot(Advanced, "DisallowShaking");
@@ -76,15 +84,18 @@ public sealed class WindowTweaksModule : ITweakModule
 
     public void Deactivate()
     {
-        IsActive = false;
-
-        WriteAnimation(_originalAnimation);
+        if (_originalAnimation is { } originalAnimation)
+        {
+            WriteAnimation(originalAnimation);
+            _originalAnimation = null;
+        }
         _menuDelay?.Restore();
         _taskbarAnimations?.Restore();
         _shake?.Restore();
         _menuDelay = _taskbarAnimations = _shake = null;
 
         Reg.Broadcast("WindowMetrics", "ImmersiveColorSet");
+        IsActive = false;
     }
 
     public void Apply()
@@ -101,14 +112,14 @@ public sealed class WindowTweaksModule : ITweakModule
         Reg.Broadcast("WindowMetrics", "ImmersiveColorSet");
     }
 
-    private static int ReadAnimation()
+    private int ReadAnimation()
     {
         var info = new AnimationInfo { Size = (uint)Marshal.SizeOf<AnimationInfo>() };
         var buffer = Marshal.AllocHGlobal(Marshal.SizeOf<AnimationInfo>());
         try
         {
             Marshal.StructureToPtr(info, buffer, false);
-            if (!SystemParametersInfo(SpiGetAnimation, 0, buffer, 0)) return 1;
+            Check(_systemParameters(SpiGetAnimation, info.Size, buffer, 0));
             return Marshal.PtrToStructure<AnimationInfo>(buffer).MinAnimate;
         }
         finally
@@ -117,7 +128,7 @@ public sealed class WindowTweaksModule : ITweakModule
         }
     }
 
-    private static void WriteAnimation(int enabled)
+    private void WriteAnimation(int enabled)
     {
         var info = new AnimationInfo
         {
@@ -129,12 +140,17 @@ public sealed class WindowTweaksModule : ITweakModule
         try
         {
             Marshal.StructureToPtr(info, buffer, false);
-            SystemParametersInfo(SpiSetAnimation, 0, buffer, SpifUpdateIniFile | SpifSendChange);
+            Check(_systemParameters(SpiSetAnimation, info.Size, buffer, SpifUpdateIniFile | SpifSendChange));
         }
         finally
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    private static void Check(bool succeeded)
+    {
+        if (!succeeded) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Windows animasyon ayarı okunamadı veya uygulanamadı.");
     }
 
     [StructLayout(LayoutKind.Sequential)]

@@ -6,6 +6,7 @@ namespace WinForge.Modules.AlwaysOnTop;
 
 public sealed class AlwaysOnTopModule : ITweakModule
 {
+    private const long WsExTopmost = 0x00000008;
     private static readonly string[] ColorOptions = { "Mavi", "Yeşil", "Turuncu", "Pembe", "Kırmızı", "Beyaz" };
 
     private static readonly Dictionary<string, Color> Colors = new(StringComparer.OrdinalIgnoreCase)
@@ -28,7 +29,7 @@ public sealed class AlwaysOnTopModule : ITweakModule
 
     private IModuleContext? _context;
     private IDisposable? _hotkey;
-    private readonly HashSet<IntPtr> _pinned = new();
+    private readonly Dictionary<IntPtr, bool> _pinned = new();
     private readonly Dictionary<IntPtr, BorderOverlay> _overlays = new();
 
     public string Id => "always-on-top";
@@ -81,21 +82,26 @@ public sealed class AlwaysOnTopModule : ITweakModule
 
     public void Activate()
     {
+        if (IsActive) return;
         IsActive = true;
         RegisterHotkey();
     }
 
     public void Deactivate()
     {
-        IsActive = false;
         _hotkey?.Dispose();
         _hotkey = null;
 
         foreach (var overlay in _overlays.Values) overlay.Stop();
         _overlays.Clear();
 
-        foreach (var window in _pinned.ToList()) SetTopmost(window, false);
-        _pinned.Clear();
+        foreach (var (window, originalTopmost) in _pinned.ToArray())
+        {
+            if (!Native.IsWindow(window) || SetTopmost(window, originalTopmost)) _pinned.Remove(window);
+        }
+        if (_pinned.Count > 0)
+            throw new InvalidOperationException("Bazı pencerelerin önceki sabitleme durumu geri yüklenemedi.");
+        IsActive = false;
     }
 
     public void Apply()
@@ -133,26 +139,48 @@ public sealed class AlwaysOnTopModule : ITweakModule
         if (processId == (uint)Environment.ProcessId) return;
         if (IgnoredClasses.Contains(Native.ClassNameOf(window))) return;
 
-        _pinned.RemoveWhere(handle => !Native.IsWindow(handle));
+        foreach (var stale in _pinned.Keys.Where(handle => !Native.IsWindow(handle)).ToArray()) _pinned.Remove(stale);
         foreach (var stale in _overlays.Keys.Where(handle => !Native.IsWindow(handle)).ToList())
         {
             _overlays[stale].Stop();
             _overlays.Remove(stale);
         }
 
+        ToggleWindow(window);
+    }
+
+    private void ToggleWindow(IntPtr window)
+    {
+        var context = _context;
+        if (context is null) return;
+        if (!Native.IsWindow(window))
+        {
+            context.Notify("Pencere artık mevcut değil.");
+            return;
+        }
         var title = Native.TitleOf(window);
         var label = string.IsNullOrWhiteSpace(title) ? "Pencere" : title;
 
-        if (_pinned.Remove(window))
+        if (_pinned.TryGetValue(window, out var originalTopmost))
         {
-            SetTopmost(window, false);
+            if (!SetTopmost(window, originalTopmost))
+            {
+                context.Notify("Pencerenin önceki sabitleme durumu geri yüklenemedi.");
+                return;
+            }
+            _pinned.Remove(window);
             RemoveOverlay(window);
             context.Notify($"Sabitleme kaldırıldı: {label}");
         }
         else
         {
-            SetTopmost(window, true);
-            _pinned.Add(window);
+            originalTopmost = (Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64() & WsExTopmost) != 0;
+            if (!SetTopmost(window, true))
+            {
+                context.Notify("Pencere üste sabitlenemedi. Pencerenin izinlerini kontrol edin.");
+                return;
+            }
+            _pinned.Add(window, originalTopmost);
             AddOverlay(window);
             context.Notify($"Üste sabitlendi: {label}");
         }
@@ -160,6 +188,7 @@ public sealed class AlwaysOnTopModule : ITweakModule
 
     private void RefreshBorders()
     {
+        foreach (var stale in _pinned.Keys.Where(handle => !Native.IsWindow(handle)).ToArray()) _pinned.Remove(stale);
         foreach (var stale in _overlays.Keys.Where(handle => !Native.IsWindow(handle)).ToList())
         {
             _overlays[stale].Stop();
@@ -176,7 +205,7 @@ public sealed class AlwaysOnTopModule : ITweakModule
         var (color, thickness) = BorderStyle;
         foreach (var overlay in _overlays.Values) overlay.SetStyle(color, thickness);
 
-        foreach (var window in _pinned)
+        foreach (var window in _pinned.Keys)
         {
             if (!_overlays.ContainsKey(window)) AddOverlay(window);
         }
@@ -215,9 +244,9 @@ public sealed class AlwaysOnTopModule : ITweakModule
         }
     }
 
-    private static void SetTopmost(IntPtr window, bool topmost)
+    private static bool SetTopmost(IntPtr window, bool topmost)
     {
-        Native.SetWindowPos(
+        return Native.SetWindowPos(
             window,
             topmost ? Native.HWND_TOPMOST : Native.HWND_NOTOPMOST,
             0, 0, 0, 0,

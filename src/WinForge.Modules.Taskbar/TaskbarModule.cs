@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using Microsoft.Win32;
 using WinForge.Core;
@@ -35,10 +36,21 @@ public sealed class TaskbarModule : ITweakModule
     private static IModuleContext? _context;
     private GlobalMouseHook? _hook;
     private bool _middleClickClose;
+    private bool _middleClickMute;
     private bool _scrollVolume;
     private int _volumeStep = 2;
     private readonly Stopwatch _volumeClock = Stopwatch.StartNew();
     private long _lastVolumeTick;
+    private const int ClickMovementTolerance = 8;
+    private bool _middleButtonCaptured;
+    private bool _middleReleaseReady;
+    private POINT _middleDownPoint;
+    private int _pendingVolumeSteps;
+    private int _volumeUpdateQueued;
+    private int _activationGeneration;
+    private ShellDiagnosticsBroker.Lease? _diagnostics;
+    private uint _diagnosticsProcessId;
+    private IReadOnlyList<ShellVisualNode> _shellTree = [];
 
     public string Id => "taskbar";
     public string Name => "Taskbar Araçları";
@@ -57,6 +69,15 @@ public sealed class TaskbarModule : ITweakModule
             Default = true,
             Section = "Fare",
             Description = "Taskbar'daki bir düğmeye orta tuşla tıklandığında o pencereyi kapatır."
+        },
+        new SettingDescriptor
+        {
+            Key = "middle-click-mute",
+            Label = "Boş görev çubuğunda orta tuşla sessiz",
+            Kind = SettingKind.Toggle,
+            Default = false,
+            Section = "Fare",
+            Description = "Yalnızca boş olduğu doğrulanan görev çubuğu alanında ana sesi açar veya kapatır; uygulama ve sistem düğmelerini etkilemez."
         },
         new SettingDescriptor
         {
@@ -159,7 +180,7 @@ public sealed class TaskbarModule : ITweakModule
             Options = IconSizeOptions,
             Default = "Orta",
             Section = "Görünüm",
-            Description = "Görev çubuğu simgelerini küçültür, normal boyutta bırakır veya büyütür. Explorer yeniden başlatılınca uygulanır."
+            Description = "Windows'un eski simge boyutu ayarıdır; bazı Windows 11 sürümlerinde uygulanmaz."
         },
         new SettingDescriptor
         {
@@ -212,17 +233,35 @@ public sealed class TaskbarModule : ITweakModule
         ApplyVisibility();
         ApplyAppearance();
 
-        _hook = new GlobalMouseHook();
+        Interlocked.Increment(ref _activationGeneration);
+        _hook = new GlobalMouseHook
+        {
+            EventFilter = FilterMouseInput,
+            ErrorHandler = exception => context.Log.Error("Görev çubuğu fare geri çağrısı başarısız.", exception)
+        };
         _hook.MiddleButtonUp += OnMiddleButtonUp;
         _hook.WheelMoved += OnWheel;
         _hook.Install();
         IsActive = true;
+        if (_middleClickClose || _middleClickMute)
+            _ = Task.Run(() =>
+            {
+                try { ReadShellTree(); }
+                catch (Exception exception) { _context?.Log.Error("Görev çubuğu düğme bilgileri hazırlanamadı.", exception); }
+            });
         context.Log.Info("Taskbar kancası kuruldu.");
     }
 
     public void Deactivate()
     {
         IsActive = false;
+        Interlocked.Increment(ref _activationGeneration);
+        _middleButtonCaptured = false;
+        _middleReleaseReady = false;
+        Volatile.Write(ref _shellTree, []);
+        Interlocked.Exchange(ref _pendingVolumeSteps, 0);
+        var diagnostics = Interlocked.Exchange(ref _diagnostics, null);
+        if (diagnostics is not null) _ = Task.Run(diagnostics.Dispose);
 
         if (_hook is not null)
         {
@@ -249,54 +288,129 @@ public sealed class TaskbarModule : ITweakModule
     {
         var settings = _context!.Settings;
         _middleClickClose = settings.GetBool("middle-click-close", true);
+        _middleClickMute = settings.GetBool("middle-click-mute", false);
         _scrollVolume = settings.GetBool("scroll-volume", true);
         _volumeStep = Math.Clamp(settings.GetInt("volume-step", 2), 1, 10);
     }
 
     private void OnMiddleButtonUp(POINT point)
     {
-        if (!_middleClickClose || !ShellTaskbar.IsTaskbarPoint(point)) return;
+        if (!_middleReleaseReady) return;
+        _middleReleaseReady = false;
+        _ = HandleMiddleClickAsync(point, Volatile.Read(ref _activationGeneration));
+    }
 
-        Application.Current?.Dispatcher.BeginInvoke(() =>
+    private bool FilterMouseInput(GlobalMouseHook.Input input)
+    {
+        if (!IsActive) return false;
+        if (input.Message == Native.WM_MBUTTONUP)
         {
-            try
-            {
-                var target = ShellTaskbar.FindWindowUnderTaskbar(point);
-                if (target == IntPtr.Zero) return;
+            var captured = _middleButtonCaptured;
+            _middleButtonCaptured = false;
+            _middleReleaseReady = captured && ShellTaskbar.IsTaskbarPoint(input.Point) &&
+                Math.Abs(input.Point.X - _middleDownPoint.X) <= ClickMovementTolerance &&
+                Math.Abs(input.Point.Y - _middleDownPoint.Y) <= ClickMovementTolerance;
+            return captured;
+        }
+        if (input.Message == Native.WM_MBUTTONDOWN && (_middleClickClose || _middleClickMute) && ShellTaskbar.IsTaskbarPoint(input.Point) &&
+            (_middleClickClose || ShellTaskbar.ResolveVisualHit(input.Point, Volatile.Read(ref _shellTree)).Kind == ShellTaskbar.HitKind.EmptyArea))
+        {
+            _middleDownPoint = input.Point;
+            _middleButtonCaptured = true;
+            return true;
+        }
+        return input.Message == Native.WM_MOUSEWHEEL && _scrollVolume && input.WheelDelta != 0 && ShellTaskbar.IsTaskbarPoint(input.Point);
+    }
 
-                var title = Native.TitleOf(target);
-                Native.PostMessage(target, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                _context?.Notify(string.IsNullOrWhiteSpace(title) ? "Pencere kapatıldı" : $"Kapatıldı: {title}");
-            }
-            catch (Exception ex)
+    private async Task HandleMiddleClickAsync(POINT point, int generation)
+    {
+        var foreground = Native.GetForegroundWindow();
+        try
+        {
+            var hit = await ShellTaskbar.HitTestAsync(point, ReadShellTree);
+            if (!IsActive || generation != Volatile.Read(ref _activationGeneration) || Native.GetForegroundWindow() != foreground) return;
+            if (hit.Kind == ShellTaskbar.HitKind.Unavailable)
             {
-                _context?.Log.Error("Orta tuşla kapatma başarısız.", ex);
+                _context?.Notify("Görev çubuğu düğme bilgileri henüz hazır değil.");
+                return;
             }
-        });
+            if (hit.Kind == ShellTaskbar.HitKind.EmptyArea && _middleClickMute)
+            {
+                VolumeService.SetMuted(!VolumeService.IsMuted());
+                _context?.Notify(VolumeService.IsMuted() ? "Ses kapatıldı" : "Ses açıldı");
+                return;
+            }
+            if (!_middleClickClose || hit.Kind != ShellTaskbar.HitKind.ApplicationButton) return;
+            if (hit.Target is not { } target || !ShellTaskbar.IsCurrentTarget(target))
+            {
+                _context?.Notify("Bu düğmede tek bir pencere belirlenemedi.");
+                return;
+            }
+            if (!Native.PostMessage(target.Handle, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero))
+                throw new InvalidOperationException("Pencereye kapatma isteği gönderilemedi.");
+            _context?.Notify($"Kapatma isteği gönderildi: {target.Title}");
+        }
+        catch (Exception exception)
+        {
+            _context?.Log.Error("Görev çubuğu orta tuş eylemi başarısız.", exception);
+            _context?.Notify("Görev çubuğu eylemi uygulanamadı.");
+        }
+    }
+
+    private IReadOnlyList<ShellVisualNode> ReadShellTree()
+    {
+        var generation = Volatile.Read(ref _activationGeneration);
+        if (!IsActive) return [];
+        var taskbar = Native.FindWindow("Shell_TrayWnd", null);
+        if (taskbar == IntPtr.Zero) return [];
+        Native.GetWindowThreadProcessId(taskbar, out var processId);
+        var diagnostics = Volatile.Read(ref _diagnostics);
+        if (diagnostics is null || _diagnosticsProcessId != processId || !diagnostics.Session.IsConnected)
+        {
+            var lease = ShellDiagnosticsBroker.Acquire(processId, Path.Combine(AppContext.BaseDirectory, "native"));
+            var previous = Interlocked.Exchange(ref _diagnostics, lease);
+            previous?.Dispose();
+            _diagnosticsProcessId = processId;
+            diagnostics = lease;
+            if (!IsActive || generation != Volatile.Read(ref _activationGeneration))
+            {
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _diagnostics, null, lease), lease)) lease.Dispose();
+                return [];
+            }
+        }
+        var nodes = diagnostics.Session.ReadVisualTree();
+        Volatile.Write(ref _shellTree, nodes);
+        return nodes;
     }
 
     private void OnWheel(POINT point, int delta)
     {
-        if (!_scrollVolume || !ShellTaskbar.IsTaskbarPoint(point)) return;
-
-        try
+        if (!IsActive || !_scrollVolume || delta == 0 || !ShellTaskbar.IsTaskbarPoint(point)) return;
+        Interlocked.Add(ref _pendingVolumeSteps, delta > 0 ? _volumeStep : -_volumeStep);
+        if (Interlocked.Exchange(ref _volumeUpdateQueued, 1) != 0) return;
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.HasShutdownStarted)
         {
-            var percent = VolumeService.Step(delta > 0 ? _volumeStep : -_volumeStep);
-
-            var now = _volumeClock.ElapsedMilliseconds;
-            if (now - _lastVolumeTick < 80) return;
-            _lastVolumeTick = now;
-
-            Application.Current?.Dispatcher.BeginInvoke(() =>
+            Interlocked.Exchange(ref _volumeUpdateQueued, 0);
+            Interlocked.Exchange(ref _pendingVolumeSteps, 0);
+            return;
+        }
+        var generation = Volatile.Read(ref _activationGeneration);
+        dispatcher.BeginInvoke(() =>
+        {
+            Interlocked.Exchange(ref _volumeUpdateQueued, 0);
+            var steps = Interlocked.Exchange(ref _pendingVolumeSteps, 0);
+            if (!IsActive || generation != Volatile.Read(ref _activationGeneration) || steps == 0) return;
+            try
             {
-                try { _context?.Notify($"Ses: {percent}%"); }
-                catch { }
-            });
-        }
-        catch (Exception ex)
-        {
-            _context?.Log.Error("Ses düzeyi değiştirilemedi.", ex);
-        }
+                var percent = VolumeService.Step(steps);
+                var now = _volumeClock.ElapsedMilliseconds;
+                if (now - _lastVolumeTick < 80) return;
+                _lastVolumeTick = now;
+                _context?.Notify($"Ses: {percent}%");
+            }
+            catch (Exception exception) { _context?.Log.Error("Ses düzeyi değiştirilemedi.", exception); }
+        });
     }
 
     private void ApplyClock()
@@ -437,7 +551,8 @@ public sealed class TaskbarModule : ITweakModule
     }
 
     private void CaptureOriginals()
-    {        var settings = _context!.Settings;
+    {
+        var settings = _context!.Settings;
         Capture(settings, OriginalSearchKey, SearchKey, "SearchboxTaskbarMode");
         Capture(settings, OriginalTaskViewKey, AdvancedKey, "ShowTaskViewButton");
         Capture(settings, OriginalWidgetsKey, AdvancedKey, "TaskbarDa");

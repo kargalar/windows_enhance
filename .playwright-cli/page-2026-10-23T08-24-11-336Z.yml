@@ -1,0 +1,6 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]: Good CreatorContains a spoiler
+  - generic [ref=e3]: BadCreatorNormal text
+  - generic [ref=e4]: Good CreatorHelpful comment
+  - generic [ref=e5]: Good CreatorCoupon available
+  - generic [ref=e6]: SpamChannelOrdinary post

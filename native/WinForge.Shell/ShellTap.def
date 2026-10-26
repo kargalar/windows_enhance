@@ -1,0 +1,4 @@
+LIBRARY "WinForge.ShellTap.dll"
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
