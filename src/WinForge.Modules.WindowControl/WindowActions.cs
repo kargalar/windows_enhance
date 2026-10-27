@@ -11,8 +11,15 @@ namespace WinForge.Modules.WindowControl;
 internal sealed class WindowActions : IDisposable
 {
     private const uint ActivationTimeoutMilliseconds = 150;
+    private const long OverlappedWindowStyle = 0x00CF0000;
+    private const long PopupWindowStyle = unchecked((int)0x80000000);
+    private const uint FrameChanged = 0x0020;
+    private const uint ShowWindow = 0x0040;
+    private static readonly IntPtr TopmostWindow = new(-1);
+    private static readonly IntPtr NotTopmostWindow = new(-2);
     private readonly Dictionary<IntPtr, SavedBounds> _rolled = new();
     private readonly Dictionary<IntPtr, SavedBounds> _snapped = new();
+    private readonly Dictionary<IntPtr, FullscreenState> _fullscreen = new();
     private readonly Dictionary<IntPtr, WindowIdentity> _minimized = new();
     private WindowIdentity? _minimizeOwner;
     private readonly Dictionary<uint, List<IntPtr>> _suspendedThreads = new();
@@ -37,6 +44,7 @@ internal sealed class WindowActions : IDisposable
         switch (action)
         {
             case WindowAction.Roll: Roll(window, direction); break;
+            case WindowAction.ToggleFullscreen: ToggleFullscreen(window, point); break;
             case WindowAction.MaximizeAxis: MaximizeAxis(window, point, modifiers.Shift); break;
             case WindowAction.MinimizeOthers: MinimizeOthers(window, modifiers.Shift); break;
             case WindowAction.Center: Center(window, point, modifiers.Shift); break;
@@ -415,6 +423,53 @@ internal sealed class WindowActions : IDisposable
         }
     }
 
+    private void ToggleFullscreen(IntPtr window, POINT point)
+    {
+        if (_fullscreen.ContainsKey(window))
+        {
+            RestoreFullscreen(window);
+            return;
+        }
+
+        var placement = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
+        if (!GetWindowPlacement(window, ref placement)) throw new Win32Exception(Marshal.GetLastWin32Error());
+
+        var monitor = MonitorFromPoint(point, 2);
+        var monitorInfo = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref monitorInfo)) throw new Win32Exception(Marshal.GetLastWin32Error());
+
+        var style = Native.GetWindowLongPtr(window, WindowStyleIndex).ToInt64();
+        var extendedStyle = Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64();
+        _fullscreen[window] = new FullscreenState(style, extendedStyle, placement);
+
+        ShowWindowSynchronously(window, Restore);
+        Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr((style & ~OverlappedWindowStyle) | PopupWindowStyle));
+        if (!Native.SetWindowPos(window, TopmostWindow, monitorInfo.Monitor.Left, monitorInfo.Monitor.Top,
+                monitorInfo.Monitor.Right - monitorInfo.Monitor.Left, monitorInfo.Monitor.Bottom - monitorInfo.Monitor.Top,
+                FrameChanged | ShowWindow))
+        {
+            var error = Marshal.GetLastWin32Error();
+            RestoreFullscreen(window);
+            throw new Win32Exception(error);
+        }
+
+        Native.SetForegroundWindow(window);
+    }
+
+    private void RestoreFullscreen(IntPtr window)
+    {
+        if (!_fullscreen.Remove(window, out var state) || !Native.IsWindow(window)) return;
+
+        Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr(state.Style));
+        Native.SetWindowLongPtr(window, Native.GWL_EXSTYLE, new IntPtr(state.ExtendedStyle));
+        var insertAfter = (state.ExtendedStyle & Native.WS_EX_TOPMOST) != 0 ? TopmostWindow : NotTopmostWindow;
+        Native.SetWindowPos(window, insertAfter, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | FrameChanged);
+        var placement = state.Placement;
+        placement.Length = Marshal.SizeOf<WindowPlacement>();
+        SetWindowPlacement(window, ref placement);
+    }
+
     private static SavedBounds Save(IntPtr window, WindowBounds bounds) =>
         new(WindowIdentity.Capture(window) ?? throw new InvalidOperationException("Pencere kapandı."), bounds);
 
@@ -428,6 +483,7 @@ internal sealed class WindowActions : IDisposable
 
     public void Dispose()
     {
+        foreach (var window in _fullscreen.Keys.ToArray()) RestoreFullscreen(window);
         foreach (var threads in _suspendedThreads.Values) ResumeThreads(threads);
         _suspendedThreads.Clear();
         RestoreMinimized();
@@ -439,6 +495,7 @@ internal sealed class WindowActions : IDisposable
     }
 
     private sealed record SavedBounds(WindowIdentity Identity, WindowBounds Bounds);
+    private readonly record struct FullscreenState(long Style, long ExtendedStyle, WindowPlacement Placement);
     private sealed record WindowIdentity(IntPtr Window, uint ProcessId, long StartTicks)
     {
         internal bool IsCurrent

@@ -756,6 +756,9 @@ internal sealed class KeyboardMappingEditor : Window
     private readonly TextBox _textMappings;
     private readonly TextBox _shortcutActions;
     private readonly TextBlock _error;
+    private TextBox? _captureTarget;
+    private TextBlock? _captureStatus;
+    private string? _capturedShortcut;
 
     public List<object> KeyMappings { get; private set; } = new();
     public List<object> ShortcutMappings { get; private set; } = new();
@@ -782,6 +785,7 @@ internal sealed class KeyboardMappingEditor : Window
         _appSpecificMappings = CreateEditor();
         _textMappings = CreateEditor();
         _shortcutActions = CreateEditor();
+        PreviewKeyDown += OnCaptureKeyDown;
         tabs.Items.Add(new TabItem
         {
             Header = "Tuş eşlemeleri",
@@ -851,14 +855,99 @@ internal sealed class KeyboardMappingEditor : Window
         Padding = new Thickness(10)
     };
 
-    private static UIElement EditorPage(string help, TextBox editor)
+    private UIElement EditorPage(string help, TextBox editor)
     {
         var panel = new DockPanel { Margin = new Thickness(10) };
         var instructions = new TextBlock { Text = help, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) };
         DockPanel.SetDock(instructions, Dock.Top);
         panel.Children.Add(instructions);
+
+        var captureRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+        var assign = new Button
+        {
+            Content = "Ata",
+            Padding = new Thickness(12, 6, 12, 6),
+            MinWidth = 72,
+            Margin = new Thickness(0, 0, 10, 0),
+            ToolTip = "İmlecin bulunduğu yere tuş veya kısayol yakalayın. Enter ile kaydedin."
+        };
+        var status = new TextBlock
+        {
+            Text = "İmleci tuşun yazılacağı yere koyup Ata'ya basın.",
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.FromRgb(180, 190, 205)),
+            TextWrapping = TextWrapping.Wrap
+        };
+        assign.Click += (_, _) => StartShortcutCapture(editor, status);
+        captureRow.Children.Add(assign);
+        captureRow.Children.Add(status);
+        DockPanel.SetDock(captureRow, Dock.Top);
+        panel.Children.Add(captureRow);
         panel.Children.Add(editor);
         return panel;
+    }
+
+    private void StartShortcutCapture(TextBox editor, TextBlock status)
+    {
+        _captureTarget = editor;
+        _captureStatus = status;
+        _capturedShortcut = null;
+        status.Text = "Tuşlara basın, ardından Enter ile kaydedin. Esc iptal eder.";
+        editor.Focus();
+    }
+
+    private void OnCaptureKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_captureTarget is null || _captureStatus is null) return;
+
+        if (e.Key == Key.Escape)
+        {
+            _captureTarget = null;
+            _captureStatus.Text = "Atama iptal edildi.";
+            _captureStatus = null;
+            _capturedShortcut = null;
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            if (_capturedShortcut is not null)
+            {
+                var target = _captureTarget;
+                var start = target.SelectionStart;
+                target.SelectedText = _capturedShortcut;
+                target.SelectionStart = start + _capturedShortcut.Length;
+                target.SelectionLength = 0;
+                _captureStatus.Text = $"Eklendi: {_capturedShortcut}";
+                target.Focus();
+                _captureTarget = null;
+                _captureStatus = null;
+                _capturedShortcut = null;
+            }
+            else
+            {
+                _captureStatus.Text = "Önce bir tuş veya kısayol kombinasyonu girin.";
+            }
+            e.Handled = true;
+            return;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or
+            Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+            return;
+
+        var parts = new List<string>();
+        var modifiers = Keyboard.Modifiers;
+        if ((modifiers & ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((modifiers & ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & ModifierKeys.Windows) != 0) parts.Add("Win");
+        parts.Add(key.ToString());
+        _capturedShortcut = string.Join('+', parts);
+        _captureStatus.Text = $"Yakalandı: {_capturedShortcut} · Enter ile ekle, Esc ile iptal et.";
+        e.Handled = true;
     }
 
     private void SaveMappings()

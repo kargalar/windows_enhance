@@ -61,16 +61,13 @@ internal static class InternalPanelBrightnessService
         return (int)Math.Round((Math.Clamp(level, minimum, maximum) - minimum) * 100d / (maximum - minimum));
     }
 
-    internal static bool SetBrightness(string id, int percent, out int appliedPercent)
+    internal static bool SetBrightness(InternalPanelBrightness panel, int percent, out int appliedPercent)
     {
         appliedPercent = 0;
-        if (!IsInternalId(id)) return false;
-        var instanceName = id[InternalIdPrefix.Length..];
+        if (!IsInternalId(panel.Id) || panel.Levels.Count == 0) return false;
+        var instanceName = panel.Id[InternalIdPrefix.Length..];
         try
         {
-            var panel = Discover().FirstOrDefault(item =>
-                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
-            if (panel is null || panel.Levels.Count == 0) return false;
             var brightness = MapPercentToLevel(percent, panel.Levels);
             using var management = new WindowsManagement(NamespacePath);
             var results = management.Query($"SELECT InstanceName, __PATH FROM {BrightnessMethodsClass} WHERE Active = TRUE",

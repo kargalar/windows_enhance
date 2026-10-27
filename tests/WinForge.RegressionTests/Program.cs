@@ -50,6 +50,13 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--tiling-only"))
+            {
+                var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Tiling.dll"));
+                TilingInteractionChecks.Run(assembly.GetType("WinForge.Modules.Tiling.TilingModule")!, Check);
+                Console.WriteLine($"PASS: {_passed} tiling interaction checks.");
+                return 0;
+            }
             if (args.Contains("--interface-only"))
             {
                 TestSettings();
@@ -274,39 +281,49 @@ internal static class Program
               hostsScript.IndexOf("[System.IO.File]::Copy", StringComparison.Ordinal) < hostsScript.IndexOf("[System.IO.File]::Replace", StringComparison.Ordinal),
             "Hosts elevated save checks for concurrent edits, creates a backup, then atomically replaces the file");
         var tiling = host.Modules.Single(module => module.Id == "auto-tiling");
-        var modeSetting = tiling.Settings.Single(setting => setting.Key == "mode");
-        Check(modeSetting.Options.Length == 2 &&
-              modeSetting.Options.Contains("Otomatik tam ekran döşeme") &&
-              modeSetting.Options.Contains("Bölgeli pencere taşıma (FancyZones)"),
-            "Window Management offers the two requested fullscreen tiling and FancyZones move modes");
-        var zoneActivationSetting = tiling.Settings.Single(setting => setting.Key == "zone-activation");
+        TilingInteractionChecks.Run(tiling.GetType(), Check);
+        var fancyZones = host.Modules.Single(module => module.Id == "fancy-zones");
+        Check(tiling.Name == "Tam Ekran Pencere Yönetimi" &&
+              tiling.Settings.Any(setting => setting.Key == "layout") &&
+              tiling.Settings.All(setting => !setting.Key.StartsWith("zone-", StringComparison.Ordinal)),
+            "Fullscreen tiling is a separate feature with only its own settings");
+        Check(fancyZones.Settings.Any(setting => setting.Key == "zone-layout") &&
+              fancyZones.Settings.All(setting => setting.Key.StartsWith("zone-", StringComparison.Ordinal) || setting.Key == "gap"),
+            "FancyZones is a separate feature with only its own settings");
+        var zoneActivationSetting = fancyZones.Settings.Single(setting => setting.Key == "zone-activation");
         Check(zoneActivationSetting.Options.Contains("Shift tuşuyla etkinleştir") &&
               zoneActivationSetting.Options.Contains("Sürüklerken otomatik göster"),
             "FancyZones mode supports both Shift activation and automatic zone display while dragging");
-        Check(tiling.Settings.Any(setting => setting.Key == "zone-window-switching" && setting.Kind == SettingKind.Toggle && setting.Default is true),
+        Check(fancyZones.Settings.Any(setting => setting.Key == "zone-window-switching" && setting.Kind == SettingKind.Toggle && setting.Default is true),
             "FancyZones exposes independently configurable same-zone window switching");
-        Check(tiling.Settings.Any(setting => setting.Key == "zone-keyboard-move-enabled" && setting.Kind == SettingKind.Toggle && setting.Default is true),
+        Check(fancyZones.Settings.Any(setting => setting.Key == "zone-keyboard-move-enabled" && setting.Kind == SettingKind.Toggle && setting.Default is true),
             "FancyZones exposes direct keyboard movement of the active window between adjacent zones");
-        var zoneSettings = host.SettingsOf(tiling);
-        zoneSettings.Set("mode", "Bölgeli pencere taşıma (FancyZones)");
-        var zoneContext = (IModuleContext)tiling.GetType().GetField("_context", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(tiling)!;
+        Check(fancyZones.Settings.Any(setting => setting.Key == "zone-show-numbers" && setting.Kind == SettingKind.Toggle) &&
+              fancyZones.Settings.Any(setting => setting.Key == "zone-active-color" && setting.Kind == SettingKind.Palette && setting.Options.Length >= 8) &&
+              fancyZones.Settings.Any(setting => setting.Key == "zone-inactive-color" && setting.Kind == SettingKind.Palette && setting.Options.Length >= 8) &&
+              fancyZones.Settings.Any(setting => setting.Key == "zone-border-thickness" && setting.Kind == SettingKind.Number) &&
+              fancyZones.Settings.Any(setting => setting.Key == "zone-merge-distance" && setting.Kind == SettingKind.Number),
+            "FancyZones exposes configurable preview labels, colors, border thickness, and merge distance");
+        Check(fancyZones.Settings.Any(setting => setting.Key == "zone-auto-place-new-windows" && setting.Kind == SettingKind.Toggle && setting.Default is true),
+            "FancyZones automatically places newly opened windows into the least occupied zone by default");
+        var zoneContext = (IModuleContext)tiling.GetType().GetField("_context", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(fancyZones)!;
         var zoneHotkeys = (FakeHotkeys)zoneContext.Hotkeys;
         var previousHotkeyCount = zoneHotkeys.RegisteredHotkeys.Count;
-        host.SetEnabled(tiling, true);
+        host.SetEnabled(fancyZones, true);
         Check(zoneHotkeys.RegisteredHotkeys.Count == previousHotkeyCount + 6 &&
               zoneHotkeys.RegisteredHotkeys.Where(entry => (entry.Modifiers & HotkeyModifiers.Control) != 0 &&
                                                               (entry.Modifiers & HotkeyModifiers.Alt) != 0)
                   .Select(entry => entry.VirtualKey).Order().SequenceEqual(new uint[] { 0x25, 0x26, 0x27, 0x28 }),
             "FancyZones registers four Win+Ctrl+Alt+Arrow zone move actions alongside same-zone window switching");
-        host.SetEnabled(tiling, false);
+        host.SetEnabled(fancyZones, false);
         Check(zoneHotkeys.RegisteredHotkeys.Count == previousHotkeyCount,
             "FancyZones releases keyboard zone movement shortcuts when disabled");
-        var zoneLayoutSetting = tiling.Settings.Single(setting => setting.Key == "zone-layout");
+        var zoneLayoutSetting = fancyZones.Settings.Single(setting => setting.Key == "zone-layout");
         Check(zoneLayoutSetting.Options.Contains("Özel ızgara") &&
-              tiling.Settings.Single(setting => setting.Key == "zone-columns") is { Min: 1, Max: 6, Default: 3 } &&
-              tiling.Settings.Single(setting => setting.Key == "zone-rows") is { Min: 1, Max: 4, Default: 2 },
+              fancyZones.Settings.Single(setting => setting.Key == "zone-columns") is { Min: 1, Max: 6, Default: 3 } &&
+              fancyZones.Settings.Single(setting => setting.Key == "zone-rows") is { Min: 1, Max: 4, Default: 2 },
             "FancyZones mode exposes a configurable custom grid with bounded rows and columns");
-        var monitorGridSetting = tiling.Settings.Single(setting => setting.Key == "zone-monitor-grid-profiles");
+        var monitorGridSetting = fancyZones.Settings.Single(setting => setting.Key == "zone-monitor-grid-profiles");
         var parseMonitorProfiles = tiling.GetType().GetMethod("ParseMonitorGridProfiles", BindingFlags.Static | BindingFlags.NonPublic)!;
         var monitorProfiles = (Dictionary<string, (int Columns, int Rows)>)parseMonitorProfiles.Invoke(null,
             ["DISPLAY1=3x2;DISPLAY2=2x4;DISPLAY1=99x0;bad/name=5x2;DISPLAY3=abc"])!;
@@ -334,6 +351,22 @@ internal static class Program
         Check(customGrid.Count == 6 && customGrid.All(zone => zone.Left >= 10 && zone.Top >= 20 && zone.Right <= 1010 && zone.Bottom <= 620) &&
               customGrid[0].Right + 8 == customGrid[1].Left && customGrid[0].Bottom + 8 == customGrid[3].Top,
             "FancyZones custom grid creates correctly spaced zones contained in the active monitor work area");
+        var fourGrid = (IReadOnlyList<RECT>)createGridZones.Invoke(null,
+            new object[] { new RECT { Left = 0, Top = 0, Right = 1000, Bottom = 600 }, 2, 2, 8 })!;
+        var findZonesNearDividers = tilingType.GetMethod("FindZonesNearDividers", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var verticalMerge = (HashSet<int>)findZonesNearDividers.Invoke(null, [fourGrid, 2, 2, new POINT { X = 500, Y = 150 }, 24])!;
+        var centerMerge = (HashSet<int>)findZonesNearDividers.Invoke(null, [fourGrid, 2, 2, new POINT { X = 500, Y = 300 }, 24])!;
+        Check(verticalMerge.SetEquals([0, 1]) && centerMerge.SetEquals([0, 1, 2, 3]),
+            "FancyZones selects adjacent areas near a divider and all four areas near a four-way grid intersection");
+        var findLeastOccupiedZone = tilingType.GetMethod("FindLeastOccupiedZone", BindingFlags.Static | BindingFlags.NonPublic)!;
+        Check((int)findLeastOccupiedZone.Invoke(null, [new[] { 2, 0, 1 }])! == 1 &&
+              (int)findLeastOccupiedZone.Invoke(null, [Array.Empty<int>()])! == -1,
+            "FancyZones chooses the first least occupied area and handles an empty grid");
+        var areAllZonesOccupied = tilingType.GetMethod("AreAllZonesOccupied", BindingFlags.Static | BindingFlags.NonPublic)!;
+        Check((bool)areAllZonesOccupied.Invoke(null, [new[] { 1, 2, 1 }])! &&
+              !(bool)areAllZonesOccupied.Invoke(null, [new[] { 1, 0, 1 }])! &&
+              !(bool)areAllZonesOccupied.Invoke(null, [Array.Empty<int>()])!,
+            "FancyZones detects when every zone is occupied to maximize overflow windows");
         var maximumGrid = (IReadOnlyList<RECT>)createGridZones.Invoke(null,
             new object[] { new RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1080 }, 99, 99, 99 })!;
         Check(maximumGrid.Count == 24 && maximumGrid.All(zone => zone.Left >= 0 && zone.Top >= 0 && zone.Right <= 1920 && zone.Bottom <= 1080),
@@ -417,21 +450,31 @@ internal static class Program
               displayBrightness.Settings.Single(setting => setting.Key == "night-start-time").Default as string == "20:00" &&
               displayBrightness.Settings.Single(setting => setting.Key == "night-brightness").Default is 35 &&
               displayBrightness.Settings.Single(setting => setting.Key == "brightness-hotkeys-enabled").Default is false &&
-              displayBrightness.Settings.Single(setting => setting.Key == "brightness-hotkey-step").Default is 5,
+              displayBrightness.Settings.Single(setting => setting.Key == "brightness-hotkey-step").Default is 5 &&
+              displayBrightness.Settings.Single(setting => setting.Key == "brightness-dim-hotkey").Default as string == "Ctrl+Alt+F11" &&
+              displayBrightness.Settings.Single(setting => setting.Key == "brightness-brighten-hotkey").Default as string == "Ctrl+Alt+F12",
             "Power Display exposes its panel, opt-in day/night schedule and cursor-monitor brightness hotkeys");
+        var parseBrightnessHotkey = displayBrightness.GetType().GetMethod("ParseBrightnessHotkey", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var customBrightnessHotkey = ((uint Modifiers, uint VirtualKey, int WheelDirection))parseBrightnessHotkey.Invoke(null, ["Shift+Alt+F8"])!;
+        var wheelBrightnessHotkey = ((uint Modifiers, uint VirtualKey, int WheelDirection))parseBrightnessHotkey.Invoke(null, ["Ctrl+Alt+MouseWheelUp"])!;
+        Check(customBrightnessHotkey == (HotkeyModifiers.Shift | HotkeyModifiers.Alt, 0x77u, 0) &&
+              wheelBrightnessHotkey == (HotkeyModifiers.Control | HotkeyModifiers.Alt, 0u, 1),
+            "Power Display parses configurable keyboard and mouse-wheel brightness shortcuts");
         var displayModuleContext = (IModuleContext)displayBrightness.GetType()
             .GetField("_context", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(displayBrightness)!;
         var fakeHotkeys = (FakeHotkeys)displayModuleContext.Hotkeys;
         var hotkeysBeforeBrightness = fakeHotkeys.RegisteredHotkeys.Count;
+        host.SettingsOf(displayBrightness).Set("brightness-dim-hotkey", "Ctrl+Alt+PageDown");
+        host.SettingsOf(displayBrightness).Set("brightness-brighten-hotkey", "Ctrl+Alt+PageUp");
         host.SettingsOf(displayBrightness).Set("brightness-hotkeys-enabled", true);
         host.SetEnabled(displayBrightness, true);
         var brightnessHotkeys = fakeHotkeys.RegisteredHotkeys.Skip(hotkeysBeforeBrightness).ToArray();
         Check(brightnessHotkeys.Select(hotkey => (hotkey.Modifiers, hotkey.VirtualKey)).ToHashSet().SetEquals(new[]
               {
-                  (HotkeyModifiers.Control | HotkeyModifiers.Alt, 0x7Au),
-                  (HotkeyModifiers.Control | HotkeyModifiers.Alt, 0x7Bu)
+                  (HotkeyModifiers.Control | HotkeyModifiers.Alt, 0x21u),
+                  (HotkeyModifiers.Control | HotkeyModifiers.Alt, 0x22u)
               }),
-            "Power Display registers Ctrl+Alt+F11/F12 only when cursor-monitor hotkeys are enabled");
+            "Power Display registers configured brightness hotkeys only when cursor-monitor hotkeys are enabled");
         host.SetEnabled(displayBrightness, false);
         Check(fakeHotkeys.RegisteredHotkeys.Count == hotkeysBeforeBrightness,
             "Power Display releases both brightness hotkeys when the module is disabled");

@@ -6,7 +6,7 @@ public sealed class WindowControlModule : ITweakModule
 {
     private IModuleContext? _context;
     private WindowControlEngine? _engine;
-    private static readonly string[] ButtonActions = ["İşlem yok", "Taşı", "Boyutlandır", "Pencere menüsü", "Windows pencere menüsü", "Küçült", "Büyüt / geri yükle", "Ortala", "Her zaman üstte", "Kapat", "Arkaya gönder", "Çerçevesiz", "Başlık çubuğuna sar", "Dikey / yatay büyüt", "Diğer pencereleri küçült", "Sessize al", "Uygulamayı sessize al", "Kenara oturt", "Bölgeye yerleştir", "Sonraki üst üste pencere", "Önceki üst üste pencere", "Pencere yığını listesi", "Tüm pencereler listesi", "Programı sonlandır", "Programı duraklat", "Programa devam et"];
+    private static readonly string[] ButtonActions = ["İşlem yok", "Taşı", "Boyutlandır", "Pencere menüsü", "Windows pencere menüsü", "Küçült", "Büyüt / geri yükle", "Tam ekran / geri yükle", "Ortala", "Her zaman üstte", "Kapat", "Arkaya gönder", "Çerçevesiz", "Başlık çubuğuna sar", "Dikey / yatay büyüt", "Diğer pencereleri küçült", "Sessize al", "Uygulamayı sessize al", "Kenara oturt", "Bölgeye yerleştir", "Sonraki üst üste pencere", "Önceki üst üste pencere", "Pencere yığını listesi", "Tüm pencereler listesi", "Programı sonlandır", "Programı duraklat", "Programa devam et"];
     private static readonly string[] WheelActions = ["İşlem yok", "Pencereler arasında geçiş", "Ses düzeyi", "Saydamlık", "Başlık çubuğuna sar", "Arkaya / öne gönder", "Büyüt / küçült", "Yatay kaydır", "Pencereyi yakınlaştır", "Üst üste pencereler"];
     private static readonly string[] ActivationKeys = ["Sol Alt", "Her iki Alt", "Sağ Alt", "Sol Windows", "Her iki Windows", "Sol Ctrl"];
     private static readonly string[] AlternativeKeys = ["Kapalı", "Sol Windows", "Sol Ctrl", "Sağ Ctrl"];
@@ -19,6 +19,7 @@ public sealed class WindowControlModule : ITweakModule
     private static readonly IReadOnlyDictionary<string, WindowAction> ActionValues = new Dictionary<string, WindowAction>
     {
         ["İşlem yok"] = WindowAction.None, ["Taşı"] = WindowAction.Move, ["Boyutlandır"] = WindowAction.Resize,
+        ["Tam ekran / geri yükle"] = WindowAction.ToggleFullscreen,
         ["Pencere menüsü"] = WindowAction.ActionMenu, ["Windows pencere menüsü"] = WindowAction.SystemMenu, ["Küçült"] = WindowAction.Minimize,
         ["Büyüt / geri yükle"] = WindowAction.ToggleMaximize, ["Ortala"] = WindowAction.Center,
         ["Her zaman üstte"] = WindowAction.ToggleTopmost, ["Kapat"] = WindowAction.Close,
@@ -65,8 +66,12 @@ public sealed class WindowControlModule : ITweakModule
     public void Activate()
     {
         if (IsActive) return;
+        var placement = _context as IWindowPlacementContext;
+        Func<IntPtr, POINT, bool>? placeInZone = placement is null ? null : new Func<IntPtr, POINT, bool>(placement.TryPlaceWindowInZone);
+        Action<IntPtr>? beginZoneDrag = placement is null ? null : new Action<IntPtr>(placement.BeginWindowZoneDrag);
+        Func<IntPtr, bool, bool>? endZoneDrag = placement is null ? null : new Func<IntPtr, bool, bool>(placement.EndWindowZoneDrag);
         var engine = new WindowControlEngine(ReadOptions(), exception => _context!.Log.Error("Pencere kontrolü başarısız.", exception),
-            _context is IWindowPlacementContext placement ? placement.TryPlaceWindowInZone : null);
+            placeInZone, beginZoneDrag: beginZoneDrag, endZoneDrag: endZoneDrag);
         try { engine.Start(); _engine = engine; }
         catch { engine.Dispose(); throw; }
     }
@@ -192,7 +197,7 @@ public sealed class WindowControlModule : ITweakModule
 
 internal enum WindowAction
 {
-    None, Move, Resize, ActionMenu, SystemMenu, Minimize, ToggleMaximize, Center, ToggleTopmost, Close, Lower, ToggleBorder, Volume, Opacity,
+    None, Move, Resize, ActionMenu, SystemMenu, Minimize, ToggleMaximize, ToggleFullscreen, Center, ToggleTopmost, Close, Lower, ToggleBorder, Volume, Opacity,
     Roll, MaximizeAxis, MinimizeOthers, MasterMute, ApplicationMute, SideSnap, PlaceInZone, NextStacked, PreviousStacked, StackList, WindowList, Kill, Pause, Resume,
     SwitchWindow, RaiseLower, MaximizeMinimize, HorizontalScroll, Zoom, CycleStacked
 }

@@ -29,10 +29,16 @@ public partial class MainWindow : Window
     private Border? _errorBox;
     private TextBlock? _errorText;
     private bool _backgroundNoticeShown;
+    private TextBox? _hotkeyCaptureTarget;
+    private TextBlock? _hotkeyCaptureStatus;
+    private Action? _hotkeyCaptureCommit;
+    private string? _capturedHotkey;
 
     public MainWindow()
     {
         InitializeComponent();
+        PreviewKeyDown += OnHotkeyCaptureKeyDown;
+        PreviewMouseWheel += OnHotkeyCaptureMouseWheel;
 
         Appearance.Load();
         ApplyAppearance();
@@ -353,6 +359,9 @@ public partial class MainWindow : Window
             case SettingKind.Choice:
                 AddChoiceSetting(module, descriptor);
                 break;
+            case SettingKind.Palette:
+                AddPaletteSetting(module, descriptor);
+                break;
             case SettingKind.Action:
                 AddActionSetting(module, descriptor);
                 break;
@@ -539,7 +548,41 @@ public partial class MainWindow : Window
             e.Handled = true;
         };
 
-        wrapper.Children.Add(box);
+        if (IsHotkeyTextSetting(descriptor))
+        {
+            var inputRow = new Grid { Margin = box.Margin };
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition());
+            inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            box.Margin = new Thickness(0);
+            inputRow.Children.Add(box);
+
+            var captureStatus = new TextBlock
+            {
+                Text = "Ata'ya basıp kısayol tuşlarına basın, Enter ile kaydedin.",
+                Foreground = BrushOf("MutedBrush"),
+                FontSize = 10.5,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 5, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+            var captureButton = new Button
+            {
+                Content = "Ata",
+                Style = StyleOf("GhostButton"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(8, 0, 0, 0),
+                ToolTip = "Kısayol tuşlarını dinle; Enter ile kaydet, Esc ile iptal et."
+            };
+            captureButton.Click += (_, _) => StartHotkeyCapture(box, captureStatus, Commit);
+            Grid.SetColumn(captureButton, 1);
+            inputRow.Children.Add(captureButton);
+            wrapper.Children.Add(inputRow);
+            wrapper.Children.Add(captureStatus);
+        }
+        else
+        {
+            wrapper.Children.Add(box);
+        }
 
         if (!string.IsNullOrWhiteSpace(descriptor.Description))
         {
@@ -554,6 +597,90 @@ public partial class MainWindow : Window
         }
 
         DetailPanel.Children.Add(wrapper);
+    }
+
+    private static bool IsHotkeyTextSetting(SettingDescriptor descriptor) =>
+        descriptor.Key.Contains("hotkey", StringComparison.OrdinalIgnoreCase) ||
+        descriptor.Key.Contains("shortcut", StringComparison.OrdinalIgnoreCase) ||
+        descriptor.Label.Contains("kısayol", StringComparison.OrdinalIgnoreCase);
+
+    private void StartHotkeyCapture(TextBox target, TextBlock status, Action commit)
+    {
+        _hotkeyCaptureTarget = target;
+        _hotkeyCaptureStatus = status;
+        _hotkeyCaptureCommit = commit;
+        _capturedHotkey = null;
+        status.Visibility = Visibility.Visible;
+        status.Text = "Tuşlara basın, ardından Enter ile kaydedin. Esc iptal eder.";
+    }
+
+    private void OnHotkeyCaptureKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_hotkeyCaptureTarget is null || _hotkeyCaptureStatus is null) return;
+
+        if (e.Key == Key.Escape)
+        {
+            _hotkeyCaptureStatus.Text = "Atama iptal edildi.";
+            ClearHotkeyCapture();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            if (_capturedHotkey is null)
+            {
+                _hotkeyCaptureStatus.Text = "Önce bir tuş veya kısayol kombinasyonu girin.";
+            }
+            else
+            {
+                _hotkeyCaptureTarget.Text = _capturedHotkey;
+                _hotkeyCaptureCommit?.Invoke();
+                _hotkeyCaptureStatus.Text = $"Kaydedildi: {_capturedHotkey}";
+                ClearHotkeyCapture();
+            }
+            e.Handled = true;
+            return;
+        }
+
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or
+            Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+            return;
+
+        var parts = new List<string>();
+        var modifiers = Keyboard.Modifiers;
+        if ((modifiers & ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((modifiers & ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & ModifierKeys.Windows) != 0) parts.Add("Win");
+        parts.Add(key.ToString());
+        _capturedHotkey = string.Join('+', parts);
+        _hotkeyCaptureStatus.Text = $"Yakalandı: {_capturedHotkey} · Enter kaydet, Esc iptal et.";
+        e.Handled = true;
+    }
+
+    private void OnHotkeyCaptureMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_hotkeyCaptureTarget is null || _hotkeyCaptureStatus is null) return;
+        var parts = new List<string>();
+        var modifiers = Keyboard.Modifiers;
+        if ((modifiers & ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((modifiers & ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & ModifierKeys.Windows) != 0) parts.Add("Win");
+        parts.Add(e.Delta > 0 ? "MouseWheelUp" : "MouseWheelDown");
+        _capturedHotkey = string.Join('+', parts);
+        _hotkeyCaptureStatus.Text = $"Yakalandı: {_capturedHotkey} · Enter kaydet, Esc iptal et.";
+        e.Handled = true;
+    }
+
+    private void ClearHotkeyCapture()
+    {
+        _hotkeyCaptureTarget = null;
+        _hotkeyCaptureStatus = null;
+        _hotkeyCaptureCommit = null;
+        _capturedHotkey = null;
     }
 
     private void AddChoiceSetting(ITweakModule module, SettingDescriptor descriptor)
@@ -641,6 +768,212 @@ public partial class MainWindow : Window
 
         wrapper.Children.Add(panel);
         DetailPanel.Children.Add(wrapper);
+    }
+
+    private void AddPaletteSetting(ITweakModule module, SettingDescriptor descriptor)
+    {
+        var settings = settingsOf(module);
+        var wrapper = new StackPanel { Margin = new Thickness(0, 6, 0, 8) };
+        wrapper.Children.Add(new TextBlock
+        {
+            Text = descriptor.Label,
+            FontSize = 12.5,
+            TextWrapping = TextWrapping.Wrap
+        });
+        if (!string.IsNullOrWhiteSpace(descriptor.Description))
+        {
+            wrapper.Children.Add(new TextBlock
+            {
+                Text = descriptor.Description,
+                Foreground = BrushOf("MutedBrush"),
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 3, 0, 0)
+            });
+        }
+
+        var configured = settings.GetString(descriptor.Key, descriptor.Default as string ?? "");
+        var current = TryParseColor(configured, out _) ? configured : descriptor.Default as string ?? "";
+        var palette = new List<(Button Button, string Value)>();
+        var panel = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        TextBox? hexInput = null;
+
+        void SelectColor(string value)
+        {
+            current = value;
+            settings.Set(descriptor.Key, value);
+            if (hexInput is not null) hexInput.Text = value;
+            foreach (var (button, optionValue) in palette)
+            {
+                var selected = string.Equals(optionValue, value, StringComparison.OrdinalIgnoreCase);
+                button.BorderBrush = selected ? BrushOf("AccentBrush") : Brushes.Gray;
+                button.BorderThickness = new Thickness(selected ? 3 : 1);
+                button.Content = selected ? "✓" : null;
+                button.Foreground = IsLightColor(optionValue) ? Brushes.Black : Brushes.White;
+            }
+            ApplyModule(module);
+        }
+
+        foreach (var value in descriptor.Options)
+        {
+            if (!TryParseColor(value, out var color)) continue;
+            var label = descriptor.OptionLabels.GetValueOrDefault(value, value);
+            var button = new Button
+            {
+                Width = 30,
+                Height = 30,
+                Margin = new Thickness(0, 0, 7, 7),
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(color),
+                BorderBrush = string.Equals(value, current, StringComparison.OrdinalIgnoreCase)
+                    ? BrushOf("AccentBrush")
+                    : Brushes.Gray,
+                BorderThickness = new Thickness(string.Equals(value, current, StringComparison.OrdinalIgnoreCase) ? 3 : 1),
+                Content = string.Equals(value, current, StringComparison.OrdinalIgnoreCase) ? "✓" : null,
+                Foreground = IsLightColor(value) ? Brushes.Black : Brushes.White,
+                ToolTip = label
+            };
+            AutomationProperties.SetName(button, label);
+            AutomationProperties.SetAutomationId(button, $"{module.Id}.{descriptor.Key}.{value.TrimStart('#')}");
+            var selectedValue = value;
+            button.Click += (_, _) => SelectColor(selectedValue);
+            palette.Add((button, value));
+            panel.Children.Add(button);
+        }
+
+        wrapper.Children.Add(panel);
+
+        var customColorRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 2, 0, 0)
+        };
+        var colorDialogButton = new Button
+        {
+            Style = StyleOf("GhostButton"),
+            Content = "Tüm renklerden seç…",
+            Padding = new Thickness(10, 6, 10, 6),
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        colorDialogButton.Click += (_, _) =>
+        {
+            if (TryChooseColor(current, out var selectedColor))
+                SelectColor(ToHex(selectedColor));
+        };
+        AutomationProperties.SetName(colorDialogButton, descriptor.Label + " renk seçici");
+        customColorRow.Children.Add(colorDialogButton);
+
+        hexInput = new TextBox
+        {
+            Text = current,
+            Width = 92,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = "HEX renk kodu (ör. #4CC2FF)"
+        };
+        AutomationProperties.SetName(hexInput, descriptor.Label + " HEX renk kodu");
+        void CommitHexColor()
+        {
+            var value = hexInput.Text.Trim();
+            if (!value.StartsWith('#')) value = "#" + value;
+            if (!TryParseColor(value, out _))
+            {
+                hexInput.Text = settings.GetString(descriptor.Key, descriptor.Default as string ?? "");
+                return;
+            }
+            value = ToHex((Color)ColorConverter.ConvertFromString(value)!);
+            hexInput.Text = value;
+            SelectColor(value);
+        }
+        hexInput.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter) return;
+            CommitHexColor();
+            e.Handled = true;
+        };
+        hexInput.LostKeyboardFocus += (_, _) => CommitHexColor();
+        customColorRow.Children.Add(hexInput);
+        wrapper.Children.Add(customColorRow);
+        DetailPanel.Children.Add(wrapper);
+    }
+
+    private bool TryChooseColor(string initialColor, out Color color)
+    {
+        var initial = TryParseColor(initialColor, out var parsed) ? parsed : Colors.White;
+        var customColors = Marshal.AllocHGlobal(16 * sizeof(uint));
+        try
+        {
+            for (var index = 0; index < 16; index++) Marshal.WriteInt32(customColors, index * sizeof(uint), 0);
+            var dialog = new ChooseColorDialog
+            {
+                Size = Marshal.SizeOf<ChooseColorDialog>(),
+                Owner = new WindowInteropHelper(this).Handle,
+                InitialColor = ToColorRef(initial),
+                CustomColors = customColors,
+                Flags = ChooseColorRgbInit | ChooseColorFullOpen
+            };
+            if (ChooseColor(ref dialog))
+            {
+                color = FromColorRef(dialog.InitialColor);
+                return true;
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(customColors);
+        }
+
+        color = default;
+        return false;
+    }
+
+    private const uint ChooseColorRgbInit = 0x00000001;
+    private const uint ChooseColorFullOpen = 0x00000002;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ChooseColorDialog
+    {
+        public int Size;
+        public IntPtr Owner;
+        public IntPtr Instance;
+        public uint InitialColor;
+        public IntPtr CustomColors;
+        public uint Flags;
+        public IntPtr CustomData;
+        public IntPtr Hook;
+        public IntPtr TemplateName;
+    }
+
+    [DllImport("comdlg32.dll", EntryPoint = "ChooseColorW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ChooseColor(ref ChooseColorDialog dialog);
+
+    private static uint ToColorRef(Color color) => (uint)(color.R | color.G << 8 | color.B << 16);
+    private static Color FromColorRef(uint color) => Color.FromRgb((byte)color, (byte)(color >> 8), (byte)(color >> 16));
+    private static string ToHex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+
+    private static bool TryParseColor(string value, out Color color)
+    {
+        try
+        {
+            if (ColorConverter.ConvertFromString(value) is Color parsed)
+            {
+                color = parsed;
+                return true;
+            }
+        }
+        catch (FormatException) { }
+        catch (ArgumentException) { }
+
+        color = default;
+        return false;
+    }
+
+    private static bool IsLightColor(string value)
+    {
+        if (!TryParseColor(value, out var color)) return false;
+        var brightness = (color.R * 299 + color.G * 587 + color.B * 114) / 1000;
+        return brightness >= 150;
     }
 
     private static IModuleSettings settingsOf(ITweakModule module) =>

@@ -19,7 +19,8 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Kısayol Rehberi** | `Win+Shift+/` ile açılır; Win tuşunu basılı tutunca odak çalmayan katman Windows ve WinForge kısayollarını kategorilere göre listeler ve aratır |
 | **Quick Accent · Hızlı Aksan** | Bir Latin harfini basılı tutunca aksan seçiciyi açar; Fransızca, Almanca, İspanyolca, Türkçe, İskandinav ve Orta Avrupa karakter kümelerini filtreler; oyun/süreç dışlama ve tam ekran bastırması içerir |
 | **Klavye Yöneticisi** | Tuşları ve kısayolları genel olarak veya işlem adına göre uygulama bazında eşler, kısayolla Unicode metin yazdırır, 1–4 adımlı ardışık chord kısayollarıyla uygulama/URI başlatır; uygulamaya özel eşleme genel eşlemenin önceliğindedir |
-| **Pencere Yönetimi** | İki mod: yeni pencereleri otomatik tam ekran döşeme veya Shift ile sürükleyip iki, üç, dört ya da özelleştirilebilir 1–6 sütun × 1–4 satır ızgaraya yerleştirme; Ctrl+okla bitişik bölgeleri birleştirme, Win+Ctrl+Alt+okla etkin pencereyi bitişik bölgeye taşıma, çoklu monitör ve ekrana göre ızgara profilleri |
+| **Tam Ekran Pencere Yönetimi** | Açık pencereleri Ana + yığın, Izgara veya Sütunlar düzeninde otomatik yerleştirme; boşluk, ana pencere genişliği ve küçültmeyi engelleme ayarları |
+| **FancyZones · Bölgeli Pencere Taşıma** | Yeni pencereleri en az dolu bölgeye otomatik yerleştirme; Shift ile sürükleyerek pencereyi iki, üç, dört ya da özelleştirilebilir 1–6 sütun × 1–4 satır ızgaraya taşıma; çizgi yakınında komşu bölgeleri, dört alan kesişiminde tüm alanları birleştirme; numara, renk, kenarlık kalınlığı ve birleştirme mesafesi ayarları; çoklu monitör ve ekrana göre ızgara profilleri |
 | **Crop And Lock · Pencere Kırpma** | `Win+Ctrl+Shift+T` ile etkin pencerenin bir alanını sürükleyerek seçer ve alanı canlı, yeniden boyutlandırılabilir küçük pencerede gösterir; kaynak pencereye tıklama göndermez |
 | **Pencere Kontrolü** | WinForge motoruyla Alt + fare ile taşıma/boyutlandırma; çoklu monitör, kenarlara oturtma, mıknatıslanma, ayarlanabilir eylemler ve uygulama/pencere istisnaları |
 | **Uyanık Kal** | Modül açıkken sistemin uykuya geçmesini engeller; isteğe bağlı olarak ekranı da açık tutar |
@@ -98,7 +99,11 @@ dönemi gece yarısını aşacak şekilde hesaplanır. Desteklenmeyen ekranlar a
 İsteğe bağlı **İmleçteki ekran için parlaklık kısayolları** ayarını açınca
 `Ctrl+Alt+F11` azaltır, `Ctrl+Alt+F12` artırır. Yalnızca imlecin bulunduğu
 Windows ekranına bağlı destekli fiziksel monitörler değişir; **Kısayol adımı (%)**
-1–20 aralığında ayarlanabilir. Kısayol başka uygulamada kayıtlıysa hata bildirilir.
+1–20 aralığında ayarlanabilir (örneğin 10'ar 10'ar). Azaltma ve artırma
+kısayollarını da ayrı ayrı değiştirebilirsiniz; `Ctrl+Alt+PageDown` gibi en az
+bir değiştirici ve bir işlem tuşu kullanın. Fare tekerleği için
+`Ctrl+Alt+MouseWheelDown` ve `Ctrl+Alt+MouseWheelUp` biçimini kullanabilirsiniz.
+Klavye kısayolu başka uygulamada kayıtlıysa hata bildirilir.
 
 **Sistem → Hosts File Editor** içinden hosts dosyasını açın. IP adresi, bir veya
 daha fazla alan adı ve isteğe bağlı yorumla girdi ekleyin; seçili girdiyi
@@ -215,12 +220,23 @@ makinelerde ayrıca doğrulanmalıdır.
 
 ## Pencere Yönetimi
 
-**Verimlilik → Pencere Yönetimi** modülünde çalışma modunu seçin:
+Bu özellikler **Verimlilik** altında ayrı modüllerdir:
 
-- **Otomatik tam ekran döşeme:** Açık pencereler seçilen Ana + yığın, Izgara veya
+- **Tam Ekran Pencere Yönetimi:** Açık pencereler seçilen Ana + yığın, Izgara veya
   Sütunlar yerleşimine göre otomatik dizilir.
-- **Bölgeli pencere taşıma (FancyZones):** Pencereyi sürüklerken Shift tuşunu basılı tutun.
+- **FancyZones · Bölgeli Pencere Taşıma:** Pencereyi sürüklerken Shift tuşunu basılı tutun.
   Ekranda bölgeler görünür; pencereyi istediğiniz bölgenin üzerinde bırakın.
+  **Pencere Kontrolü** etkinse varsayılan Alt+sol tuş sürüklemesi de bölgeleri gösterir;
+  bu hareket için Shift gerekmez.
+  Yeni açılan pencereler varsayılan olarak o ekrandaki en az dolu bölgeye yerleştirilir;
+  bütün bölgeler doluysa pencere büyütülür. Bunu **Yeni pencereleri boş bölgelere
+  yerleştir** ayarından kapatabilirsiniz.
+  Bölme çizgisine ayarladığınız mesafe kadar yaklaşınca komşu bölgeler birlikte
+  seçilir; dört alanın kesişimine yaklaştığınızda dördü de seçilir. Fareyi
+  çizgiden uzaklaştırınca tek bölge seçimine döner. Numara görünürlüğünü, etkin ve
+  pasif alan renklerini paletten, kenarlık kalınlığını ve birleştirme mesafesini
+  FancyZones ayarlarından değiştirebilirsiniz.
+  Izgaradaki tüm bölgeler doluyken bir pencere bırakırsanız pencere büyütülür.
   Fareyi oynatmadan bölge değiştirmek için ok tuşlarını kullanın; **Ctrl+ok**
   seçili pencere alanını bitişik tam satır/sütun boyunca genişletir. Seçim ok
   tuşuyla yapıldıktan sonra fareyi hareket ettirmeniz vurguyu yeniden fareye bağlar.
@@ -238,9 +254,6 @@ makinelerde ayrıca doğrulanmalıdır.
   Etkin pencereyi sürüklemeden komşu bölgeye taşımak için `Win+Ctrl+Alt+ok`
   tuşlarını kullanın; bu dört kısayol **Etkin pencereyi kısayolla komşu bölgeye
   taşı** ayarından kapatılabilir.
-
-Bölgeye taşıma modu pencereleri kendiliğinden yeniden boyutlandırmaz. Modu
-değiştirirken açık pencereler mevcut boyut ve konumlarını korur.
 
 **Çalışma Alanları** modülünde görünür masaüstü uygulamalarını ve pencere
 konumlarını adlandırılmış bir düzene kaydedip sonra birlikte geri yükleyin.
@@ -408,7 +421,7 @@ Dışlama listelerinde exe adı veya `başlık|sınıf` kalıpları kullanılabi
 `*` ve `?` jokerleri desteklenir. Masaüstü, görev çubuğu, WinForge pencereleri
 ve varsayılan olarak tam ekran uygulamalar işleme alınmaz. Yönetici pencereleri
 için WinForge'un da yönetici olarak çalışması gerekir. Bölge yerleşimleri için
-mevcut **Pencere Yönetimi** modülü kullanılır. Eski motorun INI düzenleyicisi,
+mevcut **FancyZones · Bölgeli Pencere Taşıma** modülü kullanılır. Eski motorun INI düzenleyicisi,
 süreç duraklatma ve özel parametreli eylemleri sunulmaz; taşınan ayarlardaki
 bilinmeyen eylemler güvenli varsayılanlarına döner.
 ## YouTube eklentisi

@@ -20,6 +20,14 @@ internal sealed class WindowsSpellChecker
 
     public bool IsLanguageSupported(string languageTag) => GetChecker(languageTag) is not null;
 
+    public bool IsCorrect(string word, string languageTag)
+    {
+        var checker = GetChecker(languageTag);
+        if (checker is null) return false;
+        checker.Check(word, out var errors);
+        return errors.Next(out _) != 0;
+    }
+
     public string? FindCorrection(string word, string languageTag)
     {
         var checker = GetChecker(languageTag);

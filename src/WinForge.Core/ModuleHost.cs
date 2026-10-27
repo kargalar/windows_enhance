@@ -8,19 +8,22 @@ public sealed class ModuleHost
     private readonly FileLogger _log;
     private readonly IHotkeyService _hotkeys;
     private readonly Action<string> _notify;
+    private readonly Action<int, string>? _showDisplayBrightness;
     private readonly string _modulesDirectory;
     private readonly List<ITweakModule> _modules = new();
     private readonly Dictionary<string, IModuleSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
     private readonly IQuickActionService _quickActions;
 
-    public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify)
+    public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
+        Action<int, string>? showDisplayBrightness = null)
     {
         _store = store;
         _log = log;
         _hotkeys = hotkeys;
         _modulesDirectory = modulesDirectory;
         _notify = notify;
+        _showDisplayBrightness = showDisplayBrightness;
         _quickActions = new QuickActionService(() => _modules, _log, _notify);
     }
 
@@ -57,7 +60,8 @@ public sealed class ModuleHost
                     var module = (ITweakModule)Activator.CreateInstance(type)!;
                     var settings = new ModuleSettings(_store.For(module.Id), _store.Save);
                     _settings[module.Id] = settings;
-                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, TryPlaceWindowInZone));
+                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, _showDisplayBrightness,
+                        TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag));
                     _modules.Add(module);
                     _log.Info($"Modül yüklendi: {module.Id} ({module.Name})");
                 }
@@ -180,20 +184,42 @@ public sealed class ModuleHost
         return false;
     }
 
-    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext
+    private void BeginWindowZoneDrag(IntPtr window)
+    {
+        foreach (var module in _modules.Where(module => module.IsActive))
+            if (module is IWindowZoneDragProvider provider) provider.BeginWindowZoneDrag(window);
+    }
+
+    private bool EndWindowZoneDrag(IntPtr window, bool canceled)
+    {
+        var handled = false;
+        foreach (var module in _modules.Where(module => module.IsActive))
+            if (module is IWindowZoneDragProvider provider)
+                handled |= provider.EndWindowZoneDrag(window, canceled);
+        return handled;
+    }
+
+    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext, IDisplayBrightnessOverlayContext
     {
         private readonly Action<string> _notify;
+        private readonly Action<int, string>? _showDisplayBrightness;
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
+        private readonly Action<IntPtr> _beginWindowZoneDrag;
+        private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
-            IQuickActionService quickActions, Func<IntPtr, POINT, bool> placeWindow)
+            IQuickActionService quickActions, Action<int, string>? showDisplayBrightness, Func<IntPtr, POINT, bool> placeWindow,
+            Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
         {
             Settings = settings;
             Log = log;
             Hotkeys = hotkeys;
             QuickActions = quickActions;
             _notify = notify;
+            _showDisplayBrightness = showDisplayBrightness;
             _placeWindow = placeWindow;
+            _beginWindowZoneDrag = beginWindowZoneDrag;
+            _endWindowZoneDrag = endWindowZoneDrag;
         }
 
         public IModuleSettings Settings { get; }
@@ -202,7 +228,14 @@ public sealed class ModuleHost
         public IQuickActionService QuickActions { get; }
 
         public void Notify(string message) => _notify(message);
+        public void ShowDisplayBrightness(int percent, string deviceName)
+        {
+            if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName);
+            else _notify($"Parlaklık {percent}%");
+        }
         public bool TryPlaceWindowInZone(IntPtr window, POINT point) => _placeWindow(window, point);
+        public void BeginWindowZoneDrag(IntPtr window) => _beginWindowZoneDrag(window);
+        public bool EndWindowZoneDrag(IntPtr window, bool canceled) => _endWindowZoneDrag(window, canceled);
     }
 
     private sealed class QuickActionService(Func<IEnumerable<ITweakModule>> modules, ILogger log, Action<string> notify)

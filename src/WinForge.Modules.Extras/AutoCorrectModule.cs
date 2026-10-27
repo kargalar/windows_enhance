@@ -11,6 +11,9 @@ namespace WinForge.Modules.Extras;
 public sealed class AutoCorrectModule : ITweakModule
 {
     private const string AutomaticLanguage = "Klavye düzenine göre";
+    private const string TurkishAndEnglish = "Türkçe + English";
+    private const string TurkishLanguageTag = "tr-TR";
+    private const string EnglishLanguageTag = "en-US";
     private const int InjectedFlag = 0x10;
     private const int KeyBackspace = 0x08;
     private const int KeySpace = 0x20;
@@ -27,8 +30,8 @@ public sealed class AutoCorrectModule : ITweakModule
 
     private static readonly Dictionary<string, string> LanguageTags = new()
     {
-        ["Türkçe"] = "tr-TR",
-        ["English"] = "en-US",
+        ["Türkçe"] = TurkishLanguageTag,
+        ["English"] = EnglishLanguageTag,
         ["Deutsch"] = "de-DE",
         ["Français"] = "fr-FR",
         ["Español"] = "es-ES"
@@ -60,8 +63,8 @@ public sealed class AutoCorrectModule : ITweakModule
                 Label = "Düzeltme dili",
                 Kind = SettingKind.Choice,
                 Default = AutomaticLanguage,
-                Options = [AutomaticLanguage, .. LanguageTags.Keys],
-                Description = "Klavye düzenine göre seçilirse etkin uygulamanın klavye dili kullanılır. Dil Windows'ta yüklü olmalıdır."
+                Options = [AutomaticLanguage, TurkishAndEnglish, .. LanguageTags.Keys],
+                Description = "Klavye düzenine göre seçilirse etkin uygulamanın klavye dili kullanılır. Türkçe + English seçeneği iki dili birlikte denetler; her iki dil de Windows'ta yüklü olmalıdır."
             },
             new SettingDescriptor
             {
@@ -138,6 +141,11 @@ public sealed class AutoCorrectModule : ITweakModule
 
     internal static string ResolveLanguageTag(string setting, string keyboardLanguageTag) =>
         LanguageTags.TryGetValue(setting, out var tag) ? tag : keyboardLanguageTag;
+
+    internal static IReadOnlyList<string> ResolveLanguageTags(string setting, string keyboardLanguageTag) =>
+        setting == TurkishAndEnglish
+            ? [TurkishLanguageTag, EnglishLanguageTag]
+            : [ResolveLanguageTag(setting, keyboardLanguageTag)];
 
     private void ReadSettings()
     {
@@ -217,11 +225,21 @@ public sealed class AutoCorrectModule : ITweakModule
         try
         {
             if (!IsActive || _spellChecker is null) return;
-            var tag = ResolveLanguageTag(_language, keyboardTag);
-            var correction = _spellChecker.FindCorrection(word, tag);
-            if (correction is null) return;
+            var languageTags = ResolveLanguageTags(_language, keyboardTag);
+            var supportedTags = languageTags.Where(_spellChecker.IsLanguageSupported).ToArray();
+            if (supportedTags.Length != languageTags.Count) return;
+            if (supportedTags.Length > 1 && supportedTags.Any(tag => _spellChecker.IsCorrect(word, tag))) return;
+
+            var preferredTag = supportedTags.Contains(keyboardTag, StringComparer.OrdinalIgnoreCase)
+                ? keyboardTag
+                : supportedTags[0];
+            var orderedTags = supportedTags.OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, preferredTag) ? 0 : 1);
+            var result = orderedTags
+                .Select(tag => (Tag: tag, Correction: _spellChecker.FindCorrection(word, tag)))
+                .FirstOrDefault(candidate => candidate.Correction is not null);
+            if (result.Correction is null) return;
             if (sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
-            var replacement = MatchCase(word, correction, WindowsSpellChecker.GetCulture(tag));
+            var replacement = MatchCase(word, result.Correction, WindowsSpellChecker.GetCulture(result.Tag));
             ReplaceTypedWord(word.Length + 1, replacement + " ");
             _context?.Log.Info($"Otomatik düzeltme: {word} → {replacement}");
         }

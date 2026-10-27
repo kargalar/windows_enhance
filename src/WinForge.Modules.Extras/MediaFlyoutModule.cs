@@ -396,13 +396,36 @@ public sealed class MediaFlyoutModule : ITweakModule
     private void RegisterHotkey()
     {
         if (_context?.Settings.GetBool("hotkey-enabled", true) == true)
-            _hotkey = _context.Hotkeys.Register(HotkeyModifiers.Win | HotkeyModifiers.Alt, VkM, OpenFlyout);
+            _hotkey = RegisterFlyoutHotkey(
+                "Win+Alt+M",
+                HotkeyModifiers.Win | HotkeyModifiers.Alt,
+                VkM);
     }
 
     private void RegisterVolumeHotkey()
     {
         if (_context?.Settings.GetBool("volume-hotkey-enabled", true) == true)
-            _volumeHotkey = _context.Hotkeys.Register(HotkeyModifiers.Control | HotkeyModifiers.Alt, VkV, OpenFlyout);
+            _volumeHotkey = RegisterFlyoutHotkey(
+                "Ctrl+Alt+V",
+                HotkeyModifiers.Control | HotkeyModifiers.Alt,
+                VkV);
+    }
+
+    private IDisposable? RegisterFlyoutHotkey(string shortcut, uint modifiers, uint virtualKey)
+    {
+        if (_context is null) return null;
+
+        try
+        {
+            return _context.Hotkeys.Register(modifiers, virtualKey, OpenFlyout);
+        }
+        catch (InvalidOperationException exception)
+        {
+            var message = $"{shortcut} başka bir uygulama tarafından kullanılıyor; Fluent Medya için bu kısayol etkinleştirilemedi.";
+            _context.Log.Error(message, exception);
+            _context.Notify(message);
+            return null;
+        }
     }
 
     private void RegisterExternalVolumeWatcher()
@@ -709,6 +732,7 @@ internal sealed class MediaFlyoutWindow : Window
     private readonly TextBlock _volumeText;
     private readonly TextBlock _muteButton;
     private readonly TextBlock _trackInfo;
+    private readonly TextBlock _artistInfo;
     private readonly TextBlock _lockState;
     private readonly Image _artwork;
     private readonly Button _shuffleButton;
@@ -749,6 +773,7 @@ internal sealed class MediaFlyoutWindow : Window
     private bool _hasInitialMediaSnapshot;
     private bool _wasPlaying;
     private bool _isClosed;
+    private bool _isFadingOut;
     private bool _showUpNext;
     private bool _isWindowPinned;
     private bool _hasCustomPosition;
@@ -771,7 +796,7 @@ internal sealed class MediaFlyoutWindow : Window
     public MediaFlyoutWindow()
     {
         Title = "Medya ve Ses";
-        Width = 360;
+        Width = 300;
         SizeToContent = SizeToContent.Height;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -783,30 +808,31 @@ internal sealed class MediaFlyoutWindow : Window
         FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
         WindowStartupLocation = WindowStartupLocation.Manual;
 
-        var content = new StackPanel { Margin = new Thickness(20) };
+        var content = new StackPanel { Margin = new Thickness(12) };
         _upNextText = new TextBlock
         {
             Name = "UpNextNotification",
-            Foreground = Brush("#F1F4F9"),
+            Foreground = Brush("#F5F5F5"),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Padding = new Thickness(10, 8, 10, 8),
             Margin = new Thickness(0, 0, 0, 10),
-            Background = Brush("#303B4B"),
+            Background = Brush("#292929"),
             Visibility = Visibility.Collapsed
         };
         content.Children.Add(_upNextText);
-        var headerRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 14) };
+        var headerRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 18) };
         _pinWindowButton = new Button
         {
             Name = "PinFlyoutButton",
-            Content = "📌 Sabitle",
+            Content = "Sabitle",
             ToolTip = "Flyout penceresini ekranda sabitle (otomatik kapanmasın)",
-            Height = 26,
+            Height = 28,
             Padding = new Thickness(10, 2, 10, 2),
-            Background = Brush("#252D3A"),
-            Foreground = Brush("#F1F4F9"),
-            BorderBrush = Brush("#374253"),
+            Background = Brush("#252525"),
+            Foreground = Brush("#E8E8E8"),
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
             FontSize = 11,
             Cursor = System.Windows.Input.Cursors.Hand
         };
@@ -816,8 +842,8 @@ internal sealed class MediaFlyoutWindow : Window
         headerRow.Children.Add(new TextBlock
         {
             Text = "HIZLI DENETİMLER",
-            Foreground = Brush("#A8B3C7"),
-            FontSize = 11,
+            Foreground = Brush("#A0A0A0"),
+            FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         });
@@ -826,46 +852,60 @@ internal sealed class MediaFlyoutWindow : Window
         _trackInfo = new TextBlock
         {
             Name = "MediaSessionInfo",
-            Text = "Medya oturumu bekleniyor",
-            Foreground = Brush("#E3E9F2"),
-            FontSize = 13,
+            Text = "",
+            Foreground = Brush("#F5F5F5"),
+            FontSize = 14,
+            FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 12)
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxHeight = 38
         };
-        var metadataRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 12) };
+        _artistInfo = new TextBlock
+        {
+            Name = "MediaArtistInfo",
+            Foreground = Brush("#A0A0A0"),
+            FontSize = 12,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        var trackDetails = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        trackDetails.Children.Add(_trackInfo);
+        trackDetails.Children.Add(_artistInfo);
+        var metadataRow = new DockPanel { LastChildFill = true };
         _artwork = new Image
         {
             Name = "MediaArtwork",
-            Width = 76,
-            Height = 76,
+            Width = 56,
+            Height = 56,
             Stretch = Stretch.UniformToFill,
             Margin = new Thickness(0, 0, 12, 0),
             ToolTip = "Albüm kapağı"
         };
         DockPanel.SetDock(_artwork, Dock.Left);
         metadataRow.Children.Add(_artwork);
-        _trackInfo.Margin = new Thickness(0, 0, 0, 0);
-        _trackInfo.VerticalAlignment = VerticalAlignment.Center;
-        metadataRow.Children.Add(_trackInfo);
+        metadataRow.Children.Add(trackDetails);
         content.Children.Add(metadataRow);
 
         _sessionSelector = new ComboBox
         {
             Name = "MediaSessionSelector",
             MinHeight = 30,
-            Margin = new Thickness(0, 0, 0, 10),
-            Background = Brush("#252D3A"),
-            Foreground = Brush("#F1F4F9"),
+            Margin = new Thickness(0, 0, 0, 6),
+            Background = Brush("#222222"),
+            Foreground = Brush("#F5F5F5"),
             ToolTip = "Denetlenecek medya uygulamasını seçin"
         };
         _sessionSelector.SelectionChanged += SessionSelectionChanged;
         content.Children.Add(_sessionSelector);
         _pinSessionButton = CreateButton("Oturumu sabitle", "Seçili medya oturumunu sonraki açılışlarda da tercih et", TogglePinnedSession);
+        _pinSessionButton.Height = 28;
+        _pinSessionButton.HorizontalContentAlignment = HorizontalAlignment.Left;
+        _pinSessionButton.Padding = new Thickness(8, 0, 8, 0);
         _pinSessionButton.Margin = new Thickness(0, 0, 0, 10);
         content.Children.Add(_pinSessionButton);
 
         var soundRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 6) };
-        _volumeText = new TextBlock { Foreground = Brush("#F1F4F9"), FontSize = 13, Width = 48, VerticalAlignment = VerticalAlignment.Center };
+        _volumeText = new TextBlock { Foreground = Brush("#F5F5F5"), FontSize = 12, Width = 48, VerticalAlignment = VerticalAlignment.Center };
         _muteButton = ButtonText("Sessiz");
         _muteButton.Cursor = System.Windows.Input.Cursors.Hand;
         _muteButton.MouseLeftButtonUp += (_, _) => ToggleMute();
@@ -875,7 +915,7 @@ internal sealed class MediaFlyoutWindow : Window
         soundRow.Children.Add(_volumeText);
         content.Children.Add(soundRow);
 
-        _volumeSlider = new Slider { Minimum = 0, Maximum = 100, TickFrequency = 1, IsMoveToPointEnabled = true, Margin = new Thickness(0, 0, 0, 16) };
+        _volumeSlider = new Slider { Minimum = 0, Maximum = 100, TickFrequency = 1, IsMoveToPointEnabled = true, Margin = new Thickness(0, 0, 0, 12) };
         _volumeSlider.ValueChanged += (_, args) => SetVolume((int)Math.Round(args.NewValue));
         content.Children.Add(_volumeSlider);
 
@@ -893,13 +933,17 @@ internal sealed class MediaFlyoutWindow : Window
         };
         content.Children.Add(_applicationMixerScroll);
 
-        var mediaRow = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 0, 18) };
-        mediaRow.Children.Add(CreateButton("⏮", "Önceki parça", SkipPrevious));
-        mediaRow.Children.Add(CreateButton("▶ / ❚❚", "Oynat veya duraklat", TogglePlayback));
-        mediaRow.Children.Add(CreateButton("⏭", "Sonraki parça", SkipNext));
+        var mediaRow = new UniformGrid { Columns = 3, Margin = new Thickness(0, 8, 0, 12) };
+        mediaRow.Children.Add(CreateButton("◀◀", "Önceki parça", SkipPrevious));
+        var playbackButton = CreateButton("▶  /  ❚❚", "Oynat veya duraklat", TogglePlayback);
+        playbackButton.Tag = "primary";
+        playbackButton.Background = Brushes.White;
+        playbackButton.Foreground = Brushes.Black;
+        mediaRow.Children.Add(playbackButton);
+        mediaRow.Children.Add(CreateButton("▶▶", "Sonraki parça", SkipNext));
         content.Children.Add(mediaRow);
 
-        var playbackOptions = new UniformGrid { Columns = 2, Margin = new Thickness(0, -10, 0, 10) };
+        var playbackOptions = new UniformGrid { Columns = 2, Margin = new Thickness(0, 0, 0, 10) };
         _shuffleButton = CreateButton("Karıştır: kapalı", "Karıştırmayı değiştir", ToggleShuffle);
         _repeatButton = CreateButton("Tekrar: kapalı", "Tekrar modunu değiştir", ToggleRepeat);
         playbackOptions.Children.Add(_shuffleButton);
@@ -940,21 +984,24 @@ internal sealed class MediaFlyoutWindow : Window
         timelineRow.Children.Add(_timelineSlider);
         content.Children.Add(timelineRow);
 
-        _lockState = new TextBlock { Foreground = Brush("#BCC6D6"), FontSize = 12, TextWrapping = TextWrapping.Wrap };
+        _lockState = new TextBlock { Foreground = Brush("#A0A0A0"), FontSize = 11, TextWrapping = TextWrapping.Wrap };
         content.Children.Add(new Border
         {
-            Background = Brush("#202633"),
-            CornerRadius = new CornerRadius(9),
-            Padding = new Thickness(11, 9, 11, 9),
+            Background = Brush("#202020"),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 8, 10, 8),
             Child = _lockState
         });
 
+        content.Children.Clear();
+        content.Children.Add(metadataRow);
+
         Content = new Border
         {
-            Background = Brush("#F2181E28"),
-            BorderBrush = Brush("#55465263"),
+            Background = Brush("#F2141414"),
+            BorderBrush = Brush("#333333"),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
+            CornerRadius = new CornerRadius(18),
             Child = content,
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 28, ShadowDepth = 5, Opacity = 0.35, Color = Colors.Black }
         };
@@ -1010,7 +1057,7 @@ internal sealed class MediaFlyoutWindow : Window
         {
             if (_isWindowPinned || IsMouseOver) return;
             _dismissTimer.Stop();
-            Hide();
+            Dismiss();
         };
         MouseEnter += (_, _) => _dismissTimer.Stop();
         MouseLeave += (_, _) => ResetDismissTimer(_lastTriggerWasAuto);
@@ -1043,9 +1090,7 @@ internal sealed class MediaFlyoutWindow : Window
     {
         if (IsVisible)
         {
-            _refreshTimer.Stop();
-            _dismissTimer.Stop();
-            Hide();
+            Dismiss();
             return;
         }
         ShowOrRefresh(activateWindow: true, isAutoTrigger: false);
@@ -1069,11 +1114,50 @@ internal sealed class MediaFlyoutWindow : Window
             Opacity = _animation == "fade" ? 0 : 1;
             Show();
             if (_animation == "fade")
-                BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
+                BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+                {
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                });
+        }
+        else if (_isFadingOut)
+        {
+            _isFadingOut = false;
+            BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 1, TimeSpan.FromMilliseconds(180))
+            {
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            });
         }
         if (activateWindow) Activate();
         _refreshTimer.Start();
         ResetDismissTimer(isAutoTrigger);
+    }
+
+    private void Dismiss()
+    {
+        if (!IsVisible || _isFadingOut) return;
+
+        _refreshTimer.Stop();
+        _dismissTimer.Stop();
+        if (_animation != "fade")
+        {
+            Hide();
+            return;
+        }
+
+        _isFadingOut = true;
+        var fadeOut = new DoubleAnimation(0, TimeSpan.FromMilliseconds(180))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+        };
+        fadeOut.Completed += (_, _) =>
+        {
+            if (!_isFadingOut || _isClosed) return;
+            _isFadingOut = false;
+            BeginAnimation(OpacityProperty, null);
+            Opacity = 1;
+            Hide();
+        };
+        BeginAnimation(OpacityProperty, fadeOut);
     }
 
     public void ConfigureUpNext(bool enabled) => _showUpNext = enabled;
@@ -1126,7 +1210,7 @@ internal sealed class MediaFlyoutWindow : Window
         _updatingWindowPinButton = true;
         try
         {
-            _pinWindowButton.Content = _isWindowPinned ? "📌 Sabitlendi" : "📌 Sabitle";
+            _pinWindowButton.Content = _isWindowPinned ? "Sabitlendi" : "Sabitle";
             _pinWindowButton.ToolTip = _isWindowPinned
                 ? "Flyout sabitlemesini kaldır (otomatik kapanmayı etkinleştir)"
                 : "Flyout penceresini ekranda sabitle (otomatik kapanmasın)";
@@ -1134,11 +1218,12 @@ internal sealed class MediaFlyoutWindow : Window
             {
                 var light = _theme == "light" || (_theme == "system" && IsWindowsLightTheme());
                 _pinWindowButton.Background = _isWindowPinned
-                    ? Brush(light ? "#D0E4FF" : "#2E4A70")
-                    : Brush(light ? "#E8EDF4" : "#252D3A");
-                _pinWindowButton.BorderBrush = _isWindowPinned
-                    ? Brush(light ? "#639CE8" : "#5A90D6")
-                    : Brush(light ? "#CBD3DF" : "#374253");
+                    ? Brush(light ? "#222222" : "#F0F0F0")
+                    : Brush(light ? "#E8E8E8" : "#252525");
+                _pinWindowButton.Foreground = _isWindowPinned
+                    ? Brush(light ? "#FFFFFF" : "#111111")
+                    : Brush(light ? "#222222" : "#E8E8E8");
+                _pinWindowButton.BorderBrush = Brushes.Transparent;
             }
         }
         finally
@@ -1225,27 +1310,32 @@ internal sealed class MediaFlyoutWindow : Window
     private void ApplyTheme()
     {
         var light = _theme == "light" || (_theme == "system" && IsWindowsLightTheme());
-        var background = light ? Brush("#F8FAFC") : Brush("#F2181E28");
-        var foreground = Brush(light ? "#17202C" : "#F1F4F9");
+        var background = light ? Brush("#F3F3F3") : Brush("#141414");
+        var foreground = Brush(light ? "#181818" : "#F2F2F2");
         if (Content is Border card)
         {
             card.Background = SystemParameters.HighContrast ? SystemColors.WindowBrush : background;
-            card.BorderBrush = SystemParameters.HighContrast ? SystemColors.WindowTextBrush : Brush(light ? "#CBD3DF" : "#55465263");
+            card.BorderBrush = SystemParameters.HighContrast ? SystemColors.WindowTextBrush : Brush(light ? "#D0D0D0" : "#303030");
         }
         foreach (var element in Descendants(this))
         {
             if (element is TextBlock text) text.Foreground = foreground;
-            else if (element is Border border) border.Background = Brush(light ? "#E8EDF4" : "#202633");
+            else if (element is Border border) border.Background = Brush(light ? "#E8E8E8" : "#202020");
             else if (element is Button button)
             {
-                button.Foreground = foreground;
-                button.Background = Brush(light ? "#E8EDF4" : "#252D3A");
-                button.BorderBrush = Brush(light ? "#CBD3DF" : "#374253");
+                var primary = button.Tag as string == "primary";
+                button.Foreground = primary
+                    ? Brush(light ? "#FFFFFF" : "#111111")
+                    : foreground;
+                button.Background = primary
+                    ? Brush(light ? "#222222" : "#F0F0F0")
+                    : Brush(light ? "#E6E6E6" : "#252525");
+                button.BorderBrush = Brushes.Transparent;
             }
             else if (element is ComboBox combo)
             {
                 combo.Foreground = foreground;
-                combo.Background = Brush(light ? "#E8EDF4" : "#252D3A");
+                combo.Background = Brush(light ? "#E6E6E6" : "#252525");
             }
         }
         if (SystemParameters.HighContrast)
@@ -1323,7 +1413,8 @@ internal sealed class MediaFlyoutWindow : Window
             ObserveSelectedSession(session);
             if (session is null)
             {
-                _trackInfo.Text = "Medya oturumu bekleniyor";
+                _trackInfo.Text = "";
+                _artistInfo.Text = "";
                 _lastMediaKey = null;
                 _wasPlaying = false;
                 _hasInitialMediaSnapshot = true;
@@ -1353,14 +1444,16 @@ internal sealed class MediaFlyoutWindow : Window
             _lastMediaKey = mediaKey;
             _wasPlaying = isPlaying;
             _hasInitialMediaSnapshot = true;
-            _trackInfo.Text = string.IsNullOrWhiteSpace(properties.Artist) ? title : $"{title}\n{properties.Artist}";
+            _trackInfo.Text = title;
+            _artistInfo.Text = properties.Artist;
             await RefreshArtworkAsync(properties, session);
             RefreshPlaybackOptions(session);
             UpdateTimeline(session);
         }
         catch
         {
-            _trackInfo.Text = "Medya bilgisi alınamadı";
+            _trackInfo.Text = "";
+            _artistInfo.Text = "";
             _artwork.Source = null;
             _artworkKey = null;
             _shuffleButton.IsEnabled = false;
@@ -1661,9 +1754,8 @@ internal sealed class MediaFlyoutWindow : Window
         if (choices.Length == 0)
         {
             _selectedSession = null;
-            _trackInfo.Text = _mediaAppFilterMode == "all"
-                ? "Medya oturumu bekleniyor"
-                : "Filtreye uyan medya uygulaması yok";
+            _trackInfo.Text = "";
+            _artistInfo.Text = "";
         }
     }
 
@@ -1822,12 +1914,14 @@ internal sealed class MediaFlyoutWindow : Window
         {
             Content = label,
             ToolTip = tooltip,
-            Height = 40,
-            Margin = new Thickness(3),
-            Background = Brush("#252D3A"),
-            Foreground = Brush("#F1F4F9"),
-            BorderBrush = Brush("#374253"),
-            FontSize = 13,
+            Height = 36,
+            Margin = new Thickness(2),
+            Padding = new Thickness(8, 0, 8, 0),
+            Background = Brush("#252525"),
+            Foreground = Brush("#F2F2F2"),
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            FontSize = 12,
             Cursor = System.Windows.Input.Cursors.Hand
         };
         button.Click += action;
@@ -1840,7 +1934,7 @@ internal sealed class MediaFlyoutWindow : Window
         keybd_event(virtualKey, 0, 2, UIntPtr.Zero);
     }
 
-    private static TextBlock ButtonText(string label) => new() { Text = label, Foreground = Brush("#B9C7E0"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+    private static TextBlock ButtonText(string label) => new() { Text = label, Foreground = Brush("#BDBDBD"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
     private static SolidColorBrush Brush(string color) => new((Color)ColorConverter.ConvertFromString(color)!);
 
     private static POINT GetCursorPoint()

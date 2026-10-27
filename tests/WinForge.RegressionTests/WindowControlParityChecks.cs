@@ -26,7 +26,7 @@ internal static class WindowControlParityChecks
         var module = new WindowControlModule();
         var button = module.Settings.Single(setting => setting.Key == "LMB");
         var wheel = module.Settings.Single(setting => setting.Key == "Scroll");
-        check(button.Options!.Length == 26 && wheel.Options!.Length == 10,
+        check(button.Options!.Length == 27 && wheel.Options!.Length == 10,
             "Own window engine offers every prior button/wheel action, native zone placement and all-window list");
         var context = new SettingsContext();
         context.Settings.Set("MMBB", "AltTabList");

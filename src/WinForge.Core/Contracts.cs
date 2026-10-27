@@ -6,6 +6,7 @@ public enum SettingKind
     Number,
     Text,
     Choice,
+    Palette,
     Action
 }
 
@@ -52,6 +53,12 @@ public interface IModuleContext
     void Notify(string message);
 }
 
+/// <summary>Shows a transient brightness indicator on the display being adjusted.</summary>
+public interface IDisplayBrightnessOverlayContext
+{
+    void ShowDisplayBrightness(int percent, string deviceName);
+}
+
 /// <summary>A searchable action contributed by an active module.</summary>
 public sealed record QuickAction(string Id, string Name, string SearchTerms, Action Execute);
 
@@ -75,11 +82,19 @@ public interface IQuickActionService
 public interface IWindowPlacementContext : IModuleContext
 {
     bool TryPlaceWindowInZone(IntPtr window, POINT point);
+    void BeginWindowZoneDrag(IntPtr window);
+    bool EndWindowZoneDrag(IntPtr window, bool canceled);
 }
 
 public interface IWindowZoneProvider
 {
     bool TryPlaceWindowInZone(IntPtr window, POINT point);
+}
+
+public interface IWindowZoneDragProvider : IWindowZoneProvider
+{
+    void BeginWindowZoneDrag(IntPtr window);
+    bool EndWindowZoneDrag(IntPtr window, bool canceled);
 }
 
 public interface ITweakModule

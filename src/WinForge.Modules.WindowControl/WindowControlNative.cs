@@ -40,6 +40,8 @@ internal static partial class WindowControlNative
     [DllImport("user32.dll")] internal static extern uint GetDoubleClickTime();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool IsZoomed(IntPtr window);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowPlacement(IntPtr window, ref WindowPlacement placement);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetWindowPlacement(IntPtr window, ref WindowPlacement placement);
+    [DllImport("user32.dll", EntryPoint = "ShowWindow")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ShowWindowSynchronously(IntPtr window, int command);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool ShowWindowAsync(IntPtr window, int command);
     [DllImport("user32.dll")] internal static extern IntPtr MonitorFromPoint(POINT point, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);

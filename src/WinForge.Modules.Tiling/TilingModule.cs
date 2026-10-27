@@ -6,10 +6,14 @@ using RECT = WinForge.Core.RECT;
 
 namespace WinForge.Modules.Tiling;
 
-public sealed class TilingModule : ITweakModule, IWindowZoneProvider
+public class TilingModule : ITweakModule, IWindowZoneDragProvider
 {
     private const int GWL_EXSTYLE = -20;
+    private const int GWL_STYLE = -16;
     private const uint GW_OWNER = 4;
+    private const long WS_POPUP = unchecked((int)0x80000000);
+    private const long WS_OVERLAPPEDWINDOW = 0x00CF0000;
+    private const long WS_EX_TOPMOST = 0x00000008;
     private const long WS_EX_TOOLWINDOW = 0x00000080;
     private const long WS_EX_NOACTIVATE = 0x08000000;
     private const int DWMWA_CLOAKED = 14;
@@ -25,8 +29,31 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     private const uint VkDown = 0x28;
     private const uint MONITOR_DEFAULTTONEAREST = 2;
     private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_FRAMECHANGED = 0x0020;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private static readonly IntPtr HWND_NOTOPMOST = new(-2);
     private const int AutoTileMode = 0;
     private const int ZoneMoveMode = 1;
+    private const int DefaultZoneMergeDistance = 24;
+    private const int SW_MAXIMIZE = 3;
+    private const string DefaultZoneActiveColor = "#4CC2FF";
+    private const string DefaultZoneInactiveColor = "#6B6B6B";
+
+    private static readonly IReadOnlyDictionary<string, string> ZoneColorPalette = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["#4CC2FF"] = "Turkuaz",
+        ["#0078D4"] = "Mavi",
+        ["#005A9E"] = "Lacivert",
+        ["#107C10"] = "Yeşil",
+        ["#498205"] = "Zeytin yeşili",
+        ["#C19C00"] = "Altın sarısı",
+        ["#CA5010"] = "Turuncu",
+        ["#C50F1F"] = "Kırmızı",
+        ["#8764B8"] = "Mor",
+        ["#C30052"] = "Fuşya",
+        ["#6B6B6B"] = "Gri"
+    };
 
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint EVENT_SYSTEM_MOVESIZESTART = 0x000A;
@@ -38,6 +65,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     private const uint EVENT_OBJECT_HIDE = 0x8003;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+    private static readonly TimeSpan NewWindowPlacementDelay = TimeSpan.FromMilliseconds(250);
 
     private static readonly HashSet<string> IgnoredClasses = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -53,9 +81,12 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     private readonly WinEventDelegate _handler;
     private IModuleContext? _context;
     private Timer? _timer;
+    private DispatcherTimer? _zonePlacementTimer;
     private IDisposable? _nextZoneWindowHotkey;
     private IDisposable? _previousZoneWindowHotkey;
     private readonly List<IDisposable> _zoneMoveHotkeys = new();
+    private readonly HashSet<IntPtr> _pendingZoneWindows = new();
+    private readonly object _pendingZoneWindowsLock = new();
     private int _gap = 8;
     private int _layout;
     private int _masterPercent = 55;
@@ -64,8 +95,12 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     private int _pulses;
     private bool _dragging;
     private readonly Dictionary<IntPtr, RECT> _placed = new();
+    private readonly Dictionary<IntPtr, FullscreenWindowState> _fullscreenWindows = new();
     private readonly Dictionary<string, List<IntPtr>> _zoneCycleOrders = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IntPtr> _order = new();
+    private readonly object _autoTileLock = new();
+    private readonly List<(IntPtr Handle, RECT Bounds)> _dragSlots = new();
+    private RECT _dragStartBounds;
     private readonly HashSet<IntPtr> _orderedHandles = new();
     private ZonePreviewWindow? _zonePreview;
     private DispatcherTimer? _zoneTimer;
@@ -85,26 +120,47 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     private bool _keyboardZoneSelectionActive;
     private POINT _lastZoneCursor;
     private int _lastZoneDirectionMask;
+    private int _zoneMergeDistance = DefaultZoneMergeDistance;
+    private bool _zoneShowNumbers = true;
+    private string _zoneActiveColor = DefaultZoneActiveColor;
+    private string _zoneInactiveColor = DefaultZoneInactiveColor;
+    private int _zoneBorderThickness = 2;
+    private bool _zoneAutoPlaceNewWindows = true;
+    private bool _zoneDragUsesWindowControl;
+    private string _dragStartMonitorName = string.Empty;
+    private bool _dragStartedWithAllZonesOccupied;
+    private readonly int _configuredMode;
 
-    public TilingModule() => _handler = OnWinEvent;
+    public TilingModule() : this(AutoTileMode) { }
 
-    public string Id => "auto-tiling";
-    public string Name => "Pencere Yönetimi";
-    public string Category => "Verimlilik";
-    public string Description => "Otomatik tam ekran döşeme ile FancyZones benzeri sürükle-bırak bölge yerleşimi arasında seçim yapın.";
-    public string? Warning => "Otomatik döşeme bazı uygulamaların minimum boyut kısıtları nedeniyle boşluk bırakabilir. Tam ekran uygulamalar ve küçük araç pencereleri atlanır.";
+    protected TilingModule(int mode)
+    {
+        _configuredMode = mode;
+        _mode = mode;
+        _handler = OnWinEvent;
+        Settings = CreateSettings(mode);
+    }
+
+    public virtual string Id => "auto-tiling";
+    public virtual string Name => "Tam Ekran Pencere Yönetimi";
+    public virtual string Category => "Verimlilik";
+    public virtual string Description => "Açık pencereleri otomatik olarak Ana + yığın, Izgara veya Sütunlar düzeninde yerleştirir.";
+    public virtual string? Warning => "Otomatik döşeme bazı uygulamaların minimum boyut kısıtları nedeniyle boşluk bırakabilir. Tam ekran uygulamalar ve küçük araç pencereleri atlanır.";
     public bool IsActive { get; private set; }
 
-    public IReadOnlyList<SettingDescriptor> Settings { get; } = new[]
+    public IReadOnlyList<SettingDescriptor> Settings { get; }
+
+    private static IReadOnlyList<SettingDescriptor> CreateSettings(int mode)
     {
+        var settings = new[]
+        {
         new SettingDescriptor
         {
-            Key = "mode",
-            Label = "Çalışma modu",
-            Kind = SettingKind.Choice,
-            Options = new[] { "Otomatik tam ekran döşeme", "Bölgeli pencere taşıma (FancyZones)" },
-            Default = "Otomatik tam ekran döşeme",
-            Description = "Otomatik döşeme açık pencereleri yerleştirir. Bölgeli modda pencereyi sürüklerken Shift tuşunu basılı tutup vurgulanan bölgeye bırakın; ok tuşlarıyla seçin, Ctrl+ok ile bitişik bölgeleri birleştirip pencereyi genişletin."
+            Key = "zone-auto-place-new-windows",
+            Label = "Yeni pencereleri boş bölgelere yerleştir",
+            Kind = SettingKind.Toggle,
+            Default = true,
+            Description = "Yeni açılan uygun pencereleri aynı ekrandaki en az dolu bölgeye yerleştirir."
         },
         new SettingDescriptor
         {
@@ -162,6 +218,54 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         },
         new SettingDescriptor
         {
+            Key = "zone-show-numbers",
+            Label = "Bölge numaralarını göster",
+            Kind = SettingKind.Toggle,
+            Default = true,
+            Description = "Sürükleme önizlemesinde her bölgenin numarasını gösterir."
+        },
+        new SettingDescriptor
+        {
+            Key = "zone-active-color",
+            Label = "Etkin alan rengi",
+            Kind = SettingKind.Palette,
+            Options = ZoneColorPalette.Keys.ToArray(),
+            OptionLabels = ZoneColorPalette,
+            Default = DefaultZoneActiveColor,
+            Description = "Seçili alanın rengini paletten seçin."
+        },
+        new SettingDescriptor
+        {
+            Key = "zone-inactive-color",
+            Label = "Pasif alan rengi",
+            Kind = SettingKind.Palette,
+            Options = ZoneColorPalette.Keys.ToArray(),
+            OptionLabels = ZoneColorPalette,
+            Default = DefaultZoneInactiveColor,
+            Description = "Seçilmemiş alanların rengini paletten seçin."
+        },
+        new SettingDescriptor
+        {
+            Key = "zone-border-thickness",
+            Label = "Bölge kenarlığı kalınlığı (px)",
+            Kind = SettingKind.Number,
+            Default = 2,
+            Min = 1,
+            Max = 12,
+            Description = "Etkin ve pasif bölge kenarlıklarının kalınlığını ayarlar."
+        },
+        new SettingDescriptor
+        {
+            Key = "zone-merge-distance",
+            Label = "Birleştirme algılama mesafesi (px)",
+            Kind = SettingKind.Number,
+            Default = DefaultZoneMergeDistance,
+            Min = 0,
+            Max = 200,
+            Description = "İmleç bir bölme çizgisine bu kadar yaklaştığında komşu bölgeleri birleştirerek vurgular; ızgara kesişiminde dört alanı birlikte seçer."
+        },
+        new SettingDescriptor
+        {
             Key = "zone-monitor-grid-profiles",
             Label = "Monitör başına ızgara profilleri",
             Kind = SettingKind.Text,
@@ -203,9 +307,14 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
             Default = 8,
             Min = 0,
             Max = 48,
-            Description = "Yalnızca pencereler arasındaki boşluk; ekran kenarlarına pencereler sıfıra sıfır oturur."
+            Description = "Otomatik döşemede pencere, FancyZones'ta bölge arası boşluk. Ekran kenarlarına sıfır boşluk uygulanır."
         }
-    };
+        };
+
+        return mode == ZoneMoveMode
+            ? settings.Where(setting => setting.Key.StartsWith("zone-", StringComparison.Ordinal) || setting.Key == "gap").ToArray()
+            : settings.Where(setting => setting.Key is "layout" or "master-percent" or "prevent-minimize" or "gap").ToArray();
+    }
 
     public void Initialize(IModuleContext context) => _context = context;
 
@@ -213,6 +322,15 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     {
         IsActive = true;
         _timer = new Timer(_ => Retile(), null, Timeout.Infinite, Timeout.Infinite);
+        _zonePlacementTimer = new DispatcherTimer(DispatcherPriority.Input)
+        {
+            Interval = NewWindowPlacementDelay
+        };
+        _zonePlacementTimer.Tick += (_, _) =>
+        {
+            _zonePlacementTimer.Stop();
+            PlacePendingWindowsInZones();
+        };
         _zoneTimer = new DispatcherTimer(DispatcherPriority.Input)
         {
             Interval = TimeSpan.FromMilliseconds(30)
@@ -230,8 +348,12 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     public void Deactivate()
     {
         IsActive = false;
+        foreach (var window in _fullscreenWindows.Keys.ToArray()) RestoreFullscreenWindow(window, restorePlacement: true);
         _timer?.Dispose();
         _timer = null;
+        _zonePlacementTimer?.Stop();
+        _zonePlacementTimer = null;
+        lock (_pendingZoneWindowsLock) _pendingZoneWindows.Clear();
         _nextZoneWindowHotkey?.Dispose();
         _nextZoneWindowHotkey = null;
         _previousZoneWindowHotkey?.Dispose();
@@ -245,11 +367,16 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         _zonePreview?.Close();
         _zonePreview = null;
         _draggedWindow = IntPtr.Zero;
+        _dragging = false;
+        _dragSlots.Clear();
+        _zoneDragUsesWindowControl = false;
+        _dragStartMonitorName = string.Empty;
+        _dragStartedWithAllZonesOccupied = false;
 
         foreach (var hook in _hooks) UnhookWinEvent(hook);
         _hooks.Clear();
 
-        _context?.Log.Info("Otomatik döşeme kapatıldı.");
+        _context?.Log.Info(_mode == ZoneMoveMode ? "FancyZones kapatıldı." : "Otomatik döşeme kapatıldı.");
     }
 
     public void Apply()
@@ -268,11 +395,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     private void ReadSettings()
     {
         var settings = _context?.Settings;
-        var mode = settings?.GetString("mode", "Otomatik tam ekran döşeme") ?? "Otomatik tam ekran döşeme";
-        _mode = mode.Equals("Bölgeli pencere taşıma (FancyZones)", StringComparison.CurrentCultureIgnoreCase) ||
-                mode.Equals("Shift ile bölgeye taşı", StringComparison.CurrentCultureIgnoreCase)
-            ? ZoneMoveMode
-            : AutoTileMode;
+        _mode = _configuredMode;
 
         var zoneLayout = settings?.GetString("zone-layout", "İki sütun") ?? "İki sütun";
         _zoneLayout = zoneLayout.Equals("Üç sütun", StringComparison.CurrentCultureIgnoreCase) ? 1
@@ -287,6 +410,12 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         _monitorGridProfiles = ParseMonitorGridProfiles(settings?.GetString("zone-monitor-grid-profiles", "") ?? "");
         var zoneActivation = settings?.GetString("zone-activation", "Shift tuşuyla etkinleştir") ?? "Shift tuşuyla etkinleştir";
         _requireShiftForZones = !zoneActivation.Equals("Sürüklerken otomatik göster", StringComparison.CurrentCultureIgnoreCase);
+        _zoneMergeDistance = Math.Clamp(settings?.GetInt("zone-merge-distance", DefaultZoneMergeDistance) ?? DefaultZoneMergeDistance, 0, 200);
+        _zoneShowNumbers = settings?.GetBool("zone-show-numbers", true) ?? true;
+        _zoneActiveColor = ResolvePaletteColor(settings?.GetString("zone-active-color", DefaultZoneActiveColor), DefaultZoneActiveColor);
+        _zoneInactiveColor = ResolvePaletteColor(settings?.GetString("zone-inactive-color", DefaultZoneInactiveColor), DefaultZoneInactiveColor);
+        _zoneBorderThickness = Math.Clamp(settings?.GetInt("zone-border-thickness", 2) ?? 2, 1, 12);
+        _zoneAutoPlaceNewWindows = settings?.GetBool("zone-auto-place-new-windows", true) ?? true;
 
         _gap = Math.Clamp(_context?.Settings.GetInt("gap", 8) ?? 8, 0, 48);
         _masterPercent = Math.Clamp(_context?.Settings.GetInt("master-percent", 55) ?? 55, 30, 80);
@@ -296,6 +425,16 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         _layout = layout.Equals("Izgara", StringComparison.CurrentCultureIgnoreCase) ? 1
             : layout.Equals("Sütunlar", StringComparison.CurrentCultureIgnoreCase) ? 2
             : 0;
+    }
+
+    private static string ResolvePaletteColor(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        var normalized = value.Trim();
+        if (normalized.Length != 7 || normalized[0] != '#') return fallback;
+        for (var index = 1; index < normalized.Length; index++)
+            if (!Uri.IsHexDigit(normalized[index])) return fallback;
+        return normalized.ToUpperInvariant();
     }
 
     private void RegisterZoneWindowSwitchingHotkeys()
@@ -435,8 +574,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
             MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) != targetMonitor)
             return false;
 
-        Native.GetWindowThreadProcessId(hwnd, out var processId);
-        return processId != (uint)Environment.ProcessId;
+        return true;
     }
 
     private bool TryGetCycleFrameBounds(IntPtr hwnd, out RECT bounds)
@@ -503,13 +641,14 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         Hook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_SHOW);
         Hook(EVENT_OBJECT_HIDE, EVENT_OBJECT_HIDE);
 
-        _context?.Log.Info("Otomatik döşeme etkin.");
+        _context?.Log.Info(_mode == ZoneMoveMode ? "FancyZones etkin." : "Otomatik döşeme etkin.");
     }
 
     private void Hook(uint min, uint max)
     {
+        var flags = WINEVENT_OUTOFCONTEXT | (_mode == AutoTileMode ? WINEVENT_SKIPOWNPROCESS : 0);
         var hook = SetWinEventHook(min, max, IntPtr.Zero, _handler, 0, 0,
-            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            flags);
         if (hook != IntPtr.Zero) _hooks.Add(hook);
         else _context?.Log.Error($"WinEvent kancası kurulamadı: 0x{min:X}");
     }
@@ -519,32 +658,18 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     {
         if (idObject != 0) return;
 
+        if (_mode == ZoneMoveMode && eventType == EVENT_OBJECT_SHOW && _zoneAutoPlaceNewWindows)
+            QueueNewWindowForZonePlacement(hwnd);
+
         if (eventType == EVENT_SYSTEM_MOVESIZESTART)
         {
-            _dragging = true;
-            _draggedWindow = hwnd;
-            _zoneDragArmed = false;
-            _selectedZone = -1;
-            _selectedZones.Clear();
-            _keyboardZoneSelectionActive = false;
-            _lastZoneDirectionMask = 0;
-            if (_mode == ZoneMoveMode) _zoneTimer?.Start();
+            BeginZoneDrag(hwnd, usesWindowControl: false);
             return;
         }
 
         if (eventType == EVENT_SYSTEM_MOVESIZEEND)
         {
-            _dragging = false;
-            _zoneTimer?.Stop();
-            if (_mode == ZoneMoveMode && _zoneDragArmed && _selectedZone >= 0)
-                ApplySelectedZone(hwnd);
-            _zonePreview?.ClosePreview();
-            _draggedWindow = IntPtr.Zero;
-            _zoneDragArmed = false;
-            _selectedZone = -1;
-            _selectedZones.Clear();
-            _keyboardZoneSelectionActive = false;
-            _lastZoneDirectionMask = 0;
+            _ = EndZoneDrag(hwnd, canceled: false);
 
             if (_mode == ZoneMoveMode) return;
         }
@@ -554,6 +679,182 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         Restart(40);
     }
 
+    private void QueueNewWindowForZonePlacement(IntPtr hwnd)
+    {
+        if (!IsActive || hwnd == IntPtr.Zero) return;
+        lock (_pendingZoneWindowsLock) _pendingZoneWindows.Add(hwnd);
+        _zonePlacementTimer?.Stop();
+        _zonePlacementTimer?.Start();
+    }
+
+    public void BeginWindowZoneDrag(IntPtr window)
+    {
+        if (!IsActive) return;
+        BeginZoneDrag(window, usesWindowControl: true);
+    }
+
+    public bool EndWindowZoneDrag(IntPtr window, bool canceled) => EndZoneDrag(window, canceled);
+
+    private void BeginZoneDrag(IntPtr window, bool usesWindowControl)
+    {
+        if (!IsActive || !Native.IsWindow(window)) return;
+        lock (_autoTileLock)
+        {
+            if (_dragging && _draggedWindow == window) return;
+            RestoreFullscreenWindow(window, restorePlacement: true);
+            _dragging = true;
+            _draggedWindow = window;
+            _zoneDragUsesWindowControl = usesWindowControl;
+            _zoneDragArmed = false;
+            _selectedZone = -1;
+            _selectedZones.Clear();
+            _keyboardZoneSelectionActive = false;
+            _lastZoneDirectionMask = 0;
+            _dragStartedWithAllZonesOccupied = false;
+            _dragStartMonitorName = string.Empty;
+            _dragSlots.Clear();
+            if (_mode == AutoTileMode && _placed.ContainsKey(window) && Native.GetWindowRect(window, out _dragStartBounds))
+            {
+                var dragMonitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+                foreach (var handle in _order)
+                    if (_placed.ContainsKey(handle) && Native.IsWindowVisible(handle) && !Native.IsIconic(handle) &&
+                        MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST) == dragMonitor &&
+                        TryGetVisibleFrameBounds(handle, out var bounds))
+                        _dragSlots.Add((handle, bounds));
+            }
+            if (_mode == ZoneMoveMode && TryGetMonitorWorkArea(window, out var monitor, out var monitorName, out var workArea))
+            {
+                ApplyMonitorGridProfile(monitorName);
+                _dragStartMonitorName = monitorName;
+                _dragStartedWithAllZonesOccupied = AreAllZonesOccupied(
+                    CountOccupiedZones(CreateZones(workArea), monitor, IntPtr.Zero));
+                _zoneTimer?.Start();
+            }
+        }
+    }
+
+    private bool EndZoneDrag(IntPtr window, bool canceled)
+    {
+        if (!_dragging || _draggedWindow != window) return false;
+        if (_mode == ZoneMoveMode && !canceled) UpdateZonePreview();
+        var handled = _mode == ZoneMoveMode && !canceled && _zoneDragArmed && _selectedZone >= 0;
+        lock (_autoTileLock)
+        {
+            if (_mode == AutoTileMode && !canceled && Native.GetCursorPos(out var cursor) &&
+                Native.GetWindowRect(window, out var bounds) &&
+                (bounds.Left != _dragStartBounds.Left || bounds.Top != _dragStartBounds.Top) &&
+                bounds.Right - bounds.Left == _dragStartBounds.Right - _dragStartBounds.Left &&
+                bounds.Bottom - bounds.Top == _dragStartBounds.Bottom - _dragStartBounds.Top)
+            {
+                var target = FindTileDropTarget(_dragSlots, cursor);
+                if (Native.IsWindow(target) && Native.IsWindowVisible(target) && !Native.IsIconic(target))
+                    handled = SwapTileOrder(_order, window, target);
+            }
+            _dragSlots.Clear();
+            _dragging = false;
+        }
+        _zoneTimer?.Stop();
+        if (handled && _mode == ZoneMoveMode)
+            ApplySelectedZone(window);
+        _zonePreview?.ClosePreview();
+        _draggedWindow = IntPtr.Zero;
+        _zoneDragUsesWindowControl = false;
+        _zoneDragArmed = false;
+        _selectedZone = -1;
+        _selectedZones.Clear();
+        _keyboardZoneSelectionActive = false;
+        _lastZoneDirectionMask = 0;
+        _dragStartedWithAllZonesOccupied = false;
+        _dragStartMonitorName = string.Empty;
+        if (_mode == AutoTileMode && IsActive)
+        {
+            Interlocked.Exchange(ref _pulses, 5);
+            Restart(40);
+        }
+        return handled;
+    }
+
+    internal static IntPtr FindTileDropTarget(IReadOnlyList<(IntPtr Handle, RECT Bounds)> slots, POINT cursor)
+    {
+        foreach (var (handle, bounds) in slots)
+            if (cursor.X >= bounds.Left && cursor.X < bounds.Right &&
+                cursor.Y >= bounds.Top && cursor.Y < bounds.Bottom)
+                return handle;
+        return IntPtr.Zero;
+    }
+
+    internal static bool SwapTileOrder(IList<IntPtr> order, IntPtr window, IntPtr target)
+    {
+        var sourceIndex = order.IndexOf(window);
+        var targetIndex = order.IndexOf(target);
+        if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex) return false;
+        (order[sourceIndex], order[targetIndex]) = (order[targetIndex], order[sourceIndex]);
+        return true;
+    }
+
+    private void PlacePendingWindowsInZones()
+    {
+        if (!IsActive || _mode != ZoneMoveMode || !_zoneAutoPlaceNewWindows) return;
+
+        IntPtr[] pending;
+        lock (_pendingZoneWindowsLock)
+        {
+            pending = _pendingZoneWindows.ToArray();
+            _pendingZoneWindows.Clear();
+        }
+
+        foreach (var hwnd in pending) PlaceNewWindowInAvailableZone(hwnd);
+    }
+
+    private void PlaceNewWindowInAvailableZone(IntPtr hwnd)
+    {
+        if (!Native.IsWindow(hwnd) || !Native.IsWindowVisible(hwnd) || Native.IsIconic(hwnd) ||
+            _placed.ContainsKey(hwnd) || !TryTileable(hwnd, out var monitor, out var workArea) ||
+            !TryGetMonitorWorkArea(hwnd, out _, out var monitorName, out _)) return;
+
+        ApplyMonitorGridProfile(monitorName);
+        var zones = CreateZones(workArea);
+        if (zones.Count == 0 || !TryGetVisibleFrameBounds(hwnd, out _)) return;
+
+        var occupancy = CountOccupiedZones(zones, monitor, hwnd);
+        if (AreAllZonesOccupied(occupancy))
+        {
+            EnterTrueFullscreen(hwnd, monitor);
+            return;
+        }
+
+        var targetZone = FindLeastOccupiedZone(occupancy);
+        if (targetZone >= 0) Move(hwnd, zones[targetZone]);
+    }
+
+    private int[] CountOccupiedZones(IReadOnlyList<RECT> zones, IntPtr monitor, IntPtr excludedWindow)
+    {
+        var occupancy = new int[zones.Count];
+        Native.EnumWindows((candidate, state) =>
+        {
+            if (candidate == excludedWindow || !Native.IsWindowVisible(candidate) || Native.IsIconic(candidate) ||
+                !TryTileable(candidate, out var candidateMonitor, out _) || candidateMonitor != monitor ||
+                !TryGetVisibleFrameBounds(candidate, out var bounds)) return true;
+
+            var occupiedZone = FindBestZone(zones, bounds);
+            if (occupiedZone >= 0) occupancy[occupiedZone]++;
+            return true;
+        }, IntPtr.Zero);
+        return occupancy;
+    }
+
+    private static bool AreAllZonesOccupied(IReadOnlyList<int> occupancy) =>
+        occupancy.Count > 0 && occupancy.All(count => count > 0);
+
+    internal static int FindLeastOccupiedZone(IReadOnlyList<int> occupancy)
+    {
+        if (occupancy.Count == 0) return -1;
+        var leastOccupied = 0;
+        for (var index = 1; index < occupancy.Count; index++)
+            if (occupancy[index] < occupancy[leastOccupied]) leastOccupied = index;
+        return leastOccupied;
+    }
+
     private void Retile()
     {
         if (!IsActive || _mode != AutoTileMode || _dragging) return;
@@ -561,15 +862,19 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
 
         try
         {
-            var windows = Collect();
-
-            foreach (var group in windows.GroupBy(w => w.Monitor))
+            lock (_autoTileLock)
             {
-                var handles = group.Select(w => w.Handle).ToList();
-                var work = group.First().Work;
-                if (_layout == 1) TileGrid(handles, work, _gap);
-                else if (_layout == 2) TileColumns(handles, work, _gap);
-                else TileMaster(handles, work, _gap);
+                if (_dragging) return;
+                var windows = Collect();
+
+                foreach (var group in windows.GroupBy(w => w.Monitor))
+                {
+                    var handles = group.Select(w => w.Handle).ToList();
+                    var work = group.First().Work;
+                    if (_layout == 1) TileGrid(handles, work, _gap);
+                    else if (_layout == 2) TileColumns(handles, work, _gap);
+                    else TileMaster(handles, work, _gap);
+                }
             }
         }
         catch (Exception ex)
@@ -588,7 +893,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         if (!IsActive || !_dragging || _mode != ZoneMoveMode || _draggedWindow == IntPtr.Zero)
             return;
 
-        if (_requireShiftForZones && (GetAsyncKeyState(VkShift) & 0x8000) == 0)
+        if (_requireShiftForZones && !_zoneDragUsesWindowControl && (GetAsyncKeyState(VkShift) & 0x8000) == 0)
         {
             ClearZoneSelection();
             return;
@@ -602,6 +907,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
 
         ApplyMonitorGridProfile(monitorName);
         var zones = CreateZones(workArea);
+        GetZoneGridDimensions(out var columns, out var rows);
         var directionMask = ReadZoneDirectionMask();
         var newlyPressedDirections = directionMask & ~_lastZoneDirectionMask;
         _lastZoneDirectionMask = directionMask;
@@ -613,10 +919,13 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         if (!_keyboardZoneSelectionActive)
         {
             var hoveredZone = FindZone(zones, cursor);
-            if (hoveredZone != _selectedZone)
+            var selection = FindZonesNearDividers(zones, columns, rows, cursor, _zoneMergeDistance);
+            if (selection.Count == 0 && hoveredZone >= 0) selection.Add(hoveredZone);
+            var primaryZone = hoveredZone >= 0 ? hoveredZone : selection.FirstOrDefault(-1);
+            if (primaryZone != _selectedZone || !_selectedZones.SetEquals(selection))
             {
-                _selectedZone = hoveredZone;
-                SetSingleZoneSelection(hoveredZone);
+                _selectedZone = primaryZone;
+                SetZoneSelection(selection);
             }
             _lastZoneCursor = cursor;
         }
@@ -651,7 +960,8 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         RECT? mergedBounds = _selectedZones.Count > 1 && TryGetSpanBounds(zones, _selectedZones, _gap, out var selectedBounds)
             ? selectedBounds
             : null;
-        _zonePreview.ShowZones(workArea, zones, _selectedZones, scale, mergedBounds);
+        _zonePreview.ShowZones(workArea, zones, _selectedZones, scale, mergedBounds,
+            _zoneShowNumbers, _zoneActiveColor, _zoneInactiveColor, _zoneBorderThickness);
     }
 
     private void ClearZoneSelection()
@@ -669,6 +979,15 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         if (!Native.GetCursorPos(out var cursor) || !TryGetWorkArea(cursor, out var workArea, out var monitorName)) return;
         ApplyMonitorGridProfile(monitorName);
         var zones = CreateZones(workArea);
+        var monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        var wasFullAtDragStart = _dragStartedWithAllZonesOccupied &&
+                                 string.Equals(_dragStartMonitorName, monitorName, StringComparison.OrdinalIgnoreCase);
+        if (wasFullAtDragStart || AreAllZonesOccupied(CountOccupiedZones(zones, monitor, hwnd)) ||
+            (_selectedZones.Count == zones.Count && zones.Count > 0))
+        {
+            EnterTrueFullscreen(hwnd, monitor);
+            return;
+        }
         if (_selectedZones.Count > 1 && TryGetSpanBounds(zones, _selectedZones, _gap, out var spanBounds))
         {
             Move(hwnd, spanBounds);
@@ -681,10 +1000,16 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
 
     public bool TryPlaceWindowInZone(IntPtr window, POINT point)
     {
-        if (!IsActive || !Native.IsWindow(window) || !TryTileable(window, out _, out _) ||
+        if (!IsActive || _mode != ZoneMoveMode || !Native.IsWindow(window) || !TryTileable(window, out _, out _) ||
             !TryGetWorkArea(point, out var workArea, out var monitorName)) return false;
         ApplyMonitorGridProfile(monitorName);
         var zones = CreateZones(workArea);
+        var monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+        if (AreAllZonesOccupied(CountOccupiedZones(zones, monitor, window)))
+        {
+            EnterTrueFullscreen(window, monitor);
+            return _fullscreenWindows.ContainsKey(window);
+        }
         var zone = FindZone(zones, point);
         if (zone < 0) zone = FindNearestZone(zones, point);
         if (zone < 0) return false;
@@ -698,6 +1023,63 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
     {
         _selectedZones.Clear();
         if (zone >= 0) _selectedZones.Add(zone);
+    }
+
+    private void SetZoneSelection(IEnumerable<int> zones)
+    {
+        _selectedZones.Clear();
+        foreach (var zone in zones) _selectedZones.Add(zone);
+    }
+
+    private void GetZoneGridDimensions(out int columns, out int rows)
+    {
+        columns = _zoneLayout switch { 1 => 3, 2 => 2, 3 => _zoneColumns, _ => 2 };
+        rows = _zoneLayout switch { 2 => 2, 3 => _zoneRows, _ => 1 };
+    }
+
+    internal static HashSet<int> FindZonesNearDividers(IReadOnlyList<RECT> zones, int columns, int rows,
+        POINT cursor, int distance)
+    {
+        var hovered = FindZone(zones, cursor);
+        if (hovered < 0) hovered = FindNearestZone(zones, cursor);
+        var result = new HashSet<int>();
+        if (hovered < 0 || columns <= 0 || rows <= 0) return result;
+
+        var row = hovered / columns;
+        var column = hovered % columns;
+        var selectedRows = new HashSet<int> { row };
+        var selectedColumns = new HashSet<int> { column };
+        if (column + 1 < columns && IsNearVerticalDivider(zones[hovered], zones[hovered + 1], cursor.X, distance))
+            selectedColumns.Add(column + 1);
+        else if (column > 0 && IsNearVerticalDivider(zones[hovered - 1], zones[hovered], cursor.X, distance))
+            selectedColumns.Add(column - 1);
+
+        if (row + 1 < rows && IsNearHorizontalDivider(zones[hovered], zones[hovered + columns], cursor.Y, distance))
+            selectedRows.Add(row + 1);
+        else if (row > 0 && IsNearHorizontalDivider(zones[hovered - columns], zones[hovered], cursor.Y, distance))
+            selectedRows.Add(row - 1);
+
+        foreach (var selectedRow in selectedRows)
+            foreach (var selectedColumn in selectedColumns)
+            {
+                var index = selectedRow * columns + selectedColumn;
+                if (index >= 0 && index < zones.Count) result.Add(index);
+            }
+        return result;
+    }
+
+    private static bool IsNearVerticalDivider(RECT left, RECT right, int x, int distance)
+    {
+        if (Math.Min(left.Bottom, right.Bottom) <= Math.Max(left.Top, right.Top)) return false;
+        var divider = (left.Right + right.Left) / 2;
+        return Math.Abs(x - divider) <= distance;
+    }
+
+    private static bool IsNearHorizontalDivider(RECT top, RECT bottom, int y, int distance)
+    {
+        if (Math.Min(top.Right, bottom.Right) <= Math.Max(top.Left, bottom.Left)) return false;
+        var divider = (top.Bottom + bottom.Top) / 2;
+        return Math.Abs(y - divider) <= distance;
     }
 
     private static bool TryExtendZoneSelection(IReadOnlyList<RECT> zones, ISet<int> selection, int candidate, int gap)
@@ -1015,7 +1397,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
         if (!Native.IsWindowVisible(hwnd)) return false;
 
         Native.GetWindowThreadProcessId(hwnd, out var processId);
-        if (processId == (uint)Environment.ProcessId) return false;
+        if (_mode != ZoneMoveMode && processId == (uint)Environment.ProcessId) return false;
 
         var extended = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
         if ((extended & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) != 0) return false;
@@ -1176,6 +1558,7 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
 
     private void Move(IntPtr hwnd, RECT target)
     {
+        RestoreFullscreenWindow(hwnd, restorePlacement: true);
         if (!Native.GetWindowRect(hwnd, out var current)) return;
 
         var windowTarget = target;
@@ -1206,6 +1589,76 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
             SWP_NOZORDER | Native.SWP_NOACTIVATE);
 
         _placed[hwnd] = windowTarget;
+    }
+
+    private void EnterTrueFullscreen(IntPtr hwnd, IntPtr monitor)
+    {
+        RestoreFullscreenWindow(hwnd, restorePlacement: true);
+        if (!TryGetMonitorBounds(monitor, out var bounds)) return;
+
+        var placement = new WINDOWPLACEMENT { Length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+        if (!GetWindowPlacement(hwnd, ref placement)) return;
+
+        var style = Native.GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
+        var extendedStyle = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        _fullscreenWindows[hwnd] = new FullscreenWindowState(style, extendedStyle, placement);
+
+        ShowWindow(hwnd, SW_RESTORE);
+        var fullscreenStyle = (style & ~WS_OVERLAPPEDWINDOW) | WS_POPUP;
+        Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(fullscreenStyle));
+        if (!Native.SetWindowPos(hwnd, IntPtr.Zero, bounds.Left, bounds.Top,
+                bounds.Right - bounds.Left, bounds.Bottom - bounds.Top,
+                SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW))
+        {
+            RestoreFullscreenWindow(hwnd, restorePlacement: true);
+            return;
+        }
+
+        Native.SetForegroundWindow(hwnd);
+        _placed.Remove(hwnd);
+    }
+
+    private void RestoreFullscreenWindow(IntPtr hwnd, bool restorePlacement)
+    {
+        if (!_fullscreenWindows.Remove(hwnd, out var state) || !Native.IsWindow(hwnd)) return;
+
+        Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(state.Style));
+        Native.SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(state.ExtendedStyle));
+        var insertAfter = (state.ExtendedStyle & WS_EX_TOPMOST) != 0 ? HWND_TOPMOST : HWND_NOTOPMOST;
+        Native.SetWindowPos(hwnd, insertAfter, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        if (restorePlacement)
+        {
+            var placement = state.Placement;
+            placement.Length = Marshal.SizeOf<WINDOWPLACEMENT>();
+            SetWindowPlacement(hwnd, ref placement);
+        }
+    }
+
+    private static bool TryGetMonitorBounds(IntPtr monitor, out RECT bounds)
+    {
+        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info))
+        {
+            bounds = info.rcMonitor;
+            return true;
+        }
+
+        bounds = default;
+        return false;
+    }
+
+    private readonly record struct FullscreenWindowState(long Style, long ExtendedStyle, WINDOWPLACEMENT Placement);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WINDOWPLACEMENT
+    {
+        public int Length;
+        public int Flags;
+        public int ShowCommand;
+        public POINT MinPosition;
+        public POINT MaxPosition;
+        public RECT NormalPosition;
     }
 
     private static bool IsCloaked(IntPtr hwnd) =>
@@ -1248,6 +1701,12 @@ public sealed class TilingModule : ITweakModule, IWindowZoneProvider
 
     [DllImport("user32.dll")]
     private static extern bool IsZoomed(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT placement);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT placement);
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(IntPtr hwnd, int command);

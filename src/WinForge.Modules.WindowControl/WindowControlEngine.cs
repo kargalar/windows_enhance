@@ -14,6 +14,8 @@ internal sealed class WindowControlEngine : IDisposable
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly DispatcherTimer _timer;
     private readonly Action<Exception> _report;
+    private readonly Action<IntPtr>? _beginZoneDrag;
+    private readonly Func<IntPtr, bool, bool>? _endZoneDrag;
     private readonly HashSet<int> _swallowedButtons = new();
     private readonly Dictionary<IntPtr, WindowAppearance> _appearance = new();
     private readonly HashSet<int> _heldHotclicks = new();
@@ -35,10 +37,13 @@ internal sealed class WindowControlEngine : IDisposable
     private bool _spaceDown;
 
     internal WindowControlEngine(WindowControlOptions options, Action<Exception> report, Func<IntPtr, POINT, bool>? placeInZone = null,
-        Func<IntPtr, bool, IReadOnlyList<IntPtr>>? candidates = null)
+        Func<IntPtr, bool, IReadOnlyList<IntPtr>>? candidates = null, Action<IntPtr>? beginZoneDrag = null,
+        Func<IntPtr, bool, bool>? endZoneDrag = null)
     {
         _options = options;
         _report = report;
+        _beginZoneDrag = beginZoneDrag;
+        _endZoneDrag = endZoneDrag;
         _candidates = candidates ?? WindowActions.Candidates;
         _actions = new WindowActions(report, placeInZone, _candidates);
         _timer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(8) };
@@ -444,6 +449,11 @@ internal sealed class WindowControlEngine : IDisposable
             Place(gesture.Window, gesture.Original);
         }
         if (_cursor.X != gesture.Start.X || _cursor.Y != gesture.Start.Y) gesture.DragStarted = true;
+        if (gesture.DragStarted && !gesture.ZoneDragStarted && _beginZoneDrag is not null)
+        {
+            gesture.ZoneDragStarted = true;
+            _beginZoneDrag(gesture.Window);
+        }
         var bounds = WindowGeometry.Drag(gesture.Original, gesture.Start, _cursor, gesture.Edges,
             gesture.MinWidth, gesture.MinHeight, gesture.MaxWidth, gesture.MaxHeight);
         if (gesture.Edges == ResizeEdges.None && !modifiers.SuppressSnap && (_options.MagnetMode != "Kapalı" || modifiers.Shift))
@@ -484,8 +494,9 @@ internal sealed class WindowControlEngine : IDisposable
         if (_gesture is not { } gesture) return;
         UpdateGesture(modifiers);
         if (_gesture is null) return;
+        var zoneHandled = gesture.ZoneDragStarted && _endZoneDrag?.Invoke(gesture.Window, false) == true;
         var snapped = false;
-        if (gesture.DragStarted && gesture.Edges == ResizeEdges.None && _options.EdgeSnap && !modifiers.SuppressSnap)
+        if (!zoneHandled && gesture.DragStarted && gesture.Edges == ResizeEdges.None && _options.EdgeSnap && !modifiers.SuppressSnap)
         {
             var confined = modifiers.Control || modifiers.Shift;
             var work = confined ? gesture.OriginWork : WindowActions.WorkArea(gesture.Window, _cursor);
@@ -521,6 +532,8 @@ internal sealed class WindowControlEngine : IDisposable
             foreach (var neighbor in gesture.Neighbors)
                 if (gesture.ChangedNeighbors.Contains(neighbor.Window) && SameWindow(neighbor.Window, neighbor.ProcessId)) Place(neighbor.Window, neighbor.Original);
         }
+        if (_gesture is { ZoneDragStarted: true } canceledGesture)
+            _ = _endZoneDrag?.Invoke(canceledGesture.Window, true);
         _gesture?.Opacity?.Dispose();
         _snapSuppressed = false;
         _gesture = null;
@@ -699,6 +712,7 @@ internal sealed class WindowControlEngine : IDisposable
         internal TemporaryOpacity? Opacity { get; } = opacity;
         internal WindowBounds OriginWork { get; } = originWork;
         internal bool DragStarted { get; set; }
+        internal bool ZoneDragStarted { get; set; }
         internal WindowBounds InitialBounds { get; } = initialBounds;
         internal bool HadSnapRestore { get; } = hadSnapRestore;
         internal WindowBounds Last { get; set; } = original;

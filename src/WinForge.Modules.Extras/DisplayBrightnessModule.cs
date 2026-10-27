@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WinForge.Core;
@@ -314,7 +315,16 @@ internal sealed class DisplayBrightnessSession : IDisposable
     {
         ThrowIfDisposed();
         if (InternalPanelBrightnessService.IsInternalId(id))
-            return InternalPanelBrightnessService.SetBrightness(id, percent, out appliedPercent);
+        {
+            var panel = _internalPanels.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (panel is null)
+            {
+                appliedPercent = 0;
+                return false;
+            }
+            return InternalPanelBrightnessService.SetBrightness(panel, percent, out appliedPercent);
+        }
         var monitor = FindPhysicalMonitor(id);
         if (monitor is null)
         {
@@ -352,20 +362,39 @@ internal sealed class DisplayBrightnessSession : IDisposable
         return true;
     }
 
-    internal (int Supported, int Applied, int Failed) AdjustBrightnessForDevice(string deviceName, int delta)
+    internal (int Supported, int Applied, int Failed, int? Brightness) AdjustBrightnessForDevice(string deviceName, int delta)
     {
         ThrowIfDisposed();
+        return AdjustBrightness(FindMonitorsForDevice(Monitors, deviceName), delta);
+    }
+
+    internal (int Supported, int Applied, int Failed, int? Brightness) AdjustBrightnessForAllDisplays(int delta)
+    {
+        ThrowIfDisposed();
+        return AdjustBrightness(Monitors, delta);
+    }
+
+    private (int Supported, int Applied, int Failed, int? Brightness) AdjustBrightness(
+        IEnumerable<DisplayBrightnessMonitor> monitors, int delta)
+    {
         var supported = 0;
         var applied = 0;
         var failed = 0;
-        foreach (var monitor in FindMonitorsForDevice(Monitors, deviceName))
+        var appliedBrightnessTotal = 0;
+        var supportedMonitors = monitors
+            .Where(monitor => monitor.SupportsBrightness || monitor.VcpBrightness is not null)
+            .ToArray();
+        Parallel.ForEach(supportedMonitors, monitor =>
         {
-            if (!monitor.SupportsBrightness && monitor.VcpBrightness is null) continue;
-            supported++;
-            if (SetBrightness(monitor.Id, Math.Clamp(monitor.Percent + delta, 0, 100), out _)) applied++;
-            else failed++;
-        }
-        return (supported, applied, failed);
+            Interlocked.Increment(ref supported);
+            if (SetBrightness(monitor.Id, Math.Clamp(monitor.Percent + delta, 0, 100), out var appliedPercent))
+            {
+                Interlocked.Increment(ref applied);
+                Interlocked.Add(ref appliedBrightnessTotal, appliedPercent);
+            }
+            else Interlocked.Increment(ref failed);
+        });
+        return (supported, applied, failed, applied == 0 ? null : (int)Math.Round(appliedBrightnessTotal / (double)applied));
     }
 
     internal static IReadOnlyList<DisplayBrightnessMonitor> FindMonitorsForDevice(
@@ -552,13 +581,18 @@ internal sealed class DisplayBrightnessSession : IDisposable
 
 public sealed class DisplayBrightnessModule : ITweakModule
 {
-    private const uint VkF11 = 0x7A;
-    private const uint VkF12 = 0x7B;
+    private const string DefaultDimBrightnessHotkey = "Ctrl+Alt+F11";
+    private const string DefaultBrightenBrightnessHotkey = "Ctrl+Alt+F12";
     private IModuleContext? _context;
     private DisplayBrightnessWindow? _window;
     private DispatcherTimer? _scheduleTimer;
     private IDisposable? _dimBrightnessHotkey;
     private IDisposable? _brightenBrightnessHotkey;
+    private GlobalMouseHook? _brightnessMouseHook;
+    private readonly SemaphoreSlim _brightnessAdjustmentGate = new(1, 1);
+    private readonly object _hotkeySessionSync = new();
+    private DisplayBrightnessSession? _hotkeyBrightnessSession;
+    private Task<DisplayBrightnessSession>? _hotkeyBrightnessDiscovery;
     private int? _lastScheduledBrightness;
     private bool _scheduleApplying;
 
@@ -642,6 +676,22 @@ public sealed class DisplayBrightnessModule : ITweakModule
                 Min = 1,
                 Max = 20,
                 Description = "Her kısayol basışında uygulanacak parlaklık değişimi."
+            },
+            new SettingDescriptor
+            {
+                Key = "brightness-dim-hotkey",
+                Label = "Parlaklığı azaltma kısayolu",
+                Kind = SettingKind.Text,
+                Default = DefaultDimBrightnessHotkey,
+                Description = "Örnek: Ctrl+Alt+F11 veya Ctrl+Alt+MouseWheelDown. Ctrl, Alt, Shift ya da Win kullanın."
+            },
+            new SettingDescriptor
+            {
+                Key = "brightness-brighten-hotkey",
+                Label = "Parlaklığı artırma kısayolu",
+                Kind = SettingKind.Text,
+                Default = DefaultBrightenBrightnessHotkey,
+                Description = "Örnek: Ctrl+Alt+F12 veya Ctrl+Alt+MouseWheelUp. Azaltma kısayolundan farklı olmalıdır."
             }
         };
     }
@@ -652,6 +702,7 @@ public sealed class DisplayBrightnessModule : ITweakModule
     {
         IsActive = true;
         RegisterBrightnessHotkeys();
+        StartHotkeyBrightnessDiscovery();
         UpdateScheduleTimer();
     }
 
@@ -662,6 +713,7 @@ public sealed class DisplayBrightnessModule : ITweakModule
         _scheduleTimer = null;
         _lastScheduledBrightness = null;
         ReleaseBrightnessHotkeys();
+        DisposeHotkeyBrightnessSessionIfIdle();
         _window?.Close();
         _window = null;
     }
@@ -683,17 +735,105 @@ public sealed class DisplayBrightnessModule : ITweakModule
 
         try
         {
-            _dimBrightnessHotkey = _context.Hotkeys.Register(
-                HotkeyModifiers.Control | HotkeyModifiers.Alt, VkF11, () => _ = AdjustBrightnessAtCursorAsync(-1));
-            _brightenBrightnessHotkey = _context.Hotkeys.Register(
-                HotkeyModifiers.Control | HotkeyModifiers.Alt, VkF12, () => _ = AdjustBrightnessAtCursorAsync(1));
+            var dimHotkey = ParseBrightnessHotkey(_context.Settings.GetString("brightness-dim-hotkey", DefaultDimBrightnessHotkey));
+            var brightenHotkey = ParseBrightnessHotkey(_context.Settings.GetString("brightness-brighten-hotkey", DefaultBrightenBrightnessHotkey));
+            if (dimHotkey == brightenHotkey)
+                throw new FormatException("Parlaklığı artırma ve azaltma kısayolları farklı olmalıdır.");
+
+            RegisterBrightnessShortcut(dimHotkey, -1);
+            RegisterBrightnessShortcut(brightenHotkey, 1);
+            if (dimHotkey.WheelDirection != 0 || brightenHotkey.WheelDirection != 0)
+            {
+                _brightnessMouseHook = new GlobalMouseHook();
+                _brightnessMouseHook.WheelMoved += OnBrightnessWheelMoved;
+                _brightnessMouseHook.Install();
+            }
         }
         catch (Exception exception)
         {
             ReleaseBrightnessHotkeys();
             _context.Log.Error("Power Display parlaklık kısayolları kaydedilemedi.", exception);
-            _context.Notify("Power Display kısayolları kullanılamıyor; Ctrl+Alt+F11/F12 başka bir uygulamada kayıtlı olabilir.");
+            _context.Notify($"Power Display parlaklık kısayolları kaydedilemedi: {exception.Message}");
         }
+    }
+
+    private void RegisterBrightnessShortcut((uint Modifiers, uint VirtualKey, int WheelDirection) shortcut, int direction)
+    {
+        if (shortcut.WheelDirection != 0) return;
+        var registration = _context!.Hotkeys.Register(shortcut.Modifiers, shortcut.VirtualKey,
+            () => _ = AdjustBrightnessAsync(direction));
+        if (direction < 0) _dimBrightnessHotkey = registration;
+        else _brightenBrightnessHotkey = registration;
+    }
+
+    private void OnBrightnessWheelMoved(POINT point, int wheelDelta)
+    {
+        if (!IsActive || _context is null || wheelDelta == 0) return;
+        var modifiers = GetPressedHotkeyModifiers();
+        var dimShortcut = ParseBrightnessHotkey(_context.Settings.GetString("brightness-dim-hotkey", DefaultDimBrightnessHotkey));
+        var brightenShortcut = ParseBrightnessHotkey(_context.Settings.GetString("brightness-brighten-hotkey", DefaultBrightenBrightnessHotkey));
+        var wheelDirection = Math.Sign(wheelDelta);
+
+        if (dimShortcut.WheelDirection == wheelDirection && dimShortcut.Modifiers == modifiers)
+            _ = AdjustBrightnessAsync(-1);
+        else if (brightenShortcut.WheelDirection == wheelDirection && brightenShortcut.Modifiers == modifiers)
+            _ = AdjustBrightnessAsync(1);
+    }
+
+    private static uint GetPressedHotkeyModifiers()
+    {
+        uint modifiers = 0;
+        if (IsKeyDown(0x11)) modifiers |= HotkeyModifiers.Control;
+        if (IsKeyDown(0x12)) modifiers |= HotkeyModifiers.Alt;
+        if (IsKeyDown(0x10)) modifiers |= HotkeyModifiers.Shift;
+        if (IsKeyDown(0x5B) || IsKeyDown(0x5C)) modifiers |= HotkeyModifiers.Win;
+        return modifiers;
+    }
+
+    private static bool IsKeyDown(int virtualKey) => (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int virtualKey);
+
+    internal static (uint Modifiers, uint VirtualKey, int WheelDirection) ParseBrightnessHotkey(string value)
+    {
+        var parts = value.Split('+', StringSplitOptions.TrimEntries);
+        if (parts.Length < 2 || parts.Any(string.IsNullOrWhiteSpace))
+            throw new FormatException("Kısayolu Ctrl+Alt+F11 biçiminde yazın.");
+
+        uint modifiers = 0;
+        for (var index = 0; index < parts.Length - 1; index++)
+        {
+            var modifier = parts[index].ToLowerInvariant() switch
+            {
+                "ctrl" or "control" => HotkeyModifiers.Control,
+                "alt" => HotkeyModifiers.Alt,
+                "shift" => HotkeyModifiers.Shift,
+                "win" or "windows" => HotkeyModifiers.Win,
+                _ => throw new FormatException($"'{parts[index]}' tanınan bir kısayol değiştiricisi değil.")
+            };
+            if ((modifiers & modifier) != 0)
+                throw new FormatException("Kısayolda aynı değiştiriciyi birden fazla yazmayın.");
+            modifiers |= modifier;
+        }
+
+        var wheelDirection = parts[^1].ToLowerInvariant() switch
+        {
+            "mousewheelup" or "wheelup" => 1,
+            "mousewheeldown" or "wheeldown" => -1,
+            _ => 0
+        };
+        if (wheelDirection != 0) return (modifiers, 0, wheelDirection);
+
+        if (!Enum.TryParse<Key>(parts[^1], true, out var key) ||
+            key is Key.None or Key.DeadCharProcessed or Key.ImeProcessed or Key.System or Key.LeftCtrl or Key.RightCtrl or
+                Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+            throw new FormatException($"'{parts[^1]}' geçerli bir işlem tuşu değil.");
+
+        var virtualKey = KeyInterop.VirtualKeyFromKey(key);
+        if (virtualKey is < 1 or > 254)
+            throw new FormatException($"'{parts[^1]}' eşlenebilir bir tuş değil.");
+        return (modifiers, (uint)virtualKey, 0);
     }
 
     private void ReleaseBrightnessHotkeys()
@@ -702,36 +842,81 @@ public sealed class DisplayBrightnessModule : ITweakModule
         _dimBrightnessHotkey = null;
         _brightenBrightnessHotkey?.Dispose();
         _brightenBrightnessHotkey = null;
+        _brightnessMouseHook?.Dispose();
+        _brightnessMouseHook = null;
     }
 
-    private async Task AdjustBrightnessAtCursorAsync(int direction)
+    private async Task AdjustBrightnessAsync(int direction)
     {
         if (!IsActive || _context is null) return;
-        if (!DisplayBrightnessSession.TryGetCursorDisplayDeviceName(out var deviceName))
-        {
-            _context.Notify("İmlecin bulunduğu ekran belirlenemedi.");
-            return;
-        }
-
         var step = Math.Clamp(_context.Settings.GetInt("brightness-hotkey-step", 5), 1, 20);
+        await _brightnessAdjustmentGate.WaitAsync();
         try
         {
+            if (!IsActive || _context is null) return;
             var result = await Task.Run(() =>
             {
-                using var session = DisplayBrightnessSession.Discover();
-                return session.AdjustBrightnessForDevice(deviceName, step * direction);
+                var session = _hotkeyBrightnessSession;
+                if (session is null)
+                {
+                    Task<DisplayBrightnessSession> discovery;
+                    lock (_hotkeySessionSync)
+                        discovery = _hotkeyBrightnessDiscovery ??= Task.Run(DisplayBrightnessSession.Discover);
+                    session = discovery.GetAwaiter().GetResult();
+                    _hotkeyBrightnessSession = session;
+                    lock (_hotkeySessionSync)
+                        if (ReferenceEquals(_hotkeyBrightnessDiscovery, discovery)) _hotkeyBrightnessDiscovery = null;
+                }
+                return session.AdjustBrightnessForAllDisplays(step * direction);
             });
             if (!IsActive) return;
             if (result.Supported == 0)
-                _context.Notify("İmlecin bulunduğu ekranda DDC/CI parlaklık denetimi bulunamadı.");
+                _context.Notify("Bağlı ekranlarda desteklenen bir parlaklık denetimi bulunamadı.");
             else if (result.Failed > 0)
-                _context.Notify($"Ekran parlaklığı: {result.Applied}/{result.Supported} fiziksel ekrana uygulandı; {result.Failed} hata.");
+                _context.Notify($"Ekran parlaklığı: {result.Applied}/{result.Supported} ekrana uygulandı; {result.Failed} hata.");
+            if (result.Brightness is { } brightness && _context is IDisplayBrightnessOverlayContext overlay)
+                overlay.ShowDisplayBrightness(brightness, "all-displays");
         }
         catch (Exception exception)
         {
             _context.Log.Error("Power Display kısayoluyla parlaklık değiştirilemedi.", exception);
             _context.Notify("Ekran parlaklığı değiştirilemedi: " + exception.Message);
         }
+        finally
+        {
+            if (!IsActive)
+                Interlocked.Exchange(ref _hotkeyBrightnessSession, null)?.Dispose();
+            _brightnessAdjustmentGate.Release();
+        }
+    }
+
+    private void DisposeHotkeyBrightnessSessionIfIdle()
+    {
+        if (!_brightnessAdjustmentGate.Wait(0)) return;
+        try
+        {
+            Interlocked.Exchange(ref _hotkeyBrightnessSession, null)?.Dispose();
+            Task<DisplayBrightnessSession>? discovery;
+            lock (_hotkeySessionSync)
+            {
+                discovery = _hotkeyBrightnessDiscovery;
+                _hotkeyBrightnessDiscovery = null;
+            }
+            if (discovery is not null) _ = DisposeDiscoveredSessionAsync(discovery);
+        }
+        finally { _brightnessAdjustmentGate.Release(); }
+    }
+
+    private void StartHotkeyBrightnessDiscovery()
+    {
+        lock (_hotkeySessionSync)
+            _hotkeyBrightnessDiscovery ??= Task.Run(DisplayBrightnessSession.Discover);
+    }
+
+    private static async Task DisposeDiscoveredSessionAsync(Task<DisplayBrightnessSession> discovery)
+    {
+        try { (await discovery.ConfigureAwait(false)).Dispose(); }
+        catch { }
     }
 
     private void UpdateScheduleTimer()
