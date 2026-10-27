@@ -19,6 +19,23 @@ internal static class SpellVocabulary
         "benim senin onun bizim sizin onların ve veya ya ile ama fakat lakin ancak çünkü " +
         "halbuki oysa madem gerek hem ne de da ki için gibi kadar göre karşı rağmen doğru " +
         "dolayı ötürü beri yana ait dair üzere karşın diye yani zira mademki öyleyse binaenaleyh " +
+        "mesela örneğin örnek örnekler örnekleri örnekte örnekten özellikle kesinlikle genellikle genelde " +
+        "çoğunlukla aslında zaten ayrıca ayriyeten üstelik oysaki nitekim şayet eğer mademki " +
+        "tamam tamamdır pekala peki elbette tabii tabii ki kuşkusuz şüphesiz muhakkak kesin net " +
+        "sürü sürüsü sürüyle sürüler bir sürü birçok birçoğu birkaçı birkaç biri birisi birileri birtakım " +
+        "yer yeri yerde yerden yere yerler yerleri yerlerde yerlerden yerlere yerinde yerine her yer her yerde her yerden " +
+        "var vardı vardır varsa varmış yok yoktu yoktur yoksa yokmuş yokken " +
+        "kısıtlı kısıtlama kısıtlamalar kısıtlandı kısıtlılık kısıtlamak kısıtlıdır kısıtlayıcı " +
+        "destek desteği desteğini destekte destekten destekler destekleri desteklemek destekliyor destekledi desteklemedi " +
+        "duruyor durdu duracak durur durmaz durmak durma durması durum durumu durumda durumlar durumlarda durumunda " +
+        "çoğu çoğunu çoğunda çoğundan çok çokça çoğul " +
+        "yanlış yanlışı yanlışım yanlışımı yanlışımız yanlışlar yanlışları yanlışlarım yanlışlarımı yanlışlıkla yanlışta yanlıştan " +
+        "metin metni metinde metinden metne metinler metinleri metinlerde metinlerden metinlere " +
+        "bile dahi hem de da ki mi mu mü mı kesin kesinlikle kesinlik kesinleşti " +
+        "gerek gereken gerekenler gerekeni gerekir gerekiyordu gerekecek gerekebilir gerekirse gerekli gereklilik gereksiz " +
+        "olmuş olmuştu oldu olacak oluyor olurlar olur olmaz olursak olması olmasını olmadığı olmadı olsaydı " +
+        "düzelt düzeltmek düzeltme düzeltmesi düzeltilme düzeltildi düzeltilecek düzeltir düzeltmez düzeltti düzeltmedi düzeltmediği düzelttiği düzeltiyor düzeltmiyor düzeltelim düzeltin " +
+        "altyapı altyapısı altyapıyı altyapıda sistem sistemler sistemi sistemde yazılım yazılımlar yazılımı donanım program programlar programı kod kodlar versiyon versiyonu sürüm sürümü güncelleme " +
         // Questions
         "ne neden niçin niye nasıl nerede nereye nereden ne zaman kim kimi kime kimde kimden kimin " +
         "hangisi hangi kaç kaçta kaça ne kadar nasıl bir " +

@@ -572,7 +572,25 @@ internal static class FeatureVerificationChecks
         check(isAvailable, "Native spell engine is available and independent of Windows COM or language packs");
 
         var isCorrectMethod = spellEngineType.GetMethod("IsCorrect", BindingFlags.Instance | BindingFlags.Public)!;
-        var findCorrectionMethod = spellEngineType.GetMethod("FindCorrection", BindingFlags.Instance | BindingFlags.Public)!;
+        var findCorrectionMethod = spellEngineType.GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .First(m => m.Name == "FindCorrection" && m.GetParameters().Length == 8);
+
+        // Real-world typing checks
+        var realWorldTypos = new (string Input, string Expected)[]
+        {
+            ("tamma", "tamam"),
+            ("ncak", "ancak"),
+            ("düzetlemdi", "düzeltmedi"),
+            ("melela", "mesela"),
+            ("birsürü", "bir sürü")
+        };
+        foreach (var (input, expected) in realWorldTypos)
+        {
+            var isCorrect = (bool)isCorrectMethod.Invoke(engine, [input, "tr-TR"])!;
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [input, "tr-TR", null, true, true, true, true, null]);
+            check(!isCorrect && correction == expected, $"Real-world typo '{input}' is corrected to '{expected}'");
+        }
+        check((bool)isCorrectMethod.Invoke(engine, ["düzeltmedi", "tr-TR"])!, "Valid conjugated verb 'düzeltmedi' is recognized as correct");
 
         // Turkish common typos
         var trTypos = new (string Typo, string Expected)[]
@@ -594,7 +612,7 @@ internal static class FeatureVerificationChecks
         foreach (var (typo, expected) in trTypos)
         {
             var isCorrect = (bool)isCorrectMethod.Invoke(engine, [typo, "tr-TR"])!;
-            var correction = (string?)findCorrectionMethod.Invoke(engine, [typo, "tr-TR", true, true, null]);
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [typo, "tr-TR", null, true, true, true, true, null]);
             check(!isCorrect && correction == expected, $"Turkish typo '{typo}' is corrected to '{expected}'");
         }
 
@@ -610,7 +628,7 @@ internal static class FeatureVerificationChecks
         };
         foreach (var (ascii, expected) in trDeasciify)
         {
-            var correction = (string?)findCorrectionMethod.Invoke(engine, [ascii, "tr-TR", true, true, null]);
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [ascii, "tr-TR", null, true, true, true, true, null]);
             check(correction == expected, $"Turkish de-asciifier converts '{ascii}' to '{expected}'");
         }
 
@@ -627,7 +645,7 @@ internal static class FeatureVerificationChecks
         foreach (var (typo, expected) in enTypos)
         {
             var isCorrect = (bool)isCorrectMethod.Invoke(engine, [typo, "en-US"])!;
-            var correction = (string?)findCorrectionMethod.Invoke(engine, [typo, "en-US", true, true, null]);
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [typo, "en-US", null, true, true, true, true, null]);
             check(!isCorrect && correction == expected, $"English typo '{typo}' is corrected to '{expected}'");
         }
 
@@ -657,10 +675,43 @@ internal static class FeatureVerificationChecks
         var lowerCase = (string)matchCaseMethod.Invoke(null, ["herkez", "herkes", trCulture])!;
         check(allCaps == "HERKES" && titleCase == "Herkes" && lowerCase == "herkes", "Case matching handles uppercase, titlecase, and lowercase with culture sensitivity");
 
+        // Context analysis tests (Bigram disambiguation & collocation typo fix)
+        var contextModelType = extras.GetType("WinForge.Modules.Extras.SpellContextModel")!;
+        var tryFindContextMethod = contextModelType.GetMethod("TryFindContextCorrection", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!;
+        var contextFixTr = (string?)tryFindContextMethod.Invoke(null, ["her", "ver", "tr-TR"]);
+        check(contextFixTr == "yer", "Context model correctly disambiguates collocation typo 'her ver' -> 'her yer'");
+        var contextFixEn = (string?)tryFindContextMethod.Invoke(null, ["in", "teh", "en-US"]);
+        check(contextFixEn == "the", "Context model correctly fixes English collocation typo 'in teh' -> 'in the'");
+
+        var fullContextCorrection = (string?)findCorrectionMethod.Invoke(engine, ["ver", "tr-TR", "her", true, true, true, true, null]);
+        check(fullContextCorrection == "yer", "SpellEngine resolves context correction when previous word is provided");
+
+        // Personalized frequency & adaptive learning tests
+        var trackerType = extras.GetType("WinForge.Modules.Extras.UserFrequencyTracker")!;
+        var trackerInstanceProp = trackerType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!;
+        var tracker = trackerInstanceProp.GetValue(null)!;
+        var recordWordMethod = trackerType.GetMethod("RecordWord", BindingFlags.Instance | BindingFlags.Public)!;
+        var isLearnedMethod = trackerType.GetMethod("IsLearned", BindingFlags.Instance | BindingFlags.Public)!;
+        var clearMethod = trackerType.GetMethod("Clear", BindingFlags.Instance | BindingFlags.Public)!;
+
+        clearMethod.Invoke(tracker, null);
+        const string customJargon = "AntigravityCore";
+        recordWordMethod.Invoke(tracker, [customJargon, false]);
+        recordWordMethod.Invoke(tracker, [customJargon, false]);
+        recordWordMethod.Invoke(tracker, [customJargon, false]);
+
+        var isLearned = (bool)isLearnedMethod.Invoke(tracker, [customJargon])!;
+        check(isLearned, "UserFrequencyTracker automatically learns unrecognized custom terms after repeated usage");
+        var isEngineCorrect = (bool)isCorrectMethod.Invoke(engine, [customJargon, "tr-TR"])!;
+        check(isEngineCorrect, "SpellEngine accepts dynamically learned user terms as valid words");
+        clearMethod.Invoke(tracker, null);
+
         // Module descriptor check
         var module = (ITweakModule)Activator.CreateInstance(autoCorrectModuleType)!;
         check(module.Id == "auto-correct", "AutoCorrectModule ID is 'auto-correct'");
         check(module.Settings.Any(s => s.Key == "undo-on-backspace"), "AutoCorrectModule exposes undo-on-backspace toggle");
+        check(module.Settings.Any(s => s.Key == "context-analysis"), "AutoCorrectModule exposes context-analysis toggle");
+        check(module.Settings.Any(s => s.Key == "personalized-frequency"), "AutoCorrectModule exposes personalized-frequency toggle");
         check(module.Settings.Any(s => s.Key == "deasciify-turkish"), "AutoCorrectModule exposes deasciify-turkish toggle");
         check(module.Settings.Any(s => s.Key == "text-expansions"), "AutoCorrectModule exposes text-expansions toggle");
     }

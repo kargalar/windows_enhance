@@ -44,6 +44,9 @@ internal sealed class SpellEngine
         if (isTurkish && SpellLexicons.TurkishDeasciifierMap.ContainsKey(lowerWord)) return false;
         if (isEnglish && SpellLexicons.EnglishCommonTypos.ContainsKey(lowerWord)) return false;
 
+        // Check user-learned vocabulary
+        if (UserFrequencyTracker.Instance.IsLearned(lowerWord)) return true;
+
         // Check exact vocabulary
         if (isTurkish && (SpellVocabulary.TurkishWords.Contains(lowerWord) || SpellLexicons.TurkishTypoTargets.Contains(lowerWord))) return true;
         if (isEnglish && (SpellVocabulary.EnglishWords.Contains(lowerWord) || SpellLexicons.EnglishTypoTargets.Contains(lowerWord))) return true;
@@ -65,8 +68,22 @@ internal sealed class SpellEngine
     public string? FindCorrection(
         string word,
         string languageTag,
+        bool allowDeasciify,
+        bool allowExpansions,
+        IReadOnlyDictionary<string, string>? customReplacements = null) =>
+        FindCorrection(word, languageTag, null, true, allowDeasciify, allowExpansions, true, customReplacements);
+
+    public string? FindCorrection(string word, string languageTag) =>
+        FindCorrection(word, languageTag, null, true, true, true, true, null);
+
+    public string? FindCorrection(
+        string word,
+        string languageTag,
+        string? previousWord = null,
+        bool allowContext = true,
         bool allowDeasciify = true,
         bool allowExpansions = true,
+        bool allowLearning = true,
         IReadOnlyDictionary<string, string>? customReplacements = null)
     {
         if (string.IsNullOrWhiteSpace(word) || word.Length < 2) return null;
@@ -74,6 +91,7 @@ internal sealed class SpellEngine
 
         var culture = GetCulture(languageTag);
         var lowerWord = word.ToLower(culture);
+        var lowerPrevWord = string.IsNullOrWhiteSpace(previousWord) ? null : previousWord.ToLower(culture).Trim();
 
         // 1. Custom user replacements / snippets (highest priority)
         if (customReplacements != null && customReplacements.TryGetValue(lowerWord, out var custom))
@@ -83,17 +101,32 @@ internal sealed class SpellEngine
         if (allowExpansions && SpellLexicons.DefaultTextExpansions.TryGetValue(lowerWord, out var expansion))
             return expansion;
 
+        // 3. Context-induced typo correction (e.g. 'her ver' -> 'her yer')
+        if (allowContext && lowerPrevWord is not null)
+        {
+            var contextCorrection = SpellContextModel.TryFindContextCorrection(lowerPrevWord, lowerWord, languageTag);
+            if (contextCorrection is not null)
+                return contextCorrection;
+        }
+
         // Cache lookup for algorithmic corrections
-        var cacheKey = $"{languageTag}:{lowerWord}:{allowDeasciify}";
+        var cacheKey = $"{languageTag}:{lowerPrevWord}:{lowerWord}:{allowDeasciify}:{allowContext}";
         if (_correctionCache.TryGetValue(cacheKey, out var cached))
             return cached;
 
-        var correction = ComputeCorrection(lowerWord, languageTag, allowDeasciify, culture);
+        var correction = ComputeCorrection(lowerWord, languageTag, lowerPrevWord, allowContext, allowDeasciify, allowLearning, culture);
         _correctionCache[cacheKey] = correction;
         return correction;
     }
 
-    private string? ComputeCorrection(string lowerWord, string languageTag, bool allowDeasciify, CultureInfo culture)
+    private string? ComputeCorrection(
+        string lowerWord,
+        string languageTag,
+        string? lowerPrevWord,
+        bool allowContext,
+        bool allowDeasciify,
+        bool allowLearning,
+        CultureInfo culture)
     {
         var isTurkish = languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase);
         var isEnglish = languageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase);
@@ -124,20 +157,27 @@ internal sealed class SpellEngine
             }
         }
 
-        // 4. Candidate search with Keyboard-Proximity weighted Damerau-Levenshtein distance
+        // 4. Candidate search with Keyboard-Proximity weighted Damerau-Levenshtein distance + Context + Frequency
         var vocabulary = isTurkish ? SpellVocabulary.TurkishWords : SpellVocabulary.EnglishWords;
-        var candidate = FindBestCandidate(lowerWord, vocabulary, culture);
+        var candidate = FindBestCandidate(lowerWord, vocabulary, lowerPrevWord, allowContext, allowLearning, languageTag, culture);
 
         // If in dual language mode and no candidate found in preferred language, check alternate
         if (candidate is null && isTurkish)
-            candidate = FindBestCandidate(lowerWord, SpellVocabulary.EnglishWords, CultureInfo.InvariantCulture);
+            candidate = FindBestCandidate(lowerWord, SpellVocabulary.EnglishWords, lowerPrevWord, allowContext, allowLearning, "en-US", CultureInfo.InvariantCulture);
         else if (candidate is null && isEnglish)
-            candidate = FindBestCandidate(lowerWord, SpellVocabulary.TurkishWords, GetCulture("tr-TR"));
+            candidate = FindBestCandidate(lowerWord, SpellVocabulary.TurkishWords, lowerPrevWord, allowContext, allowLearning, "tr-TR", GetCulture("tr-TR"));
 
         return candidate;
     }
 
-    private static string? FindBestCandidate(string word, HashSet<string> vocabulary, CultureInfo culture)
+    private static string? FindBestCandidate(
+        string word,
+        HashSet<string> vocabulary,
+        string? previousWord,
+        bool allowContext,
+        bool allowLearning,
+        string languageTag,
+        CultureInfo culture)
     {
         string? bestCandidate = null;
         var lowestScore = double.MaxValue;
@@ -150,10 +190,18 @@ internal sealed class SpellEngine
             var lengthDiff = Math.Abs(word.Length - candidate.Length);
             if (lengthDiff > 2) continue;
 
-            // First character filter: same character or adjacent keyboard character
+            // Relaxed compatibility filter:
+            // Allow same char, adjacent key, missing initial letter (e.g. ncak -> ancak),
+            // extra initial letter, transposition, or short words <= 5.
             var candFirstChar = candidate[0];
-            if (candFirstChar != wordFirstChar && SpellLexicons.GetKeyDistance(wordFirstChar, candFirstChar) > 1.6)
-                continue;
+            var isCompatible =
+                candFirstChar == wordFirstChar ||
+                SpellLexicons.GetKeyDistance(wordFirstChar, candFirstChar) <= 1.8 ||
+                (candidate.Length > 1 && candidate[1] == wordFirstChar) ||
+                (word.Length > 1 && candidate[0] == word[1]) ||
+                word.Length <= 5;
+
+            if (!isCompatible) continue;
 
             // Calculate weighted distance
             var distance = CalculateWeightedDamerauLevenshtein(word, candidate);
@@ -166,6 +214,18 @@ internal sealed class SpellEngine
             if (wordFirstChar == candFirstChar) score -= 0.25;
             if (word[^1] == candidate[^1]) score -= 0.15;
             if (IsSubsequence(word, candidate)) score -= 0.20;
+
+            // Bigram Context bonus
+            if (allowContext && previousWord is not null)
+            {
+                score -= SpellContextModel.GetBigramBonus(previousWord, candidate, languageTag);
+            }
+
+            // Personalized user frequency bonus
+            if (allowLearning)
+            {
+                score -= UserFrequencyTracker.Instance.GetFrequencyBonus(candidate);
+            }
 
             if (score < lowestScore)
             {
@@ -285,16 +345,42 @@ internal sealed class SpellEngine
         return subIndex == sub.Length;
     }
 
+    private static readonly HashSet<string> ShortNounStems = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ev", "su", "el", "at", "ay", "un", "ot", "ok", "ip", "ek", "iş", "uç", "ad", "av", "öz", "ön", "yol", "gün", "kol", "baş", "göz", "diş", "dil", "can"
+    };
+
+    private static readonly HashSet<string> ShortVerbStems = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "gel", "git", "al", "ver", "ol", "yap", "et", "gör", "bak", "kal", "dur",
+        "çık", "gir", "yaz", "oku", "sev", "aç", "ye", "iç", "uyu", "koş", "sor",
+        "kaç", "bul", "duy", "bil", "koy", "tut", "at", "kes", "çiz", "dön", "bırak"
+    };
+
+    private static readonly HashSet<string> VerbalSuffixes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ma", "me", "madan", "meden", "makta", "mekte", "yor", "ıyor", "iyor", "uyor", "üyor",
+        "dı", "di", "du", "dü", "tı", "ti", "tu", "tü", "mış", "miş", "muş", "müş",
+        "acak", "ecek", "yacak", "yecek", "alım", "elim", "sın", "sin", "sun", "sün"
+    };
+
     private static bool IsValidTurkishInflection(string word)
     {
         if (word.Length < 4) return false;
+        if (SpellLexicons.TurkishCommonTypos.ContainsKey(word)) return false;
+        if (SpellLexicons.TurkishDeasciifierMap.ContainsKey(word)) return false;
 
         foreach (var suffix in SpellLexicons.TurkishSuffixes)
         {
             if (word.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
             {
                 var stem = word[..^suffix.Length];
-                if (stem.Length >= 2 && SpellVocabulary.TurkishWords.Contains(stem))
+                if (stem.Length < 2) continue;
+                if (stem.Length == 2 && !ShortNounStems.Contains(stem)) continue;
+                if (VerbalSuffixes.Contains(suffix) && stem.Length <= 3 && !ShortVerbStems.Contains(stem))
+                    continue;
+
+                if (SpellVocabulary.TurkishWords.Contains(stem))
                 {
                     // Check Turkish vowel harmony
                     if (HasTurkishVowelHarmony(stem, suffix)) return true;

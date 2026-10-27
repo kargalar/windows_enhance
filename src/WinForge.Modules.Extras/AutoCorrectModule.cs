@@ -62,9 +62,13 @@ public sealed class AutoCorrectModule : ITweakModule
     private bool _undoOnBackspace = true;
     private bool _deasciifyTurkish = true;
     private bool _allowTextExpansions = true;
+    private bool _contextAnalysis = true;
+    private bool _personalizedFrequency = true;
     private Dictionary<string, string> _customReplacements = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _excludedProcesses = new(StringComparer.OrdinalIgnoreCase);
     private LastCorrection? _lastCorrection;
+    private string? _previousWord;
+    private IntPtr _previousWordWindow;
 
     public AutoCorrectModule()
     {
@@ -97,6 +101,22 @@ public sealed class AutoCorrectModule : ITweakModule
                 Kind = SettingKind.Toggle,
                 Default = true,
                 Description = "Otomatik düzeltilen bir kelimenin hemen ardından Backspace'e basıldığında düzeltmeyi geri alır ve orijinal kelimeyi geri yükler."
+            },
+            new SettingDescriptor
+            {
+                Key = "context-analysis",
+                Label = "Bağlam analizi (Önceki kelimeye göre)",
+                Kind = SettingKind.Toggle,
+                Default = true,
+                Description = "Önceki kelimeye bakarak iki kelimelik tamlamaları ve bağlam hatalarını (ör. 'her ver' -> 'her yer') düzeltir."
+            },
+            new SettingDescriptor
+            {
+                Key = "personalized-frequency",
+                Label = "Kişiselleştirilmiş frekans ve öğrenme",
+                Kind = SettingKind.Toggle,
+                Default = true,
+                Description = "Sık kullandığınız kelimeleri önceliklendirir ve tekrar eden özel terimleri otomatik öğrenir."
             },
             new SettingDescriptor
             {
@@ -151,8 +171,8 @@ public sealed class AutoCorrectModule : ITweakModule
         _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
         if (_hook == IntPtr.Zero) throw new InvalidOperationException("Otomatik düzeltme klavye kancası kurulamadı.");
         _mouseHook = new GlobalMouseHook();
-        _mouseHook.LeftButtonDown += _ => ResetWord();
-        _mouseHook.RightButtonDown += _ => ResetWord();
+        _mouseHook.LeftButtonDown += _ => { ResetWord(); ClearPreviousWord(); };
+        _mouseHook.RightButtonDown += _ => { ResetWord(); ClearPreviousWord(); };
         _mouseHook.Install();
         IsActive = true;
     }
@@ -161,6 +181,7 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         IsActive = false;
         ResetWord();
+        ClearPreviousWord();
         _lastCorrection = null;
         _sessionIgnoredWords.Clear();
         _mouseHook?.Dispose();
@@ -171,6 +192,7 @@ public sealed class AutoCorrectModule : ITweakModule
             _hook = IntPtr.Zero;
         }
         _spellChecker = null;
+        UserFrequencyTracker.Instance.SaveImmediate();
     }
 
     public void Apply()
@@ -204,10 +226,18 @@ public sealed class AutoCorrectModule : ITweakModule
         _language = _context?.Settings.GetString("language", AutomaticLanguage) ?? AutomaticLanguage;
         _minimumWordLength = Math.Clamp(_context?.Settings.GetInt("minimum-word-length", MinimumWordLengthDefault) ?? MinimumWordLengthDefault, 2, 10);
         _undoOnBackspace = _context?.Settings.GetBool("undo-on-backspace", true) ?? true;
+        _contextAnalysis = _context?.Settings.GetBool("context-analysis", true) ?? true;
+        _personalizedFrequency = _context?.Settings.GetBool("personalized-frequency", true) ?? true;
         _deasciifyTurkish = _context?.Settings.GetBool("deasciify-turkish", true) ?? true;
         _allowTextExpansions = _context?.Settings.GetBool("text-expansions", true) ?? true;
         _customReplacements = ParseCustomReplacements(_context?.Settings.GetString("custom-replacements", DefaultCustomReplacements) ?? DefaultCustomReplacements);
         _excludedProcesses = QuickAccentModule.ParseExcludedProcesses(_context?.Settings.GetString("excluded-apps", "") ?? "");
+    }
+
+    private void ClearPreviousWord()
+    {
+        _previousWord = null;
+        _previousWordWindow = IntPtr.Zero;
     }
 
     private static Dictionary<string, string> ParseCustomReplacements(string text)
@@ -347,8 +377,27 @@ public sealed class AutoCorrectModule : ITweakModule
             var supportedTags = languageTags.Where(_spellChecker.IsLanguageSupported).ToArray();
             if (supportedTags.Length == 0) return;
 
-            // If the word is already correct in any active language, do not correct it
-            if (supportedTags.Any(tag => _spellChecker.IsCorrect(word, tag))) return;
+            var previous = (window == _previousWordWindow) ? _previousWord : null;
+
+            // Check if context model suggests a collocation correction even if the word is technically valid (e.g. 'her ver' -> 'her yer')
+            string? contextOverride = null;
+            if (_contextAnalysis && !string.IsNullOrEmpty(previous))
+            {
+                foreach (var tag in supportedTags)
+                {
+                    contextOverride = SpellContextModel.TryFindContextCorrection(previous, word, tag);
+                    if (contextOverride is not null) break;
+                }
+            }
+
+            // If no context override and the word is already correct in any active language, do not correct it
+            if (contextOverride is null && supportedTags.Any(tag => _spellChecker.IsCorrect(word, tag)))
+            {
+                if (_personalizedFrequency) UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: true);
+                _previousWord = word;
+                _previousWordWindow = window;
+                return;
+            }
 
             var preferredTag = supportedTags.Contains(keyboardTag, StringComparer.OrdinalIgnoreCase)
                 ? keyboardTag
@@ -356,11 +405,23 @@ public sealed class AutoCorrectModule : ITweakModule
             var orderedTags = supportedTags.OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, preferredTag) ? 0 : 1);
 
             var result = orderedTags
-                .Select(tag => (Tag: tag, Correction: _spellChecker.FindCorrection(word, tag, _deasciifyTurkish, _allowTextExpansions, _customReplacements)))
+                .Select(tag => (Tag: tag, Correction: contextOverride ?? _spellChecker.FindCorrection(
+                    word, tag, previous, _contextAnalysis, _deasciifyTurkish, _allowTextExpansions, _personalizedFrequency, _customReplacements)))
                 .FirstOrDefault(candidate => candidate.Correction is not null);
 
-            if (result.Correction is null) return;
-            if (string.Equals(word, result.Correction, StringComparison.OrdinalIgnoreCase)) return;
+            if (result.Correction is null)
+            {
+                if (_personalizedFrequency) UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: false);
+                _previousWord = word;
+                _previousWordWindow = window;
+                return;
+            }
+            if (string.Equals(word, result.Correction, StringComparison.OrdinalIgnoreCase))
+            {
+                _previousWord = word;
+                _previousWordWindow = window;
+                return;
+            }
             if (sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
 
             var culture = SpellEngine.GetCulture(result.Tag);
@@ -370,6 +431,10 @@ public sealed class AutoCorrectModule : ITweakModule
             ReplaceTypedWord(word.Length + 1, replacement + triggerChar);
             _lastCorrection = new LastCorrection(word, replacement, triggerChar, window, _inputSequence);
             _context?.Log.Info($"Otomatik düzeltme: {word} → {replacement}");
+
+            if (_personalizedFrequency) UserFrequencyTracker.Instance.RecordWord(replacement, isKnownWord: true);
+            _previousWord = replacement;
+            _previousWordWindow = window;
         }
         catch (Exception exception)
         {
