@@ -1,1 +1,0 @@
-kelime düzeltme için Windowslar bağımsız kendi altyapını kullan

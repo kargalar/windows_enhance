@@ -342,8 +342,12 @@ internal sealed class DisplayBrightnessSession : IDisposable
             var genericValue = (uint)Math.Round(Math.Clamp(percent, 0, 100) * monitor.GenericBrightness.Maximum / 100d);
             if (!SetVCPFeature(monitor.Handle, 0x10, genericValue))
             {
-                appliedPercent = monitor.GenericBrightness.Percent;
-                return false;
+                Thread.Sleep(40);
+                if (!SetVCPFeature(monitor.Handle, 0x10, genericValue))
+                {
+                    appliedPercent = monitor.GenericBrightness.Percent;
+                    return false;
+                }
             }
             monitor.GenericBrightness.CurrentValue = genericValue;
             appliedPercent = monitor.GenericBrightness.Percent;
@@ -353,8 +357,21 @@ internal sealed class DisplayBrightnessSession : IDisposable
         var value = BrightnessPercent.ToMonitorValue(percent, monitor.Minimum, monitor.Maximum);
         if (!SetMonitorBrightness(monitor.Handle, value))
         {
-            appliedPercent = BrightnessPercent.FromMonitorValue(monitor.Current, monitor.Minimum, monitor.Maximum);
-            return false;
+            Thread.Sleep(40);
+            if (!SetMonitorBrightness(monitor.Handle, value))
+            {
+                var vcpValue = (uint)Math.Round(Math.Clamp(percent, 0, 100) * (monitor.Maximum > 0 ? monitor.Maximum : 100u) / 100d);
+                if (SetVCPFeature(monitor.Handle, 0x10, vcpValue))
+                {
+                    if (monitor.GenericBrightness is not null) monitor.GenericBrightness.CurrentValue = vcpValue;
+                    monitor.Current = value;
+                    appliedPercent = BrightnessPercent.FromMonitorValue(value, monitor.Minimum, monitor.Maximum);
+                    return true;
+                }
+
+                appliedPercent = BrightnessPercent.FromMonitorValue(monitor.Current, monitor.Minimum, monitor.Maximum);
+                return false;
+            }
         }
 
         monitor.Current = value;
@@ -429,6 +446,16 @@ internal sealed class DisplayBrightnessSession : IDisposable
         var feature = monitor.GetFeature(code);
         if (feature is null || !feature.IsValueSupported(value) || !SetVCPFeature(monitor.Handle, code, value))
         {
+            if (feature is not null && feature.IsValueSupported(value))
+            {
+                Thread.Sleep(40);
+                if (SetVCPFeature(monitor.Handle, code, value))
+                {
+                    feature.CurrentValue = value;
+                    appliedValue = value;
+                    return true;
+                }
+            }
             appliedValue = feature?.CurrentValue ?? 0;
             return false;
         }
@@ -701,6 +728,8 @@ public sealed class DisplayBrightnessModule : ITweakModule
     public void Activate()
     {
         IsActive = true;
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         RegisterBrightnessHotkeys();
         StartHotkeyBrightnessDiscovery();
         UpdateScheduleTimer();
@@ -709,6 +738,8 @@ public sealed class DisplayBrightnessModule : ITweakModule
     public void Deactivate()
     {
         IsActive = false;
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _scheduleTimer?.Stop();
         _scheduleTimer = null;
         _lastScheduledBrightness = null;
@@ -716,6 +747,14 @@ public sealed class DisplayBrightnessModule : ITweakModule
         DisposeHotkeyBrightnessSessionIfIdle();
         _window?.Close();
         _window = null;
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e) => DisposeHotkeyBrightnessSessionIfIdle();
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+            DisposeHotkeyBrightnessSessionIfIdle();
     }
 
     public void Apply()
@@ -867,7 +906,28 @@ public sealed class DisplayBrightnessModule : ITweakModule
                     lock (_hotkeySessionSync)
                         if (ReferenceEquals(_hotkeyBrightnessDiscovery, discovery)) _hotkeyBrightnessDiscovery = null;
                 }
-                return session.AdjustBrightnessForAllDisplays(step * direction);
+                var outcome = session.AdjustBrightnessForAllDisplays(step * direction);
+                if (outcome.Failed > 0)
+                {
+                    try
+                    {
+                        session.Dispose();
+                        var freshSession = DisplayBrightnessSession.Discover();
+                        _hotkeyBrightnessSession = freshSession;
+                        outcome = freshSession.AdjustBrightnessForAllDisplays(step * direction);
+                        if (outcome.Failed > 0)
+                        {
+                            freshSession.Dispose();
+                            _hotkeyBrightnessSession = null;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _hotkeyBrightnessSession = null;
+                        _context?.Log.Error("Power Display oturum yenileme başarısız.", ex);
+                    }
+                }
+                return outcome;
             });
             if (!IsActive) return;
             if (result.Supported == 0)

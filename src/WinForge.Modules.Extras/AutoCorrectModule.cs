@@ -8,12 +8,19 @@ using static WinForge.Modules.Extras.KeyboardInputSender;
 
 namespace WinForge.Modules.Extras;
 
+/// <summary>
+/// Autonomous, native auto-correct and typo fixing module.
+/// Completely independent of Windows platform spellchecker.
+/// Features intelligent Turkish & English corrections, de-asciification,
+/// keyboard proximity heuristics, text expansions, and Android-style undo on Backspace.
+/// </summary>
 public sealed class AutoCorrectModule : ITweakModule
 {
     private const string AutomaticLanguage = "Klavye düzenine göre";
     private const string TurkishAndEnglish = "Türkçe + English";
     private const string TurkishLanguageTag = "tr-TR";
     private const string EnglishLanguageTag = "en-US";
+    private const string DefaultCustomReplacements = "tşk=teşekkürler; saol=sağol; rca=rica ederim; brb=be right back; omw=on my way";
     private const int InjectedFlag = 0x10;
     private const int KeyBackspace = 0x08;
     private const int KeySpace = 0x20;
@@ -41,7 +48,9 @@ public sealed class AutoCorrectModule : ITweakModule
     private readonly SettingDescriptor[] _settings;
     private readonly StringBuilder _word = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
-    private WindowsSpellChecker? _spellChecker;
+    private readonly HashSet<string> _sessionIgnoredWords = new(StringComparer.OrdinalIgnoreCase);
+
+    private SpellEngine? _spellChecker;
     private GlobalMouseHook? _mouseHook;
     private IModuleContext? _context;
     private IntPtr _hook;
@@ -50,7 +59,12 @@ public sealed class AutoCorrectModule : ITweakModule
     private long _inputSequence;
     private string _language = AutomaticLanguage;
     private int _minimumWordLength = MinimumWordLengthDefault;
+    private bool _undoOnBackspace = true;
+    private bool _deasciifyTurkish = true;
+    private bool _allowTextExpansions = true;
+    private Dictionary<string, string> _customReplacements = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _excludedProcesses = new(StringComparer.OrdinalIgnoreCase);
+    private LastCorrection? _lastCorrection;
 
     public AutoCorrectModule()
     {
@@ -64,7 +78,7 @@ public sealed class AutoCorrectModule : ITweakModule
                 Kind = SettingKind.Choice,
                 Default = AutomaticLanguage,
                 Options = [AutomaticLanguage, TurkishAndEnglish, .. LanguageTags.Keys],
-                Description = "Klavye düzenine göre seçilirse etkin uygulamanın klavye dili kullanılır. Türkçe + English seçeneği iki dili birlikte denetler; her iki dil de Windows'ta yüklü olmalıdır."
+                Description = "Klavye düzenine göre seçilirse etkin uygulamanın klavye dili kullanılır. Türkçe + English seçeneği her iki dili birlikte denetler."
             },
             new SettingDescriptor
             {
@@ -75,6 +89,38 @@ public sealed class AutoCorrectModule : ITweakModule
                 Min = 2,
                 Max = 10,
                 Description = "Bundan kısa kelimeler düzeltilmez."
+            },
+            new SettingDescriptor
+            {
+                Key = "undo-on-backspace",
+                Label = "Backspace ile geri alma",
+                Kind = SettingKind.Toggle,
+                Default = true,
+                Description = "Otomatik düzeltilen bir kelimenin hemen ardından Backspace'e basıldığında düzeltmeyi geri alır ve orijinal kelimeyi geri yükler."
+            },
+            new SettingDescriptor
+            {
+                Key = "deasciify-turkish",
+                Label = "Türkçe karakter tamamlama",
+                Kind = SettingKind.Toggle,
+                Default = true,
+                Description = "calisiyorum -> çalışıyorum veya tesekkurler -> teşekkürler gibi Türkçe karakter içermeyen yazımları düzeltir."
+            },
+            new SettingDescriptor
+            {
+                Key = "text-expansions",
+                Label = "Kısayol genişletmeleri",
+                Kind = SettingKind.Toggle,
+                Default = true,
+                Description = "tşk -> teşekkürler, brb -> be right back gibi popüler kısaltmaları otomatik genişletir."
+            },
+            new SettingDescriptor
+            {
+                Key = "custom-replacements",
+                Label = "Özel kelime kısayolları",
+                Kind = SettingKind.Text,
+                Default = DefaultCustomReplacements,
+                Description = "Kendi kısayollarınızı 'kısaltma=kelime' biçiminde noktalı virgülle ayırarak ekleyin."
             },
             new SettingDescriptor
             {
@@ -90,7 +136,7 @@ public sealed class AutoCorrectModule : ITweakModule
     public string Id => "auto-correct";
     public string Name => "Otomatik Kelime Düzeltme";
     public string Category => "Verimlilik";
-    public string Description => "Yazım hatalı bir kelimeyi yazıp boşluğa bastığınızda Windows yazım denetimiyle otomatik olarak düzeltir (Android klavyesi gibi).";
+    public string Description => "Yazım hatalı bir kelimeyi yazıp boşluğa veya noktalama işaretine bastığınızda yerel altyapısıyla otomatik olarak düzeltir (Türkçe & İngilizce de-asciifier, klavye yakınlığı ve Backspace ile geri alma destekli).";
     public string? Warning => "Tuş vuruşlarını izler ve yanlış yazılmış kelimeyi silip yerine düzeltmesini yazar. Şifre alanlarında ve oyunlarda kapalı tutun veya uygulamayı hariç bırakın.";
     public bool IsActive { get; private set; }
     public IReadOnlyList<SettingDescriptor> Settings => _settings;
@@ -101,8 +147,7 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         if (IsActive) return;
         ReadSettings();
-        _spellChecker = new WindowsSpellChecker();
-        if (!_spellChecker.IsAvailable) throw new InvalidOperationException("Windows yazım denetimi kullanılamıyor.");
+        _spellChecker = SpellEngine.Instance;
         _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
         if (_hook == IntPtr.Zero) throw new InvalidOperationException("Otomatik düzeltme klavye kancası kurulamadı.");
         _mouseHook = new GlobalMouseHook();
@@ -116,6 +161,8 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         IsActive = false;
         ResetWord();
+        _lastCorrection = null;
+        _sessionIgnoredWords.Clear();
         _mouseHook?.Dispose();
         _mouseHook = null;
         if (_hook != IntPtr.Zero)
@@ -134,9 +181,14 @@ public sealed class AutoCorrectModule : ITweakModule
 
     internal static string MatchCase(string original, string replacement, CultureInfo culture)
     {
+        if (string.IsNullOrEmpty(original) || string.IsNullOrEmpty(replacement)) return replacement;
         if (original.Length > 1 && original.All(char.IsUpper)) return replacement.ToUpper(culture);
-        if (char.IsUpper(original[0])) return char.ToUpper(replacement[0], culture) + replacement[1..];
-        return replacement;
+        if (char.IsUpper(original[0]))
+        {
+            var firstChar = char.ToUpper(replacement[0], culture);
+            return replacement.Length > 1 ? firstChar + replacement[1..] : firstChar.ToString();
+        }
+        return replacement.ToLower(culture);
     }
 
     internal static string ResolveLanguageTag(string setting, string keyboardLanguageTag) =>
@@ -151,7 +203,28 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         _language = _context?.Settings.GetString("language", AutomaticLanguage) ?? AutomaticLanguage;
         _minimumWordLength = Math.Clamp(_context?.Settings.GetInt("minimum-word-length", MinimumWordLengthDefault) ?? MinimumWordLengthDefault, 2, 10);
+        _undoOnBackspace = _context?.Settings.GetBool("undo-on-backspace", true) ?? true;
+        _deasciifyTurkish = _context?.Settings.GetBool("deasciify-turkish", true) ?? true;
+        _allowTextExpansions = _context?.Settings.GetBool("text-expansions", true) ?? true;
+        _customReplacements = ParseCustomReplacements(_context?.Settings.GetString("custom-replacements", DefaultCustomReplacements) ?? DefaultCustomReplacements);
         _excludedProcesses = QuickAccentModule.ParseExcludedProcesses(_context?.Settings.GetString("excluded-apps", "") ?? "");
+    }
+
+    private static Dictionary<string, string> ParseCustomReplacements(string text)
+    {
+        var dictionary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(text)) return dictionary;
+
+        var pairs = text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var pair in pairs)
+        {
+            var parts = pair.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2 && parts[0].Length > 0 && parts[1].Length > 0)
+            {
+                dictionary[parts[0]] = parts[1];
+            }
+        }
+        return dictionary;
     }
 
     private IntPtr HandleKeyboard(int code, IntPtr messagePointer, IntPtr dataPointer)
@@ -174,15 +247,58 @@ public sealed class AutoCorrectModule : ITweakModule
 
         var window = Native.GetForegroundWindow();
         if (_word.Length > 0 && window != _wordWindow) ResetWord();
-        if (HasShortcutModifiers()) { ResetWord(); return; }
+        if (HasShortcutModifiers()) { ResetWord(); _lastCorrection = null; return; }
 
-        if (key == KeyBackspace) { RemoveLastCharacter(); return; }
-        if (key == KeySpace) { HandleWordEnd(window); return; }
+        if (key == KeyBackspace)
+        {
+            if (_undoOnBackspace && _lastCorrection is not null && _lastCorrection.Window == window)
+            {
+                var correction = _lastCorrection;
+                _lastCorrection = null;
+                _sessionIgnoredWords.Add(correction.OriginalWord);
+                _dispatcher.BeginInvoke(DispatcherPriority.Input, () => UndoCorrection(correction));
+                return;
+            }
+            RemoveLastCharacter();
+            return;
+        }
+
+        // Any non-backspace keystroke cancels undo for the previous correction
+        _lastCorrection = null;
+
+        if (key == KeySpace)
+        {
+            HandleWordEnd(window, ' ');
+            return;
+        }
 
         var character = TranslateCharacter(key, info.scanCode, window);
-        if (char.IsLetter(character) && _word.Length < MaxWordLength) AppendCharacter(character, window);
-        else MarkWordSkipped();
+        if (IsPunctuationTrigger(character))
+        {
+            if (_word.Length >= _minimumWordLength)
+            {
+                HandleWordEnd(window, character);
+                return;
+            }
+            ResetWord();
+            return;
+        }
+
+        if ((char.IsLetter(character) || (_word.Length > 0 && IsWordInternalCharacter(character))) && _word.Length < MaxWordLength)
+        {
+            AppendCharacter(character, window);
+        }
+        else
+        {
+            MarkWordSkipped();
+        }
     }
+
+    private static bool IsPunctuationTrigger(char c) =>
+        c is '.' or ',' or '!' or '?' or ';' or ':';
+
+    private static bool IsWordInternalCharacter(char c) =>
+        c is '\'' or '’' or '-';
 
     private void AppendCharacter(char character, IntPtr window)
     {
@@ -209,7 +325,7 @@ public sealed class AutoCorrectModule : ITweakModule
         _wordWindow = IntPtr.Zero;
     }
 
-    private void HandleWordEnd(IntPtr window)
+    private void HandleWordEnd(IntPtr window, char triggerChar)
     {
         var word = _word.ToString();
         var isEligible = !_isWordSkipped && word.Length >= _minimumWordLength && window == _wordWindow;
@@ -217,36 +333,55 @@ public sealed class AutoCorrectModule : ITweakModule
         if (!isEligible || IsExcludedWindow(window)) return;
         var sequence = _inputSequence;
         var keyboardTag = GetKeyboardLanguageTag(window);
-        _dispatcher.BeginInvoke(DispatcherPriority.Input, () => ApplyCorrection(word, window, sequence, keyboardTag));
+        _dispatcher.BeginInvoke(DispatcherPriority.Input, () => ApplyCorrection(word, window, sequence, keyboardTag, triggerChar));
     }
 
-    private void ApplyCorrection(string word, IntPtr window, long sequence, string keyboardTag)
+    private void ApplyCorrection(string word, IntPtr window, long sequence, string keyboardTag, char triggerChar)
     {
         try
         {
             if (!IsActive || _spellChecker is null) return;
+            if (_sessionIgnoredWords.Contains(word)) return;
+
             var languageTags = ResolveLanguageTags(_language, keyboardTag);
             var supportedTags = languageTags.Where(_spellChecker.IsLanguageSupported).ToArray();
-            if (supportedTags.Length != languageTags.Count) return;
-            if (supportedTags.Length > 1 && supportedTags.Any(tag => _spellChecker.IsCorrect(word, tag))) return;
+            if (supportedTags.Length == 0) return;
+
+            // If the word is already correct in any active language, do not correct it
+            if (supportedTags.Any(tag => _spellChecker.IsCorrect(word, tag))) return;
 
             var preferredTag = supportedTags.Contains(keyboardTag, StringComparer.OrdinalIgnoreCase)
                 ? keyboardTag
                 : supportedTags[0];
             var orderedTags = supportedTags.OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, preferredTag) ? 0 : 1);
+
             var result = orderedTags
-                .Select(tag => (Tag: tag, Correction: _spellChecker.FindCorrection(word, tag)))
+                .Select(tag => (Tag: tag, Correction: _spellChecker.FindCorrection(word, tag, _deasciifyTurkish, _allowTextExpansions, _customReplacements)))
                 .FirstOrDefault(candidate => candidate.Correction is not null);
+
             if (result.Correction is null) return;
+            if (string.Equals(word, result.Correction, StringComparison.OrdinalIgnoreCase)) return;
             if (sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
-            var replacement = MatchCase(word, result.Correction, WindowsSpellChecker.GetCulture(result.Tag));
-            ReplaceTypedWord(word.Length + 1, replacement + " ");
+
+            var culture = SpellEngine.GetCulture(result.Tag);
+            var replacement = MatchCase(word, result.Correction, culture);
+
+            // Replace typed word and the trigger delimiter (word.Length + 1 characters)
+            ReplaceTypedWord(word.Length + 1, replacement + triggerChar);
+            _lastCorrection = new LastCorrection(word, replacement, triggerChar, window, _inputSequence);
             _context?.Log.Info($"Otomatik düzeltme: {word} → {replacement}");
         }
         catch (Exception exception)
         {
             _context?.Log.Error("Otomatik düzeltme uygulanamadı.", exception);
         }
+    }
+
+    private static void UndoCorrection(LastCorrection correction)
+    {
+        // Deletes the replacement word and its delimiter, then writes back the original word
+        var charactersToDelete = correction.Replacement.Length + 1;
+        ReplaceTypedWord(charactersToDelete, correction.OriginalWord);
     }
 
     private static void ReplaceTypedWord(int charactersToDelete, string text)
@@ -323,5 +458,11 @@ public sealed class AutoCorrectModule : ITweakModule
     [DllImport("user32.dll")] private static extern short GetKeyState(int virtualKey);
     [DllImport("user32.dll")] private static extern IntPtr GetKeyboardLayout(uint threadId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int ToUnicodeEx(uint virtualKey, uint scanCode, byte[] keyboardState, StringBuilder buffer, int bufferLength, uint flags, IntPtr keyboardLayout);
-}
 
+    private sealed record LastCorrection(
+        string OriginalWord,
+        string Replacement,
+        char TriggerChar,
+        IntPtr Window,
+        long Sequence);
+}

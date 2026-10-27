@@ -23,6 +23,7 @@ internal static class FeatureVerificationChecks
         TestPasteCoordination(extras, check);
         TestMouseSettings(extras, directory, check);
         TestAnimationSettings(extras, check);
+        TestWordCorrectionEngine(extras, check);
         TaskbarFeatureChecks.Run(check, nativeSmoke);
         NotificationsPlacementChecks.Run(extras, directory, check, nativeSmoke);
         DisplayBrightnessChecks.Run(extras, check);
@@ -559,5 +560,108 @@ internal static class FeatureVerificationChecks
             timer.Start();
             Dispatcher.PushFrame(frame);
         }
+    }
+
+    private static void TestWordCorrectionEngine(Assembly extras, Action<bool, string> check)
+    {
+        var spellEngineType = extras.GetType("WinForge.Modules.Extras.SpellEngine")!;
+        var instanceProp = spellEngineType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!;
+        var engine = instanceProp.GetValue(null)!;
+        var isAvailableProp = spellEngineType.GetProperty("IsAvailable", BindingFlags.Instance | BindingFlags.Public)!;
+        var isAvailable = (bool)isAvailableProp.GetValue(engine)!;
+        check(isAvailable, "Native spell engine is available and independent of Windows COM or language packs");
+
+        var isCorrectMethod = spellEngineType.GetMethod("IsCorrect", BindingFlags.Instance | BindingFlags.Public)!;
+        var findCorrectionMethod = spellEngineType.GetMethod("FindCorrection", BindingFlags.Instance | BindingFlags.Public)!;
+
+        // Turkish common typos
+        var trTypos = new (string Typo, string Expected)[]
+        {
+            ("herkez", "herkes"),
+            ("yanlız", "yalnız"),
+            ("yalnış", "yanlış"),
+            ("orjinal", "orijinal"),
+            ("kiprik", "kirpik"),
+            ("süpriz", "sürpriz"),
+            ("traş", "tıraş"),
+            ("şarz", "şarj"),
+            ("egsoz", "egzoz"),
+            ("birşey", "bir şey"),
+            ("herşey", "her şey"),
+            ("tabiki", "tabii ki"),
+            ("saol", "sağol")
+        };
+        foreach (var (typo, expected) in trTypos)
+        {
+            var isCorrect = (bool)isCorrectMethod.Invoke(engine, [typo, "tr-TR"])!;
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [typo, "tr-TR", true, true, null]);
+            check(!isCorrect && correction == expected, $"Turkish typo '{typo}' is corrected to '{expected}'");
+        }
+
+        // Turkish de-asciification
+        var trDeasciify = new (string Ascii, string Expected)[]
+        {
+            ("calisiyorum", "çalışıyorum"),
+            ("tesekkurler", "teşekkürler"),
+            ("gorusuruz", "görüşürüz"),
+            ("ogrenci", "öğrenci"),
+            ("hoscakal", "hoşça kal"),
+            ("gunaydin", "günaydın")
+        };
+        foreach (var (ascii, expected) in trDeasciify)
+        {
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [ascii, "tr-TR", true, true, null]);
+            check(correction == expected, $"Turkish de-asciifier converts '{ascii}' to '{expected}'");
+        }
+
+        // English common typos & contractions
+        var enTypos = new (string Typo, string Expected)[]
+        {
+            ("teh", "the"),
+            ("dont", "don't"),
+            ("cant", "can't"),
+            ("recieve", "receive"),
+            ("seperate", "separate"),
+            ("definately", "definitely")
+        };
+        foreach (var (typo, expected) in enTypos)
+        {
+            var isCorrect = (bool)isCorrectMethod.Invoke(engine, [typo, "en-US"])!;
+            var correction = (string?)findCorrectionMethod.Invoke(engine, [typo, "en-US", true, true, null]);
+            check(!isCorrect && correction == expected, $"English typo '{typo}' is corrected to '{expected}'");
+        }
+
+        // Correct words (should not be marked incorrect)
+        var correctWords = new (string Word, string Tag)[]
+        {
+            ("kitap", "tr-TR"),
+            ("bilgisayar", "tr-TR"),
+            ("kitaplar", "tr-TR"),
+            ("evde", "tr-TR"),
+            ("computer", "en-US"),
+            ("definitely", "en-US"),
+            ("playing", "en-US")
+        };
+        foreach (var (word, tag) in correctWords)
+        {
+            var isCorrect = (bool)isCorrectMethod.Invoke(engine, [word, tag])!;
+            check(isCorrect, $"Valid word '{word}' ({tag}) is recognized as correct");
+        }
+
+        // Case preservation
+        var autoCorrectModuleType = extras.GetType("WinForge.Modules.Extras.AutoCorrectModule")!;
+        var matchCaseMethod = autoCorrectModuleType.GetMethod("MatchCase", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var trCulture = CultureInfo.GetCultureInfo("tr-TR");
+        var allCaps = (string)matchCaseMethod.Invoke(null, ["HERKEZ", "herkes", trCulture])!;
+        var titleCase = (string)matchCaseMethod.Invoke(null, ["Herkez", "herkes", trCulture])!;
+        var lowerCase = (string)matchCaseMethod.Invoke(null, ["herkez", "herkes", trCulture])!;
+        check(allCaps == "HERKES" && titleCase == "Herkes" && lowerCase == "herkes", "Case matching handles uppercase, titlecase, and lowercase with culture sensitivity");
+
+        // Module descriptor check
+        var module = (ITweakModule)Activator.CreateInstance(autoCorrectModuleType)!;
+        check(module.Id == "auto-correct", "AutoCorrectModule ID is 'auto-correct'");
+        check(module.Settings.Any(s => s.Key == "undo-on-backspace"), "AutoCorrectModule exposes undo-on-backspace toggle");
+        check(module.Settings.Any(s => s.Key == "deasciify-turkish"), "AutoCorrectModule exposes deasciify-turkish toggle");
+        check(module.Settings.Any(s => s.Key == "text-expansions"), "AutoCorrectModule exposes text-expansions toggle");
     }
 }
