@@ -2,5 +2,7 @@ bin/
 obj/
 dist/
 artifacts/
+/work/corpus/
+/work/tools/
 *.user
 .vs/

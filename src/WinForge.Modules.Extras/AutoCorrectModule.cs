@@ -39,12 +39,14 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         ["Türkçe"] = TurkishLanguageTag,
         ["English"] = EnglishLanguageTag,
+        // Retain stored language choices without silently switching their language.
         ["Deutsch"] = "de-DE",
         ["Français"] = "fr-FR",
         ["Español"] = "es-ES"
     };
 
     private readonly Native.LowLevelKeyboardProc _callback;
+    private readonly Action<int, string> _replaceText;
     private readonly SettingDescriptor[] _settings;
     private readonly StringBuilder _word = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
@@ -52,15 +54,22 @@ public sealed class AutoCorrectModule : ITweakModule
 
     private SpellEngine? _spellChecker;
     private GlobalMouseHook? _mouseHook;
+    private AutoCorrectSuggestionWindow? _suggestionWindow;
     private IModuleContext? _context;
     private IntPtr _hook;
     private IntPtr _wordWindow;
     private bool _isWordSkipped;
     private long _inputSequence;
+    private long _suggestionSequence;
+    private int _suggestionReplaceLength;
+    private IntPtr _suggestionTargetWindow;
+    private string? _suggestionPreviousWords;
+    private string _suggestionKeyboardTag = EnglishLanguageTag;
     private string _language = AutomaticLanguage;
     private int _minimumWordLength = MinimumWordLengthDefault;
     private bool _undoOnBackspace = true;
     private bool _deasciifyTurkish = true;
+    private bool _showSuggestions = true;
     private bool _allowTextExpansions = true;
     private bool _contextAnalysis = true;
     private bool _personalizedFrequency = true;
@@ -68,10 +77,14 @@ public sealed class AutoCorrectModule : ITweakModule
     private HashSet<string> _excludedProcesses = new(StringComparer.OrdinalIgnoreCase);
     private LastCorrection? _lastCorrection;
     private string? _previousWord;
+    private string? _penultimateWord;
     private IntPtr _previousWordWindow;
 
-    public AutoCorrectModule()
+    public AutoCorrectModule() : this(ReplaceTypedWord) { }
+
+    internal AutoCorrectModule(Action<int, string> replaceText)
     {
+        _replaceText = replaceText;
         _callback = HandleKeyboard;
         _settings =
         [
@@ -81,7 +94,7 @@ public sealed class AutoCorrectModule : ITweakModule
                 Label = "Düzeltme dili",
                 Kind = SettingKind.Choice,
                 Default = AutomaticLanguage,
-                Options = [AutomaticLanguage, TurkishAndEnglish, .. LanguageTags.Keys],
+                Options = [AutomaticLanguage, TurkishAndEnglish, "Türkçe", "English"],
                 Description = "Klavye düzenine göre seçilirse etkin uygulamanın klavye dili kullanılır. Türkçe + English seçeneği her iki dili birlikte denetler."
             },
             new SettingDescriptor
@@ -105,10 +118,18 @@ public sealed class AutoCorrectModule : ITweakModule
             new SettingDescriptor
             {
                 Key = "context-analysis",
-                Label = "Bağlam analizi (Önceki kelimeye göre)",
+                Label = "Bağlam analizi (N-gram / Collocation)",
                 Kind = SettingKind.Toggle,
                 Default = true,
-                Description = "Önceki kelimeye bakarak iki kelimelik tamlamaları ve bağlam hatalarını (ör. 'her ver' -> 'her yer') düzeltir."
+                Description = "Önceki iki kelimeyle ikili ve üçlü ifadeleri değerlendirir; belirsiz önerileri elemek ve uygun düzeltmeyi seçmek için bağlamı kullanır."
+            },
+            new SettingDescriptor
+            {
+                Key = "suggestion-strip",
+                Label = "Yazarken öneri şeridi",
+                Kind = SettingKind.Toggle,
+                Default = true,
+                Description = "Kelime tamamlama ve bağlama göre sonraki kelime önerilerini imlecin yanında gösterir; öneriye tıklayarak metne ekleyebilirsiniz."
             },
             new SettingDescriptor
             {
@@ -116,7 +137,15 @@ public sealed class AutoCorrectModule : ITweakModule
                 Label = "Kişiselleştirilmiş frekans ve öğrenme",
                 Kind = SettingKind.Toggle,
                 Default = true,
-                Description = "Sık kullandığınız kelimeleri önceliklendirir ve tekrar eden özel terimleri otomatik öğrenir."
+                Description = "Doğru kabul edilen kelimeleri ve birlikte kullandığınız kelime dizilerini önceliklendirir. Bilinmeyen kelimeler yalnızca açıkça kişisel sözlüğe eklendiğinde öğrenilir."
+            },
+            new SettingDescriptor
+            {
+                Key = "personal-dictionary",
+                Label = "Kişisel sözlük",
+                Kind = SettingKind.Text,
+                Default = "",
+                Description = "Özel kişi, ürün veya teknik adları noktalı virgülle ekleyin (ör. WinForge; AntigravityCore)."
             },
             new SettingDescriptor
             {
@@ -167,25 +196,53 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         if (IsActive) return;
         ReadSettings();
+        var keyboardLanguageTag = GetKeyboardLanguageTag(Native.GetForegroundWindow());
+        var selectedLanguages = ResolveLanguageTags(_language, keyboardLanguageTag);
+        if (selectedLanguages.Any(languageTag => languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase)))
+        {
+            _ = TurkishMorphologyService.IsAvailable;
+            _ = SpellNgramModel.GetTurkishVocabularyCount();
+        }
+        if (selectedLanguages.Any(languageTag => languageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase)))
+            _ = SpellNgramModel.GetEnglishVocabularyCount();
         _spellChecker = SpellEngine.Instance;
+        _suggestionWindow = new AutoCorrectSuggestionWindow(AcceptSuggestion);
         _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
-        if (_hook == IntPtr.Zero) throw new InvalidOperationException("Otomatik düzeltme klavye kancası kurulamadı.");
+        if (_hook == IntPtr.Zero)
+        {
+            _suggestionWindow.Close();
+            _suggestionWindow = null;
+            throw new InvalidOperationException("Otomatik düzeltme klavye kancası kurulamadı.");
+        }
         _mouseHook = new GlobalMouseHook();
-        _mouseHook.LeftButtonDown += _ => { ResetWord(); ClearPreviousWord(); };
-        _mouseHook.RightButtonDown += _ => { ResetWord(); ClearPreviousWord(); };
-        _mouseHook.Install();
+        _mouseHook.LeftButtonDown += point =>
+        {
+            if (_suggestionWindow?.ContainsScreenPoint(point) != true) InvalidateInput();
+        };
+        _mouseHook.RightButtonDown += _ => InvalidateInput();
+        try { _mouseHook.Install(); }
+        catch
+        {
+            Native.UnhookWindowsHookEx(_hook);
+            _hook = IntPtr.Zero;
+            _mouseHook.Dispose();
+            _mouseHook = null;
+            _suggestionWindow.Close();
+            _suggestionWindow = null;
+            throw;
+        }
         IsActive = true;
     }
 
     public void Deactivate()
     {
         IsActive = false;
-        ResetWord();
-        ClearPreviousWord();
-        _lastCorrection = null;
+        InvalidateInput();
         _sessionIgnoredWords.Clear();
         _mouseHook?.Dispose();
         _mouseHook = null;
+        _suggestionWindow?.Close();
+        _suggestionWindow = null;
         if (_hook != IntPtr.Zero)
         {
             Native.UnhookWindowsHookEx(_hook);
@@ -227,7 +284,11 @@ public sealed class AutoCorrectModule : ITweakModule
         _minimumWordLength = Math.Clamp(_context?.Settings.GetInt("minimum-word-length", MinimumWordLengthDefault) ?? MinimumWordLengthDefault, 2, 10);
         _undoOnBackspace = _context?.Settings.GetBool("undo-on-backspace", true) ?? true;
         _contextAnalysis = _context?.Settings.GetBool("context-analysis", true) ?? true;
+        _showSuggestions = _context?.Settings.GetBool("suggestion-strip", true) ?? true;
         _personalizedFrequency = _context?.Settings.GetBool("personalized-frequency", true) ?? true;
+        var personalWords = (_context?.Settings.GetString("personal-dictionary", "") ?? "")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        UserFrequencyTracker.Instance.SetConfiguredWords(personalWords);
         _deasciifyTurkish = _context?.Settings.GetBool("deasciify-turkish", true) ?? true;
         _allowTextExpansions = _context?.Settings.GetBool("text-expansions", true) ?? true;
         _customReplacements = ParseCustomReplacements(_context?.Settings.GetString("custom-replacements", DefaultCustomReplacements) ?? DefaultCustomReplacements);
@@ -237,7 +298,29 @@ public sealed class AutoCorrectModule : ITweakModule
     private void ClearPreviousWord()
     {
         _previousWord = null;
+        _penultimateWord = null;
         _previousWordWindow = IntPtr.Zero;
+    }
+
+    private void InvalidateInput()
+    {
+        _inputSequence++;
+        ResetWord();
+        ClearPreviousWord();
+        _lastCorrection = null;
+        _suggestionWindow?.Hide();
+    }
+
+    private void RememberWord(string word, IntPtr window, char delimiter)
+    {
+        if (delimiter != ' ') { ClearPreviousWord(); return; }
+        var words = word.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var token in words)
+        {
+            _penultimateWord = window == _previousWordWindow ? _previousWord : null;
+            _previousWord = token;
+            _previousWordWindow = window;
+        }
     }
 
     private static Dictionary<string, string> ParseCustomReplacements(string text)
@@ -276,19 +359,31 @@ public sealed class AutoCorrectModule : ITweakModule
         if (IsModifierKey(key)) return;
 
         var window = Native.GetForegroundWindow();
-        if (_word.Length > 0 && window != _wordWindow) ResetWord();
-        if (HasShortcutModifiers()) { ResetWord(); _lastCorrection = null; return; }
+        if ((_wordWindow != IntPtr.Zero && window != _wordWindow) ||
+            (_previousWordWindow != IntPtr.Zero && window != _previousWordWindow)) InvalidateInput();
+        if (HasShortcutModifiers()) { InvalidateInput(); return; }
 
         if (key == KeyBackspace)
         {
-            if (_undoOnBackspace && _lastCorrection is not null && _lastCorrection.Window == window)
+            if (_undoOnBackspace && _lastCorrection is not null && _lastCorrection.Window == window &&
+                _lastCorrection.Sequence + 1 == _inputSequence)
             {
                 var correction = _lastCorrection;
                 _lastCorrection = null;
                 _sessionIgnoredWords.Add(correction.OriginalWord);
-                _dispatcher.BeginInvoke(DispatcherPriority.Input, () => UndoCorrection(correction));
+                var sequence = _inputSequence;
+                ResetWord();
+                ClearPreviousWord();
+                _dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+                {
+                    if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+                    UndoCorrection(correction);
+                    _word.Append(correction.OriginalWord);
+                    _wordWindow = window;
+                });
                 return;
             }
+            if (_word.Length == 0) ClearPreviousWord();
             RemoveLastCharacter();
             return;
         }
@@ -305,14 +400,12 @@ public sealed class AutoCorrectModule : ITweakModule
         var character = TranslateCharacter(key, info.scanCode, window);
         if (IsPunctuationTrigger(character))
         {
-            if (_word.Length >= _minimumWordLength)
-            {
-                HandleWordEnd(window, character);
-                return;
-            }
-            ResetWord();
+            HandleWordEnd(window, character);
             return;
         }
+
+        // Navigation, Enter, Tab and Delete invalidate both the word and its context.
+        if (character == '\0' || char.IsControl(character)) { InvalidateInput(); return; }
 
         if ((char.IsLetter(character) || (_word.Length > 0 && IsWordInternalCharacter(character))) && _word.Length < MaxWordLength)
         {
@@ -334,18 +427,22 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         if (_word.Length == 0) _wordWindow = window;
         _word.Append(character);
+        QueueCurrentWordSuggestions(window);
     }
 
     private void RemoveLastCharacter()
     {
         if (_word.Length > 0) _word.Length--;
         if (_word.Length == 0) _isWordSkipped = false;
+        if (_word.Length > 0) QueueCurrentWordSuggestions(_wordWindow);
+        else _suggestionWindow?.Hide();
     }
 
     private void MarkWordSkipped()
     {
         _word.Clear();
         _isWordSkipped = true;
+        ClearPreviousWord();
     }
 
     private void ResetWord()
@@ -358,68 +455,64 @@ public sealed class AutoCorrectModule : ITweakModule
     private void HandleWordEnd(IntPtr window, char triggerChar)
     {
         var word = _word.ToString();
-        var isEligible = !_isWordSkipped && word.Length >= _minimumWordLength && window == _wordWindow;
+        var isEligible = !_isWordSkipped && word.Length > 0 && window == _wordWindow;
         ResetWord();
-        if (!isEligible || IsExcludedWindow(window)) return;
+        if (!isEligible || IsExcludedWindow(window))
+        {
+            _suggestionWindow?.Hide();
+            if (triggerChar != ' ' || word.Length > 0) ClearPreviousWord();
+            return;
+        }
         var sequence = _inputSequence;
         var keyboardTag = GetKeyboardLanguageTag(window);
-        _dispatcher.BeginInvoke(DispatcherPriority.Input, () => ApplyCorrection(word, window, sequence, keyboardTag, triggerChar));
+        var previous = window == _previousWordWindow
+            ? string.Join(' ', new[] { _penultimateWord, _previousWord }.Where(token => !string.IsNullOrEmpty(token))) : null;
+        // Capture every completed word immediately, even if a queued correction is
+        // cancelled because more input arrives before the dispatcher runs.
+        RememberWord(word, window, triggerChar);
+        _dispatcher.BeginInvoke(DispatcherPriority.Input, () => ApplyCorrection(word, window, sequence, keyboardTag, triggerChar, previous));
+        if (triggerChar == ' ')
+            _dispatcher.BeginInvoke(DispatcherPriority.Background, () => QueueNextWordPredictions(window, sequence, keyboardTag));
     }
 
-    private void ApplyCorrection(string word, IntPtr window, long sequence, string keyboardTag, char triggerChar)
+    private void ApplyCorrection(string word, IntPtr window, long sequence, string keyboardTag, char triggerChar, string? previous)
     {
         try
         {
-            if (!IsActive || _spellChecker is null) return;
-            if (_sessionIgnoredWords.Contains(word)) return;
+            if (!IsActive || _spellChecker is null || sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+            if (_sessionIgnoredWords.Contains(word) || word.Length < _minimumWordLength)
+            {
+                return;
+            }
 
             var languageTags = ResolveLanguageTags(_language, keyboardTag);
             var supportedTags = languageTags.Where(_spellChecker.IsLanguageSupported).ToArray();
             if (supportedTags.Length == 0) return;
-
-            var previous = (window == _previousWordWindow) ? _previousWord : null;
-
-            // Check if context model suggests a collocation correction even if the word is technically valid (e.g. 'her ver' -> 'her yer')
-            string? contextOverride = null;
-            if (_contextAnalysis && !string.IsNullOrEmpty(previous))
-            {
-                foreach (var tag in supportedTags)
-                {
-                    contextOverride = SpellContextModel.TryFindContextCorrection(previous, word, tag);
-                    if (contextOverride is not null) break;
-                }
-            }
-
-            // If no context override and the word is already correct in any active language, do not correct it
-            if (contextOverride is null && supportedTags.Any(tag => _spellChecker.IsCorrect(word, tag)))
-            {
-                if (_personalizedFrequency) UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: true);
-                _previousWord = word;
-                _previousWordWindow = window;
-                return;
-            }
 
             var preferredTag = supportedTags.Contains(keyboardTag, StringComparer.OrdinalIgnoreCase)
                 ? keyboardTag
                 : supportedTags[0];
             var orderedTags = supportedTags.OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, preferredTag) ? 0 : 1);
 
+            var hasExplicitReplacement = _customReplacements.ContainsKey(word.ToLower(SpellEngine.GetCulture(preferredTag))) ||
+                (_allowTextExpansions && SpellLexicons.DefaultTextExpansions.ContainsKey(word));
+            var isKnown = supportedTags.Any(tag => _spellChecker.IsKnownWord(word, tag, _personalizedFrequency));
+
+            // Preserve words valid in either active language. Single-language mode still
+            // permits the model's explicitly curated real-word confusion rules.
+            var preserveKnown = isKnown && supportedTags.Length > 1 && !hasExplicitReplacement;
             var result = orderedTags
-                .Select(tag => (Tag: tag, Correction: contextOverride ?? _spellChecker.FindCorrection(
+                .Select(tag => (Tag: tag, Correction: preserveKnown ? null : _spellChecker.FindCorrection(
                     word, tag, previous, _contextAnalysis, _deasciifyTurkish, _allowTextExpansions, _personalizedFrequency, _customReplacements)))
                 .FirstOrDefault(candidate => candidate.Correction is not null);
 
             if (result.Correction is null)
             {
-                if (_personalizedFrequency) UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: false);
-                _previousWord = word;
-                _previousWordWindow = window;
+                RecordPersonalizedUsage(word, isKnown, previous, result.Tag ?? preferredTag);
                 return;
             }
             if (string.Equals(word, result.Correction, StringComparison.OrdinalIgnoreCase))
             {
-                _previousWord = word;
-                _previousWordWindow = window;
                 return;
             }
             if (sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
@@ -428,13 +521,14 @@ public sealed class AutoCorrectModule : ITweakModule
             var replacement = MatchCase(word, result.Correction, culture);
 
             // Replace typed word and the trigger delimiter (word.Length + 1 characters)
-            ReplaceTypedWord(word.Length + 1, replacement + triggerChar);
-            _lastCorrection = new LastCorrection(word, replacement, triggerChar, window, _inputSequence);
+            _replaceText(word.Length + 1, replacement + triggerChar);
+            _lastCorrection = new LastCorrection(word, replacement, window, _inputSequence);
             _context?.Log.Info($"Otomatik düzeltme: {word} → {replacement}");
 
-            if (_personalizedFrequency) UserFrequencyTracker.Instance.RecordWord(replacement, isKnownWord: true);
-            _previousWord = replacement;
-            _previousWordWindow = window;
+            RecordPersonalizedUsage(replacement, isKnownWord: true, previous, result.Tag);
+            ClearPreviousWord();
+            if (!string.IsNullOrEmpty(previous)) RememberWord(previous, window, ' ');
+            RememberWord(replacement, window, triggerChar);
         }
         catch (Exception exception)
         {
@@ -442,11 +536,153 @@ public sealed class AutoCorrectModule : ITweakModule
         }
     }
 
-    private static void UndoCorrection(LastCorrection correction)
+    private void QueueCurrentWordSuggestions(IntPtr window)
     {
-        // Deletes the replacement word and its delimiter, then writes back the original word
-        var charactersToDelete = correction.Replacement.Length + 1;
-        ReplaceTypedWord(charactersToDelete, correction.OriginalWord);
+        if (!_showSuggestions)
+        {
+            _suggestionWindow?.Hide();
+            return;
+        }
+
+        var word = _word.ToString();
+        var sequence = _inputSequence;
+        if (word.Length < _minimumWordLength || _isWordSkipped || IsExcludedWindow(window))
+        {
+            _suggestionWindow?.Hide();
+            return;
+        }
+
+        var keyboardTag = GetKeyboardLanguageTag(window);
+        var previous = window == _previousWordWindow
+            ? string.Join(' ', new[] { _penultimateWord, _previousWord }.Where(token => !string.IsNullOrEmpty(token))) : null;
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            var engine = _spellChecker;
+            if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window || engine is null) return;
+
+            var tags = ResolveLanguageTags(_language, keyboardTag)
+                .Where(engine.IsLanguageSupported)
+                .OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, keyboardTag) ? 0 : 1)
+                .ToArray();
+            var suggestions = tags.SelectMany(tag => engine.GetSuggestions(
+                    word, tag, previous, _contextAnalysis, _deasciifyTurkish, _allowTextExpansions,
+                    _personalizedFrequency, _customReplacements))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToArray();
+            ShowSuggestions(suggestions, window, sequence, word.Length, keyboardTag, previous);
+        });
+    }
+
+    private void QueueNextWordPredictions(IntPtr window, long sequence, string keyboardTag)
+    {
+        if (!_showSuggestions || !IsActive || sequence != _inputSequence ||
+            Native.GetForegroundWindow() != window || !_contextAnalysis)
+            return;
+
+        var engine = _spellChecker;
+        if (engine is null) return;
+        var history = string.Join(' ', new[] { _penultimateWord, _previousWord }.Where(token => !string.IsNullOrEmpty(token)));
+        if (string.IsNullOrEmpty(history))
+        {
+            _suggestionWindow?.Hide();
+            return;
+        }
+
+        var suggestions = ResolveLanguageTags(_language, keyboardTag)
+            .Where(engine.IsLanguageSupported)
+            .OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, keyboardTag) ? 0 : 1)
+            .SelectMany(tag => SpellContextModel.GetNextWordSuggestions(
+                history, string.Empty, tag, 3, UserFrequencyTracker.Instance, _personalizedFrequency))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToArray();
+        ShowSuggestions(suggestions, window, sequence, 0, keyboardTag, history);
+    }
+
+    private void ShowSuggestions(
+        IReadOnlyList<string> suggestions,
+        IntPtr window,
+        long sequence,
+        int replaceLength,
+        string keyboardTag,
+        string? previousWords)
+    {
+        if (suggestions.Count == 0 || !AutoCorrectSuggestionWindow.TryGetCaret(window, out var caret))
+        {
+            _suggestionWindow?.Hide();
+            return;
+        }
+
+        _suggestionSequence = sequence;
+        _suggestionTargetWindow = window;
+        _suggestionReplaceLength = replaceLength;
+        _suggestionKeyboardTag = keyboardTag;
+        _suggestionPreviousWords = previousWords;
+        _suggestionWindow?.ShowSuggestions(suggestions, window, caret);
+    }
+
+    private void AcceptSuggestion(string suggestion)
+    {
+        var window = _suggestionTargetWindow;
+        if (!IsActive || _suggestionSequence != _inputSequence || window == IntPtr.Zero ||
+            Native.GetForegroundWindow() != window || string.IsNullOrWhiteSpace(suggestion)) return;
+
+        var accepted = _suggestionReplaceLength > 0
+            ? MatchCase(_word.ToString(), suggestion, SpellEngine.GetCulture(_suggestionKeyboardTag))
+            : suggestion;
+        _replaceText(_suggestionReplaceLength, accepted + " ");
+        _inputSequence++;
+        _lastCorrection = null;
+        ResetWord();
+        RecordAcceptedSuggestion(accepted, _suggestionPreviousWords, _suggestionKeyboardTag);
+        RememberWord(accepted, window, ' ');
+        _suggestionWindow?.Hide();
+        QueueNextWordPredictions(window, _inputSequence, _suggestionKeyboardTag);
+    }
+
+    private void RecordAcceptedSuggestion(string suggestion, string? previousWords, string keyboardTag)
+    {
+        if (!_personalizedFrequency || _spellChecker is null) return;
+
+        var history = previousWords?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .TakeLast(2).ToList() ?? [];
+        foreach (var word in suggestion.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var languageTag = ResolveLanguageTags(_language, keyboardTag)
+                .FirstOrDefault(tag => _spellChecker.IsLanguageSupported(tag) &&
+                                       _spellChecker.IsKnownWord(word, tag, allowLearning: true));
+            if (languageTag is not null)
+            {
+                RecordPersonalizedUsage(word, true, string.Join(' ', history), languageTag);
+                history.Add(word);
+                if (history.Count > 2) history.RemoveAt(0);
+            }
+        }
+    }
+
+    private void RecordPersonalizedUsage(string word, bool isKnownWord, string? previous, string languageTag)
+    {
+        if (!_personalizedFrequency || !isKnownWord) return;
+
+        var history = previous?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .TakeLast(2).ToList() ?? [];
+        for (var index = history.Count - 1; index >= 0; index--)
+        {
+            var historyWord = history[index];
+            if (_spellChecker?.IsKnownWord(historyWord, languageTag, allowLearning: true) == true ||
+                UserFrequencyTracker.Instance.IsLearned(historyWord)) continue;
+            history.RemoveAt(index);
+        }
+
+        UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: true, string.Join(' ', history));
+    }
+
+    private void UndoCorrection(LastCorrection correction)
+    {
+        // The physical Backspace has already removed the delimiter before dispatch.
+        var charactersToDelete = correction.Replacement.Length;
+        _replaceText(charactersToDelete, correction.OriginalWord);
     }
 
     private static void ReplaceTypedWord(int charactersToDelete, string text)
@@ -527,7 +763,6 @@ public sealed class AutoCorrectModule : ITweakModule
     private sealed record LastCorrection(
         string OriginalWord,
         string Replacement,
-        char TriggerChar,
         IntPtr Window,
         long Sequence);
 }

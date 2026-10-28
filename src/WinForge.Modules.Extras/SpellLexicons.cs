@@ -3,6 +3,8 @@ namespace WinForge.Modules.Extras;
 /// <summary>Built-in dictionary data, common typo mappings, and keyboard layout coordinates.</summary>
 internal static class SpellLexicons
 {
+    internal const double NearbyKeyDistance = 1.8;
+
     internal static readonly Dictionary<string, string> TurkishCommonTypos = new(StringComparer.OrdinalIgnoreCase)
     {
         ["herkez"] = "herkes",
@@ -13,6 +15,11 @@ internal static class SpellLexicons
         ["melela"] = "mesela",
         ["düzetlemdi"] = "düzeltmedi",
         ["ncak"] = "ancak",
+        ["genlel"] = "genel",
+        ["seviyenie"] = "seviyesine",
+        ["iyileşitr"] = "iyileştir",
+        ["iyleştirme"] = "iyileştirme",
+        ["şuan"] = "şu an",
         ["heryer"] = "her yer",
         ["heryerde"] = "her yerde",
         ["birkere"] = "bir kere",
@@ -29,6 +36,8 @@ internal static class SpellLexicons
         ["labaratuar"] = "laboratuvar",
         ["laboratuar"] = "laboratuvar",
         ["kiprik"] = "kirpik",
+        ["kitp"] = "kitap",
+        ["kitplar"] = "kitaplar",
         ["kirbit"] = "kibrit",
         ["süpriz"] = "sürpriz",
         ["surpriz"] = "sürpriz",
@@ -39,7 +48,7 @@ internal static class SpellLexicons
         ["eksoz"] = "egzoz",
         ["egzozt"] = "egzoz",
         ["muhattap"] = "muhatap",
-        ["müsade"] = "müsaade" ,
+        ["müsade"] = "müsaade",
         ["mütahhit"] = "müteahhit",
         ["müteahit"] = "müteahhit",
         ["halisünasyon"] = "halüsinasyon",
@@ -308,7 +317,6 @@ internal static class SpellLexicons
         ["yorgun"] = "yorgun",
         ["canli"] = "canlı",
         ["olu"] = "ölü",
-        ["olum"] = "ölüm",
         ["yuzyil"] = "yüzyıl",
         ["dun"] = "dün",
         ["bugun"] = "bugün",
@@ -570,6 +578,9 @@ internal static class SpellLexicons
 
         return 3.0; // Default distance for unknown/distant keys
     }
+
+    internal static IEnumerable<char> GetNearbyKeyCharacters(char character) =>
+        KeyCoordinates.Keys.Where(candidate => GetKeyDistance(character, candidate) <= NearbyKeyDistance);
 
     private static bool IsTurkishDiacriticPair(char a, char b) =>
         (a == 'c' && b == 'ç') || (a == 'ç' && b == 'c') ||

@@ -27,6 +27,23 @@ internal static class Program
     {
         if (args.Contains("--notification-activation")) return 0;
         if (args.Length == 1 && args[0] == "--window-fixture") return WindowControlParityChecks.RunFixture();
+        if (args.Length is 2 or 3 && args[0] == "--autocorrect-turkish-tweets-benchmark")
+        {
+            var maximumRows = args.Length == 3 && args[2].StartsWith("--max-rows=", StringComparison.OrdinalIgnoreCase)
+                ? int.Parse(args[2]["--max-rows=".Length..], System.Globalization.CultureInfo.InvariantCulture)
+                : int.MaxValue;
+            var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+            AutoCorrectCorpusChecks.RunTurkishTweetCorrections(args[1], extras, Check, maximumRows);
+            Console.WriteLine($"PASS: {_passed} TurkishTweets benchmark checks.");
+            return 0;
+        }
+        if (args.Length == 2 && args[0] == "--autocorrect-turkish-tweets-nextword-benchmark")
+        {
+            var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+            AutoCorrectCorpusChecks.RunTurkishTweetNextWords(args[1], extras, Check);
+            Console.WriteLine($"PASS: {_passed} TurkishTweets next-word benchmark checks.");
+            return 0;
+        }
         if (args.Contains("--software-rendering")) RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         Directory.CreateDirectory(TestDirectory);
         var app = new RegressionApplication();
@@ -50,6 +67,64 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--autocorrect-only"))
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                FeatureVerificationChecks.TestWordCorrectionEngine(extras, Check);
+                Console.WriteLine($"PASS: {_passed} autocorrect checks.");
+                return 0;
+            }
+            var autocorrectBenchmarkIndex = Array.IndexOf(args, "--autocorrect-benchmark");
+            if (autocorrectBenchmarkIndex >= 0)
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                if (autocorrectBenchmarkIndex + 1 >= args.Length) throw new ArgumentException("--autocorrect-benchmark requires a held-out corpus file.");
+                var languageTag = autocorrectBenchmarkIndex + 2 < args.Length ? args[autocorrectBenchmarkIndex + 2] : "tr-TR";
+                AutoCorrectCorpusChecks.Run(args[autocorrectBenchmarkIndex + 1], languageTag, extras, Check);
+                Console.WriteLine($"PASS: {_passed} held-out autocorrect benchmark checks.");
+                return 0;
+            }
+            var turkishTweetsBenchmarkIndex = Array.IndexOf(args, "--autocorrect-turkish-tweets-benchmark");
+            if (turkishTweetsBenchmarkIndex >= 0)
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                if (turkishTweetsBenchmarkIndex + 1 >= args.Length)
+                    throw new ArgumentException("--autocorrect-turkish-tweets-benchmark requires the TurkishTweets dataset file.");
+                AutoCorrectCorpusChecks.RunTurkishTweetCorrections(args[turkishTweetsBenchmarkIndex + 1], extras, Check);
+                Console.WriteLine($"PASS: {_passed} TurkishTweets benchmark checks.");
+                return 0;
+            }
+            var turkishTweetNextWordBenchmarkIndex = Array.IndexOf(args, "--autocorrect-turkish-tweets-nextword-benchmark");
+            if (turkishTweetNextWordBenchmarkIndex >= 0)
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                if (turkishTweetNextWordBenchmarkIndex + 1 >= args.Length)
+                    throw new ArgumentException("--autocorrect-turkish-tweets-nextword-benchmark requires the TurkishTweets dataset file.");
+                AutoCorrectCorpusChecks.RunTurkishTweetNextWords(args[turkishTweetNextWordBenchmarkIndex + 1], extras, Check);
+                Console.WriteLine($"PASS: {_passed} TurkishTweets next-word benchmark checks.");
+                return 0;
+            }
+            var annotatedBenchmarkIndex = Array.IndexOf(args, "--autocorrect-annotated-benchmark");
+            if (annotatedBenchmarkIndex >= 0)
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                if (annotatedBenchmarkIndex + 1 >= args.Length) throw new ArgumentException("--autocorrect-annotated-benchmark requires an annotation TSV file.");
+                var languageTag = annotatedBenchmarkIndex + 2 < args.Length ? args[annotatedBenchmarkIndex + 2] : "en-US";
+                var heldOutOnly = args.Skip(annotatedBenchmarkIndex + 2).Contains("--heldout", StringComparer.OrdinalIgnoreCase);
+                AutoCorrectCorpusChecks.RunAnnotatedErrors(args[annotatedBenchmarkIndex + 1], languageTag, extras, Check, heldOutOnly);
+                Console.WriteLine($"PASS: {_passed} annotated spelling benchmark checks.");
+                return 0;
+            }
+            var nextWordBenchmarkIndex = Array.IndexOf(args, "--autocorrect-nextword-benchmark");
+            if (nextWordBenchmarkIndex >= 0)
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                if (nextWordBenchmarkIndex + 1 >= args.Length) throw new ArgumentException("--autocorrect-nextword-benchmark requires a held-out corpus file.");
+                var languageTag = nextWordBenchmarkIndex + 2 < args.Length ? args[nextWordBenchmarkIndex + 2] : "tr-TR";
+                AutoCorrectCorpusChecks.RunNextWord(args[nextWordBenchmarkIndex + 1], languageTag, extras, Check);
+                Console.WriteLine($"PASS: {_passed} held-out next-word benchmark checks.");
+                return 0;
+            }
             if (args.Contains("--tiling-only"))
             {
                 var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Tiling.dll"));

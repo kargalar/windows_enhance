@@ -6,8 +6,28 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\WinForge.Core\WinForge.Core.csproj" Private="false" />
+    <EmbeddedResource Include="Resources\TurkishNgramModel.tsv.gz" Condition="Exists('Resources\TurkishNgramModel.tsv.gz')" />
+    <EmbeddedResource Include="Resources\EnglishNgramModel.tsv.gz" Condition="Exists('Resources\EnglishNgramModel.tsv.gz')" />
+    <EmbeddedResource Include="Resources\EnglishSpellingErrorModel.tsv.gz" Condition="Exists('Resources\EnglishSpellingErrorModel.tsv.gz')" />
+    <EmbeddedResource Include="Resources\TurkishDialogueNgramModel.tsv.gz" Condition="Exists('Resources\TurkishDialogueNgramModel.tsv.gz')" />
+    <EmbeddedResource Include="Resources\EnglishDialogueNgramModel.tsv.gz" Condition="Exists('Resources\EnglishDialogueNgramModel.tsv.gz')" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ZemberekDotNet.Morphology" Version="0.19.5" />
+    <!-- Direct references are required to copy the analyzer's non-transitive runtime resources. -->
+    <PackageReference Include="ZemberekDotNet.Core" Version="0.19.5" />
+    <PackageReference Include="ZemberekDotNet.Tokenization" Version="0.19.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="$(NuGetPackageRoot)zemberekdotnet.core\0.19.5\lib\net8.0\ZemberekDotNet.Core.dll;$(NuGetPackageRoot)zemberekdotnet.morphology\0.19.5\lib\net8.0\ZemberekDotNet.Morphology.dll;$(NuGetPackageRoot)zemberekdotnet.tokenization\0.19.5\lib\net8.0\ZemberekDotNet.Tokenization.dll;$(NuGetPackageRoot)google.protobuf\3.34.1\lib\net5.0\Google.Protobuf.dll;$(NuGetPackageRoot)log4net\3.3.0\lib\netstandard2.0\log4net.dll;$(NuGetPackageRoot)microsoft.extensions.caching.abstractions\10.0.5\lib\net10.0\Microsoft.Extensions.Caching.Abstractions.dll;$(NuGetPackageRoot)microsoft.extensions.caching.memory\10.0.5\lib\net10.0\Microsoft.Extensions.Caching.Memory.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="GetModuleRuntimeFiles" DependsOnTargets="Build" Returns="@(ModuleRuntimeFiles)">
+    <ItemGroup>
+      <ModuleRuntimeFiles Include="$(TargetDir)*.dll" Exclude="$(TargetPath)" />
+    </ItemGroup>
+  </Target>
 </Project>

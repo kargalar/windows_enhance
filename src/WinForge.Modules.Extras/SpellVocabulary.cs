@@ -6,11 +6,28 @@ internal static class SpellVocabulary
     private static readonly Lazy<HashSet<string>> LazyTurkishWords = new(() =>
         new HashSet<string>(TurkishWordsText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase));
 
+    private static readonly Lazy<string[]> LazyEnglishWordList = new(() =>
+        EnglishWordsText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray());
     private static readonly Lazy<HashSet<string>> LazyEnglishWords = new(() =>
-        new HashSet<string>(EnglishWordsText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase));
+        new HashSet<string>(EnglishWordList, StringComparer.OrdinalIgnoreCase));
+    private static readonly Lazy<Dictionary<string, string[]>> LazyEnglishWordsByPrefix = new(() =>
+        EnglishWordList.Where(word => word.Length >= 2)
+            .GroupBy(word => word[..2], StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.OrdinalIgnoreCase));
 
     internal static HashSet<string> TurkishWords => LazyTurkishWords.Value;
     internal static HashSet<string> EnglishWords => LazyEnglishWords.Value;
+    private static IReadOnlyList<string> EnglishWordList => LazyEnglishWordList.Value;
+
+    internal static IReadOnlyList<string> GetEnglishPrefixCandidates(string prefix, int maximumResults = 3)
+    {
+        if (prefix.Length < 2 || maximumResults <= 0) return [];
+        if (!LazyEnglishWordsByPrefix.Value.TryGetValue(prefix[..2], out var words)) return [];
+        return words.Where(word => word.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Take(maximumResults).ToArray();
+    }
 
     private const string TurkishWordsText =
         // Pronouns, Conjunctions, Basic Particles
@@ -130,6 +147,8 @@ internal static class SpellVocabulary
         "can sağlık sıhhat nefes ömür ömürlü hasta hastalık mikrop virüs bakteri ağrı sancı acı sızı " +
         "ateş öksürük grip nezle yara bere kırık çıkık kanama tansiyon nabız reçete ilaç hap şurup " +
         "iğne aşı pansuman tedavi ameliyat muayene doktor hekim hemşire hasta bakıcı tahlil röntgen " +
+        // Common terms of endearment used in everyday messaging
+        "canım aşkım tatlım hayatım kuzum yavrum abicim kardeşim dostum güzelim bir tanem " +
         // Adjectives (Quality, Quantity, Feeling, Color)
         "büyük küçük iri minik uzun kısa geniş dar yüksek alçak derin sığ kalın ince ağır hafif " +
         "hızlı çabuk yavaş serin ılık sıcak soğuk ayaz kuru ıslak nemli temiz pak kirli pis " +

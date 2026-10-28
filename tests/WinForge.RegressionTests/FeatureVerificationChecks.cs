@@ -562,7 +562,7 @@ internal static class FeatureVerificationChecks
         }
     }
 
-    private static void TestWordCorrectionEngine(Assembly extras, Action<bool, string> check)
+    internal static void TestWordCorrectionEngine(Assembly extras, Action<bool, string> check)
     {
         var spellEngineType = extras.GetType("WinForge.Modules.Extras.SpellEngine")!;
         var instanceProp = spellEngineType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!;
@@ -590,6 +590,22 @@ internal static class FeatureVerificationChecks
             var correction = (string?)findCorrectionMethod.Invoke(engine, [input, "tr-TR", null, true, true, true, true, null]);
             check(!isCorrect && correction == expected, $"Real-world typo '{input}' is corrected to '{expected}'");
         }
+        foreach (var (input, expected) in new[]
+                 {
+                     ("dahaa", "daha"),
+                     ("yaaa", "ya"),
+                     ("tatlımmm", "tatlım")
+                 })
+        {
+            var correction = (string?)findCorrectionMethod.Invoke(engine,
+                [input, "tr-TR", null, true, true, true, false, null]);
+            check(correction == expected,
+                $"High-confidence repeated-character typo '{input}' collapses to '{expected}'");
+        }
+        check(findCorrectionMethod.Invoke(engine, ["kooperatif", "tr-TR", null, true, true, true, false, null]) is null,
+            "Valid Turkish spelling with a legitimate repeated character is preserved");
+        check(findCorrectionMethod.Invoke(engine, ["alla", "tr-TR", "ya", true, true, true, false, null]) is null,
+            "An internal double letter is not collapsed into a different valid word");
         check((bool)isCorrectMethod.Invoke(engine, ["düzeltmedi", "tr-TR"])!, "Valid conjugated verb 'düzeltmedi' is recognized as correct");
 
         // Turkish common typos
@@ -688,22 +704,20 @@ internal static class FeatureVerificationChecks
 
         // Personalized frequency & adaptive learning tests
         var trackerType = extras.GetType("WinForge.Modules.Extras.UserFrequencyTracker")!;
-        var trackerInstanceProp = trackerType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!;
-        var tracker = trackerInstanceProp.GetValue(null)!;
-        var recordWordMethod = trackerType.GetMethod("RecordWord", BindingFlags.Instance | BindingFlags.Public)!;
+        var trackerPath = Path.Combine(Path.GetTempPath(), "WinForge.Tests", $"frequency-{Guid.NewGuid():N}.json");
+        var tracker = Activator.CreateInstance(trackerType, [trackerPath])!;
+        var recordWordMethod = trackerType.GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Single(method => method.Name == "RecordWord" && method.GetParameters().Length == 2);
         var isLearnedMethod = trackerType.GetMethod("IsLearned", BindingFlags.Instance | BindingFlags.Public)!;
         var clearMethod = trackerType.GetMethod("Clear", BindingFlags.Instance | BindingFlags.Public)!;
 
         clearMethod.Invoke(tracker, null);
         const string customJargon = "AntigravityCore";
-        recordWordMethod.Invoke(tracker, [customJargon, false]);
-        recordWordMethod.Invoke(tracker, [customJargon, false]);
-        recordWordMethod.Invoke(tracker, [customJargon, false]);
-
-        var isLearned = (bool)isLearnedMethod.Invoke(tracker, [customJargon])!;
-        check(isLearned, "UserFrequencyTracker automatically learns unrecognized custom terms after repeated usage");
-        var isEngineCorrect = (bool)isCorrectMethod.Invoke(engine, [customJargon, "tr-TR"])!;
-        check(isEngineCorrect, "SpellEngine accepts dynamically learned user terms as valid words");
+        for (var index = 0; index < 10; index++) recordWordMethod.Invoke(tracker, [customJargon, false]);
+        check(!(bool)isLearnedMethod.Invoke(tracker, [customJargon])!,
+            "Repeatedly typed unknown words are not silently added as correct vocabulary");
+        trackerType.GetMethod("LearnWord", BindingFlags.Instance | BindingFlags.Public)!.Invoke(tracker, [customJargon]);
+        check((bool)isLearnedMethod.Invoke(tracker, [customJargon])!, "Explicitly accepted words can be added to the personal dictionary");
         clearMethod.Invoke(tracker, null);
 
         // Module descriptor check
@@ -711,8 +725,13 @@ internal static class FeatureVerificationChecks
         check(module.Id == "auto-correct", "AutoCorrectModule ID is 'auto-correct'");
         check(module.Settings.Any(s => s.Key == "undo-on-backspace"), "AutoCorrectModule exposes undo-on-backspace toggle");
         check(module.Settings.Any(s => s.Key == "context-analysis"), "AutoCorrectModule exposes context-analysis toggle");
-        check(module.Settings.Any(s => s.Key == "personalized-frequency"), "AutoCorrectModule exposes personalized-frequency toggle");
+        check(module.Settings.Any(s => s.Key == "suggestion-strip"), "AutoCorrectModule exposes a selectable suggestion-strip toggle");
+        check(module.Settings.Any(s => s.Key == "personalized-frequency" && s.Description!.Contains("birlikte", StringComparison.OrdinalIgnoreCase)),
+            "AutoCorrectModule explains personalized word and phrase ranking");
+        check(module.Settings.Any(s => s.Key == "personal-dictionary" && s.Kind == SettingKind.Text),
+            "AutoCorrectModule exposes a personal dictionary setting for explicit vocabulary");
         check(module.Settings.Any(s => s.Key == "deasciify-turkish"), "AutoCorrectModule exposes deasciify-turkish toggle");
         check(module.Settings.Any(s => s.Key == "text-expansions"), "AutoCorrectModule exposes text-expansions toggle");
+        AutoCorrectQualityChecks.Run(extras, check);
     }
 }

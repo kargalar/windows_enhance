@@ -43,6 +43,12 @@
     <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
       <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />
     </MSBuild>
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\WinForge.Modules.Extras\WinForge.Modules.Extras.csproj"
+             Targets="GetModuleRuntimeFiles"
+             Properties="Configuration=$(Configuration);Platform=$(Platform)"
+             RemoveProperties="RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />
+    </MSBuild>
     <Delete Files="@(RetiredFiles)" />
     <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
   </Target>
