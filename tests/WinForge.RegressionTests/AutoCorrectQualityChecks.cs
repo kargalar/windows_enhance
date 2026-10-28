@@ -16,8 +16,18 @@ internal static class AutoCorrectQualityChecks
         var ngramType = extras.GetType("WinForge.Modules.Extras.SpellNgramModel")!;
         check((bool)ngramType.GetMethod("ContainsTurkishWord", PrivateStatic)!.Invoke(null, ["Türkiye"])!,
             "Training vocabulary recognizes unseen held-out Turkish words");
+        var spellType = extras.GetType("WinForge.Modules.Extras.SpellEngine")!;
+        var normalizationEngine = spellType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!.GetValue(null)!;
+        var isKnownWord = spellType.GetMethod("IsKnownWord", PrivateInstance)!;
+        check((bool)isKnownWord.Invoke(normalizationEngine, ["Tu\u0308rkiye", "tr-TR", false])!,
+            "Turkish vocabulary recognizes canonically decomposed Unicode input");
         check((int)ngramType.GetMethod("GetTurkishVocabularyCount", PrivateStatic)!.Invoke(null, null)! >= 50_000,
             "Trained Turkish frequency model contains a broad word-form vocabulary");
+        check(((IReadOnlyCollection<string>)ngramType.GetProperty("TurkishVocabulary", PrivateStatic)!.GetValue(null)!).Count >= 250_000,
+            "Turkish typo candidates include 250,000 frequency-ranked word forms");
+        check(((IReadOnlyCollection<string>)ngramType.GetProperty("TurkishCandidateWords", PrivateStatic)!.GetValue(null)!).Count ==
+              (int)ngramType.GetMethod("GetTurkishVocabularyCount", PrivateStatic)!.Invoke(null, null)!,
+            "Fuzzy correction search indexes the full Turkish frequency vocabulary, including its long tail");
         check(extras.GetManifestResourceNames().Any(name => name.EndsWith("EnglishNgramModel.tsv.gz", StringComparison.Ordinal)),
             "A trained English n-gram model is embedded in the application module");
         check(extras.GetManifestResourceNames().Any(name => name.EndsWith("EnglishSpellingErrorModel.tsv.gz", StringComparison.Ordinal)),
@@ -43,8 +53,13 @@ internal static class AutoCorrectQualityChecks
         check(!(bool)morphologyRecognizes.Invoke(null, ["bfunları"])!,
             "Morphology rejects a transposed nonword instead of protecting it as valid");
 
-        var engineType = extras.GetType("WinForge.Modules.Extras.SpellEngine")!;
+        var engineType = spellType;
         var engine = Activator.CreateInstance(engineType)!;
+        var getKeyboardSubstitutionCost = engineType.GetMethod("CalculateKeyboardSubstitutionCost", PrivateStatic)!;
+        double KeyboardCost(char left, char right) =>
+            (double)getKeyboardSubstitutionCost.Invoke(null, [left, right])!;
+        check(KeyboardCost('e', 'r') < KeyboardCost('e', 'd') && KeyboardCost('e', 'd') < KeyboardCost('e', 'b'),
+            "Keyboard typo costs rise smoothly from an adjacent key through a diagonal to a distant key");
         var getSuggestions = engineType.GetMethod("GetSuggestions", PrivateInstance)!;
         var prefixSuggestions = (IReadOnlyList<string>)getSuggestions.Invoke(engine,
             ["merh", "tr-TR", null, true, true, false, false, null, 3])!;
@@ -60,6 +75,10 @@ internal static class AutoCorrectQualityChecks
         var predictions = (IReadOnlyList<string>)getPredictions.Invoke(null, ["çok", "teş", "tr-TR", 3])!;
         check(predictions.Contains("teşekkürler", StringComparer.OrdinalIgnoreCase),
             "Next-word suggestions use corpus and collocation context with prefix filtering");
+        var decomposedPredictions = (IReadOnlyList<string>)getPredictions.Invoke(null,
+            ["c\u0327ok", "tes\u0327", "tr-TR", 3])!;
+        check(decomposedPredictions.Contains("teşekkürler", StringComparer.OrdinalIgnoreCase),
+            "N-gram context and typed prefixes normalize decomposed Turkish characters");
         var englishCorpusPredictions = (IReadOnlyList<string>)getPredictions.Invoke(null, ["the United", "sta", "en-US", 3])!;
         check(englishCorpusPredictions.Contains("states", StringComparer.OrdinalIgnoreCase),
             "English next-word suggestions use the trained corpus trigram model");
@@ -95,6 +114,13 @@ internal static class AutoCorrectQualityChecks
                 StringComparer.OrdinalIgnoreCase.Equals(
                     candidate.GetType().GetProperty("Word")!.GetValue(candidate) as string, "have")),
             "English conversational trigram model contains frequent daily-dialogue phrases");
+        var getConversationTrigramSupport = ngramType.GetMethods(PrivateStatic)
+            .Single(method => method.Name == "GetConversationTrigramSupport" &&
+                              method.GetParameters().Length == 2 &&
+                              method.GetParameters().All(parameter => parameter.ParameterType == typeof(string)));
+        check((long)getConversationTrigramSupport.Invoke(null, ["do you", "en-US"])! > 0 &&
+              (long)getConversationTrigramSupport.Invoke(null, ["qzxwv unknown", "en-US"])! == 0,
+            "Conversation model reports exact trigram evidence separately from bigram fallback");
         var apostropheCandidates = (System.Collections.IEnumerable)ngramType
             .GetMethod("GetConversationNextWordCandidates", PrivateStatic)!
             .Invoke(null, ["I don't", "en-US"])!;
@@ -135,7 +161,7 @@ internal static class AutoCorrectQualityChecks
         string? Correct(string word, string tag = "tr-TR", string? history = null, bool context = true,
             bool deasciify = true, bool expansions = true, IReadOnlyDictionary<string, string>? custom = null) =>
             (string?)find.Invoke(engine, [word, tag, history, context, deasciify, expansions, false, custom]);
-
+        var getRankedCandidates = engineType.GetMethod("GetRankedCandidates", PrivateInstance)!;
         foreach (var (word, tag, history) in new (string, string, string?)[]
         {
             ("kitap", "tr-TR", null), ("kitaplar", "tr-TR", "bir"),
@@ -175,9 +201,9 @@ internal static class AutoCorrectQualityChecks
         foreach (var (word, expected) in new[]
         {
             ("genlel", "genel"), ("iyileşitr", "iyileştir"), ("iyleştirme", "iyileştirme"),
-            ("sarkilar", "şarkılar"),
             ("şuan", "şu an"), ("kitp", "kitap"), ("kitplar", "kitaplar")
         }) check(Correct(word) == expected, $"Typing error '{word}' resolves to '{expected}'");
+        check(Correct("sarkilar") == "şarkılar", "Typing error 'sarkilar' resolves to 'şarkılar'");
         check(Correct("seviyenie") == "seviyesine", "Context demo typo 'seviyenie' is corrected to 'seviyesine'");
         check(Correct("yakisikli") == "yakışıklı", "Multiple missing Turkish diacritics do not exhaust the edit-distance budget");
         check(Correct("yapildigini") == "yapıldığını",
@@ -191,6 +217,8 @@ internal static class AutoCorrectQualityChecks
         check(affectionateSuggestions.Contains("aşkım", StringComparer.OrdinalIgnoreCase),
             "Ambiguous affectionate spelling keeps the preferred diacritic form in suggestions");
         check(Correct("olum") is null, "Ambiguous unaccented Turkish word 'olum' is left for context instead of being forced to 'ölüm'");
+        check(Correct("mı") is null, "A valid short Turkish word is preserved when an equally frequent diacritic variant has no context support");
+        check(Correct("oluyor") is null, "A valid Turkish verb is preserved when its diacritic variant has no context support");
         var ambiguousTurkishSuggestions = (IReadOnlyList<string>)getSuggestions.Invoke(engine,
             ["olum", "tr-TR", null, true, true, false, false, null, 3])!;
         check(ambiguousTurkishSuggestions.Contains("ölüm", StringComparer.OrdinalIgnoreCase),
@@ -209,6 +237,8 @@ internal static class AutoCorrectQualityChecks
             "Turkish context resolves the valid-word confusion 'seviyesine kayın' to 'seviyesine yakın'");
         check(Correct("kayın", history: "seviyesine") == "yakın",
             "SpellEngine applies a high-confidence Turkish real-word collocation correction");
+        check(Context("seviyesine", "kadar") is null,
+            "A valid Turkish collocation continuation is preserved rather than context-corrected");
         check(Correct("şu", history: "tutuyor ve") is null,
             "Known Turkish diacritics are not removed without stronger collocation evidence");
         check(Context("yakın mı", "şua") == "şu an" && Correct("şua", history: "yakın mı") == "şu an",
@@ -227,13 +257,18 @@ internal static class AutoCorrectQualityChecks
         check(Rank(null, false, "this", "thus") is null && Rank(null, false, "thus", "this") is null,
             "Ambiguous fuzzy candidates abstain independently of enumeration order");
         check(Rank("of", true, "this", "thus") == "this", "Bigram evidence disambiguates equally close candidates");
-        var getRankedCandidates = engineType.GetMethod("GetRankedCandidates", PrivateInstance)!;
-        var borderlineCandidates = new HashSet<string> { "abczey" };
+        var borderlineCandidates = new HashSet<string> { "qbxdey" };
         var borderlineRanked = ((System.Collections.IEnumerable)getRankedCandidates.Invoke(engine,
             ["abcdef", borderlineCandidates, null, false, false, "tr-TR", 3])!).Cast<object>().ToArray();
         var borderlineScore = (double)borderlineRanked[0].GetType().GetProperty("Score")!.GetValue(borderlineRanked[0])!;
+        var rankedCandidateArray = Array.CreateInstance(borderlineRanked[0].GetType(), borderlineRanked.Length);
+        for (var index = 0; index < borderlineRanked.Length; index++)
+            rankedCandidateArray.SetValue(borderlineRanked[index], index);
+        var correctionCheckArguments = new object?[] { rankedCandidateArray, "abcdef".Length, "tr-TR", null, null };
+        var isAutomaticCorrection = (bool)engineType.GetMethod("TryGetAutomaticCorrection", PrivateStatic)!
+            .Invoke(null, correctionCheckArguments)!;
         check(borderlineScore is > 2.15 and <= 2.5 &&
-              rank.Invoke(engine, ["abcdef", borderlineCandidates, null, false, false, "tr-TR"]) is null,
+              !isAutomaticCorrection,
             "Borderline Turkish candidates can be suggested while automatic correction keeps its stricter score limit");
         var rankWithTransposition = (string?)rank.Invoke(engine,
             ["teh", new HashSet<string> { "the", "tea" }, null, false, false, "tr-TR"]);
@@ -258,7 +293,7 @@ internal static class AutoCorrectQualityChecks
         Action<int, string> replace = (count, replacement) => text = text[..^count] + replacement;
         var module = type.GetConstructors(PrivateInstance).Single().Invoke([replace]);
         var correctionType = type.GetNestedType("LastCorrection", BindingFlags.NonPublic)!;
-        var correction = Activator.CreateInstance(correctionType, ["tamma", "tamam", new IntPtr(42), 1L])!;
+        var correction = Activator.CreateInstance(correctionType, ["tamma", "tamam", new IntPtr(42), 1L, "tr-TR"])!;
         type.GetMethod("UndoCorrection", PrivateInstance)!.Invoke(module, [correction]);
         check(text == "önceki tamma", "Undo restores the original typo without deleting the preceding word or its separator");
 
@@ -281,6 +316,8 @@ internal static class AutoCorrectQualityChecks
             var engine = engineType.GetConstructors(PrivateInstance).Single().Invoke([tracker]);
             var find = engineType.GetMethods().Single(method => method.Name == "FindCorrection" && method.GetParameters().Length == 8);
             string? Correct(bool learning) => (string?)find.Invoke(engine, ["kitp", "tr-TR", null, false, true, false, learning, null]);
+            string? CorrectWord(string word, string languageTag, bool learning) =>
+                (string?)find.Invoke(engine, [word, languageTag, null, true, true, false, learning, null]);
             var record = trackerType.GetMethod("RecordWord", [typeof(string), typeof(bool), typeof(string)])!;
             for (var i = 0; i < 100; i++) record.Invoke(tracker, ["kitp", false, null]);
             check(!(bool)trackerType.GetMethod("IsLearned")!.Invoke(tracker, ["kitp"])!,
@@ -289,6 +326,17 @@ internal static class AutoCorrectQualityChecks
             trackerType.GetMethod("LearnWord")!.Invoke(tracker, ["kitp"]);
             check(Correct(true) is null, "Newly learned words override previously cached corrections");
             check(Correct(false) == "kitap", "Disabling personalization ignores learned vocabulary");
+            trackerType.GetMethod("RecordRejectedCorrection", PrivateInstance,
+                    [typeof(string), typeof(string), typeof(string)])!
+                .Invoke(tracker, ["teh", "the", "en-US"]);
+            check(CorrectWord("teh", "en-US", true) != "the",
+                "Undo feedback prevents a rejected correction from being automatically repeated");
+            check(CorrectWord("teh", "en-US", false) == "the",
+                "Disabling personalization ignores locally rejected correction feedback");
+            var rejectionSuggestions = (IReadOnlyList<string>)engineType.GetMethod("GetSuggestions", PrivateInstance)!
+                .Invoke(engine, ["teh", "en-US", null, true, true, false, true, null, 3])!;
+            check(!rejectionSuggestions.Contains("the", StringComparer.OrdinalIgnoreCase),
+                "Rejected correction feedback removes the same candidate from suggestions");
             var setConfiguredWords = trackerType.GetMethod("SetConfiguredWords")!;
             setConfiguredWords.Invoke(tracker, [new[] { "MyProjectTerm" }]);
             check((bool)trackerType.GetMethod("IsLearned")!.Invoke(tracker, ["MyProjectTerm"])!,
@@ -311,6 +359,10 @@ internal static class AutoCorrectQualityChecks
             trackerType.GetMethod("SaveImmediate")!.Invoke(tracker, null);
             var restored = Activator.CreateInstance(trackerType, [path])!;
             check((bool)trackerType.GetMethod("IsLearned")!.Invoke(restored, ["kitp"])!, "Learned words survive persistence without touching the user's dictionary");
+            check((bool)trackerType.GetMethod("IsCorrectionRejected", PrivateInstance,
+                    [typeof(string), typeof(string), typeof(string)])!
+                    .Invoke(restored, ["teh", "the", "en-US"])!,
+                "Rejected correction feedback survives persistence");
             check((double)trackerType.GetMethod("GetBigramFrequencyBonus")!.Invoke(restored, ["xyz", "this"])! > 0,
                 "Personal bigram frequencies survive persistence");
             var recordTrigram = trackerType.GetMethod("RecordWord", [typeof(string), typeof(bool), typeof(string)])!;

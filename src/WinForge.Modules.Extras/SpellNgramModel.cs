@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using System.Text;
 
 namespace WinForge.Modules.Extras;
 
@@ -9,16 +10,27 @@ namespace WinForge.Modules.Extras;
 internal static class SpellNgramModel
 {
     private const char ContextSeparator = '\u001f';
-    private const int MaximumCorrectionVocabulary = 100_000;
+    private const int MaximumTurkishCorrectionVocabulary = 250_000;
+    private const int MaximumOtherCorrectionVocabulary = 100_000;
+    private const int MaximumTurkishMorphologyVocabulary = 100_000;
     private const int MaximumInterpolatedCandidates = 64;
-    private static readonly Lazy<ModelData> TurkishData = new(() => Load("Turkish"), LazyThreadSafetyMode.ExecutionAndPublication);
-    private static readonly Lazy<ModelData> EnglishData = new(() => Load("English"), LazyThreadSafetyMode.ExecutionAndPublication);
-    private static readonly Lazy<ModelData> TurkishDialogueData = new(() => Load("TurkishDialogue"), LazyThreadSafetyMode.ExecutionAndPublication);
-    private static readonly Lazy<ModelData> EnglishDialogueData = new(() => Load("EnglishDialogue"), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<ModelData> TurkishData = new(() =>
+        Load("Turkish", MaximumTurkishCorrectionVocabulary), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<ModelData> EnglishData = new(() =>
+        Load("English", MaximumOtherCorrectionVocabulary), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<ModelData> TurkishDialogueData = new(() =>
+        Load("TurkishDialogue", MaximumOtherCorrectionVocabulary), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<ModelData> EnglishDialogueData = new(() =>
+        Load("EnglishDialogue", MaximumOtherCorrectionVocabulary), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<IReadOnlyCollection<string>> TurkishMorphologyWords = new(() =>
+        TurkishData.Value.CorrectionWords.Take(MaximumTurkishMorphologyVocabulary).ToArray(),
+        LazyThreadSafetyMode.ExecutionAndPublication);
     private static readonly CultureInfo TurkishCulture = CultureInfo.GetCultureInfo("tr-TR");
     private static readonly CultureInfo EnglishCulture = CultureInfo.GetCultureInfo("en-US");
 
     internal static IReadOnlyCollection<string> TurkishVocabulary => TurkishData.Value.CorrectionWords;
+    internal static IReadOnlyCollection<string> TurkishCandidateWords => TurkishData.Value.Words.Keys;
+    internal static IReadOnlyCollection<string> TurkishMorphologyVocabulary => TurkishMorphologyWords.Value;
     internal static IReadOnlyCollection<string> EnglishVocabulary => EnglishData.Value.CorrectionWords;
 
     internal static int GetTurkishVocabularyCount() => TurkishData.Value.Words.Count;
@@ -84,13 +96,25 @@ internal static class SpellNgramModel
         if (history is null) return 0;
 
         var data = GetConversationData(languageTag);
+        var trigramSupport = GetConversationTrigramSupport(history, data);
+        if (trigramSupport > 0) return trigramSupport;
+
         var previousWord = history[(history.LastIndexOf(ContextSeparator) + 1)..];
-        if (data.TrigramCandidates.TryGetValue(history, out var trigramCandidates))
-            return trigramCandidates.Sum(candidate => (long)candidate.Count);
         return data.BigramCandidates.TryGetValue(previousWord, out var bigramCandidates)
             ? bigramCandidates.Sum(candidate => (long)candidate.Count)
             : 0;
     }
+
+    internal static long GetConversationTrigramSupport(string previousWords, string languageTag)
+    {
+        var history = NormalizeHistory(previousWords, languageTag);
+        return history is null ? 0 : GetConversationTrigramSupport(history, GetConversationData(languageTag));
+    }
+
+    private static long GetConversationTrigramSupport(string history, ModelData data) =>
+        data.TrigramCandidates.TryGetValue(history, out var candidates)
+            ? candidates.Sum(candidate => (long)candidate.Count)
+            : 0;
 
     private static ModelData GetConversationData(string languageTag) =>
         languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase)
@@ -148,7 +172,7 @@ internal static class SpellNgramModel
             .ToArray();
     }
 
-    private static ModelData Load(string language)
+    private static ModelData Load(string language, int maximumCorrectionVocabulary)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var resource = assembly.GetManifestResourceNames()
@@ -161,7 +185,7 @@ internal static class SpellNgramModel
         using var reader = new StreamReader(gzip);
 
         var words = new Dictionary<string, string>(StringComparer.Ordinal);
-        var correctionWords = new List<string>(MaximumCorrectionVocabulary);
+        var correctionWords = new List<string>(maximumCorrectionVocabulary);
         var unigrams = new Dictionary<string, int>(StringComparer.Ordinal);
         var bigrams = new Dictionary<string, int>(StringComparer.Ordinal);
         var trigrams = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -175,7 +199,7 @@ internal static class SpellNgramModel
             if (fields.Length == 3 && fields[0] == "u" && int.TryParse(fields[2], out var unigramCount))
             {
                 words[fields[1]] = fields[1];
-                if (correctionWords.Count < MaximumCorrectionVocabulary)
+                if (correctionWords.Count < maximumCorrectionVocabulary)
                 {
                     correctionWords.Add(fields[1]);
                 }
@@ -268,7 +292,7 @@ internal static class SpellNgramModel
 
     private static string Normalize(string word, string languageTag)
     {
-        var normalized = word.ToLower(
+        var normalized = word.Normalize(NormalizationForm.FormC).ToLower(
             languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase) ? TurkishCulture : EnglishCulture);
         return normalized.Replace("'", string.Empty, StringComparison.Ordinal)
             .Replace("’", string.Empty, StringComparison.Ordinal);

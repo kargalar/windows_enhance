@@ -17,22 +17,33 @@ internal sealed class SpellEngine
     private const double MaxFuzzyScoreLong = 2.15;
     private const double MaxTurkishSuggestionScoreLong = 2.5;
     private const double MinimumCandidateMargin = 0.30;
-    private const double MinimumTurkishCandidateMargin = 0.55;
+    private const double MinimumTurkishCandidateMargin = 0.40;
+    private const double MinimumTurkishFuzzyCandidateMargin = 0.30;
+    private const double MinimumTurkishLongTailCandidateMargin = 0.50;
     private const double MaximumKnownTurkishCandidateScore = 0.0;
     private const double MaximumStrongTwoDiacriticCandidateScore = -0.2;
+    private const double MaximumUniqueLongDiacriticCandidateScore = 0.05;
+    private const double MaximumUniqueMultipleDiacriticCandidateScore = 1.2;
     private const double MinimumTwoDiacriticCandidateMargin = 0.7;
     private const double MinimumKnownTurkishFrequencyAdvantage = 0.12;
+    private const double MinimumKnownWordFrequencyLead = 0.05;
     private const double MinimumRepeatedCharacterFrequencyAdvantage = 0.12;
     private const int MaximumKnownTurkishDiacriticPositions = 2;
+    private const int MaximumExhaustiveTurkishDiacriticPositions = 6;
+    private const int MinimumUniqueLongDiacriticWordLength = 6;
     private const double AdjacentTranspositionBonus = 0.15;
     private const int MaximumCachedCorrections = 2048;
     private const int MaximumWordLength = 40;
     private const int MaximumShortWordEditDistance = 2;
+    private const int MaximumFuzzyCharacterEdits = 3;
     private const int MaximumEnglishEditDistance = 3;
     private const int MaximumTurkishEditDistance = MaximumTurkishDeasciifyPositions;
     private const int MaximumTurkishDeasciifyPositions = 9;
     private const int MaximumTurkishMorphologyCandidateCacheEntries = 8_192;
     private const double TurkishDiacriticSubstitutionCost = 0.25;
+    private const double KeyboardSubstitutionBaseCost = 0.25;
+    private const double KeyboardSubstitutionDistanceScale = 0.42;
+    private const double MaximumKeyboardSubstitutionCost = 1.25;
     private const string EnglishLanguageTag = "en-US";
     private static readonly IReadOnlyDictionary<char, char> TurkishDiacriticVariants = new Dictionary<char, char>
     {
@@ -51,10 +62,20 @@ internal sealed class SpellEngine
         words.UnionWith(SpellLexicons.TurkishTypoTargets);
         return words;
     });
+    private static readonly Lazy<HashSet<string>> TurkishLongTailCandidateVocabulary = new(() =>
+    {
+        var words = new HashSet<string>(SpellNgramModel.TurkishCandidateWords, StringComparer.Ordinal);
+        words.ExceptWith(TurkishCandidateVocabulary.Value);
+        return words;
+    });
     private static readonly Lazy<Dictionary<int, Dictionary<char, string[]>>> TurkishCandidatesByLengthAndFirstCharacter =
         new(() => IndexByLengthAndCharacter(TurkishCandidateVocabulary.Value, 0));
     private static readonly Lazy<Dictionary<int, Dictionary<char, string[]>>> TurkishCandidatesByLengthAndSecondCharacter =
         new(() => IndexByLengthAndCharacter(TurkishCandidateVocabulary.Value, 1));
+    private static readonly Lazy<Dictionary<int, Dictionary<char, string[]>>> TurkishLongTailCandidatesByLengthAndFirstCharacter =
+        new(() => IndexByLengthAndCharacter(TurkishLongTailCandidateVocabulary.Value, 0));
+    private static readonly Lazy<Dictionary<int, Dictionary<char, string[]>>> TurkishLongTailCandidatesByLengthAndSecondCharacter =
+        new(() => IndexByLengthAndCharacter(TurkishLongTailCandidateVocabulary.Value, 1));
     private static readonly Lazy<HashSet<string>> EnglishCandidateVocabulary = new(() =>
     {
         var words = new HashSet<string>(SpellVocabulary.EnglishWords, StringComparer.OrdinalIgnoreCase);
@@ -90,6 +111,7 @@ internal sealed class SpellEngine
     internal bool IsKnownWord(string word, string languageTag, bool allowLearning)
     {
         if (string.IsNullOrWhiteSpace(word)) return true;
+        word = word.Normalize(NormalizationForm.FormC);
         if (word.Any(char.IsDigit)) return true; // Numbers / version codes / identifiers are not misspelled
 
         var culture = GetCulture(languageTag);
@@ -149,6 +171,8 @@ internal sealed class SpellEngine
     {
         if (string.IsNullOrWhiteSpace(word) || maximumResults <= 0 || !IsLanguageSupported(languageTag)) return [];
 
+        word = word.Normalize(NormalizationForm.FormC);
+        previousWords = previousWords?.Normalize(NormalizationForm.FormC);
         var culture = GetCulture(languageTag);
         var suggestions = new List<string>(maximumResults);
         var correction = FindCorrection(word, languageTag, previousWords, allowContext, allowDeasciify,
@@ -193,6 +217,17 @@ internal sealed class SpellEngine
                 string.IsNullOrWhiteSpace(previousWords) ? null : previousWords.ToLower(culture),
                 allowContext, allowLearning, languageTag, maximumResults);
             foreach (var candidate in rankedCorrections) AddSuggestion(candidate.Word);
+
+            if (isTurkish && suggestions.Count < maximumResults)
+            {
+                var longTailCandidates = CollectCompatibleCandidates(
+                    lowerWord, 2, isTurkish: true, useTurkishLongTail: true);
+                var rankedLongTailCandidates = GetRankedCandidates(word.ToLower(culture),
+                    longTailCandidates,
+                    string.IsNullOrWhiteSpace(previousWords) ? null : previousWords.ToLower(culture),
+                    allowContext, allowLearning, languageTag, maximumResults - suggestions.Count);
+                foreach (var candidate in rankedLongTailCandidates) AddSuggestion(candidate.Word);
+            }
         }
 
         return suggestions;
@@ -206,6 +241,7 @@ internal sealed class SpellEngine
                 ? SpellLexicons.TurkishCommonTypos
                 : SpellLexicons.EnglishCommonTypos;
             if (commonTypos.ContainsKey(normalizedSuggestion)) return;
+            if (allowLearning && _frequencyTracker.IsCorrectionRejected(word, normalizedSuggestion, languageTag)) return;
             if (suggestions.Count < maximumResults) suggestions.Add(suggestion);
         }
     }
@@ -221,6 +257,8 @@ internal sealed class SpellEngine
         IReadOnlyDictionary<string, string>? customReplacements = null)
     {
         if (string.IsNullOrWhiteSpace(word) || word.Length < 2 || word.Length > MaximumWordLength) return null;
+        word = word.Normalize(NormalizationForm.FormC);
+        previousWord = previousWord?.Normalize(NormalizationForm.FormC);
 
         var culture = GetCulture(languageTag);
         var lowerWord = word.ToLower(culture);
@@ -234,18 +272,23 @@ internal sealed class SpellEngine
         if (allowLearning && _frequencyTracker.IsLearned(lowerWord)) return null;
 
         // 2. Built-in text expansions / shortcuts (e.g. tşk -> teşekkürler, brb -> be right back)
-        if (allowExpansions && SpellLexicons.DefaultTextExpansions.TryGetValue(lowerWord, out var expansion))
+        if (allowExpansions && SpellLexicons.DefaultTextExpansions.TryGetValue(lowerWord, out var expansion) &&
+            !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, expansion, languageTag)))
             return expansion;
 
         // Explicit spelling mappings take precedence over contextual guesses.
         var isTurkish = languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase);
         var isEnglish = languageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase);
         var typos = isTurkish ? SpellLexicons.TurkishCommonTypos : SpellLexicons.EnglishCommonTypos;
-        if (typos.TryGetValue(lowerWord, out var typo)) return typo;
+        if (typos.TryGetValue(lowerWord, out var typo) &&
+            !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, typo, languageTag))) return typo;
         if (isEnglish && SpellErrorModel.TryGetCorrection(lowerWord, out var annotatedCorrection) &&
-            !IsKnownWord(word, languageTag, allowLearning)) return annotatedCorrection;
+            !IsKnownWord(word, languageTag, allowLearning) &&
+            !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, annotatedCorrection, languageTag)))
+            return annotatedCorrection;
         if (isTurkish && !allowDeasciify && SpellLexicons.TurkishDeasciifierMap.ContainsKey(lowerWord)) return null;
-        if (isTurkish && allowDeasciify && SpellLexicons.TurkishDeasciifierMap.TryGetValue(lowerWord, out var deasciified))
+        if (isTurkish && allowDeasciify && SpellLexicons.TurkishDeasciifierMap.TryGetValue(lowerWord, out var deasciified) &&
+            !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, deasciified, languageTag)))
         {
             if (SpellVocabulary.TurkishWords.Contains(lowerWord)) return null;
             return deasciified;
@@ -256,7 +299,8 @@ internal sealed class SpellEngine
         if (allowContext && lowerPrevWord is not null)
         {
             var contextCorrection = SpellContextModel.TryFindContextCorrection(lowerPrevWord, lowerWord, languageTag);
-            if (contextCorrection is not null)
+            if (contextCorrection is not null &&
+                !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, contextCorrection, languageTag)))
                 return contextCorrection;
         }
 
@@ -264,13 +308,22 @@ internal sealed class SpellEngine
         {
             var repeatedCharacterCorrection = FindHighConfidenceRepeatedCharacterCorrection(
                 lowerWord, lowerPrevWord, allowContext, allowLearning, languageTag);
-            if (repeatedCharacterCorrection is not null) return repeatedCharacterCorrection;
+            if (repeatedCharacterCorrection is not null &&
+                !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, repeatedCharacterCorrection, languageTag)))
+                return repeatedCharacterCorrection;
         }
 
-        if (IsKnownWord(word, languageTag, allowLearning))
-            return isTurkish
-                ? FindHighConfidenceTurkishKnownWordCorrection(lowerWord, lowerPrevWord, allowContext, allowLearning, languageTag)
-                : null;
+        var isKnownWord = IsKnownWord(word, languageTag, allowLearning);
+        if (isTurkish && (isKnownWord || CountTurkishDiacriticVariants(lowerWord) <= MaximumExhaustiveTurkishDiacriticPositions))
+        {
+            var highConfidenceDiacriticCorrection = FindHighConfidenceTurkishKnownWordCorrection(
+                lowerWord, lowerPrevWord, allowContext, allowLearning, languageTag);
+            if (highConfidenceDiacriticCorrection is not null &&
+                !(allowLearning && _frequencyTracker.IsCorrectionRejected(lowerWord, highConfidenceDiacriticCorrection, languageTag)))
+                return highConfidenceDiacriticCorrection;
+        }
+
+        if (isKnownWord) return null;
 
         // Cache lookup for algorithmic corrections
         var cacheKey = $"{languageTag}:{lowerPrevWord}:{lowerWord}:{allowDeasciify}:{allowContext}";
@@ -328,8 +381,33 @@ internal sealed class SpellEngine
 
         var best = rankedCandidates[0];
         var editDistance = CalculateEditDistance(word, best.Word);
-        if (editDistance is < 1 or > MaximumKnownTurkishDiacriticPositions)
+        if (editDistance < 1)
             return null;
+
+        if (editDistance <= MaximumKnownTurkishDiacriticPositions &&
+            IsKnownWord(word, languageTag, allowLearning) && allowContext)
+        {
+            var frequencyAdvantage = SpellNgramModel.GetUnigramBonus(best.Word, languageTag) -
+                                     SpellNgramModel.GetUnigramBonus(word, languageTag);
+            var typedContextEvidence = allowContext
+                ? SpellContextModel.GetBigramBonus(previousWord, word, languageTag, _frequencyTracker, allowLearning)
+                : 0;
+            var candidateContextEvidence = allowContext
+                ? SpellContextModel.GetBigramBonus(previousWord, best.Word, languageTag, _frequencyTracker, allowLearning)
+                : 0;
+            // Keep a valid typed word when unigram evidence is nearly tied unless context favors the alternative.
+            if (frequencyAdvantage < MinimumKnownWordFrequencyLead &&
+                candidateContextEvidence - typedContextEvidence < MinimumCandidateMargin)
+                return null;
+        }
+
+        if (editDistance > MaximumKnownTurkishDiacriticPositions)
+        {
+            var isUniqueMultipleDiacriticCandidate = CountTurkishDiacriticVariants(word) > MaximumKnownTurkishDiacriticPositions &&
+                                                     rankedCandidates.Count == 1 &&
+                                                     best.Score <= MaximumUniqueMultipleDiacriticCandidateScore;
+            return isUniqueMultipleDiacriticCandidate ? best.Word : null;
+        }
 
         if (CountTurkishDiacritics(best.Word) < CountTurkishDiacritics(word))
         {
@@ -346,9 +424,13 @@ internal sealed class SpellEngine
 
         if (editDistance == 2)
         {
-            if (best.Score > MaximumStrongTwoDiacriticCandidateScore ||
-                (rankedCandidates.Count > 1 &&
-                 rankedCandidates[1].Score - best.Score < MinimumTwoDiacriticCandidateMargin))
+            var hasClearCandidateMargin = rankedCandidates.Count == 1 ||
+                                          rankedCandidates[1].Score - best.Score >= MinimumTwoDiacriticCandidateMargin;
+            var hasStrongCandidateScore = best.Score <= MaximumStrongTwoDiacriticCandidateScore;
+            var isUniqueLongWordCandidate = word.Length >= MinimumUniqueLongDiacriticWordLength &&
+                                            rankedCandidates.Count == 1 &&
+                                            best.Score <= MaximumUniqueLongDiacriticCandidateScore;
+            if (!hasClearCandidateMargin || (!hasStrongCandidateScore && !isUniqueLongWordCandidate))
                 return null;
             return best.Word;
         }
@@ -371,6 +453,9 @@ internal sealed class SpellEngine
     private static int CountTurkishDiacritics(string word) =>
         word.Count(character => character is 'ç' or 'ğ' or 'ö' or 'ş' or 'ü');
 
+    private static int CountTurkishDiacriticVariants(string word) =>
+        word.Count(TurkishDiacriticVariants.ContainsKey);
+
     private static IReadOnlyCollection<string> GetTurkishDiacriticAlternatives(string word)
     {
         var positions = new List<(int Index, char Replacement)>();
@@ -381,7 +466,7 @@ internal sealed class SpellEngine
         if (positions.Count == 0) return [];
         var characters = word.ToCharArray();
         var candidates = new HashSet<string>(StringComparer.Ordinal);
-        if (positions.Count <= MaximumKnownTurkishDiacriticPositions)
+        if (positions.Count <= MaximumExhaustiveTurkishDiacriticPositions)
         {
             var variantCount = 1 << positions.Count;
             for (var mask = 1; mask < variantCount; mask++)
@@ -472,17 +557,49 @@ internal sealed class SpellEngine
         string languageTag)
     {
         var rankedCandidates = GetRankedCandidates(word, candidates, previousWord, allowContext, allowLearning, languageTag, 2);
-        if (rankedCandidates.Count == 0) return null;
+        if (TryGetAutomaticCorrection(rankedCandidates, word.Length, languageTag, out var correction))
+            return correction;
 
-        var maxAllowedScore = GetMaximumAutomaticCorrectionScore(word.Length);
-        var minimumCandidateMargin = languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase)
-            ? MinimumTurkishCandidateMargin
-            : MinimumCandidateMargin;
-        return rankedCandidates[0].Distance <= maxAllowedScore &&
-               rankedCandidates[0].Score <= maxAllowedScore &&
-               (rankedCandidates.Count == 1 || rankedCandidates[1].Score - rankedCandidates[0].Score >= minimumCandidateMargin)
-            ? rankedCandidates[0].Word
+        if (!languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase)) return null;
+
+        var longTailCandidates = CollectCompatibleCandidates(
+            word, 2, isTurkish: true, useTurkishLongTail: true);
+        var rankedLongTailCandidates = GetRankedCandidates(
+            word, longTailCandidates, previousWord, allowContext, allowLearning, languageTag, 2);
+        var combinedCandidates = rankedCandidates
+            .Concat(rankedLongTailCandidates)
+            .GroupBy(candidate => candidate.Word, StringComparer.Ordinal)
+            .Select(group => group.OrderBy(candidate => candidate, Comparer<RankedCandidate>.Create(CompareCandidates)).First())
+            .OrderBy(candidate => candidate, Comparer<RankedCandidate>.Create(CompareCandidates))
+            .Take(2)
+            .ToArray();
+        return TryGetAutomaticCorrection(
+            combinedCandidates, word.Length, languageTag, out correction, MinimumTurkishLongTailCandidateMargin)
+            ? correction
             : null;
+    }
+
+    private static bool TryGetAutomaticCorrection(
+        IReadOnlyList<RankedCandidate> candidates,
+        int wordLength,
+        string languageTag,
+        out string? correction,
+        double? minimumMarginOverride = null)
+    {
+        correction = null;
+        if (candidates.Count == 0) return false;
+
+        var best = candidates[0];
+        var maximumScore = GetMaximumAutomaticCorrectionScore(wordLength);
+        var minimumMargin = minimumMarginOverride ?? (languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase)
+            ? MinimumTurkishFuzzyCandidateMargin
+            : MinimumCandidateMargin);
+        if (best.Distance > maximumScore || best.Score > maximumScore ||
+            (candidates.Count > 1 && candidates[1].Score - best.Score < minimumMargin))
+            return false;
+
+        correction = best.Word;
+        return true;
     }
 
     private IReadOnlyList<RankedCandidate> GetRankedCandidates(
@@ -503,6 +620,7 @@ internal sealed class SpellEngine
 
         foreach (var candidate in candidates)
         {
+            if (allowLearning && _frequencyTracker.IsCorrectionRejected(word, candidate, languageTag)) continue;
             // Length filter: must be within +/- 2 characters
             var lengthDiff = Math.Abs(word.Length - candidate.Length);
             if (lengthDiff > 2) continue;
@@ -520,13 +638,16 @@ internal sealed class SpellEngine
 
             if (!isCompatible) continue;
 
+            var maximumEditDistance = word.Length <= 4
+                ? MaximumShortWordEditDistance
+                : isTurkish ? MaximumTurkishEditDistance : MaximumEnglishEditDistance;
+            if (!HasMinimumSharedCharacters(word, candidate, isTurkish,
+                    Math.Min(maximumEditDistance, MaximumFuzzyCharacterEdits))) continue;
+
             // Calculate weighted distance
             var distance = CalculateWeightedDamerauLevenshtein(word, candidate, maxAllowedScore,
                 allowTurkishDiacriticEquivalence: isTurkish);
             if (distance > maxAllowedScore) continue;
-            var maximumEditDistance = word.Length <= 4
-                ? MaximumShortWordEditDistance
-                : isTurkish ? MaximumTurkishEditDistance : MaximumEnglishEditDistance;
             if (CalculateEditDistance(word, candidate) > maximumEditDistance) continue;
 
             // Score candidate (lower is better)
@@ -558,6 +679,48 @@ internal sealed class SpellEngine
         }
 
         return rankedCandidates;
+    }
+
+    private static bool HasMinimumSharedCharacters(
+        string word,
+        string candidate,
+        bool isTurkish,
+        int maximumEditDistance)
+    {
+        Span<byte> characterCounts = stackalloc byte[128];
+        foreach (var character in word)
+        {
+            var normalized = NormalizeForCharacterOverlap(character, isTurkish);
+            if (normalized >= characterCounts.Length) return true;
+            characterCounts[normalized]++;
+        }
+
+        var sharedCharacters = 0;
+        foreach (var character in candidate)
+        {
+            var normalized = NormalizeForCharacterOverlap(character, isTurkish);
+            if (normalized >= characterCounts.Length) return true;
+            if (characterCounts[normalized] == 0) continue;
+            characterCounts[normalized]--;
+            sharedCharacters++;
+        }
+
+        return sharedCharacters >= Math.Max(0, Math.Min(word.Length, candidate.Length) - maximumEditDistance);
+    }
+
+    private static char NormalizeForCharacterOverlap(char character, bool isTurkish)
+    {
+        if (!isTurkish) return character;
+        return character switch
+        {
+            'ç' => 'c',
+            'ğ' => 'g',
+            'ı' => 'i',
+            'ö' => 'o',
+            'ş' => 's',
+            'ü' => 'u',
+            _ => character
+        };
     }
 
     private static double GetMaximumAutomaticCorrectionScore(int wordLength) =>
@@ -670,13 +833,21 @@ internal sealed class SpellEngine
         return candidates;
     }
 
-    private static HashSet<string> CollectCompatibleCandidates(string word, int maximumLengthDifference, bool isTurkish)
+    private static HashSet<string> CollectCompatibleCandidates(
+        string word,
+        int maximumLengthDifference,
+        bool isTurkish,
+        bool useTurkishLongTail = false)
     {
         var firstCharacterIndex = isTurkish
-            ? TurkishCandidatesByLengthAndFirstCharacter.Value
+            ? useTurkishLongTail
+                ? TurkishLongTailCandidatesByLengthAndFirstCharacter.Value
+                : TurkishCandidatesByLengthAndFirstCharacter.Value
             : EnglishCandidatesByLengthAndFirstCharacter.Value;
         var secondCharacterIndex = isTurkish
-            ? TurkishCandidatesByLengthAndSecondCharacter.Value
+            ? useTurkishLongTail
+                ? TurkishLongTailCandidatesByLengthAndSecondCharacter.Value
+                : TurkishCandidatesByLengthAndSecondCharacter.Value
             : EnglishCandidatesByLengthAndSecondCharacter.Value;
         var candidates = new HashSet<string>(StringComparer.Ordinal);
         var possibleFirstCharacters = new HashSet<char> { word[0] };
@@ -753,8 +924,7 @@ internal sealed class SpellEngine
                     }
                     else
                     {
-                        var keyDist = SpellLexicons.GetKeyDistance(sChar, tChar);
-                        cost = keyDist <= 1.5 ? 0.65 : 1.25;
+                        cost = CalculateKeyboardSubstitutionCost(sChar, tChar);
                     }
                 }
 
@@ -777,6 +947,10 @@ internal sealed class SpellEngine
 
         return previousRow[m];
     }
+
+    internal static double CalculateKeyboardSubstitutionCost(char source, char target) =>
+        Math.Min(MaximumKeyboardSubstitutionCost,
+            KeyboardSubstitutionBaseCost + SpellLexicons.GetKeyDistance(source, target) * KeyboardSubstitutionDistanceScale);
 
     private static bool AreTurkishDiacriticVariants(char left, char right) =>
         (left, right) is ('c', 'ç') or ('ç', 'c') or ('g', 'ğ') or ('ğ', 'g') or
@@ -889,7 +1063,8 @@ internal sealed class SpellEngine
                 if (VerbalSuffixes.Contains(suffix) && stem.Length <= 3 && !ShortVerbStems.Contains(stem))
                     continue;
 
-                if (TurkishCandidateVocabulary.Value.Contains(stem))
+                if (SpellVocabulary.TurkishWords.Contains(stem) ||
+                    SpellNgramModel.TurkishMorphologyVocabulary.Contains(stem))
                 {
                     // Check Turkish vowel harmony
                     if (HasTurkishVowelHarmony(stem, suffix)) return true;

@@ -371,6 +371,10 @@ public sealed class AutoCorrectModule : ITweakModule
                 var correction = _lastCorrection;
                 _lastCorrection = null;
                 _sessionIgnoredWords.Add(correction.OriginalWord);
+                if (_personalizedFrequency && UserFrequencyTracker.Instance.RecordRejectedCorrection(
+                        correction.OriginalWord, correction.Replacement, correction.LanguageTag))
+                    _dispatcher.BeginInvoke(DispatcherPriority.Background,
+                        () => UserFrequencyTracker.Instance.SaveImmediate());
                 var sequence = _inputSequence;
                 ResetWord();
                 ClearPreviousWord();
@@ -522,7 +526,7 @@ public sealed class AutoCorrectModule : ITweakModule
 
             // Replace typed word and the trigger delimiter (word.Length + 1 characters)
             _replaceText(word.Length + 1, replacement + triggerChar);
-            _lastCorrection = new LastCorrection(word, replacement, window, _inputSequence);
+            _lastCorrection = new LastCorrection(word, replacement, window, _inputSequence, result.Tag);
             _context?.Log.Info($"Otomatik düzeltme: {word} → {replacement}");
 
             RecordPersonalizedUsage(replacement, isKnownWord: true, previous, result.Tag);
@@ -764,5 +768,6 @@ public sealed class AutoCorrectModule : ITweakModule
         string OriginalWord,
         string Replacement,
         IntPtr Window,
-        long Sequence);
+        long Sequence,
+        string LanguageTag);
 }

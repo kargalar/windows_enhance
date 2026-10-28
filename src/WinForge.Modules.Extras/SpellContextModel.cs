@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace WinForge.Modules.Extras;
 
 /// <summary>
@@ -237,7 +239,7 @@ internal static class SpellContextModel
             return [];
 
         var culture = SpellEngine.GetCulture(languageTag);
-        prefix = prefix.ToLower(culture);
+        prefix = prefix.Normalize(NormalizationForm.FormC).ToLower(culture);
         var (bigrams, trigrams) = GetModels(languageTag);
         var history = NormalizeHistory(previousWords, languageTag);
         var curatedCandidates = trigrams.TryGetValue(history, out var trigramWords)
@@ -276,6 +278,7 @@ internal static class SpellContextModel
 
     private static string NormalizeHistory(string history, string languageTag) =>
         string.Join(' ', history.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).TakeLast(2))
+            .Normalize(NormalizationForm.FormC)
             .ToLower(SpellEngine.GetCulture(languageTag));
 
     private static string LastWord(string history) => history[(history.LastIndexOf(' ') + 1)..];

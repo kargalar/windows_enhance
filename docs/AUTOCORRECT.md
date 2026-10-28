@@ -25,7 +25,9 @@ kullanır. Eğitim verisi tüm gündelik yazımı kapsamadığından bağlam hat
 - Kişisel öğrenme kapalıysa öğrenilmiş sözlük, kelime, bigram ve trigram frekansları
   kullanılmaz. Bilinmeyen bir kelimeyi tekrarlamak onu sözlüğe eklemez; bu, aynı
   yazım hatasının zamanla kalıcı doğru kabul edilmesini önler. Yalnızca açıkça
-  eklenen kelimeler öğrenilir. Öğrenme açıkken değişen sıralama sonuçları
+  eklenen kelimeler öğrenilir. Otomatik düzeltme Backspace ile geri alındığında
+  reddedilen kelime çifti yerel olarak hatırlanır ve kişiselleştirme açık olduğu
+  sürece aynı öneri yeniden gösterilmez. Öğrenme açıkken değişen sıralama sonuçları
   önbelleğe alınmaz. Testler geçici kişisel sözlük dosyaları kullanır.
 - Yeni tuş veya fare girdisi eski bekleyen düzeltmeyi geçersiz kılar. Backspace ile
   geri almada fiziksel tuşun zaten sildiği ayırıcı ikinci kez silinmez.
@@ -163,7 +165,7 @@ python tools/extract_dialogue_parquet.py work/corpus/turkish-dialogues.test.raw 
 ```
 
 Eğitim korpusunda görülen 845.007 Türkçe kelime biçimi tanınır; bulanık yazım
-düzeltmesinde taranan adaylar en sık kullanılan 100.000 biçimle sınırlandırılır.
+düzeltmesinde taranan adaylar en sık kullanılan 250.000 biçimle sınırlandırılır.
 Model ayrıca en çok 250.000 bigram ve 150.000 trigram saklar. Biçimbilim
 çözümleyicisi korpusta görülmeyen geçerli çekimleri tanımaya yardımcı olur;
 aday havuzu ise her tuşta büyümez. Haber dili günlük sohbeti tam temsil etmez;
@@ -192,7 +194,7 @@ kapsama, %9,53 top-1 ve %15,75 top-3 verdi.
 Konuşma testlerinde örneklem sınırına ulaşılmadı; tüm bağlamlar ölçüldü. English
 Daily Dialogues test bölümündeki 60.765 bağlamda kapsam %100,00, top-1 %11,49,
 top-3 %17,55 oldu. Turkish Daily Dialogues test bölümündeki 12.977 bağlamda
-kapsam %100,00, top-1 %77,38, top-3 %87,55 oldu. Türkçe diyalog korpusu
+kapsam %100,00, top-1 %77,24, top-3 %87,42 oldu. Türkçe diyalog korpusu
 yapay olarak üretilmiştir; bu sonuçlar gerçek mesaj yazımı veya Gboard karşılaştırması sayılmaz.
 
 Kişisel sözlük ve n-gramların ayrı tutulması Android'in açık kaynak LatinIME
@@ -222,19 +224,74 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/atubakoksal/annotated_
 
 2026-10-28 tarihinde veri kümesinin boşlukla ayrılmış token hizalaması korunarak
 2.000 satırın tamamı ölçüldü. 4.061 tek kelimelik hatada tam otomatik düzeltme
-doğruluğu %54,72, kapsama %59,84 ve düzeltme precision'ı %91,44 oldu. Öneri
-şeridinde kapsam %90,40, top-1 %68,53, top-3 %72,86; aday havuzu recall'ı %86,78
-çıktı. Aynı satırlardaki 11.474 sağlam kelimenin 71'i değişti (%0,62). Önceki tam
-ölçüme göre otomatik doğruluk 4,71 puan ve öneri top-1 4,75 puan yükseldi.
+doğruluğu %65,01, kapsama %70,18 ve düzeltme precision'ı %92,63 oldu. Öneri
+şeridinde kapsam %96,21, top-1 %75,18, top-3 %79,86; aday havuzu recall'ı %91,06
+çıktı. Aynı satırlardaki 11.474 sağlam kelimenin 127'si değişti (%1,11). Türkçe fuzzy
+aday marjı %0,40'tan %0,30'a indirildi; bilinen kelime ve diakritik düzeltmelerindeki
+daha koruyucu %0,40 eşiği değişmedi. Klavye tuşu değiştirme maliyeti artık tuşlar
+arasındaki gerçek uzaklığa göre kademeli artıyor. Önceki %0,40 marjlı sürüme göre
+doğruluk 1,13 puan, kapsama 1,55 puan, öneri top-1 0,37 puan ve top-3 0,30 puan arttı;
+precision 0,44 puan azaldı ve 12 ek sağlam kelime değişti.
+Eşikler aynı 2.000 satır üzerinde, öncelikli düzeltme yolları sabit tutularak ayrıca
+karşılaştırıldı. %0,25 marj doğruluğu %65,40'a çıkarırken precision'ı %92,00'a
+indirdi ve temiz kelime değişimini 134'e yükseltti. %0,30 marj %64,98 doğruluk,
+%92,73 precision ve 127 temiz kelime değişimi verdi. Daha sıkı %0,40 marjda
+doğruluk %63,80'e, kapsama %68,36'ya indi; temiz kelime değişimi yalnızca 124 oldu.
+Bu nedenle %0,30 ayarı korundu: en yüksek ham doğruluk eşiği seçilmedi; daha düşük
+precision ve artan yanlış değişiklik maliyetine karşı dengeli sonuç tercih edildi.
+Bu eşik taraması birincil 250.000 kelimelik aday havuzunu simüle eder; aşağıdaki
+uzun-kuyruk kademesi taramaya dahil değildir.
+2026-10-28'de eklenen iki aşamalı arama, birincil havuz güvenli otomatik düzeltme
+üretemediğinde tam sözlüğün ilgili bölümünü tarar. Birincil havuzun aday marjı
+%0,30, uzun-kuyruk adaylarının marjı %0,50'dir. Aynı 2.000 satırda tam doğruluk
+%65,48, kapsama %71,29 ve precision %91,85 oldu; temiz kelime değişimi
+146/11.474 (%1,27) olarak ölçüldü. Birincil aday recall'ı %91,06'dan iki havuz
+birlikte %93,13'e çıktı. Öneri top-1/top-3 %75,35 / %80,25'e yükseldi.
+Tam benchmark'taki düzeltme çağrıları reflection üzerinden ölçüldüğünde ortalama
+2,040 ms, p95 13,506 ms ve en yüksek 138,065 ms sürdü; bu test ölçümü üretim
+klavye gecikmesi değildir ve Gboard ile eşdeğerlik göstermez. Yeni uzun-kuyruk
+başarısızlık durumları ve güven eşiği ayrıca regresyon kontrollerine eklendi.
+Tam unigram sözlüğündeki 845.007 biçim, ana fuzzy arama sıralanabilir aday
+bulmadığında ve öneri şeridinde yer kaldığında devreye girer. Bu arama otomatik
+düzeltme metriklerini değiştirmedi (önceki %0,55 güven marjıyla yapılan karşılaştırmada);
+eski tam ölçüme göre
+öneri kapsamını %95,32'den %96,18'e, top-1'i %74,51'den %74,69'a ve top-3'ü
+%79,29'dan %79,51'e yükseltti. 500 satırlık tanılamada arama süresi yaklaşık 146
+saniyeden 136 saniyeye indi; top-3 %79,52'den %79,23'e geriledi. Gboard karşılaştırması
+ve gerçek yazım sırasındaki gecikme ölçülmedi; bu artış Gboard seviyesine ulaşıldığını
+göstermez.
+Önceki tam ölçümde doğruluk %54,84, kapsama %59,05, precision %92,87, aday recall'ı
+%86,78 ve öneri top-1 %69,44'tü; ilk ölçümde doğruluk %32,48 ve öneri top-1 %41,81'di.
 Biçimbilim tarafından geçerli sayılan kelimelerde en fazla iki Türkçe diakritik
-değişimi, ancak aday skoru ve ayrımı güçlü olduğunda otomatik düzeltilir. Sonda
+değişimi, güçlü aday skoru ve ayrımında otomatik düzeltilir; üç ila altı değişim
+yalnızca tek aday yeterince güçlü olduğunda otomatikleşir. Sonda
 uzatılmış harfler, kısaltılmış biçim biliniyor ve sıklık ya da bağlam destekliyorsa
 normalleştirilir; içteki çift harfler tek başına yeterli sayılmaz. Önceki ilk ölçümde
 doğruluk %32,48 ve öneri top-1 %41,81'di.
+Bilinen kelimelerde mevcut Türkçe karakterleri ASCII harfe dönüştürmek için adayın
+önceki iki kelimelik bağlamda açıkça daha güçlü olması gerekir. Yer değiştirme
+bonusu azaltıldı; önceki sabit örneklem ölçümünde öneri top-1 %68,92'den %69,44'e ve
+otomatik tam doğruluk %54,67'den %54,84'e yükselmişti. Aday havuzu genişletmesi
+sonraki tam ölçümde doğruluğu ve öneri kapsamını artırdı; sağlam kelime değişimi de
+%0,49'dan %1,25'e çıktı.
 Bu sonuç gerçek tweet yazımına sentetik testlerden daha yakındır; Gboard üzerinde eş
 zamanlı test değildir.
 Kaynak veri pakete kopyalanmaz; yeniden dağıtım için kaynak deposunun kullanım
 koşulları ayrıca incelenmelidir.
+
+2026-10-28 tarihinde Türkçe düzeltme aday havuzu 100.000'den 250.000 kelime
+biçimine genişletildikten sonra ilk 500 satırlık tanılama örneklemi ayrıca ölçüldü:
+1.045 hatada tam düzeltme doğruluğu %60,38, kapsama %63,73, precision %94,74 ve
+aday recall'ı %91,00 oldu. Öneri top-1/top-3 %74,45 / %79,04; sağlam kelime
+değişimi 43/2.765 (%1,55) idi. Harf örtüşme süzgeci aday sıralamadan önce
+uygulanınca aynı örneklemin ölçüm süresi yaklaşık 3 dakika 48 saniyeden 1 dakika
+47 saniyeye indi; kalite metrikleri aynı kaldı. Geçerli bir Türkçe kelimenin en
+fazla iki diakritik varyantı otomatik seçilecekse ve bağlam değerlendirmesi açıksa,
+adayın unigram sıklık üstünlüğü en az 0,05 olmalı veya önceki bağlam adayı en az
+0,30 puanla desteklemelidir.
+Bu koruma eşiğinden sonra aynı 500 satırda doğruluk ve kapsama değişmedi; sağlam
+kelime değişimi 28/2.765'e (%1,01) indi. Tam 2.000 satırda doğruluk %61,14 ve
+kapsama %65,11 kaldı; sağlam kelime değişimi 107/11.474'e (%0,93) düştü.
 
 Eksik Türkçe karakterler artık aday puanlamasında düşük maliyetli yazım farkı sayılır;
 adaylar yine yerel sözlükte, eğitim korpusunda veya Zemberek biçimbilim
@@ -244,11 +301,29 @@ düzeltildi, öneri precision'ı %100,00 kaldı ve geçerli biçimlerin 9'u değ
 (%0,90). Bu ikinci ölçüm de sentetiktir.
 
 N-gram önerileri aynı Türkçe tweet kümesinin düzeltilmiş metninde de ölçülür.
-Türkçe konuşma modeline Turkish Chat Max'in gündelik konuşma alt kümesi eklendikten
-sonra TurkishTweets ölçümünde öneri kapsamı %100, top-1 %3,68 ve top-3 %6,50 oldu
-(önceki model: %3,48 / %5,89). Aynı değişiklik ayrı Turkish Daily Dialogues test
-bölümünde top-1 %77,24 ve top-3 %87,42 verdi (önceki model: %77,38 / %87,55).
-İyileşme sosyal medya ölçümünde küçük, diyalog benchmark'ında ise yaklaşık aynı
-seviyede; bu sonuç Gboard düzeyini göstermiyor. Türkçe sohbet tahmini hâlâ büyük,
-gerçek kullanıcı yazımından oluşan lisansı net bir korpusa ve kişiye göre öğrenmeye
-ihtiyaç duyuyor.
+TurkishTweets kümesindeki 10.427 gerçek iki-kelime bağlamında öneri kapsamı %100,
+top-1 %3,68 ve top-3 %6,55 oldu (önceki model: %3,48 / %5,89). Genel model tek
+başına %3,38 / %5,98, konuşma modeli %2,00 / %3,68 verdi. Konuşma modeli bulunan
+4.672 bağlamda genel model top-1/top-3 %5,03 / %9,18 ile sabit karışımdan
+(%4,39 / %8,07) daha iyi çıktı. Buna karşılık Turkish Daily Dialogues testinde
+konuşma modeli tek başına %82,16 / %88,46; karışım %77,24 / %87,42 verdi. Bu fark
+modellerin eğitim alanına duyarlı olduğunu ve sabit ağırlıkların her bağlamda en iyi
+olmadığını gösteriyor. Bu ölçümler Gboard eşdeğeri değildir; Türkçe sohbet tahmini
+hâlâ büyük, gerçek kullanıcı yazımından oluşan lisansı net bir korpusa ihtiyaç duyuyor.
+
+2026-10-28 tarihinde model karışım ağırlığı %0–%100 aralığında %10 adımlarla
+ölçüldü. TurkishTweets bağlamlarında %20 konuşma modeli ağırlığı en iyi top-1'i
+verdi (%4,14); %45 ağırlık %3,80'de kaldı. Turkish Daily Dialogues testinde ise
+%90 ağırlık en iyi top-1'i verdi (%82,23), %100 ağırlık da %82,18'e ulaştı.
+Bu tarama ham olasılık dağılımlarını karşılaştırır; üretim sıralamasına eklenen
+kişisel ve küratörlü adaylar nedeniyle bu değerler üretim benchmark'ıyla birebir
+aynı değildir. Korpuslar arasındaki bu fark, kullanıcı metninin alanına göre model
+seçimi gerektiğini gösteriyor; tek bir küresel ağırlığı değiştirmek iki alandan
+birini geriletebilir.
+
+Türkçe [Egemen 124M ONNX dil modeliyle](https://huggingface.co/BerkayRA/egemen-turkish-124m)
+500 bağlamlık keşif örnekleminde n-gram adaylarını yeniden sıralamak TurkishTweets'te
+top-1'i %4,4'ten %6,4'e, top-3'ü %7,4'ten
+%10,8'e çıkardı. Aynı işlem Turkish Daily Dialogues örnekleminde top-1'i %80,4'ten
+%14,6'ya düşürdü. Model şu an üretim yoluna ekli değildir; sohbet bağlamlarında
+haber ağırlıklı dil modelinin yanlış adayları üste taşıdığı görüldü.

@@ -620,6 +620,7 @@ internal static class FeatureVerificationChecks
             ("traş", "tıraş"),
             ("şarz", "şarj"),
             ("egsoz", "egzoz"),
+            ("gidicektin", "gidecektin"),
             ("birşey", "bir şey"),
             ("herşey", "her şey"),
             ("tabiki", "tabii ki"),

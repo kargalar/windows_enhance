@@ -11,6 +11,8 @@ namespace WinForge.Modules.Extras;
 internal sealed class UserFrequencyTracker
 {
     private const char BigramSeparator = '\u001f';
+    private const char RejectedCorrectionSeparator = '\u001e';
+    private const int MaximumRejectedCorrections = 4_096;
     private static readonly Lazy<UserFrequencyTracker> LazyInstance = new(() => new UserFrequencyTracker());
 
     public static UserFrequencyTracker Instance => LazyInstance.Value;
@@ -21,6 +23,7 @@ internal sealed class UserFrequencyTracker
     private readonly ConcurrentDictionary<string, int> _trigramFrequencies = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte> _learnedWords = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte> _configuredWords = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte> _rejectedCorrections = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _saveLock = new();
     private DateTime _lastSave = DateTime.MinValue;
 
@@ -61,6 +64,19 @@ internal sealed class UserFrequencyTracker
         var key = CreateTrigramKey(previousWords, candidate);
         if (key is null || !_trigramFrequencies.TryGetValue(key, out var count) || count < 2) return 0;
         return Math.Min(1.0, Math.Log10(count) * 0.55);
+    }
+
+    internal bool IsCorrectionRejected(string originalWord, string candidate, string languageTag)
+    {
+        var key = CreateRejectedCorrectionKey(originalWord, candidate, languageTag);
+        return key is not null && _rejectedCorrections.ContainsKey(key);
+    }
+
+    internal bool RecordRejectedCorrection(string originalWord, string candidate, string languageTag)
+    {
+        var key = CreateRejectedCorrectionKey(originalWord, candidate, languageTag);
+        return key is not null && _rejectedCorrections.Count < MaximumRejectedCorrections &&
+               _rejectedCorrections.TryAdd(key, 0);
     }
 
     internal IReadOnlyList<WeightedNextWord> GetNextWords(string previousWords, int maximumResults = 12)
@@ -159,6 +175,7 @@ internal sealed class UserFrequencyTracker
             _trigramFrequencies.Clear();
             _learnedWords.Clear();
             _configuredWords.Clear();
+            _rejectedCorrections.Clear();
             if (File.Exists(_storagePath))
             {
                 try { File.Delete(_storagePath); } catch { /* Ignore cleanup errors */ }
@@ -188,7 +205,8 @@ internal sealed class UserFrequencyTracker
                     BigramFrequencies = new Dictionary<string, int>(_bigramFrequencies, StringComparer.OrdinalIgnoreCase),
                     TrigramFrequencies = new Dictionary<string, int>(_trigramFrequencies, StringComparer.OrdinalIgnoreCase),
                     LearnedWords = [.. _learnedWords.Keys],
-                    ConfiguredWords = [.. _configuredWords.Keys]
+                    ConfiguredWords = [.. _configuredWords.Keys],
+                    RejectedCorrections = [.. _rejectedCorrections.Keys]
                 };
 
                 var json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
@@ -224,6 +242,20 @@ internal sealed class UserFrequencyTracker
                 if (model.ConfiguredWords is not null)
                 {
                     foreach (var word in model.ConfiguredWords) _configuredWords.TryAdd(word, 0);
+                }
+                if (model.RejectedCorrections is not null)
+                {
+                    foreach (var key in model.RejectedCorrections.Take(MaximumRejectedCorrections))
+                    {
+                        var separatorIndex = key.IndexOf(RejectedCorrectionSeparator);
+                        var secondSeparatorIndex = separatorIndex < 0
+                            ? -1
+                            : key.IndexOf(RejectedCorrectionSeparator, separatorIndex + 1);
+                        if (separatorIndex > 0 && secondSeparatorIndex > separatorIndex + 1 &&
+                            secondSeparatorIndex < key.Length - 1 &&
+                            secondSeparatorIndex == key.LastIndexOf(RejectedCorrectionSeparator))
+                            _rejectedCorrections.TryAdd(key, 0);
+                    }
                 }
                 if (model.BigramFrequencies is not null)
                 {
@@ -274,6 +306,18 @@ internal sealed class UserFrequencyTracker
         return $"{context[0]}{BigramSeparator}{context[1]}{BigramSeparator}";
     }
 
+    private static string? CreateRejectedCorrectionKey(string originalWord, string candidate, string languageTag)
+    {
+        if (string.IsNullOrWhiteSpace(originalWord) || string.IsNullOrWhiteSpace(candidate) ||
+            originalWord.Length > 40 || candidate.Length > 80 || string.IsNullOrWhiteSpace(languageTag)) return null;
+        var culture = SpellEngine.GetCulture(languageTag);
+        var original = originalWord.Normalize(System.Text.NormalizationForm.FormC).ToLower(culture);
+        var replacement = candidate.Normalize(System.Text.NormalizationForm.FormC).ToLower(culture);
+        return StringComparer.Ordinal.Equals(original, replacement)
+            ? null
+            : $"{languageTag.ToLowerInvariant()}{RejectedCorrectionSeparator}{original}{RejectedCorrectionSeparator}{replacement}";
+    }
+
     internal readonly record struct WeightedNextWord(string Word, int Count);
 
     private sealed class UserFrequencyModel
@@ -283,6 +327,7 @@ internal sealed class UserFrequencyTracker
         public Dictionary<string, int>? TrigramFrequencies { get; set; }
         public List<string>? LearnedWords { get; set; }
         public List<string>? ConfiguredWords { get; set; }
+        public List<string>? RejectedCorrections { get; set; }
     }
 }
 

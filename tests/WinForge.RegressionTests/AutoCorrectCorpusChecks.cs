@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Diagnostics;
 
 namespace WinForge.RegressionTests;
 
@@ -98,6 +99,11 @@ internal static class AutoCorrectCorpusChecks
         var generalTopThreeHits = 0;
         var conversationTopOneHits = 0;
         var conversationTopThreeHits = 0;
+        var blendTopOneHits = new int[11];
+        var blendTopThreeHits = new int[11];
+        var supportAdaptiveThresholds = new long[] { 10, 50, 100 };
+        var supportAdaptiveTopOneHits = new int[supportAdaptiveThresholds.Length];
+        var supportAdaptiveTopThreeHits = new int[supportAdaptiveThresholds.Length];
         var supportExamples = new List<ConversationSupportExample>();
         var confidenceExamples = new List<ConversationConfidenceExample>();
 
@@ -130,11 +136,45 @@ internal static class AutoCorrectCorpusChecks
         {
             var suggestions = (IReadOnlyList<string>)getSuggestions.Invoke(null,
                 [example.History, string.Empty, languageTag, 3])!;
-            var general = GetCandidateWords(getGeneralCandidates, example.History, languageTag);
-            var conversation = GetCandidateWords(getConversationCandidates, example.History, languageTag);
-            var conversationConfidence = GetTopProbability(getConversationCandidates, example.History, languageTag);
+            var generalDistribution = GetCandidateDistribution(getGeneralCandidates, example.History, languageTag);
+            var conversationDistribution = GetCandidateDistribution(getConversationCandidates, example.History, languageTag);
+            var general = GetCandidateWords(generalDistribution);
+            var conversation = GetCandidateWords(conversationDistribution);
+            var conversationConfidence = GetTopProbability(conversationDistribution);
             var conversationSupport = (long)getConversationSupport.Invoke(null, [example.History, languageTag])!;
             if (suggestions.Count == 0) continue;
+
+            for (var blendIndex = 0; blendIndex < blendTopOneHits.Length; blendIndex++)
+            {
+                var conversationWeight = blendIndex / 10d;
+                var blend = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                AddWeightedProbabilities(generalDistribution, 1 - conversationWeight, blend);
+                AddWeightedProbabilities(conversationDistribution, conversationWeight, blend);
+                var blendSuggestions = blend.OrderByDescending(candidate => candidate.Value)
+                    .ThenBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+                    .Take(3).Select(candidate => candidate.Key).ToArray();
+                if (blendSuggestions.Length > 0 && StringComparer.OrdinalIgnoreCase.Equals(blendSuggestions[0], example.Expected))
+                    blendTopOneHits[blendIndex]++;
+                if (blendSuggestions.Contains(example.Expected, StringComparer.OrdinalIgnoreCase))
+                    blendTopThreeHits[blendIndex]++;
+            }
+
+            for (var thresholdIndex = 0; thresholdIndex < supportAdaptiveThresholds.Length; thresholdIndex++)
+            {
+                var conversationWeight = conversationSupport is > 0 && conversationSupport < supportAdaptiveThresholds[thresholdIndex]
+                    ? 0.9
+                    : 0.2;
+                var blend = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                AddWeightedProbabilities(generalDistribution, 1 - conversationWeight, blend);
+                AddWeightedProbabilities(conversationDistribution, conversationWeight, blend);
+                var blendSuggestions = blend.OrderByDescending(candidate => candidate.Value)
+                    .ThenBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+                    .Take(3).Select(candidate => candidate.Key).ToArray();
+                if (blendSuggestions.Length > 0 && StringComparer.OrdinalIgnoreCase.Equals(blendSuggestions[0], example.Expected))
+                    supportAdaptiveTopOneHits[thresholdIndex]++;
+                if (blendSuggestions.Contains(example.Expected, StringComparer.OrdinalIgnoreCase))
+                    supportAdaptiveTopThreeHits[thresholdIndex]++;
+            }
 
             coveredContexts++;
             if (StringComparer.OrdinalIgnoreCase.Equals(suggestions[0], example.Expected)) topOneHits++;
@@ -164,26 +204,48 @@ internal static class AutoCorrectCorpusChecks
         Console.WriteLine($"Top-3 accuracy: {topThreeAccuracy:P2}");
         Console.WriteLine($"General model top-1/top-3: {(sample.Count == 0 ? 0 : (double)generalTopOneHits / sample.Count):P2}/{(sample.Count == 0 ? 0 : (double)generalTopThreeHits / sample.Count):P2}");
         Console.WriteLine($"Conversation model top-1/top-3: {(sample.Count == 0 ? 0 : (double)conversationTopOneHits / sample.Count):P2}/{(sample.Count == 0 ? 0 : (double)conversationTopThreeHits / sample.Count):P2}");
+        for (var blendIndex = 0; blendIndex < blendTopOneHits.Length; blendIndex++)
+            Console.WriteLine($"Conversation blend {blendIndex * 10}% top-1/top-3: {(double)blendTopOneHits[blendIndex] / sample.Count:P2}/{(double)blendTopThreeHits[blendIndex] / sample.Count:P2}");
+        for (var thresholdIndex = 0; thresholdIndex < supportAdaptiveThresholds.Length; thresholdIndex++)
+            Console.WriteLine($"Adaptive conversation weight (90% when support is 1-{supportAdaptiveThresholds[thresholdIndex] - 1}, otherwise 20%): {(double)supportAdaptiveTopOneHits[thresholdIndex] / sample.Count:P2}/{(double)supportAdaptiveTopThreeHits[thresholdIndex] / sample.Count:P2}");
         PrintSupportBuckets(supportExamples);
         PrintConfidenceBuckets(confidenceExamples);
         check(attempts >= EvaluationWordCount,
             "Held-out next-word benchmark evaluates enough context windows");
         return attempts;
 
-        static List<string> GetCandidateWords(MethodInfo method, string history, string languageTag) =>
-            ((System.Collections.IEnumerable)method.Invoke(null, [history, languageTag])!)
-            .Cast<object>()
+        static object[] GetCandidateDistribution(MethodInfo method, string history, string languageTag) =>
+            ((System.Collections.IEnumerable)method.Invoke(null, [history, languageTag])!).Cast<object>().ToArray();
+
+        static List<string> GetCandidateWords(IEnumerable<object> candidates) =>
+            candidates
             .Select(candidate => candidate.GetType().GetProperty("Word")!.GetValue(candidate) as string)
             .OfType<string>()
             .Take(3)
             .ToList();
 
-        static double GetTopProbability(MethodInfo method, string history, string languageTag)
+        static double GetTopProbability(IEnumerable<object> candidates)
         {
-            var candidates = ((System.Collections.IEnumerable)method.Invoke(null, [history, languageTag])!).Cast<object>().ToArray();
-            return candidates.Length == 0
+            var topCandidate = candidates.FirstOrDefault();
+            return topCandidate is null
                 ? 0
-                : (double)candidates[0].GetType().GetProperty("Probability")!.GetValue(candidates[0])!;
+                : (double)topCandidate.GetType().GetProperty("Probability")!.GetValue(topCandidate)!;
+        }
+
+        static void AddWeightedProbabilities(
+            IEnumerable<object> candidates,
+            double weight,
+            IDictionary<string, double> scores)
+        {
+            if (weight <= 0) return;
+            foreach (var candidate in candidates)
+            {
+                var candidateType = candidate.GetType();
+                var word = (string)candidateType.GetProperty("Word")!.GetValue(candidate)!;
+                var probability = (double)candidateType.GetProperty("Probability")!.GetValue(candidate)!;
+                scores.TryGetValue(word, out var existingScore);
+                scores[word] = existingScore + probability * weight;
+            }
         }
 
         static void PrintSupportBuckets(IReadOnlyList<ConversationSupportExample> examples)
@@ -310,24 +372,48 @@ internal static class AutoCorrectCorpusChecks
         var findCorrection = engineType.GetMethods()
             .Single(method => method.Name == "FindCorrection" && method.GetParameters().Length == 8);
         var getCandidates = engineType.GetMethod("GetCandidates", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var collectCompatibleCandidates = engineType.GetMethod("CollectCompatibleCandidates", BindingFlags.Static | BindingFlags.NonPublic)!;
         var getRankedCandidates = engineType.GetMethod("GetRankedCandidates", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var getSuggestions = engineType.GetMethod("GetSuggestions", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var isCorrect = engineType.GetMethod("IsCorrect", [typeof(string), typeof(string)])!;
         var contextModelType = extras.GetType("WinForge.Modules.Extras.SpellContextModel")!;
+        var isKnownWord = engineType.GetMethod("IsKnownWord", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var getUnigramBonus = extras.GetType("WinForge.Modules.Extras.SpellNgramModel")!
+            .GetMethod("GetUnigramBonus", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var tryContextCorrection = contextModelType.GetMethod("TryFindContextCorrection", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var findRepeatedCharacterCorrection = engineType.GetMethod("FindHighConfidenceRepeatedCharacterCorrection", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var findHighConfidenceDiacriticCorrection = engineType.GetMethod("FindHighConfidenceTurkishKnownWordCorrection", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var getContextBonus = contextModelType.GetMethod("GetBigramBonus", BindingFlags.Static | BindingFlags.NonPublic)!;
         var corrections = 0;
         var exactCorrections = 0;
         var candidateHits = 0;
+        var primaryCandidateHits = 0;
         var evaluatedErrors = 0;
         var suggestionCoverage = 0;
         var suggestionTopOne = 0;
         var suggestionTopThree = 0;
         var unchangedWords = 0;
         var falseCorrections = 0;
+        var falseContextCorrections = 0;
+        var falseRepeatedCharacterCorrections = 0;
+        var falseDiacriticCorrections = 0;
+        var falseFuzzyCorrections = 0;
+        var correctionLatencyMilliseconds = new List<double>();
+        var marginThresholds = new[] { 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55 };
+        var marginAttempts = new int[marginThresholds.Length];
+        var marginExactCorrections = new int[marginThresholds.Length];
+        var marginFalseCorrections = new int[marginThresholds.Length];
         var incorrectExamples = new List<string>();
         var falseCorrectionExamples = new List<string>();
         var skippedRows = 0;
         var alignedRows = 0;
+        var getMaximumAutomaticCorrectionScore = engineType.GetMethod(
+            "GetMaximumAutomaticCorrectionScore", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var lexiconType = extras.GetType("WinForge.Modules.Extras.SpellLexicons")!;
+        var turkishCommonTypos = (IReadOnlyDictionary<string, string>)lexiconType
+            .GetField("TurkishCommonTypos", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var turkishDeasciifierMap = (IReadOnlyDictionary<string, string>)lexiconType
+            .GetField("TurkishDeasciifierMap", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
 
         using var reader = new StreamReader(datasetPath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         _ = reader.ReadLine();
@@ -366,14 +452,50 @@ internal static class AutoCorrectCorpusChecks
                     if (StringComparer.OrdinalIgnoreCase.Equals(input, expected))
                     {
                         unchangedWords++;
-                        var falseCorrection = (string?)findCorrection.Invoke(engine,
-                            [input, "tr-TR", GetHistory(inputs, index), true, true, false, false, null]);
+                        var falseCorrectionHistory = GetHistory(inputs, index);
+                        var falseCorrection = MeasureFindCorrection(
+                            [input, "tr-TR", falseCorrectionHistory, true, true, false, false, null]);
+                        var falseCorrectionIsPriority = IsPriorityCorrection(input, falseCorrectionHistory, falseCorrection);
                         if (falseCorrection is not null &&
                             !StringComparer.OrdinalIgnoreCase.Equals(input, falseCorrection))
                         {
                             falseCorrections++;
+                            var contextCorrection = (string?)tryContextCorrection.Invoke(null, [falseCorrectionHistory, input, "tr-TR"]);
+                            var falseTypedContextBonus = (double)getContextBonus.Invoke(null, [falseCorrectionHistory, input, "tr-TR", null, false])!;
+                            var falseCorrectedContextBonus = (double)getContextBonus.Invoke(null, [falseCorrectionHistory, falseCorrection, "tr-TR", null, false])!;
+                            var typedUnigramBonus = (double)getUnigramBonus.Invoke(null, [input, "tr-TR"])!;
+                            var correctedUnigramBonus = (double)getUnigramBonus.Invoke(null, [falseCorrection, "tr-TR"])!;
+                            var repeatedCorrection = (string?)findRepeatedCharacterCorrection.Invoke(engine,
+                                [input.ToLower(CultureInfo.GetCultureInfo("tr-TR")), falseCorrectionHistory, true, false, "tr-TR"]);
+                            var diacriticCorrection = (string?)findHighConfidenceDiacriticCorrection.Invoke(engine,
+                                [input.ToLower(CultureInfo.GetCultureInfo("tr-TR")), falseCorrectionHistory, true, false, "tr-TR"]);
+                            if (StringComparer.OrdinalIgnoreCase.Equals(falseCorrection, contextCorrection)) falseContextCorrections++;
+                            else if (StringComparer.OrdinalIgnoreCase.Equals(falseCorrection, repeatedCorrection)) falseRepeatedCharacterCorrections++;
+                            else if (StringComparer.OrdinalIgnoreCase.Equals(falseCorrection, diacriticCorrection)) falseDiacriticCorrections++;
+                            else if (!(bool)isKnownWord.Invoke(engine, [input, "tr-TR", false])!) falseFuzzyCorrections++;
                             if (falseCorrectionExamples.Count < 25)
-                                falseCorrectionExamples.Add($"{GetHistory(inputs, index) ?? "(başlangıç)"} [{input}] -> {falseCorrection}");
+                                falseCorrectionExamples.Add($"{falseCorrectionHistory ?? "(başlangıç)"} [{input}] -> {falseCorrection} (known: {(bool)isKnownWord.Invoke(engine, [input, "tr-TR", false])!}, unigram: {typedUnigramBonus:F2}/{correctedUnigramBonus:F2}, context: {falseTypedContextBonus:F2}/{falseCorrectedContextBonus:F2})");
+                        }
+                        var cleanInputIsKnown = (bool)isKnownWord.Invoke(engine, [input, "tr-TR", false])!;
+                        if (falseCorrectionIsPriority && falseCorrection is not null &&
+                            !StringComparer.OrdinalIgnoreCase.Equals(input, falseCorrection))
+                        {
+                            for (var thresholdIndex = 0; thresholdIndex < marginThresholds.Length; thresholdIndex++)
+                                marginFalseCorrections[thresholdIndex]++;
+                        }
+                        else if (!cleanInputIsKnown)
+                        {
+                            var cleanCandidates = ((System.Collections.IEnumerable)getCandidates.Invoke(null, [input, true])!)
+                                .Cast<string>().ToArray();
+                            var cleanRanked = ((System.Collections.IEnumerable)getRankedCandidates.Invoke(engine,
+                                [input.ToLower(CultureInfo.GetCultureInfo("tr-TR")), cleanCandidates, GetHistory(inputs, index), true, false, "tr-TR", 3])!)
+                                .Cast<object>().ToArray();
+                            for (var thresholdIndex = 0; thresholdIndex < marginThresholds.Length; thresholdIndex++)
+                            {
+                                var candidate = GetFuzzyCorrection(input, cleanRanked, marginThresholds[thresholdIndex]);
+                                if (candidate is not null && !StringComparer.OrdinalIgnoreCase.Equals(input, candidate))
+                                    marginFalseCorrections[thresholdIndex]++;
+                            }
                         }
                     }
                     continue;
@@ -382,18 +504,37 @@ internal static class AutoCorrectCorpusChecks
                 evaluatedErrors++;
                 var history = GetHistory(inputs, index);
                 var candidates = ((System.Collections.IEnumerable)getCandidates.Invoke(null, [input, true])!).Cast<string>().ToArray();
-                var expectedInCandidates = candidates.Contains(expected, StringComparer.OrdinalIgnoreCase);
+                var longTailCandidates = ((System.Collections.IEnumerable)collectCompatibleCandidates.Invoke(null,
+                    [input.ToLower(CultureInfo.GetCultureInfo("tr-TR")), 2, true, true])!).Cast<string>().ToArray();
+                var primaryCandidateFound = candidates.Contains(expected, StringComparer.OrdinalIgnoreCase);
+                var expectedInCandidates = primaryCandidateFound ||
+                                           longTailCandidates.Contains(expected, StringComparer.OrdinalIgnoreCase);
+                if (primaryCandidateFound) primaryCandidateHits++;
                 if (expectedInCandidates) candidateHits++;
                 var inputIsKnown = (bool)isCorrect.Invoke(engine, [input, "tr-TR"])!;
-                var ranked = ((System.Collections.IEnumerable)getRankedCandidates.Invoke(engine,
+                var rankedCandidates = ((System.Collections.IEnumerable)getRankedCandidates.Invoke(engine,
                     [input.ToLower(CultureInfo.GetCultureInfo("tr-TR")), candidates, history, true, false, "tr-TR", 3])!)
-                    .Cast<object>()
+                    .Cast<object>().ToArray();
+                var ranked = rankedCandidates
                     .Select(candidate => $"{candidate.GetType().GetProperty("Word")!.GetValue(candidate)}:{candidate.GetType().GetProperty("Score")!.GetValue(candidate)}")
                     .ToArray();
                 var expectedContextBonus = (double)getContextBonus.Invoke(null, [history, expected, "tr-TR", null, false])!;
                 var typedContextBonus = (double)getContextBonus.Invoke(null, [history, input, "tr-TR", null, false])!;
-                var actual = (string?)findCorrection.Invoke(engine,
+                var actual = MeasureFindCorrection(
                     [input, "tr-TR", history, true, true, false, false, null]);
+                var actualIsPriorityCorrection = IsPriorityCorrection(input, history, actual);
+                for (var thresholdIndex = 0; thresholdIndex < marginThresholds.Length; thresholdIndex++)
+                {
+                    var simulatedCorrection = actualIsPriorityCorrection
+                        ? actual
+                        : !inputIsKnown
+                            ? GetFuzzyCorrection(input, rankedCandidates, marginThresholds[thresholdIndex])
+                            : null;
+                    if (simulatedCorrection is null) continue;
+                    marginAttempts[thresholdIndex]++;
+                    if (StringComparer.OrdinalIgnoreCase.Equals(simulatedCorrection, expected))
+                        marginExactCorrections[thresholdIndex]++;
+                }
                 if (actual is not null) corrections++;
                 if (StringComparer.OrdinalIgnoreCase.Equals(actual, expected)) exactCorrections++;
 
@@ -413,10 +554,22 @@ internal static class AutoCorrectCorpusChecks
         Console.WriteLine($"Exact correction accuracy: {(evaluatedErrors == 0 ? 0 : (double)exactCorrections / evaluatedErrors):P2}");
         Console.WriteLine($"Correction coverage: {(evaluatedErrors == 0 ? 0 : (double)corrections / evaluatedErrors):P2}");
         Console.WriteLine($"Correction precision: {(corrections == 0 ? 0 : (double)exactCorrections / corrections):P2}");
-        Console.WriteLine($"Candidate recall: {(evaluatedErrors == 0 ? 0 : (double)candidateHits / evaluatedErrors):P2}");
+        Console.WriteLine($"Candidate recall: primary {(evaluatedErrors == 0 ? 0 : (double)primaryCandidateHits / evaluatedErrors):P2}, primary + long tail {(evaluatedErrors == 0 ? 0 : (double)candidateHits / evaluatedErrors):P2}");
         Console.WriteLine($"Suggestion coverage: {(evaluatedErrors == 0 ? 0 : (double)suggestionCoverage / evaluatedErrors):P2}");
         Console.WriteLine($"Suggestion top-1/top-3: {(evaluatedErrors == 0 ? 0 : (double)suggestionTopOne / evaluatedErrors):P2}/{(evaluatedErrors == 0 ? 0 : (double)suggestionTopThree / evaluatedErrors):P2}");
         Console.WriteLine($"Unchanged reference words changed: {falseCorrections:N0}/{unchangedWords:N0}");
+        if (correctionLatencyMilliseconds.Count > 0)
+        {
+            correctionLatencyMilliseconds.Sort();
+            var p95Index = (int)Math.Ceiling(correctionLatencyMilliseconds.Count * 0.95) - 1;
+            Console.WriteLine($"Correction lookup latency (reflection benchmark): avg {correctionLatencyMilliseconds.Average():F3} ms, p95 {correctionLatencyMilliseconds[p95Index]:F3} ms, max {correctionLatencyMilliseconds[^1]:F3} ms");
+        }
+        Console.WriteLine($"False-correction paths: context {falseContextCorrections:N0}, repeated-character {falseRepeatedCharacterCorrections:N0}, diacritic {falseDiacriticCorrections:N0}, fuzzy {falseFuzzyCorrections:N0}");
+        for (var thresholdIndex = 0; thresholdIndex < marginThresholds.Length; thresholdIndex++)
+        {
+            var attempts = marginAttempts[thresholdIndex];
+            Console.WriteLine($"Simulated Turkish primary-pool candidate margin {marginThresholds[thresholdIndex]:F2}: accuracy {(double)marginExactCorrections[thresholdIndex] / evaluatedErrors:P2}, coverage {(double)attempts / evaluatedErrors:P2}, precision {(attempts == 0 ? 0 : (double)marginExactCorrections[thresholdIndex] / attempts):P2}, clean changes {marginFalseCorrections[thresholdIndex]:N0}/{unchangedWords:N0}");
+        }
         if (incorrectExamples.Count > 0) Console.WriteLine($"Incorrect correction examples: {string.Join(" | ", incorrectExamples)}");
         if (falseCorrectionExamples.Count > 0) Console.WriteLine($"False corrections of clean words: {string.Join(" | ", falseCorrectionExamples)}");
         var minimumAlignedRows = Math.Min(maximumRows, 1_000);
@@ -432,6 +585,50 @@ internal static class AutoCorrectCorpusChecks
         static string? GetHistory(IReadOnlyList<string> words, int index) => index == 0
             ? null
             : string.Join(' ', words.Skip(Math.Max(0, index - 2)).Take(Math.Min(2, index)));
+
+        string? GetFuzzyCorrection(string word, IReadOnlyList<object> rankedCandidates, double minimumMargin)
+        {
+            if (rankedCandidates.Count == 0) return null;
+            var best = rankedCandidates[0];
+            var bestType = best.GetType();
+            var bestWord = (string)bestType.GetProperty("Word")!.GetValue(best)!;
+            var bestScore = (double)bestType.GetProperty("Score")!.GetValue(best)!;
+            var bestDistance = (double)bestType.GetProperty("Distance")!.GetValue(best)!;
+            var maximumScore = (double)getMaximumAutomaticCorrectionScore.Invoke(null, [word.Length])!;
+            if (bestDistance > maximumScore || bestScore > maximumScore) return null;
+            if (rankedCandidates.Count > 1)
+            {
+                var runnerUpScore = (double)rankedCandidates[1].GetType().GetProperty("Score")!.GetValue(rankedCandidates[1])!;
+                if (runnerUpScore - bestScore < minimumMargin) return null;
+            }
+            return bestWord;
+        }
+
+        bool IsPriorityCorrection(string word, string? history, string? correction)
+        {
+            if (correction is null) return false;
+            var lowerWord = word.ToLower(CultureInfo.GetCultureInfo("tr-TR"));
+            if (turkishCommonTypos.TryGetValue(lowerWord, out var commonTypo) &&
+                StringComparer.OrdinalIgnoreCase.Equals(commonTypo, correction)) return true;
+            if (turkishDeasciifierMap.TryGetValue(lowerWord, out var deasciified) &&
+                StringComparer.OrdinalIgnoreCase.Equals(deasciified, correction)) return true;
+            var contextCorrection = (string?)tryContextCorrection.Invoke(null, [history, lowerWord, "tr-TR"]);
+            if (StringComparer.OrdinalIgnoreCase.Equals(contextCorrection, correction)) return true;
+            var repeatedCorrection = (string?)findRepeatedCharacterCorrection.Invoke(engine,
+                [lowerWord, history, true, false, "tr-TR"]);
+            if (StringComparer.OrdinalIgnoreCase.Equals(repeatedCorrection, correction)) return true;
+            var diacriticCorrection = (string?)findHighConfidenceDiacriticCorrection.Invoke(engine,
+                [lowerWord, history, true, false, "tr-TR"]);
+            return StringComparer.OrdinalIgnoreCase.Equals(diacriticCorrection, correction);
+        }
+
+        string? MeasureFindCorrection(object?[] arguments)
+        {
+            var startedAt = Stopwatch.GetTimestamp();
+            var correction = (string?)findCorrection.Invoke(engine, arguments);
+            correctionLatencyMilliseconds.Add(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
+            return correction;
+        }
     }
 
     internal static int RunTurkishTweetNextWords(string datasetPath, Assembly extras, Action<bool, string> check)
@@ -445,6 +642,10 @@ internal static class AutoCorrectCorpusChecks
         var getConversationCandidates = ngramType.GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
             .Single(method => method.Name == "GetConversationNextWordCandidates" && method.GetParameters().Length == 2);
         var getConversationSupport = ngramType.GetMethod("GetConversationContextSupport", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var getConversationTrigramSupport = ngramType.GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Single(method => method.Name == "GetConversationTrigramSupport" &&
+                              method.GetParameters().Length == 2 &&
+                              method.GetParameters().All(parameter => parameter.ParameterType == typeof(string)));
         var attempts = 0;
         var covered = 0;
         var topOneHits = 0;
@@ -464,8 +665,14 @@ internal static class AutoCorrectCorpusChecks
         var unseenConversationTopThreeHits = 0;
         var unseenGeneralTopOneHits = 0;
         var unseenGeneralTopThreeHits = 0;
+        var blendTopOneHits = new int[11];
+        var blendTopThreeHits = new int[11];
+        var supportAdaptiveThresholds = new long[] { 10, 50, 100 };
+        var supportAdaptiveTopOneHits = new int[supportAdaptiveThresholds.Length];
+        var supportAdaptiveTopThreeHits = new int[supportAdaptiveThresholds.Length];
         var supportExamples = new List<ConversationSupportExample>();
         var confidenceExamples = new List<ConversationConfidenceExample>();
+        var trigramExamples = new List<ConversationConfidenceExample>();
 
         using var reader = new StreamReader(datasetPath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         _ = reader.ReadLine();
@@ -483,7 +690,9 @@ internal static class AutoCorrectCorpusChecks
                 var history = $"{words[index - 2]} {words[index - 1]}";
                 var suggestions = (IReadOnlyList<string>)getSuggestions.Invoke(null,
                     [history, string.Empty, "tr-TR", 3])!;
-                var general = GetCandidateWords(getGeneralCandidates, history);
+                var generalDistribution = ((System.Collections.IEnumerable)getGeneralCandidates.Invoke(null,
+                    [history, "tr-TR"])!).Cast<object>().ToArray();
+                var general = GetCandidateWords(generalDistribution);
                 var conversationDistribution = ((System.Collections.IEnumerable)getConversationCandidates.Invoke(null,
                     [history, "tr-TR"])!).Cast<object>().ToArray();
                 var conversation = conversationDistribution
@@ -491,6 +700,36 @@ internal static class AutoCorrectCorpusChecks
                     .OfType<string>().Take(3).ToList();
                 var conversationSupport = (long)getConversationSupport.Invoke(null, [history, "tr-TR"])!;
                 var hasConversationEvidence = conversationSupport > 0;
+                for (var blendIndex = 0; blendIndex < blendTopOneHits.Length; blendIndex++)
+                {
+                    var conversationWeight = blendIndex / 10d;
+                    var blend = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                    AddWeightedProbabilities(generalDistribution, 1 - conversationWeight, blend);
+                    AddWeightedProbabilities(conversationDistribution, conversationWeight, blend);
+                    var blendSuggestions = blend.OrderByDescending(candidate => candidate.Value)
+                        .ThenBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+                        .Take(3).Select(candidate => candidate.Key).ToArray();
+                    if (blendSuggestions.Length > 0 && StringComparer.OrdinalIgnoreCase.Equals(blendSuggestions[0], words[index]))
+                        blendTopOneHits[blendIndex]++;
+                    if (blendSuggestions.Contains(words[index], StringComparer.OrdinalIgnoreCase))
+                        blendTopThreeHits[blendIndex]++;
+                }
+                for (var thresholdIndex = 0; thresholdIndex < supportAdaptiveThresholds.Length; thresholdIndex++)
+                {
+                    var conversationWeight = conversationSupport is > 0 && conversationSupport < supportAdaptiveThresholds[thresholdIndex]
+                        ? 0.9
+                        : 0.2;
+                    var blend = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                    AddWeightedProbabilities(generalDistribution, 1 - conversationWeight, blend);
+                    AddWeightedProbabilities(conversationDistribution, conversationWeight, blend);
+                    var blendSuggestions = blend.OrderByDescending(candidate => candidate.Value)
+                        .ThenBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+                        .Take(3).Select(candidate => candidate.Key).ToArray();
+                    if (blendSuggestions.Length > 0 && StringComparer.OrdinalIgnoreCase.Equals(blendSuggestions[0], words[index]))
+                        supportAdaptiveTopOneHits[thresholdIndex]++;
+                    if (blendSuggestions.Contains(words[index], StringComparer.OrdinalIgnoreCase))
+                        supportAdaptiveTopThreeHits[thresholdIndex]++;
+                }
                 if (suggestions.Count == 0) continue;
                 covered++;
                 if (StringComparer.OrdinalIgnoreCase.Equals(suggestions[0], words[index])) topOneHits++;
@@ -506,8 +745,14 @@ internal static class AutoCorrectCorpusChecks
                 var conversationConfidence = conversationDistribution.Length == 0
                     ? 0
                     : (double)conversationDistribution[0].GetType().GetProperty("Probability")!.GetValue(conversationDistribution[0])!;
+                var exactTrigramSupport = (long)getConversationTrigramSupport.Invoke(null, [history, "tr-TR"])!;
                 confidenceExamples.Add(new ConversationConfidenceExample(
                     conversationConfidence,
+                    StringComparer.OrdinalIgnoreCase.Equals(conversation.FirstOrDefault(), words[index]),
+                    StringComparer.OrdinalIgnoreCase.Equals(general.FirstOrDefault(), words[index]),
+                    StringComparer.OrdinalIgnoreCase.Equals(suggestions[0], words[index])));
+                trigramExamples.Add(new ConversationConfidenceExample(
+                    exactTrigramSupport,
                     StringComparer.OrdinalIgnoreCase.Equals(conversation.FirstOrDefault(), words[index]),
                     StringComparer.OrdinalIgnoreCase.Equals(general.FirstOrDefault(), words[index]),
                     StringComparer.OrdinalIgnoreCase.Equals(suggestions[0], words[index])));
@@ -543,20 +788,40 @@ internal static class AutoCorrectCorpusChecks
         Console.WriteLine($"Conversation-backed model top-1/top-3: {(conversationBackedContexts == 0 ? 0 : (double)conversationBackedModelTopOneHits / conversationBackedContexts):P2}/{(conversationBackedContexts == 0 ? 0 : (double)conversationBackedModelTopThreeHits / conversationBackedContexts):P2}");
         Console.WriteLine($"Merged unseen top-1/top-3: {(attempts == conversationBackedContexts ? 0 : (double)unseenConversationTopOneHits / (attempts - conversationBackedContexts)):P2}/{(attempts == conversationBackedContexts ? 0 : (double)unseenConversationTopThreeHits / (attempts - conversationBackedContexts)):P2}");
         Console.WriteLine($"General unseen top-1/top-3: {(attempts == conversationBackedContexts ? 0 : (double)unseenGeneralTopOneHits / (attempts - conversationBackedContexts)):P2}/{(attempts == conversationBackedContexts ? 0 : (double)unseenGeneralTopThreeHits / (attempts - conversationBackedContexts)):P2}");
+        for (var blendIndex = 0; blendIndex < blendTopOneHits.Length; blendIndex++)
+            Console.WriteLine($"Conversation blend {blendIndex * 10}% top-1/top-3: {(double)blendTopOneHits[blendIndex] / attempts:P2}/{(double)blendTopThreeHits[blendIndex] / attempts:P2}");
+        for (var thresholdIndex = 0; thresholdIndex < supportAdaptiveThresholds.Length; thresholdIndex++)
+            Console.WriteLine($"Adaptive conversation weight (90% when support is 1-{supportAdaptiveThresholds[thresholdIndex] - 1}, otherwise 20%): {(double)supportAdaptiveTopOneHits[thresholdIndex] / attempts:P2}/{(double)supportAdaptiveTopThreeHits[thresholdIndex] / attempts:P2}");
         PrintSupportBuckets(supportExamples);
         PrintConfidenceBuckets(confidenceExamples);
+        PrintTrigramEvidence(trigramExamples);
         check(attempts >= 1_000, "TurkishTweets next-word benchmark evaluates enough real contexts");
         return attempts;
 
         static string[] SplitTokens(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         static bool IsStandaloneWord(string word) => word.Length is >= 2 and <= 40 && word.All(char.IsLetter);
-        static List<string> GetCandidateWords(MethodInfo method, string history) =>
-            ((System.Collections.IEnumerable)method.Invoke(null, [history, "tr-TR"])!)
-            .Cast<object>()
+        static List<string> GetCandidateWords(IEnumerable<object> candidates) =>
+            candidates
             .Select(candidate => candidate.GetType().GetProperty("Word")!.GetValue(candidate) as string)
             .OfType<string>()
             .Take(3)
             .ToList();
+
+        static void AddWeightedProbabilities(
+            IEnumerable<object> candidates,
+            double weight,
+            IDictionary<string, double> scores)
+        {
+            if (weight <= 0) return;
+            foreach (var candidate in candidates)
+            {
+                var candidateType = candidate.GetType();
+                var word = (string)candidateType.GetProperty("Word")!.GetValue(candidate)!;
+                var probability = (double)candidateType.GetProperty("Probability")!.GetValue(candidate)!;
+                scores.TryGetValue(word, out var existingScore);
+                scores[word] = existingScore + probability * weight;
+            }
+        }
 
         static void PrintSupportBuckets(IReadOnlyList<ConversationSupportExample> examples)
         {
@@ -587,6 +852,20 @@ internal static class AutoCorrectCorpusChecks
                 var bucket = examples.Where(example => predicate(example.ConversationConfidence)).ToArray();
                 if (bucket.Length == 0) continue;
                 Console.WriteLine($"Conversation confidence {label} ({bucket.Length:N0}): model {bucket.Count(example => example.ConversationTopOne) / (double)bucket.Length:P2}, general {bucket.Count(example => example.GeneralTopOne) / (double)bucket.Length:P2}, merged {bucket.Count(example => example.MergedTopOne) / (double)bucket.Length:P2}");
+            }
+        }
+
+        static void PrintTrigramEvidence(IReadOnlyList<ConversationConfidenceExample> examples)
+        {
+            foreach (var (label, predicate) in new (string, Func<double, bool>)[]
+                     {
+                         ("no exact trigram", confidence => confidence == 0),
+                         ("exact trigram", confidence => confidence > 0)
+                     })
+            {
+                var bucket = examples.Where(example => predicate(example.ConversationConfidence)).ToArray();
+                if (bucket.Length == 0) continue;
+                Console.WriteLine($"{label} ({bucket.Length:N0}): conversation {bucket.Count(example => example.ConversationTopOne) / (double)bucket.Length:P2}, general {bucket.Count(example => example.GeneralTopOne) / (double)bucket.Length:P2}, merged {bucket.Count(example => example.MergedTopOne) / (double)bucket.Length:P2}");
             }
         }
     }
