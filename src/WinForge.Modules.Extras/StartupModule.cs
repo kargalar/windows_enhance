@@ -16,6 +16,7 @@ public sealed class StartupModule : ITweakModule
     public string Description => "Windows oturum açtığında WinForge'u arka planda (tepside) başlatır.";
     public string? Warning => null;
     public bool IsActive { get; private set; }
+    public bool IsPersistent => true;
 
     public IReadOnlyList<SettingDescriptor> Settings { get; } = Array.Empty<SettingDescriptor>();
 

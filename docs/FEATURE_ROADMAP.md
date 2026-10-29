@@ -14,7 +14,7 @@ third-party customization engines and direct NuGet dependencies are not used.
 | Mouse | Double-Ctrl spotlight; click rings for left, right, middle and both side buttons with an opt-in all-button scope, independent per-button colors, configurable click diameter and fade duration; configurable crosshairs; monitor jump | Add richer click highlighter modes such as per-button animation styles |
 | Clipboard | Windows clipboard history, plain-text paste, Markdown/JSON conversion, local OCR, and TXT/HTML/PNG file paste | Add media conversion and richer history search |
 | Displays / Power Display | DDC/CI capability discovery with brightness, contrast, monitor volume, input-source and color-preset controls; Windows WMI brightness for built-in panels; linked brightness levels; async discovery, color-change confirmation, persistent per-monitor profiles, opt-in local-time day/night brightness schedules, and cursor-monitor brightness hotkeys | Add rotation/power controls, custom VCP names, and profile integration with Light Switch |
-| Fluent Flyout | Compact audio flyout with master volume/mute, Windows media session title/artist and bounded album artwork, selectable and persistently pinnable sessions from both flyout and taskbar widget, playback timeline/seek, shuffle/repeat, allowlist/blocklist app filtering, expandable per-app volume/mute mixer on the default output, Windows Sound Settings shortcut for device selection, direct play/pause/skip commands (key fallback), independently configurable lock-key indicators and non-activating OSD, `Win+Alt+M`/`Ctrl+Alt+V` shortcuts, hardware media-key triggers, Core Audio endpoint volume/mute notifications for compatible external controls with self-generated changes filtered through event context, opt-in compact taskbar-adjacent mini player with edge-aware placement, session-switching context menu and configurable master/player-app volume wheel control, opt-in 24-band WASAPI output spectrum visualizer with silence hiding and optional baseline, Up Next notification, configurable corner/monitor, light/dark/system theme, fade animation, inactivity dismissal, fullscreen suppression and high-contrast colors | Direct taskbar embedding and edge-oriented widget layout; marquee/fixed-width widget options; clickable player header that reliably activates the exact player/browser tab; richer Fluent backdrop and animation settings; verify external device behavior across audio drivers and Windows builds |
+| Fluent Flyout | Compact media flyout with Windows media session title/artist and bounded album artwork, selectable sessions and persistently pinnable sessions through the taskbar widget, playback timeline/seek, shuffle/repeat, allowlist/blocklist app filtering, direct play/pause/skip commands (key fallback), independently configurable lock-key OSD and non-activating notifications, `Win+Alt+M`/`Ctrl+Alt+V` shortcuts, hardware media-key triggers, bottom-centered audio volume OSD with interactive slider and media flyout on hardware and compatible external volume changes, Core Audio endpoint volume/mute changes filtered through event context, opt-in compact taskbar-adjacent mini player with edge-aware placement, session-switching context menu and configurable master/player-app volume wheel control, opt-in 24-band WASAPI output spectrum visualizer with silence hiding and optional baseline, Up Next notification, configurable corner/monitor, black dark surfaces with white text and borderless controls, fade animation, inactivity dismissal, fullscreen suppression and high-contrast colors | Direct taskbar embedding and edge-oriented widget layout; marquee/fixed-width widget options; clickable player header that reliably activates the exact player/browser tab; richer Fluent backdrop and animation settings; verify external device behavior across audio drivers and Windows builds |
 | Taskbar and shell | Own taskbar registry/API tweaks, seconds/date format, wheel volume, middle-click close, transparency/accent, tray visibility | Own version-tested shell engine for advanced XAML themes, taskbar geometry/placement, dock animations and Explorer/browser customization; these features are currently unavailable |
 | Explorer and Start | Explorer tweaks, context-menu tools, Start/Search cleanup, bulk rename with persistent last-operation undo, image resize with metadata preservation/progress/cancellation, file-lock inspection with process/service details and post-termination rescan, and Peek preview for text/images/PDF/audio/video | Verify PDF rendering and media codec behavior across supported Windows builds |
 | Themes and system | Theme switch with timed light/dark schedule, Awake, corners, UI tweaks, startup, user and elevated system-scope environment variable editors, plus user profiles | Add reversible power/menu shortcuts |
@@ -25,17 +25,14 @@ third-party customization engines and direct NuGet dependencies are not used.
 
 ### Fluent Flyout parity plan
 
-The WinForge flyout provides `Win+Alt+M`, master volume/mute, media metadata and
+The WinForge flyout provides `Win+Alt+M`, a separate interactive master-volume
+OSD, media metadata and
 bounded album artwork, selectable and filterable Windows media sessions, a playback timeline
-with mouse/keyboard seek, shuffle/repeat, a per-app volume/mute mixer, direct
-play/pause/skip commands (with media-key fallback), and Caps/Num/Scroll Lock
-indicators. Continue in this order:
+with mouse/keyboard seek, shuffle/repeat, direct play/pause/skip commands (with
+media-key fallback), and separate Caps/Num/Scroll Lock OSD notifications. Continue
+in this order:
 
-1. Keep output-device choice routed through Windows Sound Settings: the public
-   endpoint APIs used here enumerate/read devices, while system-default switching
-   is not exposed by the documented IMMDeviceEnumerator selection methods. The
-   mixer follows the default render device; re-enumerate after device changes.
-2. A compact primary-taskbar-adjacent mini player now offers track metadata,
+1. A compact primary-taskbar-adjacent mini player now offers track metadata,
    transport controls, contextual media/sound/player actions, and optional
    master-volume or selected-player-app volume wheel control. Placement follows
    the primary taskbar edge (top, bottom, left, or right). It hides without an active media session and
@@ -44,16 +41,17 @@ indicators. Continue in this order:
    runs only while enabled and hides in fullscreen; its level meter is throttled
    to 30 FPS and decays cleanly during silence. Evaluate true taskbar embedding
    and orientation-aware widget layout as separate shell surfaces.
-3. Keyboard hardware volume/media keys show the flyout without swallowing the
-   original key event. While the flyout is open, session-list, selected-session
+2. Keyboard hardware media keys show the flyout; volume keys show both the audio
+   OSD and media flyout without swallowing their original key events. While the flyout is open,
+   session-list, selected-session
    metadata, playback and timeline updates are event-driven; a lightweight
-   timer only keeps the displayed clock, endpoint volume and expanded app mixer
-   fresh. A scoped Core Audio endpoint callback also opens the flyout for
-   software-visible volume/mute changes from compatible external controls;
+   timer only keeps the timeline fresh. A scoped Core Audio endpoint callback
+   shows the OSD and media flyout for software-visible volume/mute changes from
+   compatible external controls;
    WinForge-originated changes carry a private event-context GUID and are
    ignored. Windows and audio drivers may not surface every Bluetooth/trackpad
    control through this API.
-4. Verify headphones/Bluetooth session changes and supported brightness/audio
+3. Verify headphones/Bluetooth session changes and supported brightness/audio
    OSD behavior across Windows 10/11 builds and multiple monitors.
 
 Upstream references: [FluentFlyout features](https://fluentflyout.com/),
@@ -92,11 +90,6 @@ PowerToys utilities not yet covered or only partly covered by WinForge:
   `Win+Shift+/`; the configurable hold-Win overlay opens after 500 ms by default,
   stays non-activating so it does not steal focus, cancels when another key is
   pressed, and hides when Win is released.
-- **Quick Accent:** configurable press-and-hold picker for Latin accents,
-  preserving a short press and suppressing activation in fullscreen apps;
-  French, German, Spanish, Turkish, Scandinavian and Central European filters
-  plus process-name exclusions are implemented. Trigger-key activation, Game
-  Mode integration, toolbar placement and usage-frequency sorting remain.
 - **Crop And Lock:** `Win+Ctrl+Shift+T` selects a region of the active window and displays a resizable, always-on-top live DWM thumbnail. The thumbnail follows source-window updates and is read-only; PowerToys' interactive Reparent mode and static screenshot mode remain future work. `Esc` cancels selection.
 - **Keyboard Manager:** global and process-scoped key/shortcut remaps plus
   shortcut-triggered Unicode text sequences are implemented; app-specific rules

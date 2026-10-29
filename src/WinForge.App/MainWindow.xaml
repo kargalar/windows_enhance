@@ -8,74 +8,83 @@
     <Grid Background="{DynamicResource BgBrush}">
         <Ellipse x:Name="GlowLayer" Width="640" Height="640" HorizontalAlignment="Right"
                  VerticalAlignment="Top" Margin="0,-380,-200,0" IsHitTestVisible="False" />
-        <Grid Margin="32,22,32,16">
+        <Grid Margin="32,24,32,16">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,18">
-                <DockPanel LastChildFill="False">
-                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Width="32" Height="32" CornerRadius="9" Background="{DynamicResource AccentSoftBrush}">
-                            <TextBlock Text="W" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource AccentBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <TextBlock Text="WinForge" FontSize="17" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center" />
-                        <TextBlock x:Name="VersionText" FontSize="11" Foreground="{DynamicResource MutedBrush}"
-                                   Margin="10,0,0,0" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                        <TextBlock x:Name="EngineStatus" FontSize="12" Foreground="{DynamicResource MutedBrush}"
-                                   Margin="0,0,16,0" VerticalAlignment="Center" />
-                        <Button x:Name="AppearanceButton" Content="Görünüm" Style="{StaticResource GhostButton}" Click="OnAppearanceClick" />
-                        <Button Content="Logları aç" Style="{StaticResource GhostButton}" Click="OnOpenLogs" Margin="4,0,0,0" />
-                        <Button Content="Çıkış" Style="{StaticResource GhostButton}" Click="OnExit" Margin="4,0,0,0" />
-                    </StackPanel>
-                </DockPanel>
-            </Border>
-            <Grid Grid.Row="1" Margin="0,22,0,20">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="280" /></Grid.ColumnDefinitions>
-                <StackPanel Margin="0,0,20,0">
+            <Grid Grid.Row="0" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,20,0" VerticalAlignment="Center">
                     <TextBlock x:Name="PageTitle" Text="Tüm modüller" FontSize="26" FontWeight="SemiBold" />
                     <TextBlock x:Name="PageSubtitle" Text="Windows'u çalışma biçimine uyarla."
                                Foreground="{DynamicResource MutedBrush}" FontSize="13" Margin="0,6,0,0" TextWrapping="Wrap" />
                 </StackPanel>
-                <Grid Grid.Column="1" VerticalAlignment="Center">
-                    <TextBox x:Name="SearchBox" Height="40" Padding="34,8,34,8" TextChanged="OnSearchChanged"
-                             AutomationProperties.Name="Modül ara" ToolTip="Modül ara (Ctrl+F)" />
-                    <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
-                               Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False" />
-                    <TextBlock x:Name="SearchHint" Text="Modül ara · Ctrl+F" Foreground="{DynamicResource MutedBrush}"
-                               FontSize="12" VerticalAlignment="Center" Margin="35,0,0,0" IsHitTestVisible="False" />
-                    <Button x:Name="ClearSearchButton" Content="×" Style="{StaticResource GhostButton}"
-                            HorizontalAlignment="Right" Padding="10,5" Margin="0,2,2,2" Visibility="Collapsed"
-                            Click="OnClearSearch" AutomationProperties.Name="Aramayı temizle" />
-                </Grid>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Grid Width="280">
+                        <TextBox x:Name="SearchBox" Height="40" Padding="34,8,34,8" TextChanged="OnSearchChanged"
+                                 AutomationProperties.Name="Modül ara" ToolTip="Modül ara (Ctrl+F)" />
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="13"
+                                   Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False" />
+                        <TextBlock x:Name="SearchHint" Text="Modül ara · Ctrl+F" Foreground="{DynamicResource MutedBrush}"
+                                   FontSize="12" VerticalAlignment="Center" Margin="35,0,0,0" IsHitTestVisible="False" />
+                        <Button x:Name="ClearSearchButton" Content="×" Style="{StaticResource GhostButton}"
+                                HorizontalAlignment="Right" Padding="10,5" Margin="0,2,2,2" Visibility="Collapsed"
+                                Click="OnClearSearch" AutomationProperties.Name="Aramayı temizle" />
+                    </Grid>
+                    <Button x:Name="AppearanceButton" Width="40" Height="40" Margin="8,0,0,0"
+                            Style="{StaticResource IconButton}" Click="OnAppearanceClick"
+                            ToolTip="Görünüm ve Ayarlar" AutomationProperties.Name="Görünüm ve Ayarlar">
+                        <TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}" FontSize="16" />
+                    </Button>
+                </StackPanel>
             </Grid>
-            <Grid Grid.Row="2" Margin="0,0,0,18">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <Grid Grid.Row="1" Margin="0,0,0,18">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <ListBox x:Name="CategoryList" Background="Transparent" BorderThickness="0" Padding="0"
                          ItemContainerStyle="{StaticResource CategoryItem}" SelectionChanged="OnCategoryChanged"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Kategoriler">
                     <ListBox.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
                 </ListBox>
-                <CheckBox x:Name="ActiveOnlyToggle" Grid.Column="1" Content="Yalnızca etkin" VerticalAlignment="Top"
-                          Foreground="{DynamicResource TextBrush}" Margin="18,9,0,0" FontSize="12" Click="OnActiveFilterChanged" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="16,6,0,0">
+                    <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="7" Padding="10,5" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="EngineStatus" FontSize="11.5" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" />
+                    </Border>
+                    <CheckBox x:Name="ActiveOnlyToggle" Content="Yalnızca etkin" VerticalAlignment="Center"
+                              Foreground="{DynamicResource TextBrush}" Margin="0" FontSize="12" Click="OnActiveFilterChanged" />
+                </StackPanel>
             </Grid>
-            <Grid Grid.Row="3">
+            <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="2*" MinWidth="300" /><ColumnDefinition Width="20" /><ColumnDefinition Width="3*" MinWidth="420" />
+                    <ColumnDefinition x:Name="ModuleColumn" Width="*" MinWidth="300" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition x:Name="DetailColumn" Width="460" MinWidth="320" MaxWidth="850" />
                 </Grid.ColumnDefinitions>
                 <ListBox x:Name="ModuleList" Background="Transparent" Foreground="{DynamicResource TextBrush}" BorderThickness="0" Padding="0"
                          Style="{StaticResource ModuleListStyle}"
                          ItemContainerStyle="{StaticResource ModuleItem}" SelectionChanged="OnModuleSelected"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Modüller">
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.CanContentScroll="False"
+                         SizeChanged="OnModuleListSizeChanged"
+                         AutomationProperties.Name="Modüller">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border CornerRadius="10" Padding="16" Margin="0,0,4,8" BorderThickness="1">
+                            <Border Width="{Binding ModuleCardWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CornerRadius="10" Padding="14,12" Margin="0,0,8,8" BorderThickness="1" MinHeight="86">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="Background" Value="{DynamicResource CardBrush}" />
@@ -91,24 +100,45 @@
                                 </Border.Style>
                                 <Grid>
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                    <Border Width="36" Height="36" CornerRadius="9" Background="{DynamicResource PanelBrush}" Margin="0,0,12,0" VerticalAlignment="Top">
+                                    <Border Width="36" Height="36" CornerRadius="9" Background="{DynamicResource PanelBrush}" Margin="0,0,10,0" VerticalAlignment="Top">
                                         <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource IconFont}" FontSize="16"
                                                    Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                     </Border>
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding ShortDescription}" FontSize="12" Foreground="{DynamicResource MutedBrush}"
-                                                   Margin="0,5,0,0" TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Category}" FontSize="10.5" Foreground="{DynamicResource MutedBrush}" Margin="0,7,0,0" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding Name}" FontSize="13.5" FontWeight="SemiBold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding ShortDescription}" FontSize="11.5" Foreground="{DynamicResource MutedBrush}"
+                                                   Margin="0,3,0,0" TextWrapping="Wrap" MaxHeight="32" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Category}" FontSize="10" Foreground="{DynamicResource MutedBrush}" Margin="0,4,0,0" />
                                     </StackPanel>
                                     <CheckBox Grid.Column="2" Style="{StaticResource SwitchStyle}" IsChecked="{Binding IsActive, Mode=OneWay}"
-                                              Click="OnModuleToggle" Tag="{Binding}" VerticalAlignment="Center" Margin="12,0,0,0"
+                                              Click="OnModuleToggle" Tag="{Binding}" VerticalAlignment="Center" Margin="6,0,0,0"
                                               ToolTip="{Binding StatusText}" AutomationProperties.Name="{Binding Name}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                <GridSplitter Grid.Column="1" Width="14" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                              Background="Transparent" ShowsPreview="False" Cursor="SizeWE" Focusable="False"
+                              DragCompleted="OnSplitterDragCompleted">
+                    <GridSplitter.Template>
+                        <ControlTemplate TargetType="GridSplitter">
+                            <Border Background="Transparent" SnapsToDevicePixels="True">
+                                <Border x:Name="Grip" Width="4" Height="48" CornerRadius="2"
+                                        Background="{DynamicResource BorderBrush}"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Grip" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsDragging" Value="True">
+                                    <Setter TargetName="Grip" Property="Background" Value="{DynamicResource AccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </GridSplitter.Template>
+                </GridSplitter>
                 <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed" Margin="24">
                     <TextBlock Text="Sonuç bulunamadı" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center" />
                     <TextBlock Text="Aramayı veya filtreleri değiştirmeyi dene." FontSize="13" Foreground="{DynamicResource MutedBrush}"
@@ -121,7 +151,7 @@
                     </ScrollViewer>
                 </Border>
             </Grid>
-            <Grid Grid.Row="4" Margin="0,16,0,0">
+            <Grid Grid.Row="3" Margin="0,16,0,0">
                 <TextBlock x:Name="StatusBar" Foreground="{DynamicResource MutedBrush}" FontSize="11" />
                 <TextBlock Text="Değişiklikler otomatik kaydedilir" Foreground="{DynamicResource MutedBrush}" FontSize="11" HorizontalAlignment="Right" />
             </Grid>

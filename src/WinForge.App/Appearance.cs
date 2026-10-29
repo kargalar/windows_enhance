@@ -45,6 +45,7 @@ public static class Appearance
     public static string AccentName { get; private set; } = "Mavi";
     public static string ToneName { get; private set; } = "Varsayılan";
     public static bool Glow { get; private set; }
+    public static double DetailWidth { get; private set; } = 460;
 
     private static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -72,6 +73,11 @@ public static class Appearance
             if (root.TryGetProperty("glow", out var glow) &&
                 (glow.ValueKind == JsonValueKind.True || glow.ValueKind == JsonValueKind.False))
                 Glow = glow.GetBoolean();
+
+            if (root.TryGetProperty("detailWidth", out var detailWidth) &&
+                detailWidth.TryGetDouble(out var dw) &&
+                dw >= 280 && dw <= 900)
+                DetailWidth = dw;
         }
         catch
         {
@@ -87,7 +93,8 @@ public static class Appearance
             {
                 accent = AccentName,
                 tone = ToneName,
-                glow = Glow
+                glow = Glow,
+                detailWidth = Math.Round(DetailWidth, 1)
             }));
         }
         catch
@@ -115,11 +122,20 @@ public static class Appearance
         Save();
     }
 
+    public static void SetDetailWidth(double width)
+    {
+        if (width < 280 || width > 900) return;
+        if (Math.Abs(DetailWidth - width) < 1.0) return;
+        DetailWidth = width;
+        Save();
+    }
+
     public static void Reset()
     {
         AccentName = "Mavi";
         ToneName = "Varsayılan";
         Glow = false;
+        DetailWidth = 460;
         Save();
     }
 

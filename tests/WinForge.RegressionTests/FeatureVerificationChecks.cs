@@ -24,6 +24,8 @@ internal static class FeatureVerificationChecks
         TestMouseSettings(extras, directory, check);
         TestAnimationSettings(extras, check);
         TestWordCorrectionEngine(extras, check);
+        TestClassicContextMenu(extras, check);
+        TestAppearanceDetailWidth(check);
         TaskbarFeatureChecks.Run(check, nativeSmoke);
         NotificationsPlacementChecks.Run(extras, directory, check, nativeSmoke);
         DisplayBrightnessChecks.Run(extras, check);
@@ -318,10 +320,6 @@ internal static class FeatureVerificationChecks
             check(accepted, "Own keyboard engine submits real Unicode input using the Windows INPUT ABI");
             PumpUntil(() => editor.Text == fixture, TimeSpan.FromSeconds(3), "Keyboard Unicode delivery");
             check(editor.Text == fixture, "Own keyboard engine delivers the exact Unicode text to a real fixture editor");
-            extras.GetType("WinForge.Modules.Extras.QuickAccentModule")!
-                .GetMethod("SendUnicode", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, ['ğ']);
-            PumpUntil(() => editor.Text == fixture + "ğ", TimeSpan.FromSeconds(3), "Quick Accent Unicode delivery");
-            check(editor.Text == fixture + "ğ", "Quick Accent injects its actual Unicode character through the shared native keyboard engine");
         }
         finally
         {
@@ -734,5 +732,31 @@ internal static class FeatureVerificationChecks
         check(module.Settings.Any(s => s.Key == "deasciify-turkish"), "AutoCorrectModule exposes deasciify-turkish toggle");
         check(module.Settings.Any(s => s.Key == "text-expansions"), "AutoCorrectModule exposes text-expansions toggle");
         AutoCorrectQualityChecks.Run(extras, check);
+    }
+
+    private static void TestClassicContextMenu(Assembly extras, Action<bool, string> check)
+    {
+        var moduleType = extras.GetType("WinForge.Modules.Extras.ClassicContextMenuModule")!;
+        var module = (ITweakModule)Activator.CreateInstance(moduleType)!;
+        check(module.Id == "classic-context-menu", "ClassicContextMenuModule ID is 'classic-context-menu'");
+        check(module.IsPersistent, "ClassicContextMenuModule is marked as persistent so it is not reverted on app exit");
+        check(module.Settings.Any(s => s.Key == "auto-restart" && s.Kind == SettingKind.Toggle), "ClassicContextMenuModule exposes auto-restart toggle setting");
+        check(module.Settings.Any(s => s.Key == "restart-explorer" && s.Kind == SettingKind.Action && s.Execute != null), "ClassicContextMenuModule exposes restart-explorer action setting");
+    }
+
+    private static void TestAppearanceDetailWidth(Action<bool, string> check)
+    {
+        var initial = WinForge.App.Appearance.DetailWidth;
+        try
+        {
+            WinForge.App.Appearance.SetDetailWidth(520.5);
+            check(Math.Abs(WinForge.App.Appearance.DetailWidth - 520.5) < 0.1, "Appearance sets and remembers detail panel width");
+            WinForge.App.Appearance.Load();
+            check(Math.Abs(WinForge.App.Appearance.DetailWidth - 520.5) < 0.1, "Appearance loads persisted detail panel width from disk");
+        }
+        finally
+        {
+            WinForge.App.Appearance.SetDetailWidth(initial);
+        }
     }
 }

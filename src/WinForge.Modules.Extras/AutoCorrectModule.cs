@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Threading;
@@ -292,7 +293,7 @@ public sealed class AutoCorrectModule : ITweakModule
         _deasciifyTurkish = _context?.Settings.GetBool("deasciify-turkish", true) ?? true;
         _allowTextExpansions = _context?.Settings.GetBool("text-expansions", true) ?? true;
         _customReplacements = ParseCustomReplacements(_context?.Settings.GetString("custom-replacements", DefaultCustomReplacements) ?? DefaultCustomReplacements);
-        _excludedProcesses = QuickAccentModule.ParseExcludedProcesses(_context?.Settings.GetString("excluded-apps", "") ?? "");
+        _excludedProcesses = ParseExcludedProcesses(_context?.Settings.GetString("excluded-apps", "") ?? "");
     }
 
     private void ClearPreviousWord()
@@ -750,6 +751,18 @@ public sealed class AutoCorrectModule : ITweakModule
         }
         catch (ArgumentException) { return false; }
         catch (InvalidOperationException) { return false; }
+    }
+
+    internal static HashSet<string> ParseExcludedProcesses(string value) => value
+        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(NormalizeProcessName)
+        .Where(name => name.Length > 0)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    internal static string NormalizeProcessName(string value)
+    {
+        var fileName = Path.GetFileName(value.Trim().Trim('"', '\''));
+        return Path.GetFileNameWithoutExtension(fileName).Trim();
     }
 
     private static bool HasShortcutModifiers() =>

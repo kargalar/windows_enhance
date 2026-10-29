@@ -16,6 +16,7 @@ public sealed class ExplorerTweaksModule : ITweakModule
     public string Description => "Dosya uzantıları, gizli dosyalar ve son kullanılanlar gibi Gezgin görünüm ayarları.";
     public string? Warning => "Bazı değişiklikler için Explorer'ı yeniden başlatmak gerekir.";
     public bool IsActive { get; private set; }
+    public bool IsPersistent => true;
 
     public IReadOnlyList<SettingDescriptor> Settings { get; } = new[]
     {

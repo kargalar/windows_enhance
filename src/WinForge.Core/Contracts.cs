@@ -59,6 +59,12 @@ public interface IDisplayBrightnessOverlayContext
     void ShowDisplayBrightness(int percent, string deviceName);
 }
 
+/// <summary>Shows a transient audio volume indicator.</summary>
+public interface IAudioVolumeOverlayContext
+{
+    void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null);
+}
+
 /// <summary>A searchable action contributed by an active module.</summary>
 public sealed record QuickAction(string Id, string Name, string SearchTerms, Action Execute);
 
@@ -107,6 +113,7 @@ public interface ITweakModule
     IReadOnlyList<SettingDescriptor> Settings { get; }
 
     bool IsActive { get; }
+    bool IsPersistent => false;
 
     void Initialize(IModuleContext context);
     void Activate();

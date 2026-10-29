@@ -9,6 +9,7 @@ public sealed class ModuleHost
     private readonly IHotkeyService _hotkeys;
     private readonly Action<string> _notify;
     private readonly Action<int, string>? _showDisplayBrightness;
+    private readonly Action<int, bool, Action?>? _showAudioVolume;
     private readonly string _modulesDirectory;
     private readonly List<ITweakModule> _modules = new();
     private readonly Dictionary<string, IModuleSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
@@ -16,7 +17,7 @@ public sealed class ModuleHost
     private readonly IQuickActionService _quickActions;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
-        Action<int, string>? showDisplayBrightness = null)
+        Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?>? showAudioVolume = null)
     {
         _store = store;
         _log = log;
@@ -24,6 +25,7 @@ public sealed class ModuleHost
         _modulesDirectory = modulesDirectory;
         _notify = notify;
         _showDisplayBrightness = showDisplayBrightness;
+        _showAudioVolume = showAudioVolume;
         _quickActions = new QuickActionService(() => _modules, _log, _notify);
     }
 
@@ -60,7 +62,7 @@ public sealed class ModuleHost
                     var module = (ITweakModule)Activator.CreateInstance(type)!;
                     var settings = new ModuleSettings(_store.For(module.Id), _store.Save);
                     _settings[module.Id] = settings;
-                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, _showDisplayBrightness,
+                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, _showDisplayBrightness, _showAudioVolume,
                         TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag));
                     _modules.Add(module);
                     _log.Info($"Modül yüklendi: {module.Id} ({module.Name})");
@@ -165,7 +167,7 @@ public sealed class ModuleHost
     {
         foreach (var module in _modules)
         {
-            if (!module.IsActive) continue;
+            if (!module.IsActive || module.IsPersistent) continue;
             try
             {
                 module.Deactivate();
@@ -199,16 +201,20 @@ public sealed class ModuleHost
         return handled;
     }
 
-    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext, IDisplayBrightnessOverlayContext
+    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext,
+        IDisplayBrightnessOverlayContext, IAudioVolumeOverlayContext
     {
         private readonly Action<string> _notify;
         private readonly Action<int, string>? _showDisplayBrightness;
+        private readonly Action<int, bool, Action?>? _showAudioVolume;
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
         private readonly Action<IntPtr> _beginWindowZoneDrag;
         private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
-            IQuickActionService quickActions, Action<int, string>? showDisplayBrightness, Func<IntPtr, POINT, bool> placeWindow,
+            IQuickActionService quickActions, Action<int, string>? showDisplayBrightness,
+            Action<int, bool, Action?>? showAudioVolume,
+            Func<IntPtr, POINT, bool> placeWindow,
             Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
         {
             Settings = settings;
@@ -217,6 +223,7 @@ public sealed class ModuleHost
             QuickActions = quickActions;
             _notify = notify;
             _showDisplayBrightness = showDisplayBrightness;
+            _showAudioVolume = showAudioVolume;
             _placeWindow = placeWindow;
             _beginWindowZoneDrag = beginWindowZoneDrag;
             _endWindowZoneDrag = endWindowZoneDrag;
@@ -232,6 +239,11 @@ public sealed class ModuleHost
         {
             if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName);
             else _notify($"Parlaklık {percent}%");
+        }
+        public void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null)
+        {
+            if (_showAudioVolume is not null) _showAudioVolume(percent, isMuted, onVolumeChanged);
+            else _notify(isMuted ? $"Ses kapalı · {percent}%" : $"Ses {percent}%");
         }
         public bool TryPlaceWindowInZone(IntPtr window, POINT point) => _placeWindow(window, point);
         public void BeginWindowZoneDrag(IntPtr window) => _beginWindowZoneDrag(window);

@@ -765,12 +765,12 @@ internal static class Program
               mediaFlyout.Settings.Any(setting => setting.Key == "external-volume-flyout-enabled" && setting.Default is true) &&
               mediaFlyout.Settings.Any(setting => setting.Key == "flyout-position" && setting.Kind == SettingKind.Choice && setting.Options.Length == 4) &&
               mediaFlyout.Settings.Any(setting => setting.Key == "flyout-monitor" && setting.Options.Contains("cursor")) &&
-              mediaFlyout.Settings.Any(setting => setting.Key == "flyout-theme" && setting.Options.Contains("system")) &&
+              !mediaFlyout.Settings.Any(setting => setting.Key == "flyout-theme") &&
               mediaFlyout.Settings.Any(setting => setting.Key == "flyout-animation" && setting.Options.Contains("fade")) &&
               mediaFlyout.Settings.Any(setting => setting.Key == "flyout-dismiss-seconds" && setting.Kind == SettingKind.Number && setting.Min == 0 && setting.Max == 60) &&
               mediaFlyout.Settings.Any(setting => setting.Key == "flyout-fullscreen-suppressed" && setting.Kind == SettingKind.Toggle) &&
               (mediaFlyout.Warning ?? "").Contains("albüm kapağı", StringComparison.OrdinalIgnoreCase),
-            "Fluent Media Flyout exposes media controls, configurable placement, theme, dismissal and fullscreen behavior");
+            "Fluent Media Flyout exposes media controls, configurable placement, dismissal and fullscreen behavior");
         Check(!VolumeService.IsWinForgeChange(new VolumeService.EndpointVolumeChange(50, false, Guid.Empty)) &&
               !VolumeService.IsWinForgeChange(new VolumeService.EndpointVolumeChange(50, false, Guid.NewGuid())),
             "External endpoint volume events are distinguished from WinForge-originated changes");
@@ -826,15 +826,16 @@ internal static class Program
                                            !string.IsNullOrWhiteSpace(session.Application)),
             "Per-application mixer enumerates valid active Windows audio sessions without changing levels");
         Check(Descendants<Button>(mediaWindow).Count() >= 3, "Media Flyout renders media transport controls");
-        Check(Descendants<TextBlock>(mediaWindow).Any(block => block.Text.Contains("Caps Lock", StringComparison.Ordinal)),
-            "Media Flyout renders lock-key state");
+        Check(!Descendants<TextBlock>(mediaWindow).Any(block => block.Text.Contains("Caps Lock", StringComparison.Ordinal)),
+            "Media Flyout keeps lock-key status outside the media panel");
         Check(Descendants<TextBlock>(mediaWindow).Any(block => block.Name == "UpNextNotification" &&
               block.Visibility == Visibility.Collapsed),
             "Media Flyout provides a hidden-by-default Up Next notification surface");
         Check(Descendants<TextBlock>(mediaWindow).Any(block => block.Name == "MediaSessionInfo" && !string.IsNullOrWhiteSpace(block.Text)),
             "Media Flyout renders current-session metadata or a graceful unavailable state");
-        Check(Descendants<Button>(mediaWindow).Any(button => button.Name == "PinFlyoutButton"),
-            "Media Flyout renders a window pin toggle button");
+        Check(!Descendants<Button>(mediaWindow).Any(button => button.Name == "PinFlyoutButton" ||
+              string.Equals(button.Content?.ToString(), "Oturumu sabitle", StringComparison.Ordinal)),
+            "Media Flyout omits session and window pin buttons");
         var setWindowPinned = mediaWindowType.GetMethod("SetWindowPinned", BindingFlags.Instance | BindingFlags.Public)!;
         var isWindowPinnedProperty = mediaWindowType.GetProperty("IsWindowPinned", BindingFlags.Instance | BindingFlags.Public)!;
         var dismissTimerField = mediaWindowType.GetField("_dismissTimer", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -966,49 +967,12 @@ internal static class Program
         holdPumpWindow.Close();
         host.SetEnabled(shortcutGuide, false);
         Check(!shortcutGuide.IsActive, "Shortcut Guide releases its shortcut when disabled");
-        var quickAccent = host.Modules.Single(module => module.Id == "quick-accent");
-        Check(quickAccent.Settings.Any(setting => setting.Key == "hold-duration-ms" && setting.Default is 500) &&
-              quickAccent.Settings.Any(setting => setting.Key == "disable-fullscreen" && setting.Default is true) &&
-              quickAccent.Settings.Any(setting => setting.Key == "language-set" && setting.Kind == SettingKind.Choice && setting.Options.Contains("Türkçe")) &&
-              quickAccent.Settings.Any(setting => setting.Key == "excluded-apps" && setting.Kind == SettingKind.Text),
-            "Quick Accent exposes hold duration, fullscreen suppression, language presets and app exclusions");
-        var quickAccentType = quickAccent.GetType().Assembly.GetType("WinForge.Modules.Extras.QuickAccentModule")!;
-        var getAccentChoices = quickAccentType.GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Single(method => method.Name == "GetChoices" && method.GetParameters().Length == 1);
-        var lowerChoices = ((System.Collections.IEnumerable)getAccentChoices.Invoke(null, new object[] { 'a' })!).Cast<char>().ToArray();
-        var upperChoices = ((System.Collections.IEnumerable)getAccentChoices.Invoke(null, new object[] { 'A' })!).Cast<char>().ToArray();
-        Check(lowerChoices.Contains('à') && lowerChoices.Contains('á') && upperChoices.Contains('À') && upperChoices.Contains('Á'),
-            "Quick Accent supplies lowercase and uppercase Latin accent choices");
-        var getAccentChoicesForLanguage = quickAccentType.GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-            .Single(method => method.Name == "GetChoices" && method.GetParameters().Length == 2);
-        var germanA = (IReadOnlyList<char>)getAccentChoicesForLanguage.Invoke(null, ['a', "Almanca"])!;
-        var spanishN = (IReadOnlyList<char>)getAccentChoicesForLanguage.Invoke(null, ['n', "İspanyolca"])!;
-        var turkishG = (IReadOnlyList<char>)getAccentChoicesForLanguage.Invoke(null, ['g', "Türkçe"])!;
-        Check(germanA.Contains('ä') && !germanA.Contains('á') && spanishN.Contains('ñ') &&
-              turkishG.Contains('ğ') && !turkishG.Contains('ĝ') &&
-              ((IReadOnlyList<char>)getAccentChoicesForLanguage.Invoke(null, ['a', "Tümü"])!).SequenceEqual(lowerChoices),
-            "Quick Accent language presets include expected characters and filter unrelated variants");
-        var parseExcludedProcesses = quickAccentType.GetMethod("ParseExcludedProcesses", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var autoCorrectModule = host.Modules.Single(module => module.Id == "auto-correct");
+        var autoCorrectType = autoCorrectModule.GetType();
+        var parseExcludedProcesses = autoCorrectType.GetMethod("ParseExcludedProcesses", BindingFlags.Static | BindingFlags.NonPublic)!;
         var excludedProcesses = (HashSet<string>)parseExcludedProcesses.Invoke(null, ["C:\\Games\\game.exe; Discord; discord.exe;; 'terminal'"])!;
         Check(excludedProcesses.SetEquals(["game", "Discord", "terminal"]),
-            "Quick Accent normalizes and deduplicates excluded executable names");
-        Check(((System.Collections.IEnumerable)getAccentChoices.Invoke(null, new object[] { 'b' })!).Cast<char>().Any() == false,
-            "Quick Accent leaves letters without configured variants unchanged");
-        var pickerType = quickAccent.GetType().Assembly.GetType("WinForge.Modules.Extras.QuickAccentPickerWindow")!;
-        var picker = (Window)Activator.CreateInstance(pickerType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-            binder: null, args: new object[] { lowerChoices }, culture: null)!;
-        picker.Show();
-        Pump(picker);
-        Check(Descendants<TextBlock>(picker).Count() == lowerChoices.Length,
-            "Quick Accent picker displays every character choice");
-        var movePicker = pickerType.GetMethod("MoveSelection")!;
-        var pickerSelection = pickerType.GetProperty("SelectedIndex")!;
-        movePicker.Invoke(picker, new object[] { 1 });
-        var advancedSelection = (int)pickerSelection.GetValue(picker)!;
-        movePicker.Invoke(picker, new object[] { -1 });
-        Check(advancedSelection == 1 && (int)pickerSelection.GetValue(picker)! == 0,
-            "Quick Accent picker navigation advances and wraps across available characters");
-        picker.Close();
+            "AutoCorrect normalizes and deduplicates excluded executable names");
         var cropModule = host.Modules.Single(module => module.Id == "crop-and-lock");
         Check(cropModule.Settings.Any(setting => setting.Key == "start-crop" && setting.Kind == SettingKind.Action) &&
               cropModule.Settings.Any(setting => setting.Key == "hotkey-enabled" && setting.Default is true),

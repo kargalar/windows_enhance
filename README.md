@@ -17,7 +17,6 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Ekrandan Metin Al** | `Alt+Q` ile bölge seçer, OCR ile metni panoya kopyalar |
 | **Hızlı Başlatıcı** | `Win+Alt+Space` ile Başlat menüsü, kullanıcı klasörleri ve isteğe bağlı klasörlerde uygulama/dosya/klasör arar; uzantı filtresi, hesap makinesi ve web/Windows URI desteği |
 | **Kısayol Rehberi** | `Win+Shift+/` ile açılır; Win tuşunu basılı tutunca odak çalmayan katman Windows ve WinForge kısayollarını kategorilere göre listeler ve aratır |
-| **Quick Accent · Hızlı Aksan** | Bir Latin harfini basılı tutunca aksan seçiciyi açar; Fransızca, Almanca, İspanyolca, Türkçe, İskandinav ve Orta Avrupa karakter kümelerini filtreler; oyun/süreç dışlama ve tam ekran bastırması içerir |
 | **Klavye Yöneticisi** | Tuşları ve kısayolları genel olarak veya işlem adına göre uygulama bazında eşler, kısayolla Unicode metin yazdırır, 1–4 adımlı ardışık chord kısayollarıyla uygulama/URI başlatır; uygulamaya özel eşleme genel eşlemenin önceliğindedir |
 | **Tam Ekran Pencere Yönetimi** | Açık pencereleri Ana + yığın, Izgara veya Sütunlar düzeninde otomatik yerleştirme; boşluk, ana pencere genişliği ve küçültmeyi engelleme ayarları |
 | **FancyZones · Bölgeli Pencere Taşıma** | Yeni pencereleri en az dolu bölgeye otomatik yerleştirme; Shift ile sürükleyerek pencereyi iki, üç, dört ya da özelleştirilebilir 1–6 sütun × 1–4 satır ızgaraya taşıma; çizgi yakınında komşu bölgeleri, dört alan kesişiminde tüm alanları birleştirme; numara, renk, kenarlık kalınlığı ve birleştirme mesafesi ayarları; çoklu monitör ve ekrana göre ızgara profilleri |
@@ -47,7 +46,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Ortam Değişkenleri** | Kullanıcı değişkenlerini düzenler; geliştirme/test gibi profilleri etkinleştirir, `%...%` türünü ve önceki değerleri korur |
 | **Hosts File Editor** | Windows hosts dosyasında IP-ad eşlemeleri ekler, düzenler, filtreler ve etkinleştirir/devre dışı bırakır; kaydetmeden önce yedek oluşturur ve UAC ister |
 | **Power Display · Ekran Denetimi** | Dahili panel parlaklığını Windows WMI, harici ekranlarda desteklenen parlaklık/kontrast/ses/giriş/renk denetimlerini DDC/CI üzerinden yönetir; profilleri ve gündüz/gece zamanlamasını destekler, imleçteki harici ekran için isteğe bağlı parlaklık kısayolları sunar |
-| **Fluent Medya Flyout’u** | `Win+Alt+M` ve `Ctrl+Alt+V`; ana ses/sessiz, ses ve medya donanım tuşlarına bağlı flyout; Windows Core Audio üzerinden algılanabilen harici kulaklık/aygıt ses değişimlerinde OSD; isteğe bağlı görev çubuğu üstü mini oynatıcı (sağ tıkta medya/ses/oynatıcı eylemleri ve isteğe bağlı ana ses tekerlek kontrolü), WASAPI çıkış sesinden gerçek zamanlı spektrum görselleştiricisi, filtrelenebilir medya uygulamaları ve oturum seçimi/sabitleme, albüm kapağı, oynat/önceki/sonraki, parça arama ve shuffle/repeat, uygulama mikseri, kilit tuşu OSD’si, Up Next, köşe ve monitör seçimi, açık/koyu/sistem teması, belirme animasyonu, etkinlik sonrası otomatik kapanma ve tam ekran uygulama bastırması |
+| **Fluent Medya Flyout’u** | `Win+Alt+M` ve `Ctrl+Alt+V`; ana ses/sessiz denetimi, donanım ses tuşlarında alt-orta ses OSD’si ve medya tuşlarında flyout; Windows Core Audio üzerinden algılanabilen harici kulaklık/aygıt ses değişimlerinde OSD; isteğe bağlı görev çubuğu üstü mini oynatıcı (sağ tıkta medya/ses/oynatıcı eylemleri ve isteğe bağlı ana ses tekerlek kontrolü), WASAPI çıkış sesinden gerçek zamanlı spektrum görselleştiricisi, filtrelenebilir medya uygulamaları ve oturum seçimi/sabitleme, albüm kapağı, oynat/önceki/sonraki, parça arama ve shuffle/repeat, kilit tuşu OSD’si, Up Next, köşe ve monitör seçimi, siyah koyu görünüm, belirme animasyonu, etkinlik sonrası otomatik kapanma ve tam ekran uygulama bastırması |
 | **Çalışma Alanları** | Açık masaüstü uygulamalarını ve pencere konumlarını adlandırılmış bir düzen olarak kaydeder; seçilen düzeni uygulamaları yeniden açarak geri yükler; isteğe bağlı olarak komut satırı argümanlarını ve dosya yollarını da kaydedip yeniden kullanır |
 | **Başlangıçta Aç** | Windows oturum açtığında WinForge'u arka planda (tepside) başlatır |
 
@@ -115,18 +114,17 @@ dosya dışarıdan değişmişse kaydetme reddedilir, önce yeniden yükleyin. H
 
 **Sistem → Fluent Medya Flyout’u** modülünü etkinleştirip `Win+Alt+M` veya
 `Ctrl+Alt+V` ile açın. İki kısayol da modül ayarlarından ayrı ayrı
-kapatılabilir. Donanım ses (açma/kısma/sessiz) veya medya (oynat/duraklat,
-önceki/sonraki) tuşları kullanıldığında flyout’u göstermek de varsayılan olarak
-açıktır; bu tuşların Windows’a giden normal işlevi engellenmez. Bu davranış
-**Donanım ses ve medya tuşlarında flyout’u göster** ayarından kapatılabilir.
+kapatılabilir. Donanım ses (açma/kısma/sessiz) tuşları ekranın alt ortasında ses
+OSD’sini ve medya panelini, medya (oynat/duraklat, önceki/sonraki) tuşları medya
+flyout’unu gösterir.
+Bu tuşların Windows’a giden normal işlevi engellenmez. Davranış,
+**Donanım ses ve medya tuşlarında bildirimleri göster** ayarından kapatılabilir.
 Up Next parça bildirimi varsayılan olarak açıktır ve flyout
 açıkken yeni parçaya geçildiğinde dört saniye görünür.
 İsteğe bağlı **Küçük medya oynatıcısını görev çubuğunun üstünde göster** ayarı,
 etkin medya oturumu varken birincil görev çubuğunun hemen üzerinde başlık ve
 önceki/oynat-duraklat/sonraki denetimlerini gösterir. Başlığa tıklamak tam
-flyout’u açar. Oturum seçicisinden bir oturumu **Oturumu sabitle** düğmesiyle
-seçilen uygulama kimliğine sabitleyebilirsiniz; sabitleme ayarı uygulama
-yeniden açıldığında da korunur. Mini oynatıcıya sağ tıklayarak filtreye uyan
+flyout’u açar. Mini oynatıcıya sağ tıklayarak filtreye uyan
 medya oturumları arasında geçiş yapabilir, otomatik oturum takibini seçebilir,
 seçimi kalıcı olarak sabitleyebilir; ayrıca medya flyout’unu, Windows Ses
 Ayarları’nı açabilir veya oynatıcı penceresine geçebilirsiniz.
@@ -143,12 +141,8 @@ solunda konumlandırılabilir. Sessizlikte otomatik gizleme ve taban çizgisi
 ayarlanabilir; tam ekran uygulamalarda gizlenir. Gerçek Windows görev çubuğuna
 yerleştirme desteklenmez; görselleştirici görev çubuğunun üzerinde ayrı,
 etkileşimsiz bir pencere olarak çalışır.
-Ana çıkış sesini ve sessizi yönetin; **Uygulama seslerini göster** bölümü etkin
-Windows ses oturumlarının uygulama başına düzeyini ve sessiz durumunu değiştirir.
-**Ses çıkış aygıtlarını seç** düğmesi aygıt değişimi için Windows Ses Ayarları’nı açar.
-Medya oturumu seçildiğinde parça konumu, albüm kapağı ve desteklenen karıştır/
-tekrar denetimleri görünür. Bir uygulama ses oturumu sunmuyorsa uygulama
-mikserinde listelenmez.
+Ana çıkış sesini ve sessizi yönetin. Medya oturumu seçildiğinde parça konumu,
+albüm kapağı ve desteklenen karıştır/tekrar denetimleri görünür.
 **Medya uygulaması filtreleme** ayarından tüm oturumları gösterebilir, izin
 listesindeki uygulamalarla sınırlayabilir veya engel listesindekileri gizleyebilirsiniz.
 Listeye `Spotify; msedge` gibi işlem adı ya da paket kimliği parçalarını noktalı

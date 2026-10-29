@@ -43,7 +43,6 @@ controlled x64 build:
 - Deterministic paste fixtures verify waiting for actual key release, focus-change
   cancellation, deadline cancellation, and cancellation when either Plain Paste
   or Advanced Paste is disabled. These tests inject no input into user windows.
-- Quick Accent's real Unicode input appends `ğ` in the same owned editor.
 - The mouse fixture verifies correct native commands, exact baseline restoration,
   idempotence and failure cleanup. All native calls are intercepted, so the user's
   actual pointer settings are untouched.
@@ -154,7 +153,6 @@ available tests, even when implementation exists.
 | `text-grabber` | Captures a selected screen region, runs local Windows OCR, copies text to the clipboard. | Direct capture and 4000-pixel/zero-alpha OCR tests passed. Selection/copy/hotkey end-to-end, mixed-DPI monitor boundaries and noninstalled OCR languages remain unverified. |
 | `launcher` | Bounded application/file/folder indexing, arithmetic parser, validated path/URI targets, opt-in recent items/content search, module quick actions. | Existing tests exercise index fixtures, limits, calculator, URI validation, recent items and Workspace action lookup. Actual launch of each target category remains unverified. |
 | `shortcut-guide` | Searchable shortcut list and nonactivating hold-Win overlay. | Existing tests render/filter the guide and simulate key-state observation/hold/cancel/release. Physical keyboard combinations in other applications remain unverified. |
-| `quick-accent` | Local accent maps, long-press selector, Unicode input, language/process filtering. | Existing selector/map/filter checks; actual `ğ` input reaches an owned editor after the native INPUT ABI fix. Protected inputs/games and arbitrary editors remain unverified. No PowerToys service is used. |
 | `keyboard-manager` | Own low-level hook, key/shortcut/text/app mappings, bounded chord sequences and validated application/URI actions. | Existing parser, conflict/reserved-key validation and chord-state tests; actual Unicode input reached an owned fixture editor. Physical remapping in every application and privilege level remains unverified. Windows secure combinations cannot be remapped. |
 | `auto-tiling` | Independent fullscreen window tiling module with master/grid/column layouts. | Existing geometry/navigation/profile tests; direct excluded-minimized-window test passed. Minimum-sized apps remain unverified. |
 | `fancy-zones` | Independent drag-to-zone module with palette-based overlay colors, divider-proximity multi-zone selection, least-occupied-zone placement for new windows, maximized overflow when all zones are occupied, keyboard movement, monitor profiles and same-zone cycling; includes WinForge windows while excluding the preview overlay. | Geometry/navigation/profile, divider-selection, least-occupied-zone and full-grid occupancy checks. Actual drag/drop across DPI changes and full-screen games remain unverified. |

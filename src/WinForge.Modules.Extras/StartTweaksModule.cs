@@ -15,6 +15,7 @@ public sealed class StartTweaksModule : ITweakModule
     public string Description => "Başlat menüsündeki önerileri, yeni uygulama bildirimlerini ve son kullanılanları gizler.";
     public string? Warning => "Değişiklikler Başlat menüsü yeniden açıldığında görünür.";
     public bool IsActive { get; private set; }
+    public bool IsPersistent => true;
 
     public IReadOnlyList<SettingDescriptor> Settings { get; } = new[]
     {

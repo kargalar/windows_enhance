@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Threading;
+using Windows.Data.Xml.Dom;
+using Windows.UI.Notifications;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -20,7 +22,25 @@ public sealed class NotificationsPlacementModule : ITweakModule
     private bool _positioning;
 
     public NotificationsPlacementModule() : this(IsWindowsToast) { }
-    internal NotificationsPlacementModule(Func<IntPtr, bool> isToast) => _isToast = isToast;
+    internal NotificationsPlacementModule(Func<IntPtr, bool> isToast)
+    {
+        _isToast = isToast;
+        Settings =
+        [
+            new() { Key = "position", Label = "Bildirim konumu", Kind = SettingKind.Choice, Options = Positions, Default = Positions[0] },
+            new() { Key = "monitor", Label = "Ekran", Kind = SettingKind.Number, Default = 0, Min = 0, Max = 16,
+                Description = "0: farenin ekranı, 1: ana ekran, 2 ve sonrası: diğer ekranlar." },
+            new() { Key = "gap", Label = "Kenardan uzaklık (DIP)", Kind = SettingKind.Number, Default = DefaultGap, Min = 0, Max = 200 },
+            new()
+            {
+                Key = "send-test-toast",
+                Label = "Test bildirimi gönder",
+                Kind = SettingKind.Action,
+                Description = "Bildirim konumlandırmasını doğrulamak için bir Windows test bildirimi gönderir.",
+                Execute = SendTestNotification
+            }
+        ];
+    }
 
     public string Id => "notifications-placement";
     public string Name => "Bildirim Konumu";
@@ -28,13 +48,7 @@ public sealed class NotificationsPlacementModule : ITweakModule
     public string Description => "Windows bildirimlerini seçilen ekranın köşesine veya ortasına taşır; kapatıldığında özgün konumu geri yükler.";
     public string? Warning => "Türkçe ve İngilizce Windows bildirim pencereleri tanınır. Windows'un taşımaya izin vermediği sürümlerde hata gösterilir; bildirim merkezi taşınmaz.";
     public bool IsActive { get; private set; }
-    public IReadOnlyList<SettingDescriptor> Settings { get; } =
-    [
-        new() { Key = "position", Label = "Bildirim konumu", Kind = SettingKind.Choice, Options = Positions, Default = Positions[0] },
-        new() { Key = "monitor", Label = "Ekran", Kind = SettingKind.Number, Default = 0, Min = 0, Max = 16,
-            Description = "0: farenin ekranı, 1: ana ekran, 2 ve sonrası: diğer ekranlar." },
-        new() { Key = "gap", Label = "Kenardan uzaklık (DIP)", Kind = SettingKind.Number, Default = DefaultGap, Min = 0, Max = 200 }
-    ];
+    public IReadOnlyList<SettingDescriptor> Settings { get; }
 
     public void Initialize(IModuleContext context) => _context = context;
 
@@ -206,6 +220,79 @@ public sealed class NotificationsPlacementModule : ITweakModule
             return MatchesToastIdentity(Native.ClassNameOf(window), Native.TitleOf(window), process.MainModule?.FileName ?? "");
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
+    }
+
+    private void SendTestNotification()
+    {
+        if (!IsActive)
+        {
+            _context?.Notify("Bildirim konumu etkin değil; test bildirimi Windows varsayılan konumunda gösterilebilir.");
+        }
+
+        try
+        {
+            var xml = new XmlDocument();
+            xml.LoadXml(
+                "<toast duration='short'>" +
+                "<visual>" +
+                "<binding template='ToastGeneric'>" +
+                "<text>WinForge Bildirim Testi</text>" +
+                "<text>Bildirim konumu başarıyla test ediliyor.</text>" +
+                "</binding>" +
+                "</visual>" +
+                "</toast>");
+
+            var toast = new ToastNotification(xml)
+            {
+                ExpirationTime = DateTimeOffset.Now.AddSeconds(10)
+            };
+
+            const string aumid = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
+            ToastNotifier notifier;
+            try
+            {
+                notifier = ToastNotificationManager.CreateToastNotifier(aumid);
+            }
+            catch
+            {
+                notifier = ToastNotificationManager.CreateToastNotifier();
+            }
+
+            notifier.Show(toast);
+        }
+        catch (Exception exception)
+        {
+            SendTestNotificationViaPowerShell(exception);
+        }
+    }
+
+    private void SendTestNotificationViaPowerShell(Exception? primaryException = null)
+    {
+        try
+        {
+            const string script =
+                "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null\n" +
+                "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlContent, ContentType = WindowsRuntime] | Out-Null\n" +
+                "$xml = New-Object Windows.Data.Xml.Dom.XmlDocument\n" +
+                "$xml.LoadXml('<toast duration=\"short\"><visual><binding template=\"ToastGeneric\"><text>WinForge Bildirim Testi</text><text>Bildirim konumu başarıyla test ediliyor.</text></binding></visual></toast>')\n" +
+                "$toast = New-Object Windows.UI.Notifications.ToastNotification $xml\n" +
+                "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe').Show($toast)\n";
+
+            var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand " + encoded,
+                CreateNoWindow = true,
+                UseShellExecute = false
+            };
+            Process.Start(startInfo);
+        }
+        catch (Exception fallbackException)
+        {
+            _context?.Log.Error("Test bildirimi gönderilemedi.", fallbackException);
+            _context?.Notify("Test bildirimi gönderilemedi: " + (primaryException?.Message ?? fallbackException.Message));
+        }
     }
 
     private void Report(Exception exception)

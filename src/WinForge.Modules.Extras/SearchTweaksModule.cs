@@ -15,6 +15,7 @@ public sealed class SearchTweaksModule : ITweakModule
     public string Description => "Windows aramasındaki web sonuçlarını, vurguları ve kutu önerilerini kapatır.";
     public string? Warning => "Değişiklikler arama kutusu yeniden açıldığında görünür.";
     public bool IsActive { get; private set; }
+    public bool IsPersistent => true;
 
     public IReadOnlyList<SettingDescriptor> Settings { get; } = new[]
     {

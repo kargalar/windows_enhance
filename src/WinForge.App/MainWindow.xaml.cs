@@ -34,6 +34,16 @@ public partial class MainWindow : Window
     private Action? _hotkeyCaptureCommit;
     private string? _capturedHotkey;
 
+    public static readonly DependencyProperty ModuleCardWidthProperty =
+        DependencyProperty.Register(nameof(ModuleCardWidth), typeof(double), typeof(MainWindow),
+            new PropertyMetadata(300.0));
+
+    public double ModuleCardWidth
+    {
+        get => (double)GetValue(ModuleCardWidthProperty);
+        set => SetValue(ModuleCardWidthProperty, value);
+    }
+
     public MainWindow()
     {
         InitializeComponent();
@@ -42,6 +52,8 @@ public partial class MainWindow : Window
 
         Appearance.Load();
         ApplyAppearance();
+        DetailColumn.Width = new GridLength(Appearance.DetailWidth);
+        Loaded += (_, _) => UpdateCardLayout(ModuleList.ActualWidth);
 
         foreach (var module in App.Instance.Host.Modules) _modules.Add(new ModuleVm(module));
 
@@ -53,9 +65,6 @@ public partial class MainWindow : Window
         categories.AddRange(_modules.Select(m => m.Category).Distinct().OrderBy(c => c, StringComparer.CurrentCultureIgnoreCase));
         CategoryList.ItemsSource = categories;
         CategoryList.SelectedIndex = 0;
-
-        var version = typeof(MainWindow).Assembly.GetName().Version;
-        VersionText.Text = version is null ? "v1.0.0" : $"v{version.Major}.{version.Minor}.{version.Build}";
 
         UpdateStatus();
 
@@ -180,8 +189,8 @@ public partial class MainWindow : Window
         ModuleList.SelectedItem = null;
         _selected = null;
         _showingAppearance = true;
-        PageTitle.Text = "Görünüm";
-        PageSubtitle.Text = "Uygulamanın tonunu ve vurgu rengini kişiselleştir.";
+        PageTitle.Text = "Görünüm ve Ayarlar";
+        PageSubtitle.Text = "Uygulamanın temasını ve sistem tercihlerini yönet.";
         RenderDetail();
     }
 
@@ -1024,14 +1033,14 @@ public partial class MainWindow : Window
         var active = _modules.Count(m => m.IsActive);
         var visible = _view?.Cast<ModuleVm>().Count() ?? _modules.Count;
         StatusBar.Text = $"{visible} / {_modules.Count} modül · {active} etkin";
-        EngineStatus.Text = active > 0 ? $"{active} modül etkin" : "Hazır";
+        EngineStatus.Text = active > 0 ? $"{active} modül etkin" : "0 modül etkin";
     }
 
     private void RenderAppearance()
     {
         DetailPanel.Children.Add(new TextBlock
         {
-            Text = "Görünüm",
+            Text = "Görünüm ve Ayarlar",
             FontSize = 18,
             FontWeight = FontWeights.SemiBold,
             Foreground = BrushOf("TextBrush")
@@ -1039,7 +1048,7 @@ public partial class MainWindow : Window
 
         DetailPanel.Children.Add(new TextBlock
         {
-            Text = "Ton ve vurgu rengi anında uygulanır, seçimlerin hatırlanır.",
+            Text = "Tema görünümünü ve uygulama ayarlarını kişiselleştirin.",
             Foreground = BrushOf("MutedBrush"),
             FontSize = 12.5,
             TextWrapping = TextWrapping.Wrap,
@@ -1144,6 +1153,51 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 14, 0, 12)
         });
 
+        SectionLabel("SİSTEM VE GÜNLÜKLER");
+        var logsRow = new Grid { Margin = new Thickness(0, 6, 0, 6) };
+        logsRow.ColumnDefinitions.Add(new ColumnDefinition());
+        logsRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var logsLabels = new StackPanel { Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
+        logsLabels.Children.Add(new TextBlock { Text = "Uygulama logları", FontSize = 12.5 });
+        logsLabels.Children.Add(new TextBlock
+        {
+            Text = "Olay ve hata kayıtlarını içeren log dosyasını açar.",
+            Foreground = BrushOf("MutedBrush"),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 3, 0, 0)
+        });
+        logsRow.Children.Add(logsLabels);
+
+        var logsBtn = new Button
+        {
+            Style = StyleOf("GhostButton"),
+            Content = "Logları aç",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        logsBtn.Click += OnOpenLogs;
+        Grid.SetColumn(logsBtn, 1);
+        logsRow.Children.Add(logsBtn);
+        DetailPanel.Children.Add(logsRow);
+
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        var versionText = version is null ? "v1.0.0" : $"v{version.Major}.{version.Minor}.{version.Build}";
+        DetailPanel.Children.Add(new TextBlock
+        {
+            Text = $"WinForge {versionText}",
+            Foreground = BrushOf("MutedBrush"),
+            FontSize = 11,
+            Margin = new Thickness(0, 12, 0, 6)
+        });
+
+        DetailPanel.Children.Add(new Border
+        {
+            Height = 1,
+            Background = BrushOf("BorderBrush"),
+            Margin = new Thickness(0, 10, 0, 12)
+        });
+
         var reset = new Button
         {
             Style = StyleOf("GhostButton"),
@@ -1154,6 +1208,7 @@ public partial class MainWindow : Window
         {
             Appearance.Reset();
             ApplyAppearance();
+        DetailColumn.Width = new GridLength(Appearance.DetailWidth);
             RenderDetail();
         };
         DetailPanel.Children.Add(reset);
@@ -1236,8 +1291,42 @@ public partial class MainWindow : Window
 
     private void OnExit(object sender, RoutedEventArgs e) => App.Instance.ExitApp();
 
+    private void OnModuleListSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateCardLayout(e.NewSize.Width);
+    }
+
+    private void UpdateCardLayout(double availableWidth)
+    {
+        var usable = availableWidth - 14;
+        if (usable <= 0) return;
+
+        const double minCardWidth = 260;
+        const double cardMargin = 8;
+
+        int columns = (int)Math.Max(1, Math.Floor((usable + cardMargin) / (minCardWidth + cardMargin)));
+        double cardWidth = Math.Floor((usable - (cardMargin * columns)) / columns);
+        if (cardWidth < 200) cardWidth = usable;
+
+        ModuleCardWidth = cardWidth;
+    }
+
+    private void OnSplitterDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        SaveDetailWidth();
+    }
+
+    private void SaveDetailWidth()
+    {
+        if (DetailColumn is not null && DetailColumn.ActualWidth >= 280)
+        {
+            Appearance.SetDetailWidth(DetailColumn.ActualWidth);
+        }
+    }
+
     protected override void OnClosing(CancelEventArgs e)
     {
+        SaveDetailWidth();
         if (!App.Instance.IsExiting)
         {
             e.Cancel = true;

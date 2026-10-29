@@ -44,6 +44,11 @@ internal static class NotificationsPlacementChecks
         check(!Matches("Bildirim Merkezi", host) && !Matches("Action center", host) &&
               !Matches("New notification", @"C:\Other\ShellExperienceHost.exe") && !Matches("New notification", host, "OtherWindow"),
             "Notification classification rejects Action Center, process-name impersonation and unrelated window classes");
+
+        var instance = (ITweakModule)Activator.CreateInstance(type)!;
+        check(instance.Settings.Any(s => s.Key == "send-test-toast" && s.Kind == SettingKind.Action && s.Execute != null),
+            "Notification placement settings expose an action button to send a test notification");
+
         if (nativeSmoke) TestOwnedWindow(type, directory, check);
     }
 

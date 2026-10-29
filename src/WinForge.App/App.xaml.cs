@@ -65,7 +65,8 @@ public partial class App : Application
         Hotkeys = new HotkeyService();
 
         var modulesDirectory = Path.Combine(AppContext.BaseDirectory, "modules");
-        Host = new ModuleHost(Store, Logger, Hotkeys, modulesDirectory, OsdWindow.Toast, OsdWindow.ShowBrightness);
+        Host = new ModuleHost(Store, Logger, Hotkeys, modulesDirectory, OsdWindow.Toast, OsdWindow.ShowBrightness,
+            OsdWindow.ShowVolume);
         Host.Load();
         Host.StartEnabled();
 
