@@ -19,12 +19,17 @@ internal static class NotificationsPlacementChecks
         var bottomRight = Place(area, source, 0);
         var topLeft = Place(area, source, 3, 12, 144);
         var center = Place(area, source, 6);
+        var flushBottomRight = Place(area, source, 0, 0);
+        var flushTopLeft = Place(area, source, 3, 0);
         check(bottomRight.Left == -412 && bottomRight.Top == 708 && bottomRight.Right == -12 && bottomRight.Bottom == 828,
-            "Notification placement respects negative monitor coordinates and taskbar-excluded work areas");
+            "Notification placement respects negative monitor coordinates and monitor bounds");
+        check(flushBottomRight.Right == area.Right && flushBottomRight.Bottom == area.Bottom &&
+              flushTopLeft.Left == area.Left && flushTopLeft.Top == area.Top,
+            "A zero edge gap places notifications flush against the selected monitor bounds");
         check(topLeft.Left == -1902 && topLeft.Top == -182,
             "Notification edge gaps scale from DIPs using the destination monitor DPI");
         check(center.Left == -1160 && center.Top == 260,
-            "Notification center placement uses the monitor work area rather than the desktop origin");
+            "Notification center placement uses the monitor bounds rather than the desktop origin");
         var stacked = Place(area, source, 0, 12, 96, 132);
         check(stacked.Bottom == bottomRight.Top - 12, "Multiple notification hosts keep separate stack positions rather than overlapping");
         var clamped = Place(new() { Right = 400, Bottom = 120 }, source, 3, 200, 768);
@@ -71,9 +76,9 @@ internal static class NotificationsPlacementChecks
             module.Initialize(context);
             module.Activate();
             Native.GetWindowRect(handle, out var moved);
-            var work = DesktopDisplays.Enumerate().Single(display => display.IsPrimary).WorkArea;
-            check(moved.Left >= work.Left && moved.Top >= work.Top && moved.Right <= work.Right && moved.Bottom <= work.Bottom && moved.Left != original.Left,
-                "The own notification engine repositions an actual owned HWND within the selected monitor work area");
+            var bounds = DesktopDisplays.Enumerate().Single(display => display.IsPrimary).Bounds;
+            check(moved.Left >= bounds.Left && moved.Top >= bounds.Top && moved.Right <= bounds.Right && moved.Bottom <= bounds.Bottom && moved.Left != original.Left,
+                "The own notification engine repositions an actual owned HWND within the selected monitor bounds");
             check(Native.GetForegroundWindow() == foreground, "Notification placement preserves foreground focus while moving the owned fixture");
             context.Settings.Set("position", "Sağ alt");
             module.Apply();

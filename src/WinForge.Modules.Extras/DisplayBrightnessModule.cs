@@ -274,7 +274,7 @@ internal sealed class DisplayBrightnessSession : IDisposable
                     var description = string.IsNullOrWhiteSpace(native.Description)
                         ? $"Fiziksel ekran {index + 1}"
                         : native.Description.Trim();
-                    var brightnessSupported = GetMonitorBrightness(native.Handle, out var minimum, out var current, out var maximum) && maximum > minimum;
+                    var brightnessSupported = TryReadBrightness(native.Handle, out var minimum, out var current, out var maximum);
                     var supportedCodes = GetCapabilities(native.Handle);
                     var genericBrightness = ReadFeature(native.Handle, 0x10, supportedCodes);
                     var contrast = ReadFeature(native.Handle, 0x12, supportedCodes);
@@ -468,6 +468,18 @@ internal sealed class DisplayBrightnessSession : IDisposable
     private PhysicalMonitor? FindPhysicalMonitor(string id) => _monitors.FirstOrDefault(monitor =>
         string.Equals(monitor.Info?.Id, id, StringComparison.OrdinalIgnoreCase));
 
+    private static bool TryReadBrightness(IntPtr monitor, out uint minimum, out uint current, out uint maximum)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (GetMonitorBrightness(monitor, out minimum, out current, out maximum) && maximum > minimum)
+                return true;
+            if (attempt < 2) Thread.Sleep(40);
+        }
+        minimum = current = maximum = 0;
+        return false;
+    }
+
     private static IReadOnlyDictionary<byte, IReadOnlyList<uint>> GetCapabilities(IntPtr monitor)
     {
         if (!GetCapabilitiesStringLength(monitor, out var length) || length is < 2 or > 64 * 1024) return new Dictionary<byte, IReadOnlyList<uint>>();
@@ -479,7 +491,11 @@ internal sealed class DisplayBrightnessSession : IDisposable
 
     private static MutableVcpFeature? ReadFeature(IntPtr monitor, byte code, IReadOnlyDictionary<byte, IReadOnlyList<uint>> supportedCodes)
     {
-        if (!supportedCodes.TryGetValue(code, out var supportedValues)) return null;
+        if (!supportedCodes.TryGetValue(code, out var supportedValues))
+        {
+            if (code != 0x10) return null;
+            supportedValues = Array.Empty<uint>();
+        }
         if (!GetVCPFeatureAndVCPFeatureReply(monitor, code, out _, out var current, out var maximum)) return null;
         var isContinuous = MonitorCapabilitiesParser.IsContinuousFeature(supportedValues);
         if (isContinuous && maximum == 0) return null;
@@ -907,7 +923,7 @@ public sealed class DisplayBrightnessModule : ITweakModule
                         if (ReferenceEquals(_hotkeyBrightnessDiscovery, discovery)) _hotkeyBrightnessDiscovery = null;
                 }
                 var outcome = session.AdjustBrightnessForAllDisplays(step * direction);
-                if (outcome.Failed > 0)
+                if (outcome.Failed > 0 || outcome.Supported == 0)
                 {
                     try
                     {
@@ -915,7 +931,7 @@ public sealed class DisplayBrightnessModule : ITweakModule
                         var freshSession = DisplayBrightnessSession.Discover();
                         _hotkeyBrightnessSession = freshSession;
                         outcome = freshSession.AdjustBrightnessForAllDisplays(step * direction);
-                        if (outcome.Failed > 0)
+                        if (outcome.Failed > 0 || outcome.Supported == 0)
                         {
                             freshSession.Dispose();
                             _hotkeyBrightnessSession = null;

@@ -3,6 +3,9 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/src/">
+    <Project Path="src/WinForge.Modules.FileTools/WinForge.Modules.FileTools.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="src/WinForge.App/WinForge.App.csproj">
       <Platform Project="x64" />
     </Project>
@@ -35,6 +38,9 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/WinForge.FileToolsTests/WinForge.FileToolsTests.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="tests/WinForge.RegressionTests/WinForge.RegressionTests.csproj">
       <Platform Project="x64" />
     </Project>

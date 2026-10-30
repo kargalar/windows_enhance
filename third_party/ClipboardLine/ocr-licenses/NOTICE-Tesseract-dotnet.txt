@@ -1,0 +1,4 @@
+Tesseract .NET wrapper 5.2.0
+Copyright 2012-2020 Charles Weld
+https://github.com/charlesw/tesseract/
+Licensed under Apache License 2.0; see LICENSE-Tesseract-core-and-data.txt.

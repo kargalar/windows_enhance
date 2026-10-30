@@ -1,0 +1,10 @@
+{
+  "nashi": {
+    "repository": "https://github.com/orkunisitmak/nashi-app.git",
+    "revision": "d56be409184dae6daebcd234f5c18ce39df33e81"
+  },
+  "clipboardline": {
+    "repository": "https://github.com/orkunisitmak/clipboardline.git",
+    "revision": "7ac4905468ce8fd26a2fde10b4299701cdfa3020"
+  }
+}

@@ -9,7 +9,7 @@ public sealed class ModuleHost
     private readonly IHotkeyService _hotkeys;
     private readonly Action<string> _notify;
     private readonly Action<int, string>? _showDisplayBrightness;
-    private readonly Action<int, bool, Action?>? _showAudioVolume;
+    private readonly Action<int, bool, Action?, int>? _showAudioVolume;
     private readonly string _modulesDirectory;
     private readonly List<ITweakModule> _modules = new();
     private readonly Dictionary<string, IModuleSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
@@ -17,7 +17,7 @@ public sealed class ModuleHost
     private readonly IQuickActionService _quickActions;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
-        Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?>? showAudioVolume = null)
+        Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null)
     {
         _store = store;
         _log = log;
@@ -206,14 +206,14 @@ public sealed class ModuleHost
     {
         private readonly Action<string> _notify;
         private readonly Action<int, string>? _showDisplayBrightness;
-        private readonly Action<int, bool, Action?>? _showAudioVolume;
+        private readonly Action<int, bool, Action?, int>? _showAudioVolume;
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
         private readonly Action<IntPtr> _beginWindowZoneDrag;
         private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
             IQuickActionService quickActions, Action<int, string>? showDisplayBrightness,
-            Action<int, bool, Action?>? showAudioVolume,
+            Action<int, bool, Action?, int>? showAudioVolume,
             Func<IntPtr, POINT, bool> placeWindow,
             Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
         {
@@ -240,9 +240,9 @@ public sealed class ModuleHost
             if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName);
             else _notify($"Parlaklık {percent}%");
         }
-        public void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null)
+        public void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null, int dismissAfterSeconds = 3)
         {
-            if (_showAudioVolume is not null) _showAudioVolume(percent, isMuted, onVolumeChanged);
+            if (_showAudioVolume is not null) _showAudioVolume(percent, isMuted, onVolumeChanged, dismissAfterSeconds);
             else _notify(isMuted ? $"Ses kapalı · {percent}%" : $"Ses {percent}%");
         }
         public bool TryPlaceWindowInZone(IntPtr window, POINT point) => _placeWindow(window, point);

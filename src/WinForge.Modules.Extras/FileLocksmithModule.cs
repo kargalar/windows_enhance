@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -26,7 +26,9 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
     ];
 
     private readonly ExplorerFileVerb _explorerVerb = new("WinForge.FileLocksmith", "Dosya kilitlerini bul (WinForge)", "--file-locksmith \"%1\"");
+    private readonly ExplorerFileVerb _folderVerb = new("WinForge.FileLocksmith", "Dosya kilitlerini bul (WinForge)", "--file-locksmith \"%1\"", false, @"Software\Classes\Directory\shell");
     private bool _isActive;
+    private IModuleContext? _context;
 
     public string Id => "file-locksmith";
     public string Name => "Dosya Kilidi Bulucu";
@@ -34,19 +36,26 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
     public string Description => "Seçilen dosyayı kullanan uygulama ve hizmetleri Windows Restart Manager ile bulur.";
     public string? Warning => "Windows'un Restart Manager API'sinin bildirdiği süreçler gösterilir. Sonlandırma kaydedilmemiş işi kaybettirebilir; yalnızca yeniden doğrulanmış kullanıcı uygulamaları için kullanılabilir.";
     public bool IsActive => _isActive;
+    public bool IsPersistent => true;
     public IReadOnlyList<SettingDescriptor> Settings => _settings;
 
-    public void Initialize(IModuleContext context) { }
+    public void Initialize(IModuleContext context) => _context = context;
     public void Activate()
     {
+        if (!_explorerVerb.Install() || !_folderVerb.Install())
+        {
+            _explorerVerb.Uninstall();
+            _folderVerb.Uninstall();
+            _context?.Notify("Gezgin menüsü kaydedilemedi. WinForge.exe üzerinden çalıştırın ve mevcut menü kaydını kontrol edin.");
+        }
         _isActive = true;
-        _explorerVerb.Install();
     }
 
     public void Deactivate()
     {
         _isActive = false;
         _explorerVerb.Uninstall();
+        _folderVerb.Uninstall();
     }
 
     public void Apply() { }
@@ -54,8 +63,8 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
     public bool HandleCommand(string command, IReadOnlyList<string> arguments)
     {
         if (!string.Equals(command, "--file-locksmith", StringComparison.OrdinalIgnoreCase)) return false;
-        if (arguments.Count != 1 || !File.Exists(arguments[0]))
-            throw new FileNotFoundException("Dosya kilitlerini bulmak için geçerli bir dosya yolu gerekli.");
+        if (arguments.Count != 1 || !(File.Exists(arguments[0]) || Directory.Exists(arguments[0])))
+            throw new FileNotFoundException("Dosya kilitlerini bulmak için geçerli bir dosya veya klasör yolu gerekli.");
         new FileLocksmithWindow(arguments[0]).ShowDialog();
         return true;
     }
@@ -153,9 +162,9 @@ internal sealed class FileLocksmithWindow : Window
 
     private void Scan()
     {
-        if (!File.Exists(_path.Text))
+        if (!File.Exists(_path.Text) && !Directory.Exists(_path.Text))
         {
-            _status.Text = "Dosya bulunamadı veya artık erişilemiyor.";
+            _status.Text = "Dosya/klasör bulunamadı veya artık erişilemiyor.";
             return;
         }
 
@@ -238,6 +247,7 @@ internal static class RestartManagerQuery
     internal const uint ConsoleType = 5;
     private const int ErrorMoreData = 234;
     private const int MaximumResults = 1024;
+    private const int MaximumFolderFiles = 5000;
     private const uint StatusRunning = 0x01;
     private const uint StatusStopped = 0x02;
     private const uint StatusStoppedOther = 0x04;
@@ -251,7 +261,10 @@ internal static class RestartManagerQuery
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         var fullPath = Path.GetFullPath(filePath);
-        if (!File.Exists(fullPath)) throw new FileNotFoundException("Dosya bulunamadı.", fullPath);
+        var isDirectory = Directory.Exists(fullPath);
+        if (!isDirectory && !File.Exists(fullPath)) throw new FileNotFoundException("Dosya bulunamadı.", fullPath);
+        var paths = isDirectory ? EnumerateFolderFiles(fullPath) : new[] { fullPath };
+        if (paths.Length == 0) return Array.Empty<LockingProcess>();
 
         var sessionKey = new StringBuilder(33);
         var result = RmStartSession(out var sessionHandle, 0, sessionKey);
@@ -259,8 +272,7 @@ internal static class RestartManagerQuery
 
         try
         {
-            var resources = new[] { fullPath };
-            result = RmRegisterResources(sessionHandle, 1, resources, 0, IntPtr.Zero, 0, IntPtr.Zero);
+            result = RmRegisterResources(sessionHandle, (uint)paths.Length, paths, 0, IntPtr.Zero, 0, IntPtr.Zero);
             ThrowIfFailed(result, "Dosya Restart Manager oturumuna kaydedilemedi");
 
             uint needed = 0;
@@ -297,6 +309,15 @@ internal static class RestartManagerQuery
         {
             _ = RmEndSession(sessionHandle);
         }
+    }
+
+    private static string[] EnumerateFolderFiles(string folder)
+    {
+        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        var paths = Directory.EnumerateFiles(folder, "*", options).Take(MaximumFolderFiles + 1).ToArray();
+        if (paths.Length > MaximumFolderFiles)
+            throw new InvalidOperationException($"Klasör {MaximumFolderFiles} dosya sınırını aşıyor; daha küçük bir klasör seçin.");
+        return paths;
     }
 
     public static void Terminate(LockingProcess target)
@@ -370,3 +391,4 @@ internal static class RestartManagerQuery
     [DllImport("rstrtmgr.dll")]
     private static extern int RmEndSession(uint sessionHandle);
 }
+

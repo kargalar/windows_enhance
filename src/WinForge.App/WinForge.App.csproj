@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WinForge.Core\WinForge.Core.csproj" />
+    <ProjectReference Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
     <ProjectReference Include="..\WinForge.Modules.Taskbar\WinForge.Modules.Taskbar.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.AlwaysOnTop\WinForge.Modules.AlwaysOnTop.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.TextGrabber\WinForge.Modules.TextGrabber.csproj" ReferenceOutputAssembly="false" />
@@ -38,6 +39,7 @@
   <Target Name="CopyModules" AfterTargets="Build">
     <ItemGroup>
       <ModuleProjects Include="@(ProjectReference)" Condition="'%(ProjectReference.ReferenceOutputAssembly)' == 'false'" />
+      <ModuleProjects Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
       <RetiredFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
     </ItemGroup>
     <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">

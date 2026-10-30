@@ -1,11 +1,11 @@
-using System.IO;
+﻿using System.IO;
 using Microsoft.Win32;
 
 namespace WinForge.Modules.Extras;
 
-internal sealed class ExplorerFileVerb(string verbName, string label, string argumentTemplate, bool multiSelect = false)
+internal sealed class ExplorerFileVerb(string verbName, string label, string argumentTemplate, bool multiSelect = false,
+    string shellRoot = @"Software\Classes\*\shell")
 {
-    private const string ShellRoot = @"Software\Classes\*\shell";
     private string? _registeredCommand;
 
     public bool Install()
@@ -15,7 +15,7 @@ internal sealed class ExplorerFileVerb(string verbName, string label, string arg
             !Path.GetFileName(executable).Equals("WinForge.exe", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var keyPath = $@"{ShellRoot}\{verbName}";
+        var keyPath = $@"{shellRoot}\{verbName}";
         var command = $"\"{executable}\" {argumentTemplate}";
         using (var existing = Registry.CurrentUser.OpenSubKey(keyPath))
         {
@@ -43,7 +43,7 @@ internal sealed class ExplorerFileVerb(string verbName, string label, string arg
     {
         if (_registeredCommand is null) return;
 
-        var keyPath = $@"{ShellRoot}\{verbName}";
+        var keyPath = $@"{shellRoot}\{verbName}";
         using (var verb = Registry.CurrentUser.OpenSubKey(keyPath))
         using (var commandKey = verb?.OpenSubKey("command"))
         {
@@ -59,3 +59,4 @@ internal sealed class ExplorerFileVerb(string verbName, string label, string arg
         _registeredCommand = null;
     }
 }
+

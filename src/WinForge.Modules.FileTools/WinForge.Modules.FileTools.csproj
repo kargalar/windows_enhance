@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../WinForge.Core/WinForge.Core.csproj" />
+    <ProjectReference Include="../WinForge.Modules.TextGrabber/WinForge.Modules.TextGrabber.csproj" />
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.0.0" />
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <PackageReference Include="SharpCompress" Version="0.50.5" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="bblanchon.PDFium.Win32" Version="155.0.8044" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+    <PackageReference Include="Tesseract" Version="5.2.0" />
+    <!-- Match the host's existing morphology dependencies in the shared load context. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
+    <EmbeddedResource Include="Resources/FeatureCatalog.json" LogicalName="Nashi.FeatureCatalog.json" />
+    <EmbeddedResource Include="Resources/Turkish.json" LogicalName="Nashi.Turkish.json" />
+    <EmbeddedResource Include="Resources/LatinWords.json" LogicalName="Nashi.LatinWords.json" />
+    <Resource Include="Resources/Brand/*.png" Link="Assets/%(Filename)%(Extension)" />
+    <Resource Include="Resources/Sounds/*.wav" Link="Assets/%(Filename)%(Extension)" />
+    <Content Include="Resources/*.js" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Resources/licenses/**/*" Link="licenses/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../third_party/Nashi/*" Link="licenses/Nashi/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="WinForge.RegressionTests" />
+    <InternalsVisibleTo Include="WinForge.FileToolsTests" />
+    <Content Include="Resources/search-model-config.json" Link="models/search-model-config.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Resources/models/**/*" Link="models/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Resources/tessdata/archives/*.gz" Link="tessdata/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="$(NuGetPackageRoot)tesseract/5.2.0/x64/*.dll" Link="x64/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../third_party/ClipboardLine/LICENSE" Link="licenses/ClipboardLine/LICENSE-ClipBoardLine.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../third_party/ClipboardLine/ocr-licenses/*" Link="licenses/ClipboardLine/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../third_party/ClipboardLine/onnx-licenses/*" Link="licenses/ClipboardLine/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="RequireOfflineImageModels" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('Resources/models/mobileclip-s2-image.onnx') Or !Exists('Resources/models/mobileclip-s2-text.onnx') Or !Exists('Resources/models/clip-vocab.json') Or !Exists('Resources/models/clip-merges.txt') Or !Exists('Resources/models/model-source.json') Or !Exists('Resources/models/LICENSE-Apple-code') Or !Exists('Resources/models/LICENSE-MobileCLIP-S2') Or !Exists('Resources/models/ACKNOWLEDGEMENTS-MobileCLIP')"
+           Text="Offline image models are missing. Run scripts/prepare-models.ps1 before building WinForge." />
+  </Target>
+</Project>

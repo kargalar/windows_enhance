@@ -208,6 +208,18 @@ kontrolleri için:
 .\scripts\test.ps1 -NativeSmoke
 ```
 
+Nashi/ClipboardLine modüllerinin gerçek Windows, yerel medya ve Office dönüşüm
+kontrolleri `-NativeSmoke` ile çalışır. Nashi'nin tam medya ve belge motorunu da
+gerçek FFmpeg/ffprobe ve LibreOffice araçlarıyla doğrulamak için:
+
+```powershell
+.\scripts\test.ps1 -ExtendedFileTools
+```
+
+Bu ek doğrulama sabitlenmiş araç paketlerini `artifacts` altındaki test
+klasörlerine SHA-256 doğrulamasıyla indirir; Windows'a kurulum yapmaz. Normal
+test koşusu paket indirmez.
+
 Canlı kontroller kullanılabilir bir ses çıkışı gerektirir. Monitör parlaklığı,
 yönetici pencereleri ve farklı Windows yapılarındaki kabuk davranışları hedef
 makinelerde ayrıca doğrulanmalıdır.
@@ -493,14 +505,20 @@ pencereler ekran kenarlarına ve birbirine sıfıra sıfır oturur. Kapatınca p
 
 ## Bağımlılık politikası
 
-WinForge; Windhawk, AltSnap, PowerToys veya NAudio motoru çalıştırmaz, indirmez
-ve dağıtmaz. Projelerde doğrudan NuGet paket referansı yoktur. Pencere kontrolü,
-ses yakalama ve analiz, WMI erişimi, kısayollar, OCR ve önizleme kendi kodumuzla
-Windows'un Win32/COM/WinRT arayüzlerine bağlanır. Çalışma platformu Windows ve
-.NET 10 Desktop/WPF'tir; Windows'un OCR dil paketleri ve medya codec'leri gibi
-sistem yetenekleri kullanılır. Üçüncü taraf özellik motorları eklenmez.
-`Directory.Build.targets`, yeni doğrudan paket referanslarını derlemede reddeder;
-Windows SDK'nin sağladığı .NET/WinRT platform dosyaları bu kuralın dışındadır.
+WinForge; Windhawk, AltSnap, PowerToys veya NAudio motorunu çalıştırmaz, indirmez
+ve dağıtmaz. Pencere kontrolü, ses yakalama ve analiz, WMI erişimi ve kısayollar
+WinForge koduyla Windows'un Win32/COM/WinRT arayüzlerine bağlanır. Çalışma
+platformu Windows ve .NET 10 Desktop/WPF'tir.
+
+Nashi ve ClipboardLine entegrasyonu bu genel bağımsızlık kuralının bir istisnasıdır:
+WinForge içinde çalışan modüller üçüncü taraf PDF, görsel, arşiv, OCR ve ONNX
+kütüphanelerini kullanır. Bazı medya ve belge işlemleri için kullanıcının kurduğu
+veya Nashi araç kurulumuyla indirilen harici araçlar gerekir. Çevrimdışı görsel
+arama modelleri derleme öncesinde `scripts/prepare-models.ps1` tarafından indirilir
+ve SHA-256 ile doğrulanır. Üçüncü taraf kaynak ve lisans bilgileri
+[lisans bildirimlerinde](docs/THIRD_PARTY_NOTICES.md) bulunur.
+`Directory.Build.targets` doğrudan paket referanslarını yalnızca tanımlı projelerde
+kabul eder.
 
 Eski AltSnap modülünün WinForge'da kayıtlı ortak ayarları `window-control`
 modülüne taşınır. Yeni modülün mevcut ayarları önceliklidir. Kaldırılan Windhawk

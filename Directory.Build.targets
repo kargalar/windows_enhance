@@ -1,11 +1,16 @@
 <Project>
   <Target Name="EnforceNativeDependencyPolicy" BeforeTargets="CollectPackageReferences;ResolveReferences">
     <ItemGroup>
+      <FileToolPackage Include="PDFsharp;BouncyCastle.Cryptography;Magick.NET-Q8-AnyCPU;ZXing.Net;SharpCompress;PdfPig;bblanchon.PDFium.Win32;Microsoft.ML.OnnxRuntime;Tesseract;Microsoft.Extensions.Logging.Abstractions;Microsoft.Extensions.DependencyInjection.Abstractions"
+                       Condition="$([System.String]::Copy('$(MSBuildProjectName)').StartsWith('WinForge.Modules.FileTools'))" />
       <ExternalPackages Include="@(PackageReference)"
                         Condition="'%(PackageReference.IsImplicitlyDefined)' != 'true'
                           and '%(PackageReference.Identity)' != 'ZemberekDotNet.Morphology'
                           and '%(PackageReference.Identity)' != 'ZemberekDotNet.Core'
                           and '%(PackageReference.Identity)' != 'ZemberekDotNet.Tokenization'" />
+    </ItemGroup>
+    <ItemGroup>
+      <ExternalPackages Remove="@(FileToolPackage)" />
     </ItemGroup>
     <Error Condition="'@(ExternalPackages)' != ''"
            Text="WinForge kendi altyapısını kullanır; doğrudan NuGet bağımlılıkları eklenemez: @(ExternalPackages, ', '). Windows/.NET SDK platform referansları kullanılabilir." />

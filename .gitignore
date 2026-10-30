@@ -6,3 +6,5 @@ artifacts/
 /work/tools/
 *.user
 .vs/
+/.upstream/
+/src/WinForge.Modules.FileTools/Resources/models/

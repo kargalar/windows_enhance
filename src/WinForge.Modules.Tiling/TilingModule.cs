@@ -13,6 +13,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private const uint GW_OWNER = 4;
     private const long WS_POPUP = unchecked((int)0x80000000);
     private const long WS_OVERLAPPEDWINDOW = 0x00CF0000;
+    private const long WS_THICKFRAME = 0x00040000;
     private const long WS_EX_TOPMOST = 0x00000008;
     private const long WS_EX_TOOLWINDOW = 0x00000080;
     private const long WS_EX_NOACTIVATE = 0x08000000;
@@ -31,8 +32,6 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_FRAMECHANGED = 0x0020;
     private const uint SWP_SHOWWINDOW = 0x0040;
-    private static readonly IntPtr HWND_TOPMOST = new(-1);
-    private static readonly IntPtr HWND_NOTOPMOST = new(-2);
     private const int AutoTileMode = 0;
     private const int ZoneMoveMode = 1;
     private const int DefaultZoneMergeDistance = 24;
@@ -488,8 +487,10 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         ApplyMonitorGridProfile(monitorName);
         var zones = CreateZones(workArea);
         var currentZone = FindBestZone(zones, bounds);
-        var nextZone = FindAdjacentZoneForWindow(zones, bounds, direction);
-        if (nextZone != currentZone) Move(activeWindow, zones[nextZone]);
+        var nextZone = currentZone < 0
+            ? FindNearestZone(zones, new POINT { X = (bounds.Left + bounds.Right) / 2, Y = (bounds.Top + bounds.Bottom) / 2 })
+            : FindAdjacentZoneForWindow(zones, bounds, direction);
+        if (nextZone >= 0 && nextZone != currentZone) Move(activeWindow, zones[nextZone]);
     }
 
     internal static int FindAdjacentZoneForWindow(IReadOnlyList<RECT> zones, RECT windowBounds, int direction)
@@ -658,6 +659,13 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     {
         if (idObject != 0) return;
 
+        if (_mode == ZoneMoveMode && eventType == EVENT_OBJECT_DESTROY)
+        {
+            _placed.Remove(hwnd);
+            _fullscreenWindows.Remove(hwnd);
+            return;
+        }
+
         if (_mode == ZoneMoveMode && eventType == EVENT_OBJECT_SHOW && _zoneAutoPlaceNewWindows)
             QueueNewWindowForZonePlacement(hwnd);
 
@@ -727,7 +735,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
                 ApplyMonitorGridProfile(monitorName);
                 _dragStartMonitorName = monitorName;
                 _dragStartedWithAllZonesOccupied = AreAllZonesOccupied(
-                    CountOccupiedZones(CreateZones(workArea), monitor, IntPtr.Zero));
+                    CountOccupiedZones(CreateZones(workArea), monitor, window));
                 _zoneTimer?.Start();
             }
         }
@@ -809,12 +817,14 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private void PlaceNewWindowInAvailableZone(IntPtr hwnd)
     {
         if (!Native.IsWindow(hwnd) || !Native.IsWindowVisible(hwnd) || Native.IsIconic(hwnd) ||
-            _placed.ContainsKey(hwnd) || !TryTileable(hwnd, out var monitor, out var workArea) ||
+            hwnd == _draggedWindow || _fullscreenWindows.ContainsKey(hwnd) ||
+            _placed.ContainsKey(hwnd) || !IsResizableWindow(hwnd) || !TryTileable(hwnd, out var monitor, out var workArea) ||
             !TryGetMonitorWorkArea(hwnd, out _, out var monitorName, out _)) return;
 
         ApplyMonitorGridProfile(monitorName);
         var zones = CreateZones(workArea);
-        if (zones.Count == 0 || !TryGetVisibleFrameBounds(hwnd, out _)) return;
+        if (zones.Count == 0 || !TryGetVisibleFrameBounds(hwnd, out var frameBounds) ||
+            FindBestZone(zones, frameBounds) >= 0) return;
 
         var occupancy = CountOccupiedZones(zones, monitor, hwnd);
         if (AreAllZonesOccupied(occupancy))
@@ -826,6 +836,9 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         var targetZone = FindLeastOccupiedZone(occupancy);
         if (targetZone >= 0) Move(hwnd, zones[targetZone]);
     }
+
+    private static bool IsResizableWindow(IntPtr hwnd) =>
+        (Native.GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64() & WS_THICKFRAME) != 0;
 
     private int[] CountOccupiedZones(IReadOnlyList<RECT> zones, IntPtr monitor, IntPtr excludedWindow)
     {
@@ -993,8 +1006,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
             Move(hwnd, spanBounds);
             return;
         }
-        var zone = _keyboardZoneSelectionActive ? _selectedZone : FindZone(zones, cursor);
-        if (zone < 0 && _keyboardZoneSelectionActive) zone = FindNearestZone(zones, cursor);
+        var zone = _selectedZone >= 0 && _selectedZone < zones.Count ? _selectedZone : FindNearestZone(zones, cursor);
         if (zone >= 0) Move(hwnd, zones[zone]);
     }
 
@@ -1408,7 +1420,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         if (Native.GetWindowTextLength(hwnd) == 0) return false;
         if (Native.IsIconic(hwnd))
         {
-            if (!_noMinimize) return false;
+            if (!_noMinimize || _mode == ZoneMoveMode) return false;
             ShowWindow(hwnd, SW_RESTORE);
             if (Native.IsIconic(hwnd)) return false;
         }
@@ -1623,10 +1635,11 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         if (!_fullscreenWindows.Remove(hwnd, out var state) || !Native.IsWindow(hwnd)) return;
 
         Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(state.Style));
-        Native.SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(state.ExtendedStyle));
-        var insertAfter = (state.ExtendedStyle & WS_EX_TOPMOST) != 0 ? HWND_TOPMOST : HWND_NOTOPMOST;
-        Native.SetWindowPos(hwnd, insertAfter, 0, 0, 0, 0,
-            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        var currentTopmost = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOPMOST;
+        var restoredExtendedStyle = (state.ExtendedStyle & ~WS_EX_TOPMOST) | currentTopmost;
+        Native.SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(restoredExtendedStyle));
+        Native.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED);
         if (restorePlacement)
         {
             var placement = state.Placement;

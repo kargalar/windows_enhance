@@ -52,3 +52,26 @@ turns from the `casual_conversation` subset of
 published by Cisimcik AI Lab under Apache License 2.0. The license text is in
 [`third_party/TurkishChatMax/LICENSE`](../third_party/TurkishChatMax/LICENSE).
 No other task subsets or reasoning fields are included.
+
+## Nashi and ClipboardLine integrations
+
+The Nashi file tools incorporate code from [nashi-app](https://github.com/orkunisitmak/nashi-app),
+pinned in [`third_party/feature-apps.json`](../third_party/feature-apps.json). Its license
+and upstream notices are in [`third_party/Nashi`](../third_party/Nashi/); the bundled
+component notices are in [`Resources/licenses`](../src/WinForge.Modules.FileTools/Resources/licenses/).
+The integration uses PDFsharp, BouncyCastle, Magick.NET, ZXing.Net, SharpCompress,
+PdfPig and PDFium; optional operations may use separately installed or downloaded
+media and document tools.
+
+The clipboard feature is based on the functionality of
+[clipboardline](https://github.com/orkunisitmak/clipboardline), pinned in the same
+metadata file; the upstream MIT license is in
+[`third_party/ClipboardLine/LICENSE`](../third_party/ClipboardLine/LICENSE). Its text identity
+contract fixture is reproduced in the test suite. It uses Tesseract and its English and Turkish data files, Microsoft
+ONNX Runtime and MobileCLIP-S2 model assets. The Tesseract notice is in
+[`third_party/ClipboardLine/ocr-licenses`](../third_party/ClipboardLine/ocr-licenses/).
+The .NET wrapper is Copyright 2012-2020 Charles Weld and is distributed under
+Apache 2.0. ONNX Runtime's MIT license and bundled third-party notices are in
+[`third_party/ClipboardLine/onnx-licenses`](../third_party/ClipboardLine/onnx-licenses/).
+The model archive includes its own licenses and acknowledgements; its exact source
+and hashes are recorded in [`search-model-config.json`](../src/WinForge.Modules.FileTools/Resources/search-model-config.json).

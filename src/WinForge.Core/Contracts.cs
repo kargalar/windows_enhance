@@ -62,7 +62,7 @@ public interface IDisplayBrightnessOverlayContext
 /// <summary>Shows a transient audio volume indicator.</summary>
 public interface IAudioVolumeOverlayContext
 {
-    void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null);
+    void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null, int dismissAfterSeconds = 3);
 }
 
 /// <summary>A searchable action contributed by an active module.</summary>

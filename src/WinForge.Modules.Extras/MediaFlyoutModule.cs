@@ -458,7 +458,6 @@ public sealed class MediaFlyoutModule : ITweakModule
     private void ShowVolumeOsd()
     {
         _ = ShowVolumeOsdAfterHardwareKeyAsync();
-        OpenFlyoutFromHardwareKey();
     }
 
     private async Task ShowVolumeOsdAfterHardwareKeyAsync()
@@ -466,13 +465,20 @@ public sealed class MediaFlyoutModule : ITweakModule
         await Task.Delay(100);
         var volume = TryReadCurrentVolume();
         if (volume < 0) return;
-        ShowVolumeOsd(volume, TryReadCurrentMuted() == true);
+        var isMuted = TryReadCurrentMuted() == true;
+        Application.Current?.Dispatcher.BeginInvoke(() =>
+        {
+            if (!IsActive) return;
+            ShowVolumeOsd(volume, isMuted);
+            OpenFlyoutFromHardwareKey();
+        });
     }
 
     private void ShowVolumeOsd(int percent, bool isMuted)
     {
         if (_context is IAudioVolumeOverlayContext overlay)
-            overlay.ShowAudioVolume(percent, isMuted, OpenFlyoutFromHardwareKey);
+            overlay.ShowAudioVolume(percent, isMuted, OpenFlyoutFromHardwareKey,
+                Math.Clamp(_context.Settings.GetInt("flyout-auto-dismiss-seconds", 3), 1, 30));
         else
             _context?.Notify(isMuted ? $"Ses kapalı · {percent}%" : $"Ses {percent}%");
     }
@@ -792,6 +798,8 @@ internal sealed class MediaFlyoutWindow : Window
     private GlobalSystemMediaTransportControlsSession? _observedSession;
     private bool _updatingTimeline;
     private bool _updatingSessionChoices;
+    private readonly MediaSessionTracker _sessionTracker = new();
+    private GlobalSystemMediaTransportControlsSession? _manualSession;
     private bool _seeking;
     private bool _refreshingMedia;
     private bool _mediaRefreshPending;
@@ -1665,17 +1673,21 @@ internal sealed class MediaFlyoutWindow : Window
     private void RefreshSessionChoices()
     {
         if (_sessionManager is null) return;
-        var sessions = _sessionManager.GetSessions()
+        var allowed = _sessionManager.GetSessions()
             .Where(session => IsMediaAppAllowed(session.SourceAppUserModelId, _mediaAppFilterMode, _mediaAppFilterList))
             .ToArray();
+        if (_sessionTracker.Update(allowed)) _manualSession = null;
+        var sessions = _sessionTracker.Order(allowed);
         var pinned = sessions.FirstOrDefault(session => string.Equals(
             session.SourceAppUserModelId, _pinnedSessionId, StringComparison.OrdinalIgnoreCase));
-        var current = pinned ?? (_selectedSession is not null && IsMediaAppAllowed(_selectedSession.SourceAppUserModelId, _mediaAppFilterMode, _mediaAppFilterList)
-            ? _selectedSession
-            : sessions.FirstOrDefault(session => ReferenceEquals(session, _sessionManager.GetCurrentSession())));
+        var manual = _manualSession is not null && sessions.Any(session => ReferenceEquals(session, _manualSession))
+            ? _manualSession
+            : null;
+        _manualSession = manual;
+        var current = pinned ?? manual ?? sessions.FirstOrDefault();
         var choices = sessions.Select(session => new MediaSessionChoice(
             session,
-            string.IsNullOrWhiteSpace(session.SourceAppUserModelId) ? "Medya uygulaması" : session.SourceAppUserModelId)).ToArray();
+            (MediaSessionTracker.IsPlaying(session) ? "▶ " : "❚❚ ") + FriendlySessionName(session))).ToArray();
 
         _updatingSessionChoices = true;
         _sessionSelector.ItemsSource = choices;
@@ -1701,8 +1713,15 @@ internal sealed class MediaFlyoutWindow : Window
         if (_sessionSelector.SelectedItem is MediaSessionChoice choice)
         {
             _selectedSession = choice.Session;
+            _manualSession = choice.Session;
             _ = RefreshAsync();
         }
+    }
+
+    private static string FriendlySessionName(GlobalSystemMediaTransportControlsSession session)
+    {
+        var name = NormalizeMediaAppId(session.SourceAppUserModelId);
+        return string.IsNullOrWhiteSpace(name) ? "Medya uygulaması" : name;
     }
 
     private void UpdateTimeline(GlobalSystemMediaTransportControlsSession? session)

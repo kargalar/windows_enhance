@@ -25,6 +25,10 @@ internal sealed class TaskbarMediaWidgetWindow : Window
     private string _pinnedSessionId = "";
     private Action<string?>? _savePinnedSession;
     private bool _refreshing;
+    private readonly MediaSessionTracker _tracker = new();
+    private readonly Button _switchButton;
+    private GlobalSystemMediaTransportControlsSession[] _availableSessions = [];
+    private string _manualSessionId = "";
     private string _scrollMode = "master-volume";
     private const int ScrollVolumeStep = 2;
     private const uint AbmGetTaskbarPos = 0x00000005;
@@ -62,6 +66,9 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         _trackInfo.MouseLeftButtonUp += (_, _) => _openFlyout();
 
         var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        _switchButton = CreateButton("⇄", "Başka medya oturumuna geç", SwitchSession);
+        _switchButton.Visibility = Visibility.Collapsed;
+        controls.Children.Add(_switchButton);
         controls.Children.Add(CreateButton("⏮", "Önceki parça", SkipPrevious));
         _playPauseButton = CreateButton("▶", "Oynat veya duraklat", TogglePlayback);
         controls.Children.Add(_playPauseButton);
@@ -288,10 +295,14 @@ internal sealed class TaskbarMediaWidgetWindow : Window
                 .Where(session => MediaFlyoutWindow.IsMediaAppAllowed(
                     session.SourceAppUserModelId, _filterMode, _filterList))
                 .ToArray();
-            var currentSession = _sessionManager.GetCurrentSession();
+            if (_tracker.Update(sessions)) _manualSessionId = "";
+            sessions = _tracker.Order(sessions);
+            _availableSessions = sessions;
+            _switchButton.Visibility = sessions.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
             _session = sessions.FirstOrDefault(session => string.Equals(session.SourceAppUserModelId,
                 _pinnedSessionId, StringComparison.OrdinalIgnoreCase))
-                ?? sessions.FirstOrDefault(session => ReferenceEquals(session, currentSession))
+                ?? sessions.FirstOrDefault(session => string.Equals(session.SourceAppUserModelId,
+                    _manualSessionId, StringComparison.OrdinalIgnoreCase))
                 ?? sessions.FirstOrDefault();
             if (_session is null)
             {
@@ -327,6 +338,16 @@ internal sealed class TaskbarMediaWidgetWindow : Window
             Hide();
         }
         finally { _refreshing = false; }
+    }
+
+    private async void SwitchSession(object? sender, RoutedEventArgs e)
+    {
+        if (_availableSessions.Length < 2) return;
+        var index = Array.FindIndex(_availableSessions, session => ReferenceEquals(session, _session));
+        var next = _availableSessions[(index + 1) % _availableSessions.Length];
+        _manualSessionId = next.SourceAppUserModelId;
+        _pinnedSessionId = "";
+        await RefreshAsync();
     }
 
     private async void SkipPrevious(object? sender, RoutedEventArgs e)

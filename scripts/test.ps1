@@ -1,6 +1,7 @@
 param(
     [string]$Configuration = "Release",
     [switch]$NativeSmoke,
+    [switch]$ExtendedFileTools,
     [switch]$LiveShell,
     [switch]$LiveBrowser,
     [switch]$LiveAudio,
@@ -9,6 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
+& (Join-Path $PSScriptRoot 'prepare-models.ps1')
 $project = Join-Path $root "tests\WinForge.RegressionTests\WinForge.RegressionTests.csproj"
 
 $testArguments = @()
@@ -16,6 +18,39 @@ if ($NativeSmoke) { $testArguments += "--native-smoke" }
 dotnet build $project -c $Configuration -p:Platform=x64 -nologo
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $executable = Join-Path $root "tests\WinForge.RegressionTests\bin\x64\$Configuration\net10.0-windows10.0.19041.0\WinForge.RegressionTests.exe"
+$fileToolsProject = Join-Path $root 'tests\WinForge.FileToolsTests\WinForge.FileToolsTests.csproj'
+dotnet build $fileToolsProject -c $Configuration -p:Platform=x64 -nologo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$fileToolsExecutable = Join-Path $root "tests\WinForge.FileToolsTests\bin\x64\$Configuration\net10.0-windows10.0.19041.0\WinForge.FileToolsTests.exe"
+& $fileToolsExecutable
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $fileToolsExecutable --clipboard-only
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $fileToolsExecutable --ocr-only
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($NativeSmoke) {
+    & $fileToolsExecutable --native-only --uia
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $fileToolsExecutable --video-only
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+if ($ExtendedFileTools) {
+    $env:NASHI_VERIFY_DOWNLOAD_TOOLS = '1'
+    $env:NASHI_VERIFY_TOOLS_DIRECTORY = Join-Path $root 'artifacts\WinForge-filetools-test\tools'
+    try {
+        & $fileToolsExecutable
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } finally {
+        Remove-Item Env:\NASHI_VERIFY_DOWNLOAD_TOOLS, Env:\NASHI_VERIFY_TOOLS_DIRECTORY -ErrorAction SilentlyContinue
+    }
+    $env:NASHI_VERIFY_OFFICE_DIRECTORY = Join-Path $root 'artifacts\WinForge-filetools-test\office-tools'
+    try {
+        & $fileToolsExecutable --office-only
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    } finally {
+        Remove-Item Env:\NASHI_VERIFY_OFFICE_DIRECTORY -ErrorAction SilentlyContinue
+    }
+}
 & $executable @testArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($NativeSmoke) {

@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
+& (Join-Path $PSScriptRoot 'prepare-models.ps1')
 
 Write-Host "WinForge derleniyor ($Configuration)..." -ForegroundColor Cyan
 dotnet build (Join-Path $root "WinForge.slnx") -c $Configuration -p:Platform=x64

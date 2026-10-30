@@ -30,6 +30,7 @@ public sealed class OsdWindow : Window
     private int _volumePercent;
     private bool _volumeMuted;
     private bool _draggingVolumeSlider;
+    private int _volumeDismissSeconds = 3;
     private const double DefaultFontSize = 12.5;
 
     private OsdWindow()
@@ -201,7 +202,7 @@ public sealed class OsdWindow : Window
         MouseLeave += (_, _) =>
         {
             if (_volumeRow.Visibility != Visibility.Visible) return;
-            _timer.Interval = TimeSpan.FromMilliseconds(1200);
+            _timer.Interval = TimeSpan.FromSeconds(_volumeDismissSeconds);
             _timer.Stop();
             _timer.Start();
         };
@@ -255,23 +256,26 @@ public sealed class OsdWindow : Window
         }));
     }
 
-    public static void ShowVolume(int percent, bool isMuted, Action? onVolumeChanged = null)
+    public static void ShowVolume(int percent, bool isMuted, Action? onVolumeChanged = null, int dismissAfterSeconds = 3)
     {
         var app = Application.Current;
         if (app is null) return;
 
-        app.Dispatcher.BeginInvoke(new Action(() =>
+        void Show()
         {
             try
             {
                 _instance ??= new OsdWindow();
-                _instance.ShowVolumeMessage(Math.Clamp(percent, 0, 100), isMuted, onVolumeChanged);
+                _instance.ShowVolumeMessage(Math.Clamp(percent, 0, 100), isMuted, onVolumeChanged, dismissAfterSeconds);
             }
             catch
             {
                 // A notification must never break the caller.
             }
-        }));
+        }
+
+        if (app.Dispatcher.CheckAccess()) Show();
+        else app.Dispatcher.BeginInvoke(new Action(Show));
     }
 
     private void ShowMessage(string message)
@@ -331,9 +335,10 @@ public sealed class OsdWindow : Window
         _timer.Start();
     }
 
-    private void ShowVolumeMessage(int percent, bool isMuted, Action? onVolumeChanged = null)
+    private void ShowVolumeMessage(int percent, bool isMuted, Action? onVolumeChanged, int dismissAfterSeconds)
     {
         _onVolumeChanged = onVolumeChanged;
+        _volumeDismissSeconds = Math.Clamp(dismissAfterSeconds, 1, 30);
         _volumeRow.Visibility = Visibility.Visible;
         _text.Visibility = Visibility.Collapsed;
         SetInteractive(true);
@@ -351,7 +356,7 @@ public sealed class OsdWindow : Window
         Left = area.Left + (area.Width - ActualWidth) / 2;
         Top = area.Bottom - ActualHeight - 56;
 
-        _timer.Interval = TimeSpan.FromMilliseconds(5000);
+        _timer.Interval = TimeSpan.FromSeconds(_volumeDismissSeconds);
         _timer.Stop();
         _timer.Start();
     }
@@ -425,7 +430,7 @@ public sealed class OsdWindow : Window
 
     private void RestartVolumeTimer()
     {
-        _timer.Interval = TimeSpan.FromMilliseconds(5000);
+        _timer.Interval = TimeSpan.FromSeconds(_volumeDismissSeconds);
         _timer.Stop();
         _timer.Start();
     }

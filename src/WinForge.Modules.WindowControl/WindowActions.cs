@@ -15,8 +15,6 @@ internal sealed class WindowActions : IDisposable
     private const long PopupWindowStyle = unchecked((int)0x80000000);
     private const uint FrameChanged = 0x0020;
     private const uint ShowWindow = 0x0040;
-    private static readonly IntPtr TopmostWindow = new(-1);
-    private static readonly IntPtr NotTopmostWindow = new(-2);
     private readonly Dictionary<IntPtr, SavedBounds> _rolled = new();
     private readonly Dictionary<IntPtr, SavedBounds> _snapped = new();
     private readonly Dictionary<IntPtr, FullscreenState> _fullscreen = new();
@@ -444,9 +442,9 @@ internal sealed class WindowActions : IDisposable
 
         ShowWindowSynchronously(window, Restore);
         Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr((style & ~OverlappedWindowStyle) | PopupWindowStyle));
-        if (!Native.SetWindowPos(window, TopmostWindow, monitorInfo.Monitor.Left, monitorInfo.Monitor.Top,
+        if (!Native.SetWindowPos(window, IntPtr.Zero, monitorInfo.Monitor.Left, monitorInfo.Monitor.Top,
                 monitorInfo.Monitor.Right - monitorInfo.Monitor.Left, monitorInfo.Monitor.Bottom - monitorInfo.Monitor.Top,
-                FrameChanged | ShowWindow))
+                NoZOrder | FrameChanged | ShowWindow))
         {
             var error = Marshal.GetLastWin32Error();
             RestoreFullscreen(window);
@@ -461,10 +459,10 @@ internal sealed class WindowActions : IDisposable
         if (!_fullscreen.Remove(window, out var state) || !Native.IsWindow(window)) return;
 
         Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr(state.Style));
-        Native.SetWindowLongPtr(window, Native.GWL_EXSTYLE, new IntPtr(state.ExtendedStyle));
-        var insertAfter = (state.ExtendedStyle & Native.WS_EX_TOPMOST) != 0 ? TopmostWindow : NotTopmostWindow;
-        Native.SetWindowPos(window, insertAfter, 0, 0, 0, 0,
-            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | FrameChanged);
+        var currentTopmost = Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64() & Native.WS_EX_TOPMOST;
+        Native.SetWindowLongPtr(window, Native.GWL_EXSTYLE, new IntPtr((state.ExtendedStyle & ~Native.WS_EX_TOPMOST) | currentTopmost));
+        Native.SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0,
+            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | NoZOrder | FrameChanged);
         var placement = state.Placement;
         placement.Length = Marshal.SizeOf<WindowPlacement>();
         SetWindowPlacement(window, ref placement);

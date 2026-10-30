@@ -152,7 +152,7 @@ public sealed class NotificationsPlacementModule : ITweakModule
                 if (!Native.IsWindowVisible(window) || placement.Blocked || !Native.GetWindowRect(window, out var current)) continue;
                 try
                 {
-                    var target = CalculateBounds(display.WorkArea, current, anchor, gap, DisplayDpi(display.Handle), stack);
+                    var target = CalculateBounds(display.Bounds, current, anchor, gap, DisplayDpi(display.Handle), stack);
                     stack = checked(stack + current.Bottom - current.Top + DefaultGap);
                     if (Equal(current, target)) continue;
                     if (placement.Moves.Elapsed > TimeSpan.FromSeconds(3)) { placement.Moves.Restart(); placement.Attempts = 0; }
