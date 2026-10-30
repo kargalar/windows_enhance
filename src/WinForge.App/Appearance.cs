@@ -40,9 +40,7 @@ public static class Appearance
     public static bool Glow { get; private set; }
     public static double DetailWidth { get; private set; } = 460;
 
-    private static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "WinForge", "appearance.json");
+    private static string FilePath => Path.Combine(WinForge.Core.AppData.DirectoryPath, "appearance.json");
 
     public static void Load()
     {

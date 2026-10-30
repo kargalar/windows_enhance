@@ -6,7 +6,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Taskbar;
 
-public sealed class TaskbarModule : ITweakModule
+public sealed class TaskbarModule : ITweakModule, IAsyncTweakModule
 {
     private const string AdvancedKey = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
     private const string InternationalKey = @"Control Panel\International";
@@ -254,6 +254,21 @@ public sealed class TaskbarModule : ITweakModule
 
     public void Deactivate()
     {
+        RestoreState();
+        BroadcastSettingChange();
+    }
+
+    public Task ActivateAsync() { Activate(); return Task.CompletedTask; }
+    public Task ApplyAsync() { Apply(); return Task.CompletedTask; }
+
+    public async Task DeactivateAsync()
+    {
+        RestoreState();
+        await Task.Run(BroadcastSettingChange);
+    }
+
+    private void RestoreState()
+    {
         IsActive = false;
         Interlocked.Increment(ref _activationGeneration);
         _middleButtonCaptured = false;
@@ -451,7 +466,6 @@ public sealed class TaskbarModule : ITweakModule
 
         RestoreValue(settings, OriginalSecondsKey, AdvancedKey, "ShowSecondsInSystemClock");
         RestoreValue(settings, OriginalFormatKey, InternationalKey, "sShortTime", isString: true);
-        BroadcastSettingChange();
     }
 
     private void ApplyVisibility()
@@ -497,7 +511,6 @@ public sealed class TaskbarModule : ITweakModule
         RestoreValue(settings, OriginalTransparencyKey, PersonalizeKey, "EnableTransparency");
         RestoreValue(settings, OriginalAccentTaskbarKey, PersonalizeKey, "ColorPrevalence");
         RestoreValue(settings, OriginalAutoTrayKey, ExplorerKey, "EnableAutoTray");
-        BroadcastSettingChange();
     }
 
     private void SyncFromRegistry()
@@ -578,7 +591,6 @@ public sealed class TaskbarModule : ITweakModule
         RestoreValue(settings, OriginalCombineKey, AdvancedKey, "TaskbarGlomLevel");
         RestoreValue(settings, OriginalAlignKey, AdvancedKey, "TaskbarAl");
         RestoreValue(settings, OriginalEndTaskKey, AdvancedKey, "TaskbarEndTask");
-        BroadcastSettingChange();
     }
 
     private static void Capture(IModuleSettings settings, string originalKey, string registryKey, string name)

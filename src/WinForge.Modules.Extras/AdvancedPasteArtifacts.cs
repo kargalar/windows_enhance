@@ -16,7 +16,7 @@ internal static class AdvancedPasteArtifacts
     public static string CreateFile(AdvancedPasteAction action, ClipboardTextSnapshot snapshot, string text,
         string? outputFolder = null)
     {
-        var folder = outputFolder ?? Path.Combine(Path.GetTempPath(), "WinForge", "AdvancedPaste");
+        var folder = outputFolder ?? Path.Combine(WinForge.Core.AppData.TemporaryDirectory, "AdvancedPaste");
         Directory.CreateDirectory(folder);
         CleanupExpiredFiles(folder);
 

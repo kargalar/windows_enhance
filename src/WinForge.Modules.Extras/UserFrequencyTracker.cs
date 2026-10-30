@@ -29,9 +29,7 @@ internal sealed class UserFrequencyTracker
 
     public UserFrequencyTracker(string? storagePath = null)
     {
-        _storagePath = storagePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "WinForge", "AutoCorrectUserFrequencies.json");
+        _storagePath = storagePath ?? Path.Combine(WinForge.Core.AppData.DirectoryPath, "AutoCorrectUserFrequencies.json");
 
         Load();
     }

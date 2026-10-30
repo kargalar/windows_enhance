@@ -28,7 +28,7 @@ public static class CorePdfPreviewService
         var host = Path.GetFullPath(Path.Combine(nativeDirectory, "WinForge.ShellHost.exe"));
         if (!File.Exists(host)) throw new FileNotFoundException("WinForge yerel PDF işleyicisi bulunamadı; uygulamanın yerel bileşenlerini yeniden derleyin.", host);
 
-        var directory = Path.Combine(Path.GetTempPath(), "WinForge", "PdfPreview", Guid.NewGuid().ToString("N"));
+        var directory = Path.Combine(WinForge.Core.AppData.TemporaryDirectory, "PdfPreview", Guid.NewGuid().ToString("N"));
         var output = Path.Combine(directory, "preview.png");
         Directory.CreateDirectory(directory);
         try

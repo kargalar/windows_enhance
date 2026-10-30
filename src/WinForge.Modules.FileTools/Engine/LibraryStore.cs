@@ -22,7 +22,7 @@ public sealed class LibraryStore
     private sealed record State(string Appearance,List<LibraryEntry> Entries,bool WindowManagementEnabled=true);
     public LibraryStore(string? directory=null)
     {
-        DirectoryPath=directory??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi");
+        DirectoryPath=directory??Path.Combine(WinForge.Core.AppData.DirectoryPath,"Nashi");
         if(!File.Exists(FilePath))return;
         try
         {

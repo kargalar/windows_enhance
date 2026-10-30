@@ -13,7 +13,7 @@ internal sealed class FilePreviewWindow : Window
     private readonly Toolchain tools;
     private readonly OfficeRuntime office;
     private readonly IFeatureUiAssetSurface uiSurface;
-    private readonly string temporary = Path.Combine(Path.GetTempPath(), "Nashi-quick-preview-" + Guid.NewGuid().ToString("N"));
+    private readonly string temporary = Path.Combine(WinForge.Core.AppData.TemporaryDirectory, "Nashi-quick-preview-" + Guid.NewGuid().ToString("N"));
     private CancellationTokenSource lifetime = new();
     private PdfRasterDocument? pdfDocument;
     private int index;
@@ -33,10 +33,10 @@ internal sealed class FilePreviewWindow : Window
         OfficeRuntime? office = null, IFeatureUiService? featureUi = null)
     {
         this.tools = tools ?? new Toolchain(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi", "Tools", "v1"),
+            Path.Combine(WinForge.Core.AppData.DirectoryPath, "Nashi", "Tools", "v1"),
             Environment.GetEnvironmentVariable("PATH"));
         this.office = office ?? new OfficeRuntime(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi", "Tools"));
+            Path.Combine(WinForge.Core.AppData.DirectoryPath, "Nashi", "Tools"));
         this.paths = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (this.paths.Length == 0) throw new ArgumentException("Choose a file to preview.", nameof(paths));
 

@@ -82,7 +82,7 @@ internal static class RecordingTools
 
     private static async Task TrimWithAvailableEncoderAsync(string source, string output, TimeSpan start, TimeSpan end, CancellationToken token)
     {
-        var tools = new Toolchain(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi", "Tools", "v1"), Environment.GetEnvironmentVariable("PATH"));
+        var tools = new Toolchain(Path.Combine(WinForge.Core.AppData.DirectoryPath, "Nashi", "Tools", "v1"), Environment.GetEnvironmentVariable("PATH"));
         string encoder;
         try { encoder = tools.Executable("ffmpeg"); }
         catch (FileNotFoundException error) { throw new InvalidOperationException("Windows video kodlayıcısı bu kaydı işleyemedi. Nashi araç kurulumuyla medya araçlarını hazırlayın.", error); }

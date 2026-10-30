@@ -42,7 +42,7 @@ internal sealed class HostsFileStore
         var content = snapshot.Encoding.GetBytes(document.Render());
         var bytes = snapshot.HasUtf8Bom ? Encoding.UTF8.Preamble.ToArray().Concat(content).ToArray() : content;
         var request = JsonSerializer.Serialize(new HostsFileSaveRequest(snapshot.Sha256, Convert.ToBase64String(bytes)));
-        var payloadPath = Path.Combine(Path.GetTempPath(), "WinForge-hosts-" + Guid.NewGuid().ToString("N") + ".json");
+        var payloadPath = Path.Combine(WinForge.Core.AppData.TemporaryDirectory, "WinForge-hosts-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
             File.WriteAllText(payloadPath, request, new UTF8Encoding(false));

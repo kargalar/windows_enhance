@@ -21,7 +21,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
 
     public ReactWindowHostService()
     {
-        var userDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "WebView2");
+        var userDataDirectory = Path.Combine(WinForge.Core.AppData.DirectoryPath, "WebView2");
         Directory.CreateDirectory(userDataDirectory);
         _webViewEnvironment = CoreWebView2Environment.CreateAsync(null, userDataDirectory);
     }

@@ -34,7 +34,7 @@ internal static class LocalOcr
             token.ThrowIfCancellationRequested();
             var target = Path.Combine(directory, model.Name + ".traineddata");
             if (ValidModel(target, model)) continue;
-            var source = Path.Combine(AppContext.BaseDirectory, "tessdata", model.Name + ".traineddata.gz");
+            var source = Path.Combine(WinForge.Core.AppData.DirectoryPath, "tessdata", model.Name + ".traineddata.gz");
             using var input = File.OpenRead(source);
             if (Convert.ToHexStringLower(SHA256.HashData(input)) != model.ArchiveHash) throw new InvalidDataException("OCR dil paketi bütünlük denetimini geçemedi.");
             input.Position = 0;

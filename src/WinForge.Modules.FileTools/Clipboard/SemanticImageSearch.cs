@@ -25,7 +25,7 @@ internal sealed class SemanticImageSearch : IDisposable
 
     internal SemanticImageSearch(string libraryDirectory, string? modelsDirectory = null)
     {
-        _models = modelsDirectory ?? Path.Combine(AppContext.BaseDirectory, "models");
+        _models = modelsDirectory ?? Path.Combine(WinForge.Core.AppData.DirectoryPath, "models");
         _cacheDirectory = Path.Combine(libraryDirectory, "image-search"); Directory.CreateDirectory(_cacheDirectory);
     }
 

@@ -31,7 +31,7 @@ internal static class Program
             if (args.Length == 1 && args[0] == "--audit") { Audit(); return 0; }
             if (args.Length == 1 && args[0] == "--scrolling") return Scrolling();
             var root = Path.Combine(Path.GetTempPath(), "WinForge-CaptureTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-            try { Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); Speech(); Lifecycle(root); Protocol().GetAwaiter().GetResult(); }
+            try { PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); Speech(); Lifecycle(root); Protocol().GetAwaiter().GetResult(); }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
             Console.WriteLine($"PASS: {checks} capture/history checks."); return 0;
         }
@@ -280,8 +280,12 @@ internal static class Program
                     .All(name => capture.GetQuickActions("").Any(action => action.Name == name)),
                     "ShareX-style capture modes are directly searchable quick actions");
             if (module is RecallModule recall)
+            {
                 Check(recall.GetQuickActions("").Any(action => action.Name == "Ekran geçmişini duraklat / sürdür"),
                     "Recall exposes its privacy pause action");
+                Check(recall.Settings.Any(setting => setting.Key == "pause-hotkey"),
+                    "Recall exposes an optional privacy pause hotkey");
+            }
             module.Activate(); Check(module.IsActive, module.Name + " activates");
             module.Deactivate(); module.Deactivate(); Check(!module.IsActive && context.Keys.Count == 0, module.Name + " deactivates idempotently and releases shortcuts");
         }

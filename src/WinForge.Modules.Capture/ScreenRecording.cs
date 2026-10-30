@@ -10,7 +10,7 @@ namespace WinForge.Modules.Capture;
 
 internal static class SharedMediaTools
 {
-    public static Toolchain Create() => new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi", "Tools", "v1"), Environment.GetEnvironmentVariable("PATH"), ["ffmpeg", "ffprobe"]);
+    public static Toolchain Create() => new(Path.Combine(WinForge.Core.AppData.DirectoryPath, "Nashi", "Tools", "v1"), Environment.GetEnvironmentVariable("PATH"), ["ffmpeg", "ffprobe"]);
     public static string Ffmpeg => Create().Executable("ffmpeg");
 }
 

@@ -88,7 +88,7 @@ public sealed partial class ClipboardLibrary
 
     public ClipboardLibrary(string? directory = null, Func<DateTimeOffset>? clock = null)
     {
-        DirectoryPath = Path.GetFullPath(directory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "ClipboardLine"));
+        DirectoryPath = Path.GetFullPath(directory ?? Path.Combine(WinForge.Core.AppData.DirectoryPath, "ClipboardLine"));
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         Directory.CreateDirectory(DirectoryPath);
         if ((File.GetAttributes(DirectoryPath) & FileAttributes.ReparsePoint) != 0)

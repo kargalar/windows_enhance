@@ -29,6 +29,26 @@ public partial class App : Application
 
     public bool IsExiting { get; private set; }
 
+    private void MigrateCaptureDirectories()
+    {
+        var keys = Store.Values.Values.Where(values => values.ContainsKey("storage-directory")).ToArray();
+        var legacyDefault = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "History");
+        var destination = Path.Combine(AppData.DirectoryPath, "History");
+        var sources = keys.Select(values => values["storage-directory"]).Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(path => !string.Equals(path.TrimEnd(Path.DirectorySeparatorChar), legacyDefault.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(path.TrimEnd(Path.DirectorySeparatorChar), destination.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+                && Directory.Exists(path)).ToArray();
+        foreach (var source in sources)
+        {
+            if (File.Exists(Path.Combine(source, "history.db")) && File.Exists(Path.Combine(destination, "history.db")))
+                throw new InvalidOperationException($"Birden fazla ge?mi? veritaban? bulundu. Veri kayb?n? ?nlemek i?in otomatik ta??ma durduruldu: {source} ve {destination}");
+            AppData.CopyMissing(source, destination);
+        }
+        foreach (var values in keys) values.Remove("storage-directory");
+        if (keys.Length > 0) Store.Save();
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         _mutex = new Mutex(true, SingleInstanceMutexName, out _ownsMutex);
@@ -54,15 +74,24 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        var dataDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "WinForge");
-        Directory.CreateDirectory(dataDirectory);
+        var dataDirectory = AppData.DirectoryPath;
+        try
+        {
+            AppData.MigrateLegacyData();
+            Store = new SettingsStore(Path.Combine(dataDirectory, "settings.json"));
+            MigrateCaptureDirectories();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        {
+            MessageBox.Show("WinForge verileri ta??namad?. Program klas?r?n?n yaz?labilir oldu?unu kontrol edin.\n\n" + exception.Message,
+                "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
 
         Logger = new FileLogger(Path.Combine(dataDirectory, "winforge.log"));
         Logger.Info($"WinForge başlatılıyor · {Environment.OSVersion.VersionString}");
 
-        Store = new SettingsStore(Path.Combine(dataDirectory, "settings.json"));
         Hotkeys = new HotkeyService();
         FeatureUi = new ReactWindowHostService();
         OsdWindow.Configure(FeatureUi);
@@ -199,6 +228,7 @@ public partial class App : Application
     {
         if (IsExiting) return;
         IsExiting = true;
+        MainView?.Hide();
         if (Host is not null) await Host.StopAllAsync();
         Shutdown();
     }

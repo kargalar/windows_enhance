@@ -3,8 +3,8 @@ using WinForge.FileTools.Engine;
 namespace WinForge.FileTools.UI;
 public sealed partial class MainWindow
 {
-    private readonly OfficeRuntime officeRuntime=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi","Tools"));
-    private readonly MetadataService metadataService=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi","Tools"));
+    private readonly OfficeRuntime officeRuntime=new(Path.Combine(WinForge.Core.AppData.DirectoryPath,"Nashi","Tools"));
+    private readonly MetadataService metadataService=new(Path.Combine(WinForge.Core.AppData.DirectoryPath,"Nashi","Tools"));
     private async Task EditMetadataAsync(string[] selected)
     {
         if(selected.All(p=>FeatureCatalog.IsAudio(p)||FeatureCatalog.IsVideo(p)&&FeatureCatalog.Extension(p)!="gif")){await EditMediaMetadataAsync(selected);return;}

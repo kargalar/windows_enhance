@@ -162,7 +162,7 @@ public sealed class LegacyImporter(HistoryStore destination)
         private Snapshot(string file, SqliteConnection connection) { path = file; Connection = connection; }
         public static Snapshot Create(string database)
         {
-            var temporary = Path.Combine(Path.GetTempPath(), "WinForge-import-" + Guid.NewGuid().ToString("N") + ".db");
+            var temporary = Path.Combine(Directory.CreateDirectory(Path.Combine(AppContext.BaseDirectory, "data", "temp")).FullName, "WinForge-import-" + Guid.NewGuid().ToString("N") + ".db");
             var target = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = temporary, Pooling = false }.ToString());
             try
             {

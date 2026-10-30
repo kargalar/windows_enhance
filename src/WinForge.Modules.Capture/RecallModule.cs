@@ -14,6 +14,7 @@ public sealed class RecallModule : CaptureModuleBase
     private UsageTracker? idleUsage;
     private ContextUsageTracker? contextUsage;
     private WindowEventObserver? foregroundObserver;
+    private IDisposable? pauseHotkey;
     private CancellationTokenSource? lifetime;
     private Task? ocr;
     private bool locked, suspended, busy, paused;
@@ -38,6 +39,8 @@ public sealed class RecallModule : CaptureModuleBase
         new() { Key = "track-context", Label = "Web sitesi ve klasör konumlarını kaydet", Default = true, Description = "Yalnız ön plandaki tarayıcının adres çubuğu veya Dosya Gezgini yolu okunur; arama sorgusu ve URL sorgu parametreleri saklanmaz." },
         new() { Key = "retention-days", Label = "Saklama süresi (gün; 0 = silme yok)", Kind = SettingKind.Number, Min = 0, Max = 3650, Default = 0 },
         new() { Key = "limit-gb", Label = "Depolama sınırı (GB; 0 = sınırsız)", Kind = SettingKind.Number, Min = 0, Max = 2000, Default = 0 },
+        new() { Key = "pause-hotkey", Label = "Duraklatma kısayolu (isteğe bağlı)", Kind = SettingKind.Text, Default = "",
+            Description = "Dolu olduğunda bu kısayol ekran geçmişi kaydını duraklatır veya sürdürür. Boş bırakarak devre dışı bırakın." },
         new() { Key = "pause", Label = "Kaydı duraklat / sürdür", Kind = SettingKind.Action, Execute = TogglePause }
     ];
     public override void Activate()
@@ -47,8 +50,10 @@ public sealed class RecallModule : CaptureModuleBase
         contextUsage = new(store.AddContextUsage); previous = ""; lastCapture = 0;
         contextWindow = contextReadWindow = 0; lastContextRead = 0; currentContext = null; contextRead = null;
         paused = Context.Settings.GetBool("paused");
+        IsActive = true;
+        RegisterPauseHotkey();
         SystemEvents.SessionSwitch += SessionChanged; SystemEvents.PowerModeChanged += PowerChanged;
-        timer.Tick += Tick; IsActive = true; timer.Start();
+        timer.Tick += Tick; timer.Start();
         foregroundObserver = new(WindowEventObserver.Foreground, WindowEventObserver.Foreground, _ =>
         {
             if (!IsActive) return;
@@ -59,6 +64,8 @@ public sealed class RecallModule : CaptureModuleBase
     }
     public override void Deactivate()
     {
+        IsActive = false;
+        pauseHotkey?.Dispose(); pauseHotkey = null;
         timer.Stop(); timer.Tick -= Tick; SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.PowerModeChanged -= PowerChanged;
         foregroundObserver?.Dispose(); foregroundObserver = null;
         var now = DateTimeOffset.UtcNow; var tick = Environment.TickCount64;
@@ -67,6 +74,22 @@ public sealed class RecallModule : CaptureModuleBase
         var stoppedOcr = ocr; var stoppedLifetime = lifetime;
         ocr = null; lifetime = null; store = null; usage = null; idleUsage = null; contextUsage = null; contextRead = null; base.Deactivate();
         _ = FinishOcrAsync(stoppedOcr, stoppedLifetime);
+    }
+    public override void Apply()
+    {
+        if (IsActive) RegisterPauseHotkey();
+    }
+    private void RegisterPauseHotkey()
+    {
+        pauseHotkey?.Dispose(); pauseHotkey = null;
+        var configured = Context.Settings.GetString("pause-hotkey").Trim();
+        if (configured.Length == 0) return;
+        try
+        {
+            var (modifiers, key) = ModuleShortcut.Parse(configured);
+            pauseHotkey = Context.Hotkeys.Register(modifiers, key, TogglePause);
+        }
+        catch (Exception error) { Report(new InvalidOperationException("Ekran geçmişi duraklatma kısayolu kaydedilemedi.", error)); }
     }
     private async Task FinishOcrAsync(Task? stoppedOcr, CancellationTokenSource? stoppedLifetime)
     {

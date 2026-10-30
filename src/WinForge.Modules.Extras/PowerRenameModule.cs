@@ -249,7 +249,7 @@ internal static class RenameUndoStore
     private static readonly System.Text.Json.JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public static string DefaultPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "PowerRename", "undo.json");
+        WinForge.Core.AppData.DirectoryPath, "PowerRename", "undo.json");
 
     public static List<RenameOperation> Load(string? path = null)
     {

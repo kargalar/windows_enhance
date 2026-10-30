@@ -175,7 +175,7 @@ internal static class Feedback
         last = DateTime.UtcNow;
         try
         {
-            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi");
+            var directory = Path.Combine(WinForge.Core.AppData.DirectoryPath, "Nashi");
             Directory.CreateDirectory(directory);
             var file = Path.Combine(directory, "WheelSelection.wav");
             if (!File.Exists(file))

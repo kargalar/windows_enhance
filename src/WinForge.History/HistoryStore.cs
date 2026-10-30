@@ -26,7 +26,7 @@ public sealed class HistoryStore
         """;
     private static readonly object MediaGate = new();
     private static readonly Dictionary<string, int> PendingMedia = new(StringComparer.OrdinalIgnoreCase);
-    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "History");
+    public static string DefaultDirectory => Path.Combine(AppContext.BaseDirectory, "data", "History");
     public string DirectoryPath { get; }
     public string DatabasePath => Path.Combine(DirectoryPath, "history.db");
     public string MediaDirectory => Path.Combine(DirectoryPath, "media");

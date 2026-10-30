@@ -565,3 +565,8 @@ Eski AltSnap modülünün WinForge'da kayıtlı ortak ayarları `window-control`
 modülüne taşınır. Yeni modülün mevcut ayarları önceliklidir. Kaldırılan Windhawk
 modülünün kayıtları yeniden etkinleştirilmez. Kullanıcının ayrıca kurduğu
 programlara ve onların ayarlarına müdahale edilmez.
+
+
+### Ta??nabilir veri
+
+WinForge ayarlar?n?, ge?mi?ini, ekran g?r?nt?lerini, ses modellerini, indirdi?i ara?lar? ve di?er uygulama verilerini ?al??t?r?labilir dosyan?n yan?ndaki `data` klas?r?nde saklar. Ta??mak i?in program klas?r?n?n tamam?n? `data` ile birlikte kopyalay?n; klas?r yaz?labilir olmal?d?r. ?lk a??l??ta eski varsay?lan WinForge kullan?c? klas?rlerindeki veriler, mevcut dosyalar?n ?zerine yaz?lmadan kopyalan?r. Eski dosyalar silinmez. Birden fazla ayr? ge?mi? veritaban? varsa otomatik ta??ma veri kayb?n? ?nlemek i?in durur. Windows ba?lang?? kayd? ve Windows sistem ayarlar? bilgisayara ?zeldir; ba?ka bilgisayarda yeniden ayarlanmal?d?r. Kullan?c?n?n ayr?ca d??a aktard??? dosyalar se?ilen konumda kal?r.

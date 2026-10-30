@@ -21,7 +21,7 @@ public sealed partial class MainWindow:Window
     private readonly TextBlock status=Text("Files stay on your computer.",12,"Muted");
     private readonly TextBox link=new(){ToolTip="Paste a public video, image or audio page link"};
     private readonly ComboBox downloadKind=new(){ItemsSource=new[]{"video","audio","thumbnail"},SelectedIndex=0,MinWidth=110};
-    private readonly Toolchain tools=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi","Tools","v1"),Environment.GetEnvironmentVariable("PATH"));
+    private readonly Toolchain tools=new(Path.Combine(WinForge.Core.AppData.DirectoryPath,"Nashi","Tools","v1"),Environment.GetEnvironmentVariable("PATH"));
     private readonly LibraryStore library;
     private readonly PreferencesStore preferences;private GlobalDragController? globalDrag;
     private readonly IFeatureUiSurface _uiSurface;
@@ -357,7 +357,7 @@ public sealed partial class MainWindow:Window
                 var engine=new MediaEngine(tools.Executable("ffmpeg"),tools.Executable("ffprobe"));info=await engine.InspectAsync(input);
                 if(choice.Id is "cropVideo" or "redactVideo")
                 {
-                    temporary=Path.Combine(Path.GetTempPath(),"Nashi-preview-"+Guid.NewGuid().ToString("N")+".png");
+                    temporary=Path.Combine(WinForge.Core.AppData.TemporaryDirectory,"Nashi-preview-"+Guid.NewGuid().ToString("N")+".png");
                     await ProcessRunner.RunAsync(tools.Executable("ffmpeg"),["-v","error","-i",input,"-frames:v","1",temporary]);preview=ImageEngine.Load(temporary);
                 }
             }

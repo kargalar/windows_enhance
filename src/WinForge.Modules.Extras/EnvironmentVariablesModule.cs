@@ -123,7 +123,7 @@ public sealed class EnvironmentVariablesModule : WinForge.Core.ITweakModule
     private WinForge.Core.IModuleContext? _context;
     private readonly UserEnvironmentVariableStore _store = new(@"Environment");
     private readonly EnvironmentProfileService _profileService = new(@"Environment",
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "environment-profiles.json"));
+        Path.Combine(WinForge.Core.AppData.DirectoryPath, "environment-profiles.json"));
     private readonly WinForge.Core.SettingDescriptor[] _settings;
     private EnvironmentVariablesWindow? _window;
     private EnvironmentVariablesWindow? _systemWindow;

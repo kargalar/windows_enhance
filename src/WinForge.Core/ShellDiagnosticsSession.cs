@@ -34,7 +34,7 @@ public sealed class ShellDiagnosticsSession : IDisposable
 
     private ShellDiagnosticsSession()
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "ShellEngine", "Sessions");
+        var directory = Path.Combine(WinForge.Core.AppData.DirectoryPath, "ShellEngine", "Sessions");
         Directory.CreateDirectory(directory);
         _mappingPath = Path.Combine(directory, $"{Environment.ProcessId}-{Guid.NewGuid():N}.bin");
         _mappingFile = new FileStream(_mappingPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
@@ -89,7 +89,7 @@ public sealed class ShellDiagnosticsSession : IDisposable
     {
         using var stream = File.OpenRead(source);
         var digest = Convert.ToHexString(SHA256.HashData(stream));
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "ShellEngine", digest);
+        var directory = Path.Combine(WinForge.Core.AppData.DirectoryPath, "ShellEngine", digest);
         Directory.CreateDirectory(directory);
         var target = Path.Combine(directory, "WinForge.ShellTap.dll");
         if (!File.Exists(target))

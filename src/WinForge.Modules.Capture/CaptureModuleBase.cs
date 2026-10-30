@@ -15,13 +15,11 @@ public abstract class CaptureModuleBase : ITweakModule, IQuickActionProvider
     public string? Warning => null;
     public bool IsActive { get; protected set; }
     protected abstract string Kind { get; }
-    protected HistoryStore Store => new(Context.Settings.GetString("storage-directory", HistoryStore.DefaultDirectory));
+    protected HistoryStore Store => new(HistoryStore.DefaultDirectory);
     protected virtual IEnumerable<SettingDescriptor> ModuleSettings => [];
     public IReadOnlyList<SettingDescriptor> Settings => new[]
     {
         new SettingDescriptor { Key = "open", Label = "Geçmişi aç", Kind = SettingKind.Action, Execute = Open },
-        new SettingDescriptor { Key = "storage-directory", Label = "Depolama klasörü", Kind = SettingKind.Text, Default = HistoryStore.DefaultDirectory,
-            Description = "Klasör değişikliği sonraki etkinleştirmede uygulanır. Önceki kayıtlar taşınmaz; eski klasöre dönerek açılabilir." },
         new SettingDescriptor { Key = "import", Label = "Eski kayıtları içe aktar", Kind = SettingKind.Action,
             Execute = () => new ImportWindow(Store, Kind, Context, (Context as IFeatureUiContext)?.FeatureUi).Show() }
     }.Where(setting => Kind != "capture" || setting.Key != "import").Concat(ModuleSettings).ToArray();
