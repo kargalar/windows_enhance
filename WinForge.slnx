@@ -3,6 +3,9 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/src/">
+    <Project Path="src/WinForge.History/WinForge.History.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/WinForge.Dictation.Worker/WinForge.Dictation.Worker.csproj"><Platform Project="x64" /></Project>
+    <Project Path="src/WinForge.Modules.Capture/WinForge.Modules.Capture.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/WinForge.Modules.FileTools/WinForge.Modules.FileTools.csproj">
       <Platform Project="x64" />
     </Project>
@@ -38,6 +41,7 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/WinForge.CaptureTests/WinForge.CaptureTests.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/WinForge.FileToolsTests/WinForge.FileToolsTests.csproj">
       <Platform Project="x64" />
     </Project>

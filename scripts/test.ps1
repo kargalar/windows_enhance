@@ -11,6 +11,8 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 & (Join-Path $PSScriptRoot 'prepare-models.ps1')
+dotnet run --project (Join-Path $root 'tests\WinForge.CaptureTests\WinForge.CaptureTests.csproj') -c $Configuration -p:Platform=x64
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $project = Join-Path $root "tests\WinForge.RegressionTests\WinForge.RegressionTests.csproj"
 
 $testArguments = @()

@@ -6,6 +6,11 @@ namespace WinForge.Core;
 /// <summary>Captures the default render mix. All audio COM objects belong to one worker thread.</summary>
 public sealed class WasapiLoopbackCapture : IDisposable
 {
+    private readonly bool _microphone;
+    private readonly string? _deviceId;
+    public WasapiLoopbackCapture() : this(false, null) { }
+    public WasapiLoopbackCapture(bool microphone, string? deviceId = null)
+    { _microphone = microphone; _deviceId = deviceId; }
     public delegate void SamplesHandler(ReadOnlySpan<float> samples, int sampleRate);
     public event SamplesHandler? SamplesAvailable;
     private readonly object _gate = new();
@@ -65,14 +70,15 @@ public sealed class WasapiLoopbackCapture : IDisposable
         try
         {
             enumerator = (IMMDeviceEnumerator)CoreAudioDeviceFactory.CreateEnumerator();
-            Check(enumerator.GetDefaultAudioEndpoint(0, 0, out device));
+            if (string.IsNullOrWhiteSpace(_deviceId)) Check(enumerator.GetDefaultAudioEndpoint(_microphone ? 1 : 0, 0, out device));
+            else Check(enumerator.GetDevice(_deviceId, out device));
             Check(device.GetId(out var endpointId));
             var clientId = AudioClientId;
             Check(device.Activate(ref clientId, 1, IntPtr.Zero, out var audioObject));
             client = (IAudioClient)audioObject;
             Check(client.GetMixFormat(out formatPointer));
             var format = SampleFormat.Read(formatPointer);
-            Check(client.Initialize(0, LoopbackFlag, 1_000_000, 0, formatPointer, IntPtr.Zero));
+            Check(client.Initialize(0, _microphone ? 0 : LoopbackFlag, 1_000_000, 0, formatPointer, IntPtr.Zero));
             var captureId = CaptureClientId;
             Check(client.GetService(ref captureId, out var captureObject));
             capture = (IAudioCaptureClient)captureObject;
@@ -114,7 +120,8 @@ public sealed class WasapiLoopbackCapture : IDisposable
                     IMMDevice? current = null;
                     try
                     {
-                        Check(enumerator.GetDefaultAudioEndpoint(0, 0, out current));
+                        if (string.IsNullOrWhiteSpace(_deviceId)) Check(enumerator.GetDefaultAudioEndpoint(_microphone ? 1 : 0, 0, out current));
+                        else Check(enumerator.GetDevice(_deviceId, out current));
                         Check(current.GetId(out var currentId));
                         if (!string.Equals(currentId, endpointId, StringComparison.Ordinal)) return;
                     }

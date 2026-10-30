@@ -12,9 +12,12 @@ public static class OcrRecognitionService
 {
     private const long MaximumImagePixels = 30_000_000;
 
-    public static async Task<string> RecognizeAsync(BitmapSource source)
+    public static Task<string> RecognizeAsync(BitmapSource source) => RecognizeAsync(source, CancellationToken.None);
+
+    public static async Task<string> RecognizeAsync(BitmapSource source, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
+        cancellationToken.ThrowIfCancellationRequested();
         if (source.PixelWidth <= 0 || source.PixelHeight <= 0 ||
             (long)source.PixelWidth * source.PixelHeight > MaximumImagePixels)
             throw new InvalidOperationException("Görsel OCR için 30 megapiksel sınırını aşıyor.");
@@ -34,7 +37,7 @@ public static class OcrRecognitionService
         // GDI screen captures leave alpha undefined; OCR must use the visible RGB values.
         using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(buffer, BitmapPixelFormat.Bgra8,
             image.PixelWidth, image.PixelHeight, BitmapAlphaMode.Ignore);
-        var result = await engine.RecognizeAsync(bitmap);
+        var result = await engine.RecognizeAsync(bitmap).AsTask(cancellationToken);
         return string.Join(Environment.NewLine,
             result.Lines.Select(line => line.Text).Where(line => !string.IsNullOrWhiteSpace(line)));
     }

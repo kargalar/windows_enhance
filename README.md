@@ -436,6 +436,20 @@ YouTube tarayıcı özellikleri WinForge bileşenlerinden çıkarıldı ve Playl
 
 ## Mimari
 
+### Ekran geçmişi, sesle yazma ve ekran yakalama
+
+Üç yeni bağımsız modül **Verimlilik** kategorisindedir ve ilk kurulumda kapalıdır.
+**Ekran Geçmişi** yerel OCR araması, zaman sıralı görüntüler ve gerçek pencere geçişlerinden
+ölçülen kullanım süreleri sunar. **Sesle Yazma**, `Shift+Space` ile yerel Whisper diktesini
+hedef alana yazar; basılı tutma, Turbo/Large, CPU/CUDA ve İngilizceye çeviri desteklenir.
+**Ekran Yakalama**, `Win+Alt+S` ile bölge seçimi; ayrıca pencere/monitör, kayan yakalama,
+düzenleme, OCR, video/GIF ve mikrofon/sistem sesi kaydı sağlar.
+
+RecallClone ve Whisper geçmişleri modül panelindeki **Eski kayıtları içe aktar** eylemiyle
+aktarılır. Kaynaklar korunur; modeller ve görseller WinForge deposuna kopyalanır.
+Otomatik silme varsayılan olarak kapalıdır. Ayrıntılar ve doğrulama komutları:
+[Ekran ve ses modülleri](docs/CAPTURE_FEATURES.md).
+
 ```
 WinForge.Core     ITweakModule sözleşmesi, modül yükleme, ayar deposu,
                   global kısayol, fare kancası, ses (Core Audio COM), OSD

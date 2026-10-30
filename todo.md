@@ -1,11 +1,5 @@
 <!-- iki repo... taskında devam et -->AAAAAAAAAAAAAxxxxxxxxxxx
 
-recall ı buraya entegre et
-
-whisper  dictation buraya entegre et.
-
-share x i de burada bir özellik olarak ekle
-
 bağlam analizi ve otomarik düzeltme taskı deva medilebilir otomati kdüzeltemy iiyeştirmek için
 
 <!-- Check -->
@@ -28,3 +22,11 @@ https://github.com/orkunisitmak/clipboardline
 bu iki repoyu birer özellik olarak ekle ve test et. tam ve eksiksiz olsun
 
 bildirim konumu için kenara uzaklık 0 olsa bile tam kenarda dip dibe olmuyor.
+
+benim normalde kullandığım recall diye bir programım var. belirli aralıklarla ekran görüntüsü alıyor vesaire. onu detaylıca nivelle ve onu buraya daha iy ibir şekilde bir özellik olarak entegre et.
+aynı şekilde whisper diye de bir programım var onunu da buraya entegre edilmesini isityorum.
+bir de sharex diye bir program var. o benim değil amma onun gibi bir özelliğin de bu programda olmasını isitoyrum.
+yani oradaki sitem burada çalışmayacak direkt burada daha iyi bir şeikle inşa edilecek en baştan. 
+C:\Kargalar\Projeler\Other Apps\RecallClone
+C:\Kargalar\Projeler\Other Apps\whisper
+https://getsharex.com/

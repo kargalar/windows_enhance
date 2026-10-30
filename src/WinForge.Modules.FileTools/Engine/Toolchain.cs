@@ -7,7 +7,7 @@ namespace WinForge.FileTools.Engine;
 /// the upstream executable archives or silently import browser credentials.
 /// With a search path, tools the user already installed are reused and setup
 /// downloads only the missing packages; downloaded tools still take priority.
-public sealed class Toolchain(string directory,string? searchPath=null)
+public sealed class Toolchain(string directory,string? searchPath=null, string[]? requiredTools=null)
 {
     private static readonly string[] Names=["ffmpeg","ffprobe","yt-dlp","deno"];
     public string DirectoryPath=>Path.GetFullPath(directory);
@@ -30,7 +30,7 @@ public sealed class Toolchain(string directory,string? searchPath=null)
         }
         return null;
     }
-    private bool Complete(string directory)=>Names.All(n=>Find(n,directory) is not null);
+    private bool Complete(string directory)=>(requiredTools??Names).All(n=>Names.Contains(n)&&Find(n,directory) is not null);
     public bool Ready=>Complete(DirectoryPath);
     public async Task InstallAsync(IProgress<OperationProgress>? progress=null,CancellationToken token=default)
     {
@@ -43,7 +43,7 @@ public sealed class Toolchain(string directory,string? searchPath=null)
                 new Package("FFmpeg 9.0","https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build.zip","759d0a9831c436a0eb331ad36f236c06cb04aaa0005da46571f0e9d3d9206f6b",["ffmpeg.exe","ffprobe.exe"]),
                 new Package("yt-dlp","https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe","66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",["yt-dlp.exe"]),
                 new Package("Deno","https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip","a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238",["deno.exe"])
-            }.Where(p=>p.Files.Any(f=>Installed(Path.GetFileNameWithoutExtension(f)) is null)).ToArray();
+            }.Where(p=>p.Files.Any(f=>(requiredTools??Names).Contains(Path.GetFileNameWithoutExtension(f)))&&p.Files.Any(f=>Installed(Path.GetFileNameWithoutExtension(f)) is null)).ToArray();
             for(var n=0;n<packages.Length;n++)
             {
                 var package=packages[n];var archive=Path.Combine(stage,"package-"+n);

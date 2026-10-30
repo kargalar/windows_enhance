@@ -81,7 +81,7 @@ internal sealed class PasteTargetTracker : IDisposable
         var foreground = GetForegroundWindow();
         GetWindowThreadProcessId(foreground, out var foregroundProcess);
         if (foreground == IntPtr.Zero || foregroundProcess != info.ProcessId || !info.IsEnabled || info.IsPassword ||
-            !element.TryGetCurrentPattern(ValuePattern.Pattern, out var raw) || ((ValuePattern)raw).Current.IsReadOnly)
+            !WinForge.Core.FocusedTextOutput.IsEditable(element))
             return null;
         var runtimeId = element.GetRuntimeId();
         return runtimeId is { Length: > 0 and <= 128 } ? new PasteTarget(foreground, info.ProcessId, runtimeId) : null;
@@ -103,7 +103,7 @@ internal sealed class PasteTargetTracker : IDisposable
             if (process != expected.ProcessId) return false;
             var element = AutomationElement.FocusedElement;
             if (element is null || element.Current.ProcessId != expected.ProcessId || !element.Current.IsEnabled || element.Current.IsPassword ||
-                !element.TryGetCurrentPattern(ValuePattern.Pattern, out var raw) || ((ValuePattern)raw).Current.IsReadOnly) return false;
+                !WinForge.Core.FocusedTextOutput.IsEditable(element)) return false;
             return element.GetRuntimeId().SequenceEqual(expected.RuntimeId);
         }
         catch (Exception error) when (IsAutomationFailure(error)) { return false; }

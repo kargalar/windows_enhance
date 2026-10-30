@@ -1,6 +1,7 @@
 <Project>
   <Target Name="EnforceNativeDependencyPolicy" BeforeTargets="CollectPackageReferences;ResolveReferences">
     <ItemGroup>
+      <FileToolPackage Include="Microsoft.Data.Sqlite" Condition="'$(MSBuildProjectName)' == 'WinForge.History'" />
       <FileToolPackage Include="PDFsharp;BouncyCastle.Cryptography;Magick.NET-Q8-AnyCPU;ZXing.Net;SharpCompress;PdfPig;bblanchon.PDFium.Win32;Microsoft.ML.OnnxRuntime;Tesseract;Microsoft.Extensions.Logging.Abstractions;Microsoft.Extensions.DependencyInjection.Abstractions"
                        Condition="$([System.String]::Copy('$(MSBuildProjectName)').StartsWith('WinForge.Modules.FileTools'))" />
       <ExternalPackages Include="@(PackageReference)"

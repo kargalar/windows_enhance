@@ -16,6 +16,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
     <ProjectReference Include="..\WinForge.Core\WinForge.Core.csproj" />
     <ProjectReference Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
     <ProjectReference Include="..\WinForge.Modules.Taskbar\WinForge.Modules.Taskbar.csproj" ReferenceOutputAssembly="false" />
@@ -40,6 +41,7 @@
     <ItemGroup>
       <ModuleProjects Include="@(ProjectReference)" Condition="'%(ProjectReference.ReferenceOutputAssembly)' == 'false'" />
       <ModuleProjects Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
+      <ModuleProjects Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
       <RetiredFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
     </ItemGroup>
     <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
@@ -53,6 +55,10 @@
     </MSBuild>
     <Delete Files="@(RetiredFiles)" />
     <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <DictationFiles Include="$(MSBuildProjectDirectory)\..\WinForge.Dictation.Worker\bin\$(Configuration)\net10.0\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DictationFiles)" DestinationFiles="@(DictationFiles->'$(OutDir)dictation\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="IncludeModulesInPublish" AfterTargets="ComputeFilesToPublish" DependsOnTargets="CopyModules">
@@ -65,9 +71,19 @@
         <RelativePath>native/%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
+      <ResolvedFileToPublish Include="@(DictationFiles)">
+        <RelativePath>dictation/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 
   <Target Name="GetModuleFiles" DependsOnTargets="CopyModules" Returns="@(ModuleFiles)" />
+
+  <Target Name="PrepareDictationEngine" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'"
+          Inputs="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\WhisperBridge.cpp;$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\CMakeLists.txt;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1"
+          Outputs="$(MSBuildProjectDirectory)\..\WinForge.Dictation.Worker\bin\$(Configuration)\net10.0\cpu\WinForge.Whisper.dll">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1&quot; -Configuration &quot;$(Configuration)&quot;" />
+  </Target>
 
 </Project>

@@ -47,6 +47,7 @@ public struct KBDLLHOOKSTRUCT
 
 public static class Native
 {
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
     public const int WM_SETTINGCHANGE = 0x001A;
     public const int WM_CLOSE = 0x0010;
     public const int WM_KEYDOWN = 0x0100;
