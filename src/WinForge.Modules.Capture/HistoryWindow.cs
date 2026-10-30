@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -52,6 +53,8 @@ internal sealed class HistoryWindow : Window
 {
     private readonly HistoryStore store;
     private readonly string kind;
+    private readonly IFeatureUiService? featureUi;
+    private readonly IFeatureUiSurface? uiSurface;
     private readonly TextBox search = new() { Width = 220, Margin = new(4), ToolTip = "Metin/OCR ara" };
     private readonly TextBox app = new() { Width = 140, Margin = new(4), ToolTip = "Uygulama adı (örn. Code.exe)" };
     private readonly TextBox tag = new() { Width = 110, Margin = new(4), ToolTip = "Etiket filtresi" };
@@ -67,11 +70,17 @@ internal sealed class HistoryWindow : Window
     private readonly Slider timeline = new() { Minimum = 0, Maximum = 0, TickFrequency = 1, IsSnapToTickEnabled = true, IsDirectionReversed = true, Margin = new(8), ToolTip = "Bu sayfadaki kayıtlar arasında gezin" };
     private int offset;
     private bool busy;
+    private bool deleteConfirmedFromUi;
+    private bool confirmDelete;
+    private bool confirmDeleteRange;
+    private bool confirmDeleteAll;
     private Point? cursorImagePoint;
     private BitmapSource? previewImage;
-    public HistoryWindow(HistoryStore store, string kind, string title)
+    public HistoryWindow(HistoryStore store, string kind, string title, IFeatureUiService? featureUi = null)
     {
-        this.store = store; this.kind = kind; Title = title; Width = 1180; Height = 780; MinWidth = 900; MinHeight = 600; CaptureUi.Theme(this);
+        this.store = store; this.kind = kind; this.featureUi = featureUi; Title = title; Width = 1180; Height = 780; MinWidth = 900; MinHeight = 600; CaptureUi.Theme(this);
+        uiSurface = featureUi?.CreateSurface("capture-history");
+        if (uiSurface is not null) uiSurface.MessageReceived += OnUiMessage;
         var root = new DockPanel { Margin = new(12) }; Content = root;
         var itemTemplate = new DataTemplate(typeof(HistoryRow));
         var rowPanel = new FrameworkElementFactory(typeof(DockPanel));
@@ -112,7 +121,7 @@ internal sealed class HistoryWindow : Window
         }));
         if (kind == "recall")
         {
-            bottom.Children.Add(CaptureUi.Button("Kullanım istatistikleri", () => new UsageStatisticsWindow(store, Start, End).Show()));
+            bottom.Children.Add(CaptureUi.Button("Kullanım istatistikleri", () => new UsageStatisticsWindow(store, Start, End, featureUi).Show()));
             bottom.Children.Add(CaptureUi.Button("OCR yeniden dene", () => Guard(store.RetryOcr)));
         }
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status);
@@ -130,7 +139,10 @@ internal sealed class HistoryWindow : Window
                 if (rows.SelectedItem is HistoryRow row) Guard(() => store.SetTags(row.Item.App, tags.Text.Split(','))); _ = RefreshAsync();
             }));
         }
-        rows.SelectionChanged += (_, _) => { timeline.Value = Math.Max(0, rows.SelectedIndex); ShowSelection(); }; Loaded += (_, _) => _ = RefreshAsync();
+        rows.SelectionChanged += (_, _) => { timeline.Value = Math.Max(0, rows.SelectedIndex); ShowSelection(); PushUiState(); };
+        if (uiSurface is not null) Content = uiSurface.Element;
+        Loaded += (_, _) => _ = RefreshAsync();
+        Closed += (_, _) => uiSurface?.Dispose();
     }
     private DateTimeOffset? Start => ParseDate(from.Text);
     private DateTimeOffset? End => ParseDate(until.Text)?.AddDays(1);
@@ -152,7 +164,7 @@ internal sealed class HistoryWindow : Window
             status.Text = items.Count == 0 ? "Kayıt bulunamadı." : $"{offset + 1}–{offset + items.Count} · {store.DirectoryPath}";
         }
         catch (Exception error) { status.Text = error.Message; }
-        finally { busy = false; }
+        finally { busy = false; PushUiState(); }
     }
     private void ShowSelection()
     {
@@ -176,6 +188,98 @@ internal sealed class HistoryWindow : Window
             else status.Text = "Görsel dosyası bulunamadı.";
         });
     }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "history.filter":
+                search.Text = ReadString(payload, "search"); app.Text = ReadString(payload, "app");
+                tag.Text = ReadString(payload, "tag"); from.Text = ReadString(payload, "from"); until.Text = ReadString(payload, "until");
+                offset = 0; _ = RefreshAsync(); break;
+            case "history.page":
+                var delta = payload.TryGetProperty("delta", out var page) && page.TryGetInt32(out var amount) ? amount : 0;
+                offset = Math.Max(0, offset + delta); _ = RefreshAsync(); break;
+            case "history.select":
+                if (payload.TryGetProperty("id", out var id) && id.TryGetInt64(out var itemId))
+                    rows.SelectedItem = (rows.ItemsSource as IEnumerable<HistoryRow>)?.FirstOrDefault(row => row.Item.Id == itemId);
+                PushUiState(); break;
+            case "history.copy": Guard(() => Clipboard.SetText(detail.Text)); break;
+            case "history.open-media": Guard(() =>
+            {
+                if (rows.SelectedItem is HistoryRow row && row.Item.Media.Length > 0)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(store.ResolveMedia(row.Item.Media)) { UseShellExecute = true });
+            }); break;
+            case "history.delete-selected": Delete(false); break;
+            case "history.delete-range": Delete(true); break;
+            case "history.delete-all":
+                if (payload.TryGetProperty("confirm", out var all) && all.ValueKind == JsonValueKind.True)
+                { confirmDeleteAll = false; Guard(() => store.Delete(kind)); _ = RefreshAsync(); }
+                else { confirmDeleteAll = true; PushUiState(); }
+                break;
+            case "history.delete-confirm":
+                var accepted = payload.TryGetProperty("confirm", out var confirm) && confirm.ValueKind == JsonValueKind.True;
+                if (confirmDeleteAll)
+                {
+                    confirmDeleteAll = false;
+                    if (accepted) { Guard(() => store.Delete(kind)); _ = RefreshAsync(); }
+                    else PushUiState();
+                }
+                else
+                {
+                    var range = payload.TryGetProperty("range", out var rangeValue) && rangeValue.ValueKind == JsonValueKind.True;
+                    confirmDelete = false;
+                    if (accepted) { deleteConfirmedFromUi = true; Delete(range); deleteConfirmedFromUi = false; }
+                    else PushUiState();
+                }
+                break;
+            case "history.save-tags":
+                if (rows.SelectedItem is HistoryRow selected) Guard(() => store.SetTags(selected.Item.App, ReadString(payload, "tags").Split(',')));
+                _ = RefreshAsync(); break;
+            case "history.retry-ocr": Guard(store.RetryOcr); _ = RefreshAsync(); break;
+            case "history.usage": new UsageStatisticsWindow(store, Start, End, featureUi).Show(); break;
+        }
+    }
+
+    private static string ReadString(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var value) ? value.GetString() ?? "" : "";
+
+    private void PushUiState()
+    {
+        if (uiSurface is null) return;
+        var selected = rows.SelectedItem as HistoryRow;
+        uiSurface.SetState(new
+        {
+            title = Title, kind, search = search.Text, app = app.Text, tag = tag.Text, from = from.Text, until = until.Text,
+            offset, status = status.Text, selectedId = selected?.Item.Id, selectedText = detail.Text, selectedTags = tags.Text,
+            confirmDelete, confirmDeleteRange, confirmDeleteAll,
+            preview = BitmapToDataUri(previewImage), mediaType = selected is null ? "" : System.IO.Path.GetExtension(selected.Item.Media),
+            rows = (rows.ItemsSource as IEnumerable<HistoryRow>)?.Select(row => new
+            {
+                id = row.Item.Id, label = row.Label, app = row.Item.App, title = row.Item.Title,
+                created = row.Item.Created.LocalDateTime.ToString("dd.MM.yyyy HH:mm:ss"),
+                hasMedia = row.Item.Media.Length > 0, mediaType = System.IO.Path.GetExtension(row.Item.Media), tags = row.Item.Tags
+            }).ToArray() ?? []
+        });
+    }
+
+    private static string? BitmapToDataUri(BitmapSource? bitmap)
+    {
+        if (bitmap is null) return null;
+        const double maximumPreviewDimension = 1200;
+        var scale = Math.Min(1, maximumPreviewDimension / Math.Max(bitmap.PixelWidth, bitmap.PixelHeight));
+        BitmapSource source = bitmap;
+        if (scale < 1)
+        {
+            var resized = new TransformedBitmap(bitmap, new ScaleTransform(scale, scale));
+            resized.Freeze();
+            source = resized;
+        }
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(source));
+        using var stream = new MemoryStream(); encoder.Save(stream);
+        return $"data:image/png;base64,{Convert.ToBase64String(stream.ToArray())}";
+    }
+
     private BitmapSource? LoadIcon(string name)
     {
         if (name.Length == 0) return null;
@@ -219,9 +323,16 @@ internal sealed class HistoryWindow : Window
     {
         try
         {
-            if (range && Start is null && End is null) { status.Text = "Önce tarih aralığı seçin."; return; }
+            if (range && Start is null && End is null) { status.Text = "Önce tarih aralığı seçin."; PushUiState(); return; }
             if (!range && rows.SelectedItem is not HistoryRow) return;
-            if (!CaptureUi.Confirm(this, range ? "Seçilen tarih aralığı silinsin mi?" : "Seçilen kayıt silinsin mi?")) return;
+            if (uiSurface is not null && !deleteConfirmedFromUi)
+            {
+                confirmDelete = true;
+                confirmDeleteRange = range;
+                PushUiState();
+                return;
+            }
+            if (!deleteConfirmedFromUi && !CaptureUi.Confirm(this, range ? "Seçilen tarih aralığı silinsin mi?" : "Seçilen kayıt silinsin mi?")) return;
             Guard(() => store.Delete(kind, range ? null : ((HistoryRow)rows.SelectedItem).Item.Id, range ? Start : null, range ? End : null)); _ = RefreshAsync();
         }
         catch (Exception error) { status.Text = error.Message; }

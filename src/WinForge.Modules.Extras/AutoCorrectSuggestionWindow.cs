@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -16,10 +17,14 @@ internal sealed class AutoCorrectSuggestionWindow : Window
     private const double VerticalOffset = 44;
     private readonly StackPanel _suggestions = new() { Orientation = Orientation.Horizontal };
     private readonly Action<string> _acceptSuggestion;
+    private readonly IFeatureUiSurface? _uiSurface;
 
-    internal AutoCorrectSuggestionWindow(Action<string> acceptSuggestion)
+    internal AutoCorrectSuggestionWindow(Action<string> acceptSuggestion, IFeatureUiService? featureUi = null)
     {
         _acceptSuggestion = acceptSuggestion;
+        _uiSurface = featureUi?.CreateSurface("autocorrect-suggestions");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        if (_uiSurface is not null) { Width = 300; Height = 46; SizeToContent = SizeToContent.Manual; }
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -28,7 +33,7 @@ internal sealed class AutoCorrectSuggestionWindow : Window
         Focusable = false;
         Topmost = true;
         SizeToContent = SizeToContent.WidthAndHeight;
-        Content = new Border
+        var legacyContent = new Border
         {
             Background = new SolidColorBrush(Color.FromRgb(35, 38, 45)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(76, 80, 90)),
@@ -37,7 +42,9 @@ internal sealed class AutoCorrectSuggestionWindow : Window
             Padding = new Thickness(4),
             Child = _suggestions
         };
+        Content = _uiSurface?.Element ?? legacyContent;
         SourceInitialized += ApplyNonActivatingStyle;
+        Closed += (_, _) => _uiSurface?.Dispose();
     }
 
     internal void ShowSuggestions(IReadOnlyList<string> suggestions, IntPtr targetWindow, POINT caret)
@@ -68,11 +75,21 @@ internal sealed class AutoCorrectSuggestionWindow : Window
             _suggestions.Children.Add(button);
         }
 
+        if (_uiSurface is not null)
+            Width = Math.Clamp(48 + suggestions.Sum(suggestion => Math.Clamp(suggestion.Length, 5, 24) * 7), 150, 560);
+
         var dpi = GetDpiForWindow(targetWindow);
         var scale = dpi == 0 ? 1.0 : 96.0 / dpi;
         Left = caret.X * scale;
         Top = Math.Max(0, caret.Y * scale - VerticalOffset);
+        _uiSurface?.SetState(new { suggestions = suggestions.ToArray() });
         if (!IsVisible) Show();
+    }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        if (command == "autocorrect.accept" && payload.TryGetProperty("suggestion", out var value) && value.GetString() is { Length: > 0 } suggestion)
+            _acceptSuggestion(suggestion);
     }
 
     internal bool ContainsScreenPoint(POINT point)

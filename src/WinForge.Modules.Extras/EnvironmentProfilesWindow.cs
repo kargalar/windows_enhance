@@ -1,14 +1,17 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
 internal sealed class EnvironmentProfilesWindow : Window
 {
     private readonly EnvironmentProfileService _service;
+    private readonly IFeatureUiSurface? _uiSurface;
     private readonly ObservableCollection<UserEnvironmentProfile> _profiles = new();
     private readonly ObservableCollection<UserEnvironmentVariable> _variables = new();
     private readonly ComboBox _profileBox;
@@ -18,10 +21,14 @@ internal sealed class EnvironmentProfilesWindow : Window
     private readonly DataGrid _grid;
     private readonly TextBlock _status;
     private bool _loading;
+    private bool _deleteConfirmedFromUi;
+    private bool _confirmDelete;
 
-    public EnvironmentProfilesWindow(EnvironmentProfileService service)
+    public EnvironmentProfilesWindow(EnvironmentProfileService service, IFeatureUiService? featureUi = null)
     {
         _service = service;
+        _uiSurface = featureUi?.CreateSurface("environment-profiles");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = "Ortam Değişkeni Profilleri";
         Width = 900;
         Height = 600;
@@ -144,8 +151,9 @@ internal sealed class EnvironmentProfilesWindow : Window
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
 
-        Content = root;
+        Content = _uiSurface?.Element ?? root;
         RefreshProfiles(null);
+        Closed += (_, _) => _uiSurface?.Dispose();
     }
 
     private static Button CreateButton(string label, Action action, int column = -1)
@@ -179,6 +187,7 @@ internal sealed class EnvironmentProfilesWindow : Window
         {
             _loading = false;
         }
+        PushUiState();
     }
 
     private void OnProfileChanged(object sender, SelectionChangedEventArgs args)
@@ -227,7 +236,66 @@ internal sealed class EnvironmentProfilesWindow : Window
         {
             _loading = false;
         }
+        PushUiState();
     }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "profiles.select":
+                var id = payload.TryGetProperty("id", out var profileId) ? profileId.GetString() : null;
+                _profileBox.SelectedItem = _profiles.FirstOrDefault(profile => profile.Id == id);
+                break;
+            case "profiles.name": _profileName.Text = ReadString(payload, "name"); PushUiState(); break;
+            case "profiles.new-name": _newProfileName.Text = ReadString(payload, "name"); PushUiState(); break;
+            case "profiles.new": _newProfileName.Text = ReadString(payload, "name"); CreateProfile(); break;
+            case "profiles.delete": DeleteProfile(); break;
+            case "profiles.delete-confirm":
+                var accepted = payload.TryGetProperty("confirm", out var confirm) && confirm.ValueKind == JsonValueKind.True;
+                _confirmDelete = false;
+                if (accepted) { _deleteConfirmedFromUi = true; DeleteProfile(); _deleteConfirmedFromUi = false; }
+                else PushUiState();
+                break;
+            case "profiles.toggle":
+                if (payload.TryGetProperty("enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    _enabled.IsChecked = enabled.GetBoolean();
+                PushUiState(); break;
+            case "profiles.variable-update":
+                if (payload.TryGetProperty("index", out var row) && row.TryGetInt32(out var rowIndex) && rowIndex >= 0 && rowIndex < _variables.Count)
+                {
+                    var variable = _variables[rowIndex];
+                    if (payload.TryGetProperty("name", out var name)) variable.Name = name.GetString() ?? "";
+                    if (payload.TryGetProperty("value", out var value)) variable.Value = value.GetString() ?? "";
+                    if (payload.TryGetProperty("expandable", out var expansion) && expansion.ValueKind is JsonValueKind.True or JsonValueKind.False) variable.Expandable = expansion.GetBoolean();
+                    PushUiState();
+                }
+                break;
+            case "profiles.variable-add": AddVariable(); PushUiState(); break;
+            case "profiles.variable-remove":
+                if (payload.TryGetProperty("index", out var removeIndex) && removeIndex.TryGetInt32(out var index) && index >= 0 && index < _variables.Count)
+                    _variables.RemoveAt(index);
+                PushUiState(); break;
+            case "profiles.save": SaveProfile(); break;
+            case "profiles.close": Close(); break;
+        }
+    }
+
+    private static string ReadString(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var value) ? value.GetString() ?? "" : "";
+
+    private void PushUiState() => _uiSurface?.SetState(new
+    {
+        profiles = _profiles.Select(profile => new { id = profile.Id, name = profile.Name }).ToArray(),
+        selectedId = (_profileBox.SelectedItem as UserEnvironmentProfile)?.Id ?? "",
+        profileName = _profileName.Text,
+        newProfileName = _newProfileName.Text,
+        enabled = _enabled.IsChecked == true,
+        enabledAllowed = _enabled.IsEnabled,
+        status = _status.Text,
+        confirmDelete = _confirmDelete,
+        variables = _variables.Select(variable => new { variable.Name, variable.Value, variable.Expandable }).ToArray()
+    });
 
     private void CreateProfile()
     {
@@ -244,7 +312,8 @@ internal sealed class EnvironmentProfilesWindow : Window
     private void DeleteProfile()
     {
         if (_profileBox.SelectedItem is not UserEnvironmentProfile profile) return;
-        if (MessageBox.Show(this, $"'{profile.Name}' profili silinsin mi? Etkinse değişkenleri geri yüklenir.",
+        if (_uiSurface is not null && !_deleteConfirmedFromUi) { _confirmDelete = true; PushUiState(); return; }
+        if (!_deleteConfirmedFromUi && MessageBox.Show(this, $"'{profile.Name}' profili silinsin mi? Etkinse değişkenleri geri yüklenir.",
                 "Ortam Değişkenleri", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         try
         {
@@ -272,7 +341,7 @@ internal sealed class EnvironmentProfilesWindow : Window
         }
     }
 
-    private void SaveProfile() => SaveCurrentProfile(showErrors: true);
+    private void SaveProfile() { SaveCurrentProfile(showErrors: true); PushUiState(); }
 
     private bool SaveCurrentProfile(bool showErrors)
     {
@@ -284,8 +353,11 @@ internal sealed class EnvironmentProfilesWindow : Window
     {
         try
         {
-            _grid.CommitEdit(DataGridEditingUnit.Cell, true);
-            _grid.CommitEdit(DataGridEditingUnit.Row, true);
+            if (_uiSurface is null)
+            {
+                _grid.CommitEdit(DataGridEditingUnit.Cell, true);
+                _grid.CommitEdit(DataGridEditingUnit.Row, true);
+            }
             _service.SaveProfile(id, name, variables);
             var profile = _profiles.FirstOrDefault(item => item.Id == id);
             if (profile is not null)
@@ -307,9 +379,12 @@ internal sealed class EnvironmentProfilesWindow : Window
     {
         var entry = new UserEnvironmentVariable("", "", false);
         _variables.Add(entry);
-        _grid.SelectedItem = entry;
-        _grid.ScrollIntoView(entry);
-        _grid.BeginEdit();
+        if (_uiSurface is null)
+        {
+            _grid.SelectedItem = entry;
+            _grid.ScrollIntoView(entry);
+            _grid.BeginEdit();
+        }
     }
 
     private void RemoveVariable()
@@ -318,7 +393,10 @@ internal sealed class EnvironmentProfilesWindow : Window
             _variables.Remove(entry);
     }
 
-    private void ShowError(string message, Exception exception) =>
-        MessageBox.Show(this, message + Environment.NewLine + exception.Message,
-            "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+    private void ShowError(string message, Exception exception)
+    {
+        _status.Text = message + " " + exception.Message;
+        if (_uiSurface is null) MessageBox.Show(this, _status.Text, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+        else PushUiState();
+    }
 }

@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -27,14 +29,17 @@ internal sealed class MouseJumpWindow : Window
     private const uint MonitorInfoPrimary = 1;
     private static readonly MonitorEnumCallback EnumCallback = CollectMonitor;
     private readonly IReadOnlyList<MouseMonitor> _monitors;
+    private readonly IFeatureUiSurface? _uiSurface;
     private readonly List<Border> _cards = new();
     private int _selected;
 
     public POINT? Destination { get; private set; }
 
-    public MouseJumpWindow(IReadOnlyList<MouseMonitor> monitors)
+    public MouseJumpWindow(IReadOnlyList<MouseMonitor> monitors, IFeatureUiService? featureUi = null)
     {
         _monitors = monitors;
+        _uiSurface = featureUi?.CreateSurface("mouse-jump");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         _selected = Math.Max(0, monitors.ToList().FindIndex(monitor => monitor.IsPrimary));
         Title = "Ekranlar Arası Fare Taşıma";
         Width = Math.Min(1100, Math.Max(620, monitors.Count * 350));
@@ -74,10 +79,74 @@ internal sealed class MouseJumpWindow : Window
         RefreshSelection();
         scroll.Content = cards;
         root.Children.Add(scroll);
-        Content = root;
+        Content = _uiSurface?.Element ?? root;
 
         PreviewKeyDown += HandleKeyDown;
         Loaded += (_, _) => Focus();
+        Closed += (_, _) => _uiSurface?.Dispose();
+        PushUiState();
+    }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "mouse-jump.cancel": DialogResult = false; break;
+            case "mouse-jump.move":
+                if (payload.TryGetProperty("delta", out var deltaValue) && deltaValue.TryGetInt32(out var delta) && _monitors.Count > 0)
+                    _selected = (_selected + delta + _monitors.Count) % _monitors.Count;
+                PushUiState();
+                break;
+            case "mouse-jump.select":
+                if (payload.TryGetProperty("index", out var selected) && selected.TryGetInt32(out var index) && index >= 0 && index < _monitors.Count)
+                { _selected = index; PushUiState(); }
+                break;
+            case "mouse-jump.center":
+                if (TryGetMonitor(payload, out var centerMonitor)) Destination = CenterOf(_monitors[centerMonitor].Bounds);
+                if (Destination is not null) DialogResult = true;
+                break;
+            case "mouse-jump.choose":
+                if (TryGetMonitor(payload, out var monitorIndex) &&
+                    payload.TryGetProperty("x", out var xValue) && xValue.TryGetDouble(out var x) &&
+                    payload.TryGetProperty("y", out var yValue) && yValue.TryGetDouble(out var y))
+                {
+                    var bounds = _monitors[monitorIndex].Bounds;
+                    Destination = new POINT(bounds.Left + (int)Math.Round(Math.Clamp(x, 0, 1) * (bounds.Right - bounds.Left - 1)),
+                        bounds.Top + (int)Math.Round(Math.Clamp(y, 0, 1) * (bounds.Bottom - bounds.Top - 1)));
+                    DialogResult = true;
+                }
+                break;
+        }
+    }
+
+    private bool TryGetMonitor(JsonElement payload, out int index)
+    {
+        index = -1;
+        return payload.TryGetProperty("index", out var selected) && selected.TryGetInt32(out index) && index >= 0 && index < _monitors.Count;
+    }
+
+    private void PushUiState() => _uiSurface?.SetState(new
+    {
+        selected = _selected,
+        monitors = _monitors.Select(monitor => new
+        {
+            monitor.Index,
+            monitor.Name,
+            monitor.IsPrimary,
+            width = monitor.Bounds.Right - monitor.Bounds.Left,
+            height = monitor.Bounds.Bottom - monitor.Bounds.Top,
+            preview = BitmapToDataUri(monitor.Preview)
+        }).ToArray()
+    });
+
+    private static string? BitmapToDataUri(ImageSource? image)
+    {
+        if (image is not BitmapSource bitmap) return null;
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return $"data:image/png;base64,{Convert.ToBase64String(stream.ToArray())}";
     }
 
     public static IReadOnlyList<MouseMonitor> CaptureMonitors()

@@ -23,27 +23,20 @@ public static class Appearance
     public static IReadOnlyList<Accent> Accents { get; } = new[]
     {
         new Accent("Mavi", "#75A7FF"),
-        new Accent("Mor", "#8B8CFF"),
         new Accent("Yeşil", "#4CD97B"),
-        new Accent("Turuncu", "#FFA94C"),
-        new Accent("Pembe", "#FF6BD6"),
         new Accent("Kırmızı", "#FF6B6B")
     };
 
     public static IReadOnlyList<Tone> Tones { get; } = new[]
     {
-        new Tone("Varsayılan", "#141518", "#1D1F23", "#34363D", "#26282E",
-                 "#F2F3F5", "#AAADB7", "#24262B", "#191A1E", "#242C3B"),
-        new Tone("Gece", "#050608", "#0C0F14", "#1A1F28", "#12161D",
-                 "#E8EDF5", "#7E8797", "#0A0D12", "#070A0E", "#10141B"),
-        new Tone("Grafit", "#101318", "#1A202B", "#2B3546", "#222B39",
-                 "#F0F4FA", "#A4ADBD", "#161C26", "#11161F", "#1C2530"),
-        new Tone("Açık", "#F5F6F8", "#FFFFFF", "#D7DAE1", "#F0F2F6",
-                 "#20242C", "#596272", "#EEF0F4", "#FFFFFF", "#EDF2FC")
+        new Tone("Siyah", "#101010", "#171719", "#303033", "#242426",
+                 "#F5F5F5", "#9A9A9F", "#1D1D1F", "#FFFFFF", "#242426"),
+        new Tone("Grafit", "#141416", "#1D1D20", "#39393D", "#29292D",
+                 "#F5F5F5", "#A5A5AA", "#242427", "#FFFFFF", "#303034")
     };
 
     public static string AccentName { get; private set; } = "Mavi";
-    public static string ToneName { get; private set; } = "Varsayılan";
+    public static string ToneName { get; private set; } = "Siyah";
     public static bool Glow { get; private set; }
     public static double DetailWidth { get; private set; } = 460;
 
@@ -68,7 +61,7 @@ public static class Appearance
             if (root.TryGetProperty("tone", out var tone) &&
                 tone.GetString() is { } toneName &&
                 Tones.Any(t => t.Name == toneName))
-                ToneName = toneName;
+                ToneName = toneName == "Grafit" ? "Grafit" : "Siyah";
 
             if (root.TryGetProperty("glow", out var glow) &&
                 (glow.ValueKind == JsonValueKind.True || glow.ValueKind == JsonValueKind.False))
@@ -133,7 +126,7 @@ public static class Appearance
     public static void Reset()
     {
         AccentName = "Mavi";
-        ToneName = "Varsayılan";
+        ToneName = "Siyah";
         Glow = false;
         DetailWidth = 460;
         Save();
@@ -147,7 +140,6 @@ public static class Appearance
         var tone = Tones.FirstOrDefault(t => t.Name == ToneName) ?? Tones[0];
         var accentHex = Accents.FirstOrDefault(a => a.Name == AccentName)?.Hex ?? Accents[0].Hex;
         var accent = Parse(accentHex);
-        if (ToneName == "Açık") accent = Blend(accent, Colors.Black, 0.58);
         var card = Parse(tone.Card);
 
         SetColor("BgBrush", Parse(tone.Bg));
@@ -158,11 +150,12 @@ public static class Appearance
         SetColor("MutedBrush", Parse(tone.Muted));
         SetColor("PanelBrush", Parse(tone.Panel));
         SetColor("InputBrush", Parse(tone.Input));
+        SetColor("InputTextBrush", Parse("#141414"));
         SetColor("SelectedCardBrush", Parse(tone.Selected));
         SetColor("AccentBrush", accent);
         SetColor("AccentSoftBrush", Blend(accent, card, 0.16));
-        SetColor("WarnBrush", ToneName == "Açık" ? Parse("#805000") : Parse("#FFC857"));
-        SetColor("DangerBrush", ToneName == "Açık" ? Parse("#B42332") : Parse("#FF6B6B"));
+        SetColor("WarnBrush", Parse("#F2C66D"));
+        SetColor("DangerBrush", Parse("#FF7373"));
 
         var border = Parse(tone.Border);
         var text = Parse(tone.Text);

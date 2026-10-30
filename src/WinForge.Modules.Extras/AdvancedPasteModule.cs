@@ -105,7 +105,8 @@ public sealed class AdvancedPasteModule : ITweakModule
 
             Action? paste = null;
             _window = new AdvancedPasteWindow(snapshot, RecognizeImageAsync, CopyToClipboard,
-                (action, contents, result) => paste = () => _ = PasteIntoTargetAsync(target, action, contents, result));
+                (action, contents, result) => paste = () => _ = PasteIntoTargetAsync(target, action, contents, result),
+                (_context as IFeatureUiContext)?.FeatureUi);
             if (_window.ShowDialog() == true && IsActive) paste?.Invoke();
         }
         catch (Exception exception)

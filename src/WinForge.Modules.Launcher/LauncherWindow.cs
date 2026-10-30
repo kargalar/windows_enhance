@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -43,6 +44,7 @@ internal sealed class LauncherWindow : Window
     private readonly Action<string> _launch;
     private readonly Action<string> _copyResult;
     private readonly IQuickActionService? _quickActions;
+    private readonly IFeatureUiSurface? _uiSurface;
     private readonly ObservableCollection<LauncherEntry> _results = new();
     private readonly TextBox _searchBox;
     private readonly ListBox _resultList;
@@ -55,10 +57,12 @@ internal sealed class LauncherWindow : Window
     private DateTime _lastIndexRefreshUtc = DateTime.MinValue;
     private bool _indexing;
     private int _indexGeneration;
+    private int _focusGeneration;
 
     public LauncherWindow(Action<string> launch, Action<string> copyResult,
         IEnumerable<string>? additionalRoots = null, IReadOnlySet<string>? allowedExtensions = null,
-        bool contentSearchEnabled = false, bool recentItemsEnabled = false, IQuickActionService? quickActions = null)
+        bool contentSearchEnabled = false, bool recentItemsEnabled = false, IQuickActionService? quickActions = null,
+        IFeatureUiService? featureUi = null)
     {
         _launch = launch;
         _copyResult = copyResult;
@@ -67,6 +71,8 @@ internal sealed class LauncherWindow : Window
         _contentSearchEnabled = contentSearchEnabled;
         _recentItemsEnabled = recentItemsEnabled;
         _quickActions = quickActions;
+        _uiSurface = featureUi?.CreateSurface("launcher");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = "WinForge Hızlı Başlatıcı";
         Width = 680;
         Height = 480;
@@ -133,14 +139,14 @@ internal sealed class LauncherWindow : Window
         };
         Grid.SetRow(hint, 3);
         root.Children.Add(hint);
-        Content = root;
+        Content = _uiSurface?.Element ?? root;
 
         _searchBox.TextChanged += (_, _) => UpdateResults();
         _searchBox.PreviewKeyDown += OnSearchKeyDown;
         _resultList.PreviewKeyDown += OnSearchKeyDown;
         _resultList.MouseDoubleClick += (_, _) => LaunchSelected();
         Deactivated += (_, _) => Hide();
-        Closed += (_, _) => CancelContentSearch();
+        Closed += (_, _) => { CancelContentSearch(); _uiSurface?.Dispose(); };
     }
 
     public void Open()
@@ -155,6 +161,8 @@ internal sealed class LauncherWindow : Window
             _searchBox.Focus();
             _searchBox.SelectAll();
         }));
+        _focusGeneration++;
+        PushUiState();
         if (DateTime.UtcNow - _lastIndexRefreshUtc > IndexCacheDuration) _ = RefreshIndexAsync();
     }
 
@@ -255,6 +263,7 @@ internal sealed class LauncherWindow : Window
             _results.Clear();
             _results.Add(new LauncherEntry($"Sonucu kopyala: {query[1..].Trim()} = {result}", result, true));
             _resultList.SelectedIndex = 0;
+            PushUiState();
             return;
         }
 
@@ -263,6 +272,7 @@ internal sealed class LauncherWindow : Window
             _results.Clear();
             _results.Add(new LauncherEntry(directResult, directTarget));
             _resultList.SelectedIndex = 0;
+            PushUiState();
             return;
         }
 
@@ -282,6 +292,46 @@ internal sealed class LauncherWindow : Window
         foreach (var match in matches) _results.Add(match);
         _resultList.SelectedIndex = _results.Count > 0 ? 0 : -1;
         if (_contentSearchEnabled && query.Length >= 3) ScheduleContentSearch(query);
+        PushUiState();
+    }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "launcher.search":
+                _searchBox.Text = payload.TryGetProperty("query", out var query) ? query.GetString() ?? "" : "";
+                break;
+            case "launcher.select":
+                if (payload.TryGetProperty("index", out var selected) && selected.TryGetInt32(out var index))
+                    _resultList.SelectedIndex = Math.Clamp(index, -1, _results.Count - 1);
+                PushUiState();
+                break;
+            case "launcher.move":
+                if (_results.Count == 0) break;
+                var delta = payload.TryGetProperty("delta", out var amount) && amount.TryGetInt32(out var value) ? value : 0;
+                _resultList.SelectedIndex = Math.Clamp(_resultList.SelectedIndex + delta, 0, _results.Count - 1);
+                PushUiState();
+                break;
+            case "launcher.activate":
+                if (payload.TryGetProperty("index", out var activateIndex) && activateIndex.TryGetInt32(out var itemIndex))
+                    _resultList.SelectedIndex = Math.Clamp(itemIndex, -1, _results.Count - 1);
+                LaunchSelected();
+                break;
+            case "launcher.dismiss": Hide(); break;
+        }
+    }
+
+    private void PushUiState()
+    {
+        if (_uiSurface is null) return;
+        _uiSurface.SetState(new
+        {
+            query = _searchBox.Text,
+            selectedIndex = _resultList.SelectedIndex,
+            focusGeneration = _focusGeneration,
+            results = _results.Select(entry => new { entry.Name, entry.Path, entry.IsCalculation, entry.IsRecent }).ToArray()
+        });
     }
 
     private void ScheduleContentSearch(string query)
@@ -309,6 +359,7 @@ internal sealed class LauncherWindow : Window
                 _results.Add(result);
                 if (_results.Count >= ResultLimit + ContentResultLimit) break;
             }
+            PushUiState();
         }
         catch (OperationCanceledException) { }
     }

@@ -1,31 +1,33 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.CompilerServices;
+﻿using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using WinForge.Core;
+using System.Text.Json;
 
 namespace WinForge.Modules.Extras;
 
 public sealed class ImageResizerModule : ITweakModule
 {
-    private readonly SettingDescriptor[] _settings =
-    [
-        new SettingDescriptor
-        {
-            Key = "open",
-            Label = "Görsel boyutlandırmayı aç",
-            Kind = SettingKind.Action,
-            Description = "Birden fazla görseli yeniden boyutlandırın veya PNG/JPEG biçimine dönüştürün; EXIF/IPTC metadatasını korumayı seçin ve işlemi iptal edin.",
-            Execute = Open
-        }
-    ];
+    private readonly SettingDescriptor[] _settings;
 
+    public ImageResizerModule()
+    {
+        _settings =
+        [
+            new SettingDescriptor
+            {
+                Key = "open",
+                Label = "Görsel boyutlandırmayı aç",
+                Kind = SettingKind.Action,
+                Description = "Birden fazla görseli yeniden boyutlandırın veya PNG/JPEG biçimine dönüştürün; EXIF/IPTC metadatasını korumayı seçin ve işlemi iptal edin.",
+                Execute = Open
+            }
+        ];
+    }
     private bool _isActive;
+    private IFeatureUiService? _featureUi;
 
     public string Id => "image-resizer";
     public string Name => "Görsel Boyutlandırıcı";
@@ -35,112 +37,52 @@ public sealed class ImageResizerModule : ITweakModule
     public bool IsActive => _isActive;
     public IReadOnlyList<SettingDescriptor> Settings => _settings;
 
-    public void Initialize(IModuleContext context) { }
+    public void Initialize(IModuleContext context) => _featureUi = (context as IFeatureUiContext)?.FeatureUi;
     public void Activate() => _isActive = true;
     public void Deactivate() => _isActive = false;
     public void Apply() { }
 
-    private static void Open() => new ImageResizerWindow().ShowDialog();
+    private void Open()
+    {
+        if (_featureUi is null) throw new InvalidOperationException("React arayüz altyapısı kullanılamıyor.");
+        _ = new ImageResizerWindow(_featureUi);
+    }
 }
 
-internal sealed class ImageResizerWindow : Window
+internal sealed class ImageResizerWindow
 {
-    private readonly ObservableCollection<ImageResizeItem> _items = new();
-    private readonly ComboBox _preset = new() { MinWidth = 150 };
-    private readonly TextBox _customSize = new() { Text = "1280", Width = 78, IsEnabled = false };
-    private readonly ComboBox _format = new() { MinWidth = 130 };
-    private readonly TextBox _quality = new() { Text = "90", Width = 55 };
-    private readonly CheckBox _preserveMetadata = new() { Content = "EXIF/IPTC metadatasını koru", IsChecked = true, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
-    private readonly DataGrid _grid;
-    private readonly TextBlock _status = new() { Margin = new Thickness(0, 8, 0, 0) };
-    private readonly Button _resize = new() { Content = "Boyutlandır", MinWidth = 110, IsEnabled = false };
-    private readonly Button _choose = new() { Content = "Görselleri seç…", Padding = new Thickness(10, 6, 10, 6) };
-    private readonly Button _remove = new() { Content = "Seçileni kaldır", Margin = new Thickness(8, 0, 0, 0), Padding = new Thickness(10, 6, 10, 6) };
-    private readonly Button _cancel = new() { Content = "İptal", MinWidth = 72, IsEnabled = false, Margin = new Thickness(8, 0, 0, 0) };
-    private readonly ProgressBar _progress = new() { Height = 8, Minimum = 0, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 2, 12, 0) };
+    private readonly IFeatureUiWindow _window;
+    private readonly List<ImageResizeItem> _items = [];
     private CancellationTokenSource? _resizeCancellation;
+    private string _preset = "medium";
+    private string _customSize = "1280";
+    private string _format = "source";
+    private string _quality = "90";
+    private bool _preserveMetadata = true;
+    private string _status = "Görselleri ekleyerek başlayın.";
+    private bool _processing;
+    private int _progress;
+    private int _progressMaximum;
 
-    public ImageResizerWindow()
+    internal ImageResizerWindow(IFeatureUiService featureUi)
     {
-        Title = "Görsel Boyutlandırıcı";
-        Width = 820;
-        Height = 550;
-        MinWidth = 640;
-        MinHeight = 380;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        ShowInTaskbar = true;
+        _window = featureUi.Open("image-resizer-" + Guid.NewGuid().ToString("N"), "image-resizer", "Görsel Boyutlandırıcı",
+            new FeatureUiWindowOptions(980, 680, ShowInTaskbar: true, Resizable: true));
+        _window.MessageReceived += OnMessage;
+        PushState();
+    }
 
-        _preset.ItemsSource = new[] { "Küçük (854 px)", "Orta (1280 px)", "Büyük (1920 px)", "Özel", "Kaynağı koru" };
-        _preset.SelectedIndex = 1;
-        _format.ItemsSource = new[] { "Kaynak biçimi", "PNG", "JPEG" };
-        _format.SelectedIndex = 0;
-
-        _grid = new DataGrid
+    private void OnMessage(string command, JsonElement payload)
+    {
+        switch (command)
         {
-            AutoGenerateColumns = false,
-            IsReadOnly = true,
-            CanUserAddRows = false,
-            ItemsSource = _items,
-            Margin = new Thickness(0, 12, 0, 0)
-        };
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Dosya", Binding = new System.Windows.Data.Binding(nameof(ImageResizeItem.FileName)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Özgün boyut", Binding = new System.Windows.Data.Binding(nameof(ImageResizeItem.SourceSize)), Width = 110 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Çıktı adı", Binding = new System.Windows.Data.Binding(nameof(ImageResizeItem.TargetName)), Width = 160 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Boyut", Binding = new System.Windows.Data.Binding(nameof(ImageResizeItem.TargetSize)), Width = 100 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Durum", Binding = new System.Windows.Data.Binding(nameof(ImageResizeItem.Status)), Width = 150 });
-
-        _choose.Click += (_, _) => ChooseImages();
-        _remove.Click += (_, _) => RemoveSelected();
-        _preset.SelectionChanged += (_, _) => RefreshTargets();
-        _customSize.TextChanged += (_, _) => RefreshTargets();
-        _format.SelectionChanged += (_, _) => RefreshTargets();
-        _quality.TextChanged += (_, _) => RefreshTargets();
-        _resize.Click += async (_, _) => await ResizeImagesAsync();
-        _cancel.Click += (_, _) => _resizeCancellation?.Cancel();
-        Closed += (_, _) => _resizeCancellation?.Cancel();
-
-        var layout = new Grid { Margin = new Thickness(18) };
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var fileButtons = new StackPanel { Orientation = Orientation.Horizontal };
-        fileButtons.Children.Add(_choose);
-        fileButtons.Children.Add(_remove);
-        Grid.SetRow(fileButtons, 0);
-        layout.Children.Add(fileButtons);
-
-        var options = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
-        options.Children.Add(new TextBlock { Text = "Boyut", VerticalAlignment = VerticalAlignment.Center });
-        options.Children.Add(_preset);
-        options.Children.Add(_customSize);
-        options.Children.Add(new TextBlock { Text = "Biçim", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) });
-        options.Children.Add(_format);
-        options.Children.Add(new TextBlock { Text = "JPEG kalitesi", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) });
-        options.Children.Add(_quality);
-        options.Children.Add(_preserveMetadata);
-        Grid.SetRow(options, 1);
-        layout.Children.Add(options);
-
-        Grid.SetRow(_grid, 2);
-        layout.Children.Add(_grid);
-
-        var footer = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
-        var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        right.Children.Add(_cancel);
-        right.Children.Add(_resize);
-        DockPanel.SetDock(right, Dock.Right);
-        footer.Children.Add(right);
-        var progressPanel = new StackPanel();
-        progressPanel.Children.Add(_progress);
-        progressPanel.Children.Add(_status);
-        footer.Children.Add(progressPanel);
-        Grid.SetRow(footer, 3);
-        layout.Children.Add(footer);
-        Content = layout;
-
-        UpdateControlState();
+            case "image-resizer.choose": ChooseImages(); break;
+            case "image-resizer.remove": Remove(payload); break;
+            case "image-resizer.options": UpdateOptions(payload); break;
+            case "image-resizer.run": _ = ResizeImagesAsync(); break;
+            case "image-resizer.cancel": _resizeCancellation?.Cancel(); break;
+            case "image-resizer.close": _resizeCancellation?.Cancel(); _window.Close(); break;
+        }
     }
 
     private void ChooseImages()
@@ -149,12 +91,9 @@ internal sealed class ImageResizerWindow : Window
         {
             Title = "Boyutlandırılacak görselleri seçin",
             Filter = "Görseller|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.wdp;*.jxr|Tüm dosyalar|*.*",
-            Multiselect = true,
-            CheckFileExists = true,
-            CheckPathExists = true
+            Multiselect = true, CheckFileExists = true, CheckPathExists = true
         };
-        if (dialog.ShowDialog(this) != true) return;
-
+        if (dialog.ShowDialog() != true) return;
         var known = _items.Select(item => item.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var path in dialog.FileNames)
         {
@@ -164,91 +103,82 @@ internal sealed class ImageResizerWindow : Window
                 var size = ImageResizeProcessor.ReadSize(path);
                 _items.Add(new ImageResizeItem(path, size.Width, size.Height));
             }
-            catch (Exception exception)
-            {
-                _items.Add(new ImageResizeItem(path, 0, 0) { Status = "Okunamadı: " + exception.Message });
-            }
+            catch (Exception exception) { _items.Add(new ImageResizeItem(path, 0, 0, "Okunamadı: " + exception.Message)); }
         }
         RefreshTargets();
     }
 
-    private void RemoveSelected()
+    private void Remove(JsonElement payload)
     {
-        foreach (var item in _grid.SelectedItems.Cast<ImageResizeItem>().ToArray())
-            _items.Remove(item);
+        if (_processing || !payload.TryGetProperty("index", out var indexElement) || !indexElement.TryGetInt32(out var index)) return;
+        if (index >= 0 && index < _items.Count) _items.RemoveAt(index);
         RefreshTargets();
     }
 
-    private void RefreshTargets()
+    private void UpdateOptions(JsonElement payload)
+    {
+        if (_processing) return;
+        if (payload.TryGetProperty("preset", out var preset)) _preset = preset.GetString() ?? _preset;
+        if (payload.TryGetProperty("customSize", out var custom)) _customSize = custom.GetString() ?? _customSize;
+        if (payload.TryGetProperty("format", out var format)) _format = format.GetString() ?? _format;
+        if (payload.TryGetProperty("quality", out var quality)) _quality = quality.GetString() ?? _quality;
+        if (payload.TryGetProperty("preserveMetadata", out var metadata)) _preserveMetadata = metadata.ValueKind == JsonValueKind.True;
+        RefreshTargets();
+    }
+
+    private void RefreshTargets(bool updateStatus = true)
     {
         var maxDimension = GetMaxDimension();
-        var format = _format.SelectedItem as string ?? "Kaynak biçimi";
         foreach (var item in _items)
         {
             if (item.Width <= 0 || item.Height <= 0) continue;
             var size = ImageResizeProcessor.CalculateSize(item.Width, item.Height, maxDimension);
-            var extension = ImageResizeProcessor.OutputExtension(item.Path, format);
+            var extension = ImageResizeProcessor.OutputExtension(item.Path, _format);
             item.TargetName = Path.GetFileNameWithoutExtension(item.Path) + "_resized" + extension;
             item.TargetSize = $"{size.Width} × {size.Height}";
             var target = Path.Combine(Path.GetDirectoryName(item.Path)!, item.TargetName);
-            item.Status = File.Exists(target) ? "Çakışma: çıktı var" : "Hazır";
+            item.Status = item.Status == "Tamamlandı" ? item.Status : File.Exists(target) ? "Çakışma: çıktı var" : "Hazır";
         }
-        UpdateControlState();
+        if (updateStatus)
+            _status = $"{_items.Count} görsel · {_items.Count(item => item.Status == "Hazır")} hazır · {_items.Count(item => item.Status.StartsWith("Çakışma", StringComparison.Ordinal))} çakışma";
+        PushState();
     }
 
-    private int GetMaxDimension()
+    private int GetMaxDimension() => _preset switch
     {
-        return _preset.SelectedIndex switch
-        {
-            0 => 854,
-            1 => 1280,
-            2 => 1920,
-            3 when int.TryParse(_customSize.Text, out var custom) && custom is >= 1 and <= ImageResizeProcessor.MaximumDimension => custom,
-            4 => 0,
-            _ => -1
-        };
-    }
-
-    private void UpdateControlState()
-    {
-        _customSize.IsEnabled = _preset.SelectedIndex == 3;
-        var maxDimension = GetMaxDimension();
-        var qualityValid = int.TryParse(_quality.Text, out var quality) && quality is >= 1 and <= 100;
-        var ready = _items.Any(item => item.Width > 0 && item.Height > 0 && item.Status == "Hazır");
-        _resize.IsEnabled = ready && maxDimension >= 0 && qualityValid;
-        _status.Text = $"{_items.Count} görsel · {_items.Count(item => item.Status == "Hazır")} hazır · {_items.Count(item => item.Status.StartsWith("Çakışma", StringComparison.Ordinal))} çakışma";
-    }
+        "small" => 854,
+        "medium" => 1280,
+        "large" => 1920,
+        "custom" when int.TryParse(_customSize, out var custom) && custom is >= 1 and <= ImageResizeProcessor.MaximumDimension => custom,
+        "source" => 0,
+        _ => -1
+    };
 
     private async Task ResizeImagesAsync()
     {
-        if (_resizeCancellation is not null || !int.TryParse(_quality.Text, out var quality) || quality is < 1 or > 100) return;
+        if (_resizeCancellation is not null || !int.TryParse(_quality, out var quality) || quality is < 1 or > 100) return;
         var maxDimension = GetMaxDimension();
         if (maxDimension < 0) return;
-
         var workItems = _items.Where(item => item.Status == "Hazır").ToArray();
         if (workItems.Length == 0) return;
-        var jobs = workItems.Select(item =>
-            (Item: item, OutputPath: Path.Combine(Path.GetDirectoryName(item.Path)!, item.TargetName))).ToArray();
-        var outputFormat = _format.SelectedItem as string ?? "Kaynak biçimi";
-        var preserveMetadata = _preserveMetadata.IsChecked == true;
+        var jobs = workItems.Select(item => (Item: item, OutputPath: Path.Combine(Path.GetDirectoryName(item.Path)!, item.TargetName))).ToArray();
         var cancellation = new CancellationTokenSource();
         _resizeCancellation = cancellation;
-        _progress.Minimum = 0;
-        _progress.Maximum = workItems.Length;
-        _progress.Value = 0;
-        _progress.Visibility = Visibility.Visible;
-        SetProcessing(true);
-        _status.Text = $"0 / {workItems.Length} görsel işlendi…";
+        _processing = true;
+        _progress = 0;
+        _progressMaximum = workItems.Length;
+        _status = $"0 / {workItems.Length} görsel işlendi…";
+        PushState();
         var completed = 0;
         var succeeded = 0;
         var failed = 0;
         IProgress<ImageResizeProgress> progress = new Progress<ImageResizeProgress>(update =>
         {
             update.Item.Status = update.Status;
-            _progress.Value = update.Completed;
-            _status.Text = $"{update.Completed} / {update.Total} işlendi · {update.Item.FileName}";
+            _progress = update.Completed;
+            _status = $"{update.Completed} / {update.Total} işlendi · {update.Item.FileName}";
+            PushState();
         });
-
         try
         {
             await Task.Run(() =>
@@ -260,76 +190,55 @@ internal sealed class ImageResizerWindow : Window
                     var status = "Tamamlandı";
                     try
                     {
-                        ImageResizeProcessor.ResizeWithOptions(item.Path, outputPath, maxDimension,
-                            outputFormat, quality, preserveMetadata, cancellation.Token);
+                        ImageResizeProcessor.ResizeWithOptions(item.Path, outputPath, maxDimension, _format,
+                            quality, _preserveMetadata, cancellation.Token);
                         Interlocked.Increment(ref succeeded);
                     }
-                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception exception)
-                    {
-                        status = "Başarısız: " + exception.Message;
-                        Interlocked.Increment(ref failed);
-                    }
-
-                    var done = Interlocked.Increment(ref completed);
-                    progress.Report(new ImageResizeProgress(done, workItems.Length, item, status));
+                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
+                    catch (Exception exception) { status = "Başarısız: " + exception.Message; Interlocked.Increment(ref failed); }
+                    progress.Report(new ImageResizeProgress(Interlocked.Increment(ref completed), workItems.Length, item, status));
                 }
             }, cancellation.Token);
-            _progress.Value = completed;
-            _status.Text = $"{succeeded} görsel oluşturuldu · {failed} başarısız; özgün dosyalar korundu.";
+            _status = $"{succeeded} görsel oluşturuldu · {failed} başarısız; özgün dosyalar korundu.";
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
-            _progress.Value = completed;
-            _status.Text = $"İşlem iptal edildi · {succeeded} tamamlandı · {failed} başarısız · {workItems.Length - completed} beklemede.";
+            _status = $"İşlem iptal edildi · {succeeded} tamamlandı · {failed} başarısız · {workItems.Length - completed} beklemede.";
         }
         finally
         {
             _resizeCancellation = null;
             cancellation.Dispose();
-            _progress.Visibility = Visibility.Collapsed;
-            SetProcessing(false);
+            _processing = false;
+            RefreshTargets(updateStatus: false);
         }
     }
 
-    private void SetProcessing(bool isProcessing)
+    private void PushState() => _window.SetState(new
     {
-        _choose.IsEnabled = !isProcessing;
-        _remove.IsEnabled = !isProcessing;
-        _preset.IsEnabled = !isProcessing;
-        _customSize.IsEnabled = !isProcessing && _preset.SelectedIndex == 3;
-        _format.IsEnabled = !isProcessing;
-        _quality.IsEnabled = !isProcessing;
-        _preserveMetadata.IsEnabled = !isProcessing;
-        _cancel.IsEnabled = isProcessing;
-        _resize.IsEnabled = !isProcessing && _items.Any(item => item.Status == "Hazır") &&
-                            GetMaxDimension() >= 0 && int.TryParse(_quality.Text, out var quality) && quality is >= 1 and <= 100;
+        preset = _preset, customSize = _customSize, format = _format, quality = _quality,
+        preserveMetadata = _preserveMetadata, processing = _processing, progress = _progress,
+        progressMaximum = _progressMaximum,
+        canResize = !_processing && _items.Any(item => item.Status == "Hazır") && GetMaxDimension() >= 0 &&
+            int.TryParse(_quality, out var quality) && quality is >= 1 and <= 100,
+        status = _status,
+        rows = _items.Select((item, index) => new { index, item.FileName, item.SourceSize, item.TargetName, item.TargetSize, item.Status }).ToArray()
+    });
+
+    private sealed class ImageResizeItem(string path, int width, int height, string status = "Hazır")
+    {
+        public string Path { get; } = path;
+        public string FileName => System.IO.Path.GetFileName(Path);
+        public int Width { get; } = width;
+        public int Height { get; } = height;
+        public string SourceSize => Width > 0 && Height > 0 ? $"{Width} × {Height}" : "—";
+        public string TargetName { get; set; } = "";
+        public string TargetSize { get; set; } = "";
+        public string Status { get; set; } = status;
     }
 
     private sealed record ImageResizeProgress(int Completed, int Total, ImageResizeItem Item, string Status);
 }
-
-internal sealed class ImageResizeItem(string path, int width, int height) : INotifyPropertyChanged
-{
-    private string _targetName = "";
-    private string _targetSize = "";
-    private string _status = "Hazır";
-
-    public string Path { get; } = path;
-    public string FileName => System.IO.Path.GetFileName(Path);
-    public int Width { get; } = width;
-    public int Height { get; } = height;
-    public string SourceSize => Width > 0 && Height > 0 ? $"{Width} × {Height}" : "—";
-    public string TargetName { get => _targetName; set { if (_targetName != value) { _targetName = value; OnPropertyChanged(); } } }
-    public string TargetSize { get => _targetSize; set { if (_targetSize != value) { _targetSize = value; OnPropertyChanged(); } } }
-    public string Status { get => _status; set { if (_status != value) { _status = value; OnPropertyChanged(); } } }
-    public event PropertyChangedEventHandler? PropertyChanged;
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-}
-
 internal static class ImageResizeProcessor
 {
     public const int MaximumDimension = 16_384;
@@ -457,3 +366,5 @@ internal static class ImageResizeProcessor
         _ => throw new NotSupportedException($"Bu çıktı biçimi desteklenmiyor: {extension}")
     };
 }
+
+

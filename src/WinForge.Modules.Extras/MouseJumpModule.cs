@@ -90,7 +90,7 @@ public sealed class MouseJumpModule : ITweakModule
                 return;
             }
 
-            var window = new MouseJumpWindow(monitors);
+            var window = new MouseJumpWindow(monitors, (_context as IFeatureUiContext)?.FeatureUi);
             if (window.ShowDialog() != true || window.Destination is not { } point) return;
             if (!Native.SetCursorPos(point.X, point.Y))
                 _context?.Notify("Fare konumu değiştirilemedi.");

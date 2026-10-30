@@ -1,10 +1,7 @@
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.CompilerServices;
+﻿using System.IO;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
 using Microsoft.Win32;
 using WinForge.Core;
 
@@ -15,6 +12,7 @@ public sealed class PowerRenameModule : ITweakModule, IAppCommandModule
     private readonly SettingDescriptor[] _settings;
     private readonly ExplorerFileVerb _explorerVerb = new("WinForge.PowerRename", "Toplu yeniden adlandır (WinForge)", "--power-rename %*", multiSelect: true);
     private bool _isActive;
+    private IFeatureUiService? _featureUi;
 
     public PowerRenameModule()
     {
@@ -39,7 +37,7 @@ public sealed class PowerRenameModule : ITweakModule, IAppCommandModule
     public bool IsActive => _isActive;
     public IReadOnlyList<SettingDescriptor> Settings => _settings;
 
-    public void Initialize(IModuleContext context) { }
+    public void Initialize(IModuleContext context) => _featureUi = (context as IFeatureUiContext)?.FeatureUi;
     public void Activate()
     {
         _isActive = true;
@@ -59,213 +57,144 @@ public sealed class PowerRenameModule : ITweakModule, IAppCommandModule
         if (!string.Equals(command, "--power-rename", StringComparison.OrdinalIgnoreCase)) return false;
         var selectedFiles = arguments.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (selectedFiles.Length == 0) throw new FileNotFoundException("Toplu yeniden adlandırma için dosya seçimi gerekli.");
-        new PowerRenameWindow(selectedFiles).ShowDialog();
+        Open(selectedFiles);
         return true;
     }
 
-    private static void Open() => new PowerRenameWindow().ShowDialog();
+    private void Open() => Open(null);
+
+    private void Open(IEnumerable<string>? files)
+    {
+        if (_featureUi is null) throw new InvalidOperationException("React arayüz altyapısı kullanılamıyor.");
+        _ = new PowerRenameWindow(_featureUi, files);
+    }
 }
 
-internal sealed class PowerRenameWindow : Window
+internal sealed class PowerRenameWindow
 {
-    private readonly ObservableCollection<RenamePreview> _previews = new();
-    private readonly TextBox _find = new() { MinWidth = 180 };
-    private readonly TextBox _replace = new() { MinWidth = 180 };
-    private readonly CheckBox _regex = new() { Content = "Düzenli ifade (regex)" };
-    private readonly CheckBox _caseSensitive = new() { Content = "Büyük/küçük harfe duyarlı" };
-    private readonly DataGrid _grid;
-    private readonly TextBlock _status = new() { Margin = new Thickness(0, 8, 0, 0) };
-    private readonly Button _apply = new() { Content = "Yeniden adlandır", IsEnabled = false, MinWidth = 132 };
-    private readonly Button _undo = new() { Content = "Geri al", IsEnabled = false, MinWidth = 88 };
+    private readonly IFeatureUiWindow _window;
     private readonly string? _undoStorePath;
-    private List<RenameOperation> _lastOperation = new();
+    private readonly List<RenameItem> _items = [];
+    private List<RenameOperation> _lastOperation;
+    private string _find = "";
+    private string _replace = "";
+    private bool _regex;
+    private bool _caseSensitive;
+    private string _status = "Dosyaları ekleyerek başlayın.";
 
-    public PowerRenameWindow() : this(null, null) { }
-
-    internal PowerRenameWindow(IEnumerable<string>? initialFiles) : this(initialFiles, null) { }
-
-    internal PowerRenameWindow(IEnumerable<string>? initialFiles, string? undoStorePath)
+    internal PowerRenameWindow(IFeatureUiService featureUi, IEnumerable<string>? initialFiles = null, string? undoStorePath = null)
     {
         _undoStorePath = undoStorePath;
-        Title = "Toplu Yeniden Adlandırma";
-        Width = 820;
-        Height = 560;
-        MinWidth = 640;
-        MinHeight = 400;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        ShowInTaskbar = true;
-
-        _grid = new DataGrid
-        {
-            AutoGenerateColumns = false,
-            IsReadOnly = true,
-            CanUserAddRows = false,
-            ItemsSource = _previews,
-            Margin = new Thickness(0, 12, 0, 0),
-            SelectionMode = DataGridSelectionMode.Extended
-        };
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Mevcut ad", Binding = new System.Windows.Data.Binding(nameof(RenamePreview.OriginalName)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Yeni ad", Binding = new System.Windows.Data.Binding(nameof(RenamePreview.NewName)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Durum", Binding = new System.Windows.Data.Binding(nameof(RenamePreview.Status)), Width = new DataGridLength(170) });
-
-        var choose = new Button { Content = "Dosyaları seç…", MinWidth = 110, Padding = new Thickness(10, 6, 10, 6) };
-        choose.Click += (_, _) => ChooseFiles();
-        _find.TextChanged += (_, _) => RefreshPreview();
-        _replace.TextChanged += (_, _) => RefreshPreview();
-        _regex.Checked += (_, _) => RefreshPreview();
-        _regex.Unchecked += (_, _) => RefreshPreview();
-        _caseSensitive.Checked += (_, _) => RefreshPreview();
-        _caseSensitive.Unchecked += (_, _) => RefreshPreview();
-        _apply.Click += (_, _) => ApplyRename();
-        _undo.Click += (_, _) => UndoRename();
-
-        var form = new Grid { Margin = new Thickness(18) };
-        form.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        form.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        form.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        form.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        form.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var header = new StackPanel { Orientation = Orientation.Horizontal };
-        header.Children.Add(choose);
-        header.Children.Add(_regex);
-        header.Children.Add(_caseSensitive);
-        Grid.SetRow(header, 0);
-        form.Children.Add(header);
-
-        var findRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
-        findRow.Children.Add(new TextBlock { Text = "Ara", VerticalAlignment = VerticalAlignment.Center, Width = 78 });
-        findRow.Children.Add(_find);
-        findRow.Children.Add(new TextBlock { Text = "Değiştir", VerticalAlignment = VerticalAlignment.Center, Width = 80, Margin = new Thickness(16, 0, 0, 0) });
-        findRow.Children.Add(_replace);
-        Grid.SetRow(findRow, 1);
-        form.Children.Add(findRow);
-
-        Grid.SetRow(_grid, 3);
-        form.Children.Add(_grid);
-
-        var footer = new DockPanel { Margin = new Thickness(0, 10, 0, 0), LastChildFill = true };
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        actions.Children.Add(_undo);
-        actions.Children.Add(_apply);
-        DockPanel.SetDock(actions, Dock.Right);
-        footer.Children.Add(actions);
-        footer.Children.Add(_status);
-        Grid.SetRow(footer, 4);
-        form.Children.Add(footer);
-
-        Content = form;
-
+        _window = featureUi.Open("power-rename-" + Guid.NewGuid().ToString("N"), "power-rename", "Toplu Yeniden Adlandırma",
+            new FeatureUiWindowOptions(900, 640, ShowInTaskbar: true, Resizable: true));
+        _window.MessageReceived += OnMessage;
         _lastOperation = RenameUndoStore.Load(_undoStorePath);
-        _undo.IsEnabled = RenameUndoStore.CanUndo(_lastOperation);
-        if (_undo.IsEnabled) _status.Text = $"Önceki işlemden {_lastOperation.Count} dosya geri alınabilir.";
+        if (RenameUndoStore.CanUndo(_lastOperation)) _status = $"Önceki işlemden {_lastOperation.Count} dosya geri alınabilir.";
         if (initialFiles is not null) AddFiles(initialFiles);
+        RefreshPreview();
+    }
+
+    private void OnMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "power-rename.choose": ChooseFiles(); break;
+            case "power-rename.update": UpdateOptions(payload); break;
+            case "power-rename.apply": ApplyRename(); break;
+            case "power-rename.undo": UndoRename(); break;
+            case "power-rename.close": _window.Close(); break;
+        }
+    }
+
+    private void UpdateOptions(JsonElement payload)
+    {
+        if (payload.TryGetProperty("find", out var find)) _find = find.GetString() ?? "";
+        if (payload.TryGetProperty("replace", out var replace)) _replace = replace.GetString() ?? "";
+        if (payload.TryGetProperty("regex", out var regex)) _regex = regex.ValueKind == JsonValueKind.True;
+        if (payload.TryGetProperty("caseSensitive", out var sensitive)) _caseSensitive = sensitive.ValueKind == JsonValueKind.True;
+        RefreshPreview();
     }
 
     private void ChooseFiles()
     {
-        var dialog = new OpenFileDialog
-        {
-            Title = "Yeniden adlandırılacak dosyaları seçin",
-            Multiselect = true,
-            CheckFileExists = true,
-            CheckPathExists = true
-        };
-        if (dialog.ShowDialog(this) != true) return;
-
-        _previews.Clear();
+        var dialog = new OpenFileDialog { Title = "Yeniden adlandırılacak dosyaları seçin", Multiselect = true,
+            CheckFileExists = true, CheckPathExists = true };
+        if (dialog.ShowDialog() != true) return;
+        _items.Clear();
         AddFiles(dialog.FileNames);
+        RefreshPreview();
     }
 
     private void AddFiles(IEnumerable<string> paths)
     {
-        foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (File.Exists(path)) _previews.Add(new RenamePreview(path));
-        }
-        RefreshPreview();
+        foreach (var path in paths.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+            _items.Add(new RenameItem(path));
     }
 
     private void RefreshPreview()
     {
-        var items = _previews.Select(item => (Item: item, Result: BuildTarget(item.FilePath))).ToList();
-        foreach (var (item, result) in items)
+        var previews = _items.Select(item => (Item: item, Result: BuildTarget(item.FilePath))).ToList();
+        foreach (var (item, result) in previews)
         {
             item.NewName = result.TargetName;
             item.Status = result.Error ?? (result.TargetName == item.OriginalName ? "Değişiklik yok" : "Hazır");
         }
 
-        foreach (var duplicateGroup in items.Where(x => x.Result.Error is null && x.Result.TargetPath != x.Item.FilePath)
-                     .GroupBy(x => x.Result.TargetPath, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
-            foreach (var (item, _) in duplicateGroup)
-                item.Status = "Çakışma: aynı hedef ad";
+        foreach (var group in previews.Where(entry => entry.Result.Error is null && entry.Result.TargetPath != entry.Item.FilePath)
+                     .GroupBy(entry => entry.Result.TargetPath, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
+            foreach (var (item, _) in group) item.Status = "Çakışma: aynı hedef ad";
 
-        var sources = items.Select(x => Path.GetFullPath(x.Item.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var (item, result) in items.Where(x => x.Result.Error is null && x.Result.TargetPath != x.Item.FilePath))
-            if (File.Exists(result.TargetPath) && !sources.Contains(result.TargetPath))
-                item.Status = "Çakışma: hedef dosya var";
+        var sources = previews.Select(entry => Path.GetFullPath(entry.Item.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (item, result) in previews.Where(entry => entry.Result.Error is null && entry.Result.TargetPath != entry.Item.FilePath))
+            if (File.Exists(result.TargetPath) && !sources.Contains(result.TargetPath)) item.Status = "Çakışma: hedef dosya var";
 
-        var validChanges = _previews.Where(item => item.Status == "Hazır").ToList();
-        var errors = _previews.Count(item => item.Status.StartsWith("Çakışma", StringComparison.Ordinal) || item.Status.StartsWith("Geçersiz", StringComparison.Ordinal));
-        _apply.IsEnabled = validChanges.Count > 0 && errors == 0;
-        _status.Text = $"{_previews.Count} dosya · {validChanges.Count} değişiklik · {errors} sorun";
+        var changes = _items.Count(item => item.Status == "Hazır");
+        var errors = _items.Count(item => item.Status.StartsWith("Çakışma", StringComparison.Ordinal) || item.Status.StartsWith("Geçersiz", StringComparison.Ordinal));
+        _status = $"{_items.Count} dosya · {changes} değişiklik · {errors} sorun";
+        PushState(changes > 0 && errors == 0);
     }
 
     private (string TargetPath, string TargetName, string? Error) BuildTarget(string path)
     {
         var originalName = Path.GetFileName(path);
-        if (string.IsNullOrEmpty(_find.Text)) return (path, originalName, "Arama metni girin");
+        if (string.IsNullOrEmpty(_find)) return (path, originalName, "Arama metni girin");
 
         try
         {
-            var comparison = _caseSensitive.IsChecked == true ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-            var newName = _regex.IsChecked == true
-                ? Regex.Replace(originalName, _find.Text, _replace.Text, _caseSensitive.IsChecked == true ? RegexOptions.None : RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250))
-                : originalName.Replace(_find.Text, _replace.Text, comparison);
+            var comparison = _caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+            var newName = _regex
+                ? Regex.Replace(originalName, _find, _replace, _caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(250))
+                : originalName.Replace(_find, _replace, comparison);
             if (newName.Length == 0 || newName is "." or ".." || newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 return (path, newName, "Geçersiz dosya adı");
-
-            var target = Path.Combine(Path.GetDirectoryName(path)!, newName);
-            return (target, newName, null);
+            return (Path.Combine(Path.GetDirectoryName(path)!, newName), newName, null);
         }
-        catch (ArgumentException)
-        {
-            return (path, originalName, "Geçersiz düzenli ifade");
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            return (path, originalName, "Düzenli ifade zaman aşımına uğradı");
-        }
+        catch (ArgumentException) { return (path, originalName, "Geçersiz düzenli ifade"); }
+        catch (RegexMatchTimeoutException) { return (path, originalName, "Düzenli ifade zaman aşımına uğradı"); }
     }
 
     private void ApplyRename()
     {
-        var operations = _previews.Where(item => item.Status == "Hazır")
-            .Select(item => new RenameOperation(item.FilePath, Path.Combine(Path.GetDirectoryName(item.FilePath)!, item.NewName)))
-            .ToList();
+        var operations = _items.Where(item => item.Status == "Hazır")
+            .Select(item => new RenameOperation(item.FilePath, Path.Combine(Path.GetDirectoryName(item.FilePath)!, item.NewName))).ToList();
         try
         {
             RenameTransaction.Apply(operations);
             _lastOperation = operations;
             foreach (var operation in operations)
             {
-                var item = _previews.First(x => StringComparer.OrdinalIgnoreCase.Equals(x.FilePath, operation.Source));
+                var item = _items.First(entry => StringComparer.OrdinalIgnoreCase.Equals(entry.FilePath, operation.Source));
                 item.FilePath = operation.Target;
             }
-            _undo.IsEnabled = _lastOperation.Count > 0;
-            _status.Text = $"{operations.Count} dosya yeniden adlandırıldı.";
+            _status = $"{operations.Count} dosya yeniden adlandırıldı.";
             try { RenameUndoStore.Save(_lastOperation, _undoStorePath); }
-            catch (Exception storeFailure)
-            {
-                _status.Text += " Geri alma kaydı diske yazılamadı; bu pencere açıkken geri alabilirsiniz.";
-                _status.ToolTip = storeFailure.Message;
-            }
+            catch (Exception exception) { _status += " Geri alma kaydı yazılamadı: " + exception.Message; }
             RefreshPreview();
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Yeniden adlandırma başarısız", MessageBoxButton.OK, MessageBoxImage.Error);
-            RefreshPreview();
+            _status = "Yeniden adlandırma başarısız: " + exception.Message;
+            PushState(false);
         }
     }
 
@@ -274,65 +203,44 @@ internal sealed class PowerRenameWindow : Window
         try
         {
             RenameTransaction.Apply(_lastOperation.Select(item => new RenameOperation(item.Target, item.Source)).ToList());
-            foreach (var item in _previews)
+            foreach (var item in _items)
             {
-                var operation = _lastOperation.FirstOrDefault(x => StringComparer.OrdinalIgnoreCase.Equals(x.Target, item.FilePath));
+                var operation = _lastOperation.FirstOrDefault(entry => StringComparer.OrdinalIgnoreCase.Equals(entry.Target, item.FilePath));
                 if (operation is not null) item.FilePath = operation.Source;
             }
             _lastOperation.Clear();
-            _undo.IsEnabled = false;
-            _status.Text = "Son yeniden adlandırma geri alındı.";
+            _status = "Son yeniden adlandırma geri alındı.";
             try { RenameUndoStore.Clear(_undoStorePath); }
-            catch (Exception storeFailure)
-            {
-                _status.Text += " Eski geri alma kaydı diskte temizlenemedi.";
-                _status.ToolTip = storeFailure.Message;
-            }
+            catch (Exception exception) { _status += " Geri alma kaydı temizlenemedi: " + exception.Message; }
             RefreshPreview();
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Geri alma başarısız", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-}
-
-internal sealed class RenamePreview(string path) : INotifyPropertyChanged
-{
-    private string _path = path;
-    private string _newName = System.IO.Path.GetFileName(path);
-    private string _status = "Hazır";
-
-    public string FilePath
-    {
-        get => _path;
-        set
-        {
-            if (_path == value) return;
-            _path = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(OriginalName));
+            _status = "Geri alma başarısız: " + exception.Message;
+            PushState(false);
         }
     }
 
-    public string OriginalName => System.IO.Path.GetFileName(FilePath);
-    public string NewName
+    private void PushState(bool canApply) => _window.SetState(new
     {
-        get => _newName;
-        set { if (_newName != value) { _newName = value; OnPropertyChanged(); } }
-    }
+        find = _find,
+        replace = _replace,
+        regex = _regex,
+        caseSensitive = _caseSensitive,
+        status = _status,
+        canApply,
+        canUndo = RenameUndoStore.CanUndo(_lastOperation),
+        rows = _items.Select(item => new { item.OriginalName, item.NewName, item.Status }).ToArray()
+    });
 
-    public string Status
+    private sealed class RenameItem(string filePath)
     {
-        get => _status;
-        set { if (_status != value) { _status = value; OnPropertyChanged(); } }
+        public string FilePath { get; set; } = filePath;
+        public string OriginalName => Path.GetFileName(FilePath);
+        public string NewName { get; set; } = Path.GetFileName(filePath);
+        public string Status { get; set; } = "Hazır";
     }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
-
 internal sealed record RenameOperation(string Source, string Target);
 
 internal static class RenameUndoStore
@@ -465,3 +373,4 @@ internal static class RenameTransaction
         }
     }
 }
+

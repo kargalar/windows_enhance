@@ -207,7 +207,7 @@ public sealed class AutoCorrectModule : ITweakModule
         if (selectedLanguages.Any(languageTag => languageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase)))
             _ = SpellNgramModel.GetEnglishVocabularyCount();
         _spellChecker = SpellEngine.Instance;
-        _suggestionWindow = new AutoCorrectSuggestionWindow(AcceptSuggestion);
+        _suggestionWindow = new AutoCorrectSuggestionWindow(AcceptSuggestion, (_context as IFeatureUiContext)?.FeatureUi);
         _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
         if (_hook == IntPtr.Zero)
         {

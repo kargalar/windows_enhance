@@ -153,16 +153,16 @@ hiçbir medya oturumunu göstermez.
 
 ## Görünüm
 
-Üst çubuktaki **Görünüm** düğmesinden uygulamanın görünümü kişiselleştirilir.
-Sol gezinme paneli yerine üstte kategori filtreleri bulunur. Arama (`Ctrl+F`)
+Sol paneldeki **Görünüm** düğmesinden uygulamanın görünümü kişiselleştirilir.
+Kategoriler sol panelde listelenir. Arama (`Ctrl+F`)
 modül adı, açıklaması ve kategorisinde çalışır; `Esc` aramayı temizler.
 **Yalnızca etkin** filtresi açık modülleri gösterir. Sonuç bulunamazsa
 **Filtreleri temizle** düğmesi tüm modüllere geri döndürür.
 
 | Ayar | Seçenekler |
 |---|---|
-| Ton | Varsayılan, Gece, Grafit, Açık |
-| Vurgu rengi | Mavi, Mor, Yeşil, Turuncu, Pembe, Kırmızı |
+| Ton | Siyah, Grafit |
+| Vurgu rengi | Mavi, Yeşil, Kırmızı |
 | Arka plan parlaması | Açık / kapalı; yeni kurulumlarda kapalı |
 
 Seçimler anında uygulanır ve `%APPDATA%\WinForge\appearance.json` dosyasına yazılır.
@@ -170,7 +170,7 @@ Sürüm numarası üst çubukta gösterilir; `WinForge.App.csproj` içindeki `<V
 
 ## Çalıştırma
 
-Derleme gereksinimleri: Windows 10/11 (x64), .NET 10 SDK ve Visual Studio C++ Build Tools ile Windows SDK. Yerel kabuk tasarımı Windows 11 görev çubuğunu hedefler. Çalıştırılabilir pakete SDK ve derleyici gerekmez; kendinden yeterli yayıma .NET Desktop çalışma zamanı dahil edilir.
+Derleme gereksinimleri: Windows 10/11 (x64), .NET 10 SDK, Node.js/npm ve Visual Studio C++ Build Tools ile Windows SDK. Uygulamayı çalıştırmak için WebView2 Runtime gerekir (Windows 11'de genellikle hazır bulunur). Yerel kabuk tasarımı Windows 11 görev çubuğunu hedefler. Çalıştırılabilir pakete SDK ve derleyici gerekmez; kendinden yeterli yayıma .NET Desktop çalışma zamanı dahil edilir.
 
 ```powershell
 .\scripts\build.ps1
@@ -453,7 +453,8 @@ Otomatik silme varsayılan olarak kapalıdır. Ayrıntılar ve doğrulama komutl
 ```
 WinForge.Core     ITweakModule sözleşmesi, modül yükleme, ayar deposu,
                   global kısayol, fare kancası, ses (Core Audio COM), OSD
-WinForge.App      WPF arayüzü, modül listesi, otomatik ayar paneli, tepsi
+WinForge.App      WPF uygulama kabuğu ve tepsi; React/WebView2 arayüzü,
+                  modül listesi ve ayar paneli
 modules\*.dll     Her modül bağımsız bir sınıf kütüphanesi
 ```
 
@@ -522,7 +523,8 @@ pencereler ekran kenarlarına ve birbirine sıfıra sıfır oturur. Kapatınca p
 WinForge; Windhawk, AltSnap, PowerToys veya NAudio motorunu çalıştırmaz, indirmez
 ve dağıtmaz. Pencere kontrolü, ses yakalama ve analiz, WMI erişimi ve kısayollar
 WinForge koduyla Windows'un Win32/COM/WinRT arayüzlerine bağlanır. Çalışma
-platformu Windows ve .NET 10 Desktop/WPF'tir.
+platformu Windows ve .NET 10 Desktop/WPF'tir. Ana kontrol arayüzü React ve
+TypeScript ile geliştirilir, uygulama içinde Microsoft WebView2 ile gösterilir.
 
 Nashi ve ClipboardLine entegrasyonu bu genel bağımsızlık kuralının bir istisnasıdır:
 WinForge içinde çalışan modüller üçüncü taraf PDF, görsel, arşiv, OCR ve ONNX

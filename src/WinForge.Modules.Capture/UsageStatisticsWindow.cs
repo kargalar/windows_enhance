@@ -1,8 +1,10 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using WinForge.Core;
 using WinForge.History;
 
 namespace WinForge.Modules.Capture;
@@ -10,6 +12,7 @@ namespace WinForge.Modules.Capture;
 internal sealed class UsageStatisticsWindow : Window
 {
     private readonly HistoryStore store;
+    private readonly IFeatureUiSurface? uiSurface;
     private readonly TextBox from = new() { Width = 125, Margin = new(4), ToolTip = "gg.aa.yyyy" };
     private readonly TextBox until = new() { Width = 125, Margin = new(4), ToolTip = "gg.aa.yyyy" };
     private readonly DataGrid applications = CreateGrid();
@@ -25,9 +28,11 @@ internal sealed class UsageStatisticsWindow : Window
     private (string Label, double Active, double Idle)[] dailyChartData = [];
     private (string Label, double Seconds)[] tagChartData = [];
 
-    public UsageStatisticsWindow(HistoryStore store, DateTimeOffset? from, DateTimeOffset? until)
+    public UsageStatisticsWindow(HistoryStore store, DateTimeOffset? from, DateTimeOffset? until, IFeatureUiService? featureUi = null)
     {
         this.store = store;
+        uiSurface = featureUi?.CreateSurface("capture-usage-statistics");
+        if (uiSurface is not null) uiSurface.MessageReceived += OnUiMessage;
         if (from is { } start) this.from.Text = start.ToLocalTime().ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR"));
         if (until is { } end) this.until.Text = end.AddDays(-1).ToLocalTime().ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR"));
         Title = "Kullanım istatistikleri"; Width = 1080; Height = 700; MinWidth = 820; MinHeight = 500; CaptureUi.Theme(this);
@@ -45,7 +50,9 @@ internal sealed class UsageStatisticsWindow : Window
         applicationChart.SizeChanged += (_, _) => DrawHorizontal(applicationChart, appChartData);
         dailyChart.SizeChanged += (_, _) => DrawDaily(dailyChart, dailyChartData);
         tagChart.SizeChanged += (_, _) => DrawHorizontal(tagChart, tagChartData);
+        if (uiSurface is not null) Content = uiSurface.Element;
         Loaded += (_, _) => Refresh();
+        Closed += (_, _) => uiSurface?.Dispose();
     }
 
     private static Canvas CreateChart() => new() { Height = 210, Margin = new(12), ClipToBounds = true };
@@ -114,6 +121,36 @@ internal sealed class UsageStatisticsWindow : Window
         return new DateTimeOffset(date, TimeZoneInfo.Local.GetUtcOffset(date));
     }
 
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        if (command == "statistics.refresh")
+        {
+            from.Text = payload.TryGetProperty("from", out var start) ? start.GetString() ?? "" : "";
+            until.Text = payload.TryGetProperty("until", out var end) ? end.GetString() ?? "" : "";
+            Refresh();
+        }
+        else if (command == "statistics.close")
+            Close();
+    }
+
+    private void PushUiState(RecallUsageSummary summaryData, IReadOnlyList<UsageTotal> appTotals,
+        IReadOnlyList<UsageDayTotal> activeByDay, IReadOnlyList<UsageDayTotal> idleByDay,
+        IReadOnlyList<ContextUsageDayTotal> contextTotals, IReadOnlyList<TagUsageTotal> tagTotals)
+    {
+        uiSurface?.SetState(new
+        {
+            from = from.Text,
+            until = until.Text,
+            status = status.Text,
+            summary = summary.Text,
+            applications = appTotals.Select(row => new { app = row.App, seconds = row.Seconds, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"), estimated = row.Estimated }).ToArray(),
+            days = dailyChartData.Select(row => new { date = row.Label, active = row.Active, idle = row.Idle }).ToArray(),
+            dayApplications = activeByDay.Select(row => new { date = row.Date, app = row.App, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"), estimated = row.Estimated }).ToArray(),
+            contexts = contextTotals.Select(row => new { date = row.Date, type = row.Type, app = row.App, context = row.Context, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g") }).ToArray(),
+            tags = tagTotals.Select(row => new { tag = row.Tag, seconds = row.Seconds, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"), applications = row.ApplicationCount }).ToArray()
+        });
+    }
+
     private void Refresh()
     {
         try
@@ -145,7 +182,8 @@ internal sealed class UsageStatisticsWindow : Window
                 Süre = TimeSpan.FromSeconds(row.Seconds).ToString("g"),
                 Tahmini = row.Estimated ? "Evet" : "Hayır"
             }).ToArray();
-            contexts.ItemsSource = store.ContextUsageByDay(Start, End).Select(row => new
+            var contextTotals = store.ContextUsageByDay(Start, End);
+            contexts.ItemsSource = contextTotals.Select(row => new
             {
                 Tarih = row.Date,
                 Tür = row.Type == "website" ? "Web sitesi" : "Klasör",
@@ -163,6 +201,7 @@ internal sealed class UsageStatisticsWindow : Window
                 Uygulama = row.ApplicationCount
             }).ToArray();
             status.Text = $"Aralık: {(Start?.ToLocalTime().ToString("dd.MM.yyyy") ?? "başlangıçtan beri")} – {(End?.AddDays(-1).ToLocalTime().ToString("dd.MM.yyyy") ?? "bugün dahil")} · İstatistikler yerel kullanım zamanlarından hesaplanır.";
+            PushUiState(summaryData, appTotals, activeByDay, idleByDay, contextTotals, tagTotals);
         }
         catch (Exception error) { status.Text = error.Message; }
     }

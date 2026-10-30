@@ -1,7 +1,10 @@
 bin/
 obj/
 dist/
+src/WinForge.App/ui/node_modules/
+src/WinForge.App/wwwroot/
 artifacts/
+.playwright-cli/
 /work/corpus/
 /work/tools/
 *.user

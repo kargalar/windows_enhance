@@ -1,8 +1,9 @@
 # WinForge native feature roadmap
 
 WinForge implements reversible utilities using its own engines and Windows
-Win32/COM/WinRT interfaces. Feature catalogs are research references only;
-third-party customization engines and direct NuGet dependencies are not used.
+Win32/COM/WinRT interfaces. Feature catalogs are research references only.
+The WPF host uses Microsoft's WebView2 runtime to render the React interface;
+feature engines continue to use Windows/.NET APIs and their existing contracts.
 ## Existing coverage
 
 | Area | Current WinForge coverage | Remaining work |

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
@@ -198,7 +199,7 @@ public sealed class EnvironmentVariablesModule : WinForge.Core.ITweakModule
     {
         try
         {
-            _window ??= new EnvironmentVariablesWindow(_store);
+            _window ??= new EnvironmentVariablesWindow(_store, featureUi: (_context as IFeatureUiContext)?.FeatureUi);
             _window.Closed += (_, _) => _window = null;
             if (!_window.IsVisible) _window.Show();
             _window.Activate();
@@ -214,7 +215,7 @@ public sealed class EnvironmentVariablesModule : WinForge.Core.ITweakModule
     {
         try
         {
-            _profilesWindow ??= new EnvironmentProfilesWindow(_profileService);
+            _profilesWindow ??= new EnvironmentProfilesWindow(_profileService, (_context as IFeatureUiContext)?.FeatureUi);
             _profilesWindow.Closed += (_, _) => _profilesWindow = null;
             if (!_profilesWindow.IsVisible) _profilesWindow.Show();
             _profilesWindow.Activate();
@@ -232,7 +233,8 @@ public sealed class EnvironmentVariablesModule : WinForge.Core.ITweakModule
         {
             _systemWindow ??= new EnvironmentVariablesWindow(new SystemEnvironmentVariableStore(),
                 "Sistem Ortam Değişkenleri",
-                "Sistem kapsamındaki değerler tüm kullanıcıları etkiler. Kaydet düğmesi Windows yönetici izni ister.");
+                "Sistem kapsamındaki değerler tüm kullanıcıları etkiler. Kaydet düğmesi Windows yönetici izni ister.",
+                (_context as IFeatureUiContext)?.FeatureUi);
             _systemWindow.Closed += (_, _) => _systemWindow = null;
             if (!_systemWindow.IsVisible) _systemWindow.Show();
             _systemWindow.Activate();

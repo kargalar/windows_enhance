@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Text.Json;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -202,7 +203,7 @@ public sealed class ShortcutGuideModule : ITweakModule
         if (!IsActive || !IsWindowsKeyDown() || _pressedKeys.Any(key => !IsWindowsKey(key))) return;
         try
         {
-            _heldWindow ??= new ShortcutGuideWindow(nonActivating: true);
+            _heldWindow ??= new ShortcutGuideWindow(nonActivating: true, featureUi: (_context as IFeatureUiContext)?.FeatureUi);
             _heldWindow.Closed += (_, _) => _heldWindow = null;
             if (!_heldWindow.IsVisible) _heldWindow.Show();
         }
@@ -224,7 +225,7 @@ public sealed class ShortcutGuideModule : ITweakModule
         HideHeldGuide();
         try
         {
-            _window ??= new ShortcutGuideWindow();
+            _window ??= new ShortcutGuideWindow(featureUi: (_context as IFeatureUiContext)?.FeatureUi);
             _window.Closed += (_, _) => _window = null;
             _window.Show();
             _window.Activate();
@@ -275,11 +276,14 @@ internal sealed class ShortcutGuideWindow : Window
 
     private readonly TextBox _search;
     private readonly DataGrid _grid;
+    private readonly IFeatureUiSurface? _uiSurface;
 
     public ShortcutGuideWindow() : this(nonActivating: false) { }
 
-    public ShortcutGuideWindow(bool nonActivating)
+    public ShortcutGuideWindow(bool nonActivating = false, IFeatureUiService? featureUi = null)
     {
+        _uiSurface = featureUi?.CreateSurface("shortcut-guide");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = "Kısayol Rehberi";
         Width = 760;
         Height = 600;
@@ -322,22 +326,36 @@ internal sealed class ShortcutGuideWindow : Window
         _grid.Columns.Add(new DataGridTextColumn { Header = "İşlev", Binding = new System.Windows.Data.Binding(nameof(ShortcutGuideEntry.Description)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         content.Children.Add(_grid);
         _search.TextChanged += (_, _) => Filter();
-        Content = content;
+        Content = _uiSurface?.Element ?? content;
         PreviewKeyDown += (_, args) =>
         {
             if (args.Key == System.Windows.Input.Key.Escape) Close();
         };
         Loaded += (_, _) => _search.Focus();
+        Closed += (_, _) => _uiSurface?.Dispose();
+        Filter();
     }
 
     private void Filter()
     {
         var query = _search.Text.Trim();
-        _grid.ItemsSource = string.IsNullOrWhiteSpace(query)
+        var entries = string.IsNullOrWhiteSpace(query)
             ? Entries
             : Entries.Where(entry => entry.Category.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
                                      entry.Keys.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
                                      entry.Description.Contains(query, StringComparison.CurrentCultureIgnoreCase)).ToArray();
+        _grid.ItemsSource = entries;
+        _uiSurface?.SetState(new { query, entries = entries.Select(entry => new { category = entry.Category, keys = entry.Keys, description = entry.Description }).ToArray() });
+    }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        if (command == "shortcut-guide.search")
+        {
+            _search.Text = payload.TryGetProperty("query", out var query) ? query.GetString() ?? "" : "";
+            Filter();
+        }
+        else if (command == "shortcut-guide.close") Close();
     }
 
     internal sealed record ShortcutGuideEntry(string Category, string Keys, string Description);

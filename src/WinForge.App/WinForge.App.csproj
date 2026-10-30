@@ -16,6 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
     <ProjectReference Include="..\WinForge.Core\WinForge.Core.csproj" />
     <ProjectReference Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
@@ -28,6 +32,31 @@
     <ProjectReference Include="..\WinForge.Modules.Extras\WinForge.Modules.Extras.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.WindowControl\WinForge.Modules.WindowControl.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="BuildReactUi" BeforeTargets="PrepareForBuild"
+          Inputs="$(MSBuildProjectDirectory)\ui\package.json;$(MSBuildProjectDirectory)\ui\package-lock.json;$(MSBuildProjectDirectory)\ui\index.html;$(MSBuildProjectDirectory)\ui\vite.config.ts;$(MSBuildProjectDirectory)\ui\tsconfig*.json;$(MSBuildProjectDirectory)\ui\src\**\*"
+          Outputs="$(MSBuildProjectDirectory)\wwwroot\index.html">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-ui.ps1&quot; -UiDirectory &quot;$(MSBuildProjectDirectory)\ui&quot;" />
+  </Target>
+
+  <Target Name="CopyReactUi" AfterTargets="Build">
+    <ItemGroup>
+      <ReactUiFiles Include="$(MSBuildProjectDirectory)\wwwroot\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ReactUiFiles)"
+          DestinationFiles="@(ReactUiFiles->'$(OutDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="IncludeReactUiInPublish" AfterTargets="ComputeFilesToPublish" DependsOnTargets="BuildReactUi">
+    <ItemGroup>
+      <ReactUiFiles Include="$(MSBuildProjectDirectory)\wwwroot\**\*" />
+      <ResolvedFileToPublish Include="@(ReactUiFiles)">
+        <RelativePath>wwwroot/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 
   <Target Name="BuildNativeShell" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-native.ps1&quot; -Configuration &quot;$(Configuration)&quot;" />
@@ -47,10 +76,7 @@
     <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
       <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />
     </MSBuild>
-    <MSBuild Projects="$(MSBuildProjectDirectory)\..\WinForge.Modules.Extras\WinForge.Modules.Extras.csproj"
-             Targets="GetModuleRuntimeFiles"
-             Properties="Configuration=$(Configuration);Platform=$(Platform)"
-             RemoveProperties="RuntimeIdentifier;SelfContained">
+    <MSBuild Projects="$(MSBuildProjectDirectory)\..\WinForge.Modules.Extras\WinForge.Modules.Extras.csproj" Targets="GetModuleRuntimeFiles" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
       <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />
     </MSBuild>
     <Delete Files="@(RetiredFiles)" />
@@ -80,9 +106,7 @@
 
   <Target Name="GetModuleFiles" DependsOnTargets="CopyModules" Returns="@(ModuleFiles)" />
 
-  <Target Name="PrepareDictationEngine" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'"
-          Inputs="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\WhisperBridge.cpp;$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\CMakeLists.txt;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1"
-          Outputs="$(MSBuildProjectDirectory)\..\WinForge.Dictation.Worker\bin\$(Configuration)\net10.0\cpu\WinForge.Whisper.dll">
+  <Target Name="PrepareDictationEngine" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\WhisperBridge.cpp;$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\CMakeLists.txt;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1" Outputs="$(MSBuildProjectDirectory)\..\WinForge.Dictation.Worker\bin\$(Configuration)\net10.0\cpu\WinForge.Whisper.dll">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1&quot; -Configuration &quot;$(Configuration)&quot;" />
   </Target>
 

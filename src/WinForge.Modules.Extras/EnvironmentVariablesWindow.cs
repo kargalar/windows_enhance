@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
@@ -11,17 +13,24 @@ internal sealed class EnvironmentVariablesWindow : Window
     private readonly IEnvironmentVariableStore _store;
     private readonly ObservableCollection<UserEnvironmentVariable> _entries = new();
     private readonly DataGrid _grid;
+    private readonly IFeatureUiSurface? _uiSurface;
+    private readonly string _descriptionText;
+    private string _statusText = "";
     private string[] _originalNames = Array.Empty<string>();
 
-    public EnvironmentVariablesWindow(UserEnvironmentVariableStore store)
+    public EnvironmentVariablesWindow(UserEnvironmentVariableStore store, IFeatureUiService? featureUi = null)
         : this(store, "Kullanıcı Ortam Değişkenleri",
-            "Yalnızca geçerli kullanıcı kapsamı düzenlenir. %DEĞİŞKEN% biçimindeki değerler genişletilebilir olarak saklanır.")
+            "Yalnızca geçerli kullanıcı kapsamı düzenlenir. %DEĞİŞKEN% biçimindeki değerler genişletilebilir olarak saklanır.", featureUi)
     {
     }
 
-    public EnvironmentVariablesWindow(IEnvironmentVariableStore store, string title, string descriptionText)
+    public EnvironmentVariablesWindow(IEnvironmentVariableStore store, string title, string descriptionText,
+        IFeatureUiService? featureUi = null)
     {
         _store = store;
+        _descriptionText = descriptionText;
+        _uiSurface = featureUi?.CreateSurface("environment-variables");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = title;
         Width = 820;
         Height = 540;
@@ -101,9 +110,42 @@ internal sealed class EnvironmentVariablesWindow : Window
         DockPanel.SetDock(buttons, Dock.Bottom);
         root.Children.Add(buttons);
 
-        Content = root;
+        Content = _uiSurface?.Element ?? root;
         Reload();
+        Closed += (_, _) => _uiSurface?.Dispose();
     }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "environment.add": AddEntry(); PushUiState(); break;
+            case "environment.remove":
+                if (payload.TryGetProperty("index", out var index) && index.TryGetInt32(out var rowIndex) && rowIndex >= 0 && rowIndex < _entries.Count)
+                    _entries.RemoveAt(rowIndex);
+                PushUiState();
+                break;
+            case "environment.update":
+                if (!payload.TryGetProperty("index", out var selected) || !selected.TryGetInt32(out var selectedIndex) || selectedIndex < 0 || selectedIndex >= _entries.Count) break;
+                var row = _entries[selectedIndex];
+                if (payload.TryGetProperty("name", out var name)) row.Name = name.GetString() ?? "";
+                if (payload.TryGetProperty("value", out var value)) row.Value = value.GetString() ?? "";
+                if (payload.TryGetProperty("expandable", out var expandable) && expandable.ValueKind is JsonValueKind.True or JsonValueKind.False) row.Expandable = expandable.GetBoolean();
+                PushUiState();
+                break;
+            case "environment.save": Save(); break;
+            case "environment.reload": Reload(); break;
+            case "environment.close": Close(); break;
+        }
+    }
+
+    private void PushUiState() => _uiSurface?.SetState(new
+    {
+        title = Title,
+        description = _descriptionText,
+        status = _statusText,
+        rows = _entries.Select(row => new { row.Name, row.Value, row.Expandable }).ToArray()
+    });
 
     private static Button CreateButton(string text, Action action)
     {
@@ -122,9 +164,12 @@ internal sealed class EnvironmentVariablesWindow : Window
     {
         var row = new UserEnvironmentVariable("", "", false);
         _entries.Add(row);
-        _grid.SelectedItem = row;
-        _grid.ScrollIntoView(row);
-        _grid.BeginEdit();
+        if (_uiSurface is null)
+        {
+            _grid.SelectedItem = row;
+            _grid.ScrollIntoView(row);
+            _grid.BeginEdit();
+        }
     }
 
     private void RemoveSelected()
@@ -141,29 +186,41 @@ internal sealed class EnvironmentVariablesWindow : Window
             _entries.Clear();
             foreach (var entry in entries) _entries.Add(entry);
             _originalNames = entries.Select(entry => entry.Name).ToArray();
+            _statusText = $"{entries.Count} değişken yüklendi.";
         }
         catch (Exception exception)
         {
             ShowError("Ortam değişkenleri okunamadı.", exception);
         }
+        PushUiState();
     }
 
     private void Save()
     {
         try
         {
-            _grid.CommitEdit(DataGridEditingUnit.Cell, true);
-            _grid.CommitEdit(DataGridEditingUnit.Row, true);
+            if (_uiSurface is null)
+            {
+                _grid.CommitEdit(DataGridEditingUnit.Cell, true);
+                _grid.CommitEdit(DataGridEditingUnit.Row, true);
+            }
             _store.Save(_originalNames, _entries.ToArray());
             Reload();
+            _statusText = "Ortam değişkenleri kaydedildi.";
         }
         catch (Exception exception)
         {
             ShowError("Değişkenler kaydedilemedi.", exception);
         }
+        PushUiState();
     }
 
-    private void ShowError(string message, Exception exception) =>
-        MessageBox.Show(this, message + Environment.NewLine + exception.Message,
-            "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+    private void ShowError(string message, Exception exception)
+    {
+        _statusText = message + " " + exception.Message;
+        if (_uiSurface is null)
+            MessageBox.Show(this, _statusText, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+        else
+            PushUiState();
+    }
 }

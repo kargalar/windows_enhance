@@ -53,6 +53,49 @@ public interface IModuleContext
     void Notify(string message);
 }
 
+public sealed record FeatureUiWindowOptions(
+    double Width,
+    double Height,
+    bool Topmost = false,
+    bool ActivateOnShow = true,
+    bool ShowInTaskbar = false,
+    bool Transparent = false,
+    bool ClickThrough = false,
+    bool Resizable = false);
+
+/// <summary>Controls a React-rendered feature window hosted by the desktop application.</summary>
+public interface IFeatureUiWindow : IDisposable
+{
+    bool IsVisible { get; }
+    event Action<string, System.Text.Json.JsonElement>? MessageReceived;
+    void Show();
+    void Hide();
+    void Close();
+    void SetBounds(double left, double top, double width, double height);
+    void SetState(object state);
+}
+
+/// <summary>Creates feature windows using the application's shared React UI runtime.</summary>
+public interface IFeatureUiService
+{
+    IFeatureUiWindow Open(string key, string view, string title, FeatureUiWindowOptions options);
+    IFeatureUiSurface CreateSurface(string view);
+}
+
+/// <summary>Embeds a React-rendered feature view inside a native window owned by a module.</summary>
+public interface IFeatureUiSurface : IDisposable
+{
+    System.Windows.FrameworkElement Element { get; }
+    event Action<string, System.Text.Json.JsonElement>? MessageReceived;
+    void SetState(object state);
+}
+
+/// <summary>Available to modules hosted by an application with the shared React UI runtime.</summary>
+public interface IFeatureUiContext
+{
+    IFeatureUiService? FeatureUi { get; }
+}
+
 /// <summary>Shows a transient brightness indicator on the display being adjusted.</summary>
 public interface IDisplayBrightnessOverlayContext
 {

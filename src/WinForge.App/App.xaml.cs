@@ -23,6 +23,7 @@ public partial class App : Application
     public ModuleHost Host { get; private set; } = null!;
     public FileLogger Logger { get; private set; } = null!;
     public HotkeyService Hotkeys { get; private set; } = null!;
+    public IFeatureUiService FeatureUi { get; private set; } = null!;
     public MainWindow? MainView { get; private set; }
     private TrayIcon? _tray;
 
@@ -63,10 +64,12 @@ public partial class App : Application
 
         Store = new SettingsStore(Path.Combine(dataDirectory, "settings.json"));
         Hotkeys = new HotkeyService();
+        FeatureUi = new ReactWindowHostService();
+        OsdWindow.Configure(FeatureUi);
 
         var modulesDirectory = Path.Combine(AppContext.BaseDirectory, "modules");
         Host = new ModuleHost(Store, Logger, Hotkeys, modulesDirectory, OsdWindow.Toast, OsdWindow.ShowBrightness,
-            OsdWindow.ShowVolume);
+            OsdWindow.ShowVolume, FeatureUi);
         Host.Load();
         Host.StartEnabled();
 
@@ -196,6 +199,8 @@ public partial class App : Application
         try { _commandServerCancellation?.Cancel(); } catch { }
         try { _commandServerCancellation?.Dispose(); } catch { }
         try { Host?.StopAll(); } catch { }
+        try { OsdWindow.Dispose(); } catch { }
+        try { (FeatureUi as IDisposable)?.Dispose(); } catch { }
         try { _tray?.Dispose(); } catch { }
         try { Hotkeys?.Dispose(); } catch { }
         try { Store?.Save(); } catch { }

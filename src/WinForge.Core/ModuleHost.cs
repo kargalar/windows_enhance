@@ -15,9 +15,11 @@ public sealed class ModuleHost
     private readonly Dictionary<string, IModuleSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
     private readonly IQuickActionService _quickActions;
+    private readonly IFeatureUiService? _featureUi;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
-        Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null)
+        Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null,
+        IFeatureUiService? featureUi = null)
     {
         _store = store;
         _log = log;
@@ -26,6 +28,7 @@ public sealed class ModuleHost
         _notify = notify;
         _showDisplayBrightness = showDisplayBrightness;
         _showAudioVolume = showAudioVolume;
+        _featureUi = featureUi;
         _quickActions = new QuickActionService(() => _modules, _log, _notify);
     }
 
@@ -62,7 +65,7 @@ public sealed class ModuleHost
                     var module = (ITweakModule)Activator.CreateInstance(type)!;
                     var settings = new ModuleSettings(_store.For(module.Id), _store.Save);
                     _settings[module.Id] = settings;
-                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, _showDisplayBrightness, _showAudioVolume,
+                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, _showDisplayBrightness, _showAudioVolume, _featureUi,
                         TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag));
                     _modules.Add(module);
                     _log.Info($"Modül yüklendi: {module.Id} ({module.Name})");
@@ -202,18 +205,19 @@ public sealed class ModuleHost
     }
 
     private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext,
-        IDisplayBrightnessOverlayContext, IAudioVolumeOverlayContext
+        IDisplayBrightnessOverlayContext, IAudioVolumeOverlayContext, IFeatureUiContext
     {
         private readonly Action<string> _notify;
         private readonly Action<int, string>? _showDisplayBrightness;
         private readonly Action<int, bool, Action?, int>? _showAudioVolume;
+        private readonly IFeatureUiService? _featureUi;
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
         private readonly Action<IntPtr> _beginWindowZoneDrag;
         private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
             IQuickActionService quickActions, Action<int, string>? showDisplayBrightness,
-            Action<int, bool, Action?, int>? showAudioVolume,
+            Action<int, bool, Action?, int>? showAudioVolume, IFeatureUiService? featureUi,
             Func<IntPtr, POINT, bool> placeWindow,
             Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
         {
@@ -224,6 +228,7 @@ public sealed class ModuleHost
             _notify = notify;
             _showDisplayBrightness = showDisplayBrightness;
             _showAudioVolume = showAudioVolume;
+            _featureUi = featureUi;
             _placeWindow = placeWindow;
             _beginWindowZoneDrag = beginWindowZoneDrag;
             _endWindowZoneDrag = endWindowZoneDrag;
@@ -233,6 +238,7 @@ public sealed class ModuleHost
         public ILogger Log { get; }
         public IHotkeyService Hotkeys { get; }
         public IQuickActionService QuickActions { get; }
+        public IFeatureUiService? FeatureUi => _featureUi;
 
         public void Notify(string message) => _notify(message);
         public void ShowDisplayBrightness(int percent, string deviceName)

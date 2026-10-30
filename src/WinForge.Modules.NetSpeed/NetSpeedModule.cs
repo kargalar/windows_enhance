@@ -82,7 +82,7 @@ public sealed class NetSpeedModule : ITweakModule
 
     public void Activate()
     {
-        _window = new NetSpeedWindow();
+        _window = new NetSpeedWindow((_context as IFeatureUiContext)?.FeatureUi);
         _window.Start();
         Apply();
 

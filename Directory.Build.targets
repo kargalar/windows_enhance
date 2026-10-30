@@ -8,7 +8,8 @@
                         Condition="'%(PackageReference.IsImplicitlyDefined)' != 'true'
                           and '%(PackageReference.Identity)' != 'ZemberekDotNet.Morphology'
                           and '%(PackageReference.Identity)' != 'ZemberekDotNet.Core'
-                          and '%(PackageReference.Identity)' != 'ZemberekDotNet.Tokenization'" />
+                          and '%(PackageReference.Identity)' != 'ZemberekDotNet.Tokenization'
+                          and '%(PackageReference.Identity)' != 'Microsoft.Web.WebView2'" />
     </ItemGroup>
     <ItemGroup>
       <ExternalPackages Remove="@(FileToolPackage)" />

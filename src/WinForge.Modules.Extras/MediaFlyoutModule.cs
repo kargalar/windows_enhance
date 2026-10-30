@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -31,7 +32,7 @@ public sealed class MediaFlyoutModule : ITweakModule
     private LockKeysFlyoutHook? _lockKeysHook;
     private MediaFlyoutWindow? _window;
     private TaskbarMediaWidgetWindow? _taskbarWidget;
-    private TaskbarAudioVisualizerWindow? _taskbarVisualizer;
+    private TaskbarAudioVisualizer? _taskbarVisualizer;
     private readonly SettingDescriptor[] _settings;
 
     public MediaFlyoutModule()
@@ -335,7 +336,7 @@ public sealed class MediaFlyoutModule : ITweakModule
             _window = null;
             _taskbarWidget?.Close();
             _taskbarWidget = null;
-            _taskbarVisualizer?.Close();
+            _taskbarVisualizer?.Dispose();
             _taskbarVisualizer = null;
             _context?.Log.Error("Medya flyout kısayolu kaydedilemedi.", exception);
             throw;
@@ -355,7 +356,7 @@ public sealed class MediaFlyoutModule : ITweakModule
         _lockKeysHook = null;
         _taskbarWidget?.Close();
         _taskbarWidget = null;
-        _taskbarVisualizer?.Close();
+        _taskbarVisualizer?.Dispose();
         _taskbarVisualizer = null;
         _window?.Close();
         _window = null;
@@ -485,6 +486,7 @@ public sealed class MediaFlyoutModule : ITweakModule
 
     private void RegisterLockKeysFlyout()
     {
+        LockKeysStatusWindow.Configure((_context as IFeatureUiContext)?.FeatureUi);
         var settings = _context?.Settings;
         var lockKeysEnabled = settings?.GetBool("lock-keys-flyout-enabled", true) == true;
         var hardwareKeysEnabled = _context?.Settings.GetBool("hardware-keys-flyout-enabled", true) == true;
@@ -501,7 +503,7 @@ public sealed class MediaFlyoutModule : ITweakModule
     {
         if (_context?.Settings.GetBool("taskbar-media-widget-enabled", false) == true)
         {
-            _taskbarWidget ??= new TaskbarMediaWidgetWindow(OpenFlyout);
+            _taskbarWidget ??= new TaskbarMediaWidgetWindow(OpenFlyout, (_context as IFeatureUiContext)?.FeatureUi);
             _taskbarWidget.ConfigureMediaFilter(
                 _context?.Settings.GetString("media-app-filter-mode", "all") ?? "all",
                 _context?.Settings.GetString("media-app-filter-list", "") ?? "",
@@ -519,16 +521,16 @@ public sealed class MediaFlyoutModule : ITweakModule
 
     private void ConfigureTaskbarVisualizer()
     {
-        _taskbarVisualizer?.Close();
+        _taskbarVisualizer?.Dispose();
         _taskbarVisualizer = null;
         var settings = _context?.Settings;
         if (settings?.GetBool("taskbar-visualizer-enabled", false) != true) return;
-        _taskbarVisualizer = new TaskbarAudioVisualizerWindow(
+        _taskbarVisualizer = new TaskbarAudioVisualizer(
+            (_context as IFeatureUiContext)?.FeatureUi,
             settings.GetString("taskbar-visualizer-position", "center"),
             settings.GetBool("taskbar-media-widget-enabled", false),
             settings.GetBool("taskbar-visualizer-baseline", false),
             settings.GetBool("taskbar-visualizer-hide-when-silent", true));
-        _taskbarVisualizer.Show();
     }
 
     private void ConfigureFlyoutWindow()
@@ -555,7 +557,7 @@ public sealed class MediaFlyoutModule : ITweakModule
     {
         if (_window is null)
         {
-            _window = new MediaFlyoutWindow();
+            _window = new MediaFlyoutWindow((_context as IFeatureUiContext)?.FeatureUi);
             _window.Closed += (_, _) => _window = null;
         }
         var settings = _context?.Settings;
@@ -670,10 +672,11 @@ internal sealed class LockKeysFlyoutHook : IDisposable
     private static extern short GetKeyState(int virtualKey);
 }
 
-internal sealed class LockKeysStatusWindow : Window
+internal static class LockKeysStatusWindow
 {
     private static readonly DispatcherTimer Timer = new() { Interval = TimeSpan.FromMilliseconds(1500) };
-    private static LockKeysStatusWindow? _instance;
+    private static IFeatureUiService? _featureUi;
+    private static IFeatureUiWindow? _instance;
 
     static LockKeysStatusWindow()
     {
@@ -685,64 +688,20 @@ internal sealed class LockKeysStatusWindow : Window
         };
     }
 
-    private LockKeysStatusWindow(string key, bool enabled)
-    {
-        Width = 230;
-        Height = 76;
-        WindowStyle = WindowStyle.None;
-        ResizeMode = ResizeMode.NoResize;
-        ShowInTaskbar = false;
-        ShowActivated = false;
-        Topmost = true;
-        AllowsTransparency = true;
-        Background = Brushes.Transparent;
-        WindowStartupLocation = WindowStartupLocation.Manual;
-        Left = SystemParameters.WorkArea.Left + (SystemParameters.WorkArea.Width - Width) / 2;
-        Top = SystemParameters.WorkArea.Top + 48;
-        Content = new Border
-        {
-            Background = Brush("#F20A0A0A"),
-            BorderBrush = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(16, 10, 16, 10),
-            Child = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Children =
-                {
-                    new TextBlock { Text = enabled ? "●" : "○", FontSize = 23, Foreground = Brush(enabled ? "#72D49B" : "#A8B3C7"), Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center },
-                    new StackPanel
-                    {
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Children =
-                        {
-                            new TextBlock { Text = key, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White },
-                            new TextBlock { Text = enabled ? "Açık" : "Kapalı", FontSize = 11, Foreground = Brushes.White }
-                        }
-                    }
-                }
-            }
-        };
-        SourceInitialized += (_, _) =>
-        {
-            var handle = new WindowInteropHelper(this).Handle;
-            var style = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64() | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW;
-            Native.SetWindowLongPtr(handle, Native.GWL_EXSTYLE, new IntPtr(style));
-        };
-    }
+    public static void Configure(IFeatureUiService? featureUi) => _featureUi = featureUi;
 
     public static void Show(string key, bool enabled)
     {
+        if (_featureUi is null) return;
         _instance?.Close();
-        _instance = new LockKeysStatusWindow(key, enabled);
-        _instance.Show();
+        var bounds = SystemParameters.WorkArea;
+        _instance = _featureUi.Open("lock-keys-status", "lock-keys-status", "Kilit tuşu durumu",
+            new FeatureUiWindowOptions(230, 76, Topmost: true, ActivateOnShow: false, Transparent: true));
+        _instance.SetBounds(bounds.Left + (bounds.Width - 230) / 2, bounds.Top + 48, 230, 76);
+        _instance.SetState(new { key, enabled });
         Timer.Stop();
         Timer.Start();
     }
-
-    private static SolidColorBrush Brush(string color) => new((Color)ColorConverter.ConvertFromString(color)!);
 }
 
 internal sealed class MediaFlyoutWindow : Window
@@ -768,6 +727,8 @@ internal sealed class MediaFlyoutWindow : Window
     private readonly DispatcherTimer _upNextTimer;
     private readonly DispatcherTimer _dismissTimer;
     private readonly TextBlock _upNextText;
+    private readonly IFeatureUiSurface? _uiSurface;
+    private string? _artworkDataUri;
 
     // Kaynak uygulama tespiti ve yönlendirme
     private readonly Button _sourceAppButton;
@@ -828,11 +789,14 @@ internal sealed class MediaFlyoutWindow : Window
 
     public bool IsWindowPinned => _isWindowPinned;
 
-    public MediaFlyoutWindow()
+    public MediaFlyoutWindow(IFeatureUiService? featureUi = null)
     {
+        _uiSurface = featureUi?.CreateSurface("media-flyout");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = "Medya ve Ses";
-        Width = 320;
-        SizeToContent = SizeToContent.Height;
+        Width = 360;
+        Height = 300;
+        SizeToContent = SizeToContent.Manual;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
@@ -843,7 +807,7 @@ internal sealed class MediaFlyoutWindow : Window
         FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
         WindowStartupLocation = WindowStartupLocation.Manual;
 
-        var content = new StackPanel { Margin = new Thickness(14) };
+        var content = new StackPanel { Margin = new Thickness(15) };
         _upNextText = new TextBlock
         {
             Name = "UpNextNotification",
@@ -1125,15 +1089,16 @@ internal sealed class MediaFlyoutWindow : Window
         mediaControls.Children.Add(_nextButton);
         content.Children.Add(mediaControls);
 
-        Content = new Border
+        var legacyContent = new Border
         {
-            Background = Brush("#F20A0A0A"),
-            BorderBrush = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(16),
+            Background = Brush("#F21B1B1D"),
+            BorderBrush = Brush("#FF424246"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(19),
             Child = content,
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 28, ShadowDepth = 5, Opacity = 0.35, Color = Colors.Black }
         };
+        Content = _uiSurface?.Element ?? legacyContent;
 
         SourceInitialized += (_, _) =>
         {
@@ -1156,6 +1121,7 @@ internal sealed class MediaFlyoutWindow : Window
         _refreshTimer.Tick += (_, _) =>
         {
             UpdateTimeline(_selectedSession);
+            PushUiState();
         };
         _backgroundMediaTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
         _backgroundMediaTimer.Tick += async (_, _) =>
@@ -1175,6 +1141,7 @@ internal sealed class MediaFlyoutWindow : Window
         {
             _upNextTimer.Stop();
             _upNextText.Visibility = Visibility.Collapsed;
+            PushUiState();
         };
         _dismissTimer = new DispatcherTimer();
         _dismissTimer.Tick += (_, _) =>
@@ -1197,6 +1164,7 @@ internal sealed class MediaFlyoutWindow : Window
             _upNextTimer.Stop();
             _dismissTimer.Stop();
             DetachMediaEventHandlers();
+            _uiSurface?.Dispose();
         };
         Loaded += async (_, _) => await RefreshAsync();
     }
@@ -1307,6 +1275,7 @@ internal sealed class MediaFlyoutWindow : Window
         ApplyTheme();
         if (_isWindowPinned) _dismissTimer.Stop();
         else if (IsVisible) ResetDismissTimer(_lastTriggerWasAuto);
+        PushUiState();
     }
 
     public void SetWindowPinned(bool pinned)
@@ -1315,6 +1284,105 @@ internal sealed class MediaFlyoutWindow : Window
         _saveWindowPinned?.Invoke(_isWindowPinned);
         if (_isWindowPinned) _dismissTimer.Stop();
         else ResetDismissTimer(isAutoTrigger: false);
+        PushUiState();
+    }
+
+    private async void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "media.previous": SkipPrevious(null, new RoutedEventArgs()); break;
+            case "media.next": SkipNext(null, new RoutedEventArgs()); break;
+            case "media.toggle": TogglePlayback(null, new RoutedEventArgs()); break;
+            case "media.shuffle": ToggleShuffle(null, new RoutedEventArgs()); break;
+            case "media.repeat": ToggleRepeat(null, new RoutedEventArgs()); break;
+            case "media.seek":
+                if (payload.TryGetProperty("position", out var position) && position.TryGetDouble(out var seconds))
+                    await SeekToPositionAsync(seconds);
+                break;
+            case "media.select-session":
+                if (payload.TryGetProperty("id", out var id))
+                {
+                    var choice = (_sessionSelector.ItemsSource as IEnumerable<MediaSessionChoice>)?
+                        .FirstOrDefault(item => string.Equals(item.Session.SourceAppUserModelId, id.GetString(), StringComparison.Ordinal));
+                    if (choice is not null) _sessionSelector.SelectedItem = choice;
+                }
+                break;
+            case "media.open-source": OpenCurrentMediaApp(); break;
+            case "media.pin":
+                if (payload.TryGetProperty("value", out var pinned) && pinned.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    SetWindowPinned(pinned.GetBoolean());
+                break;
+            case "media.dismiss": Dismiss(); break;
+            case "media.hover":
+                if (payload.TryGetProperty("value", out var hovering) && hovering.ValueKind == JsonValueKind.True)
+                    _dismissTimer.Stop();
+                else if (!_isWindowPinned)
+                    ResetDismissTimer(_lastTriggerWasAuto);
+                break;
+        }
+    }
+
+    private async Task SeekToPositionAsync(double seconds)
+    {
+        if (_selectedSession is null || _currentDuration <= TimeSpan.Zero || !double.IsFinite(seconds)) return;
+        var target = TimeSpan.FromSeconds(Math.Clamp(seconds, 0, _currentDuration.TotalSeconds));
+        try
+        {
+            var timeline = _selectedSession.GetTimelineProperties();
+            await _selectedSession.TryChangePlaybackPositionAsync((timeline.StartTime + target).Ticks);
+            UpdateTimeline(_selectedSession);
+            PushUiState();
+        }
+        catch { }
+    }
+
+    private void PushUiState()
+    {
+        if (_uiSurface is null || _isClosed) return;
+        var sessions = (_sessionSelector.ItemsSource as IEnumerable<MediaSessionChoice>)?.Select(choice => new
+        {
+            id = choice.Session.SourceAppUserModelId,
+            label = choice.DisplayName
+        }).ToArray() ?? [];
+        var selected = _selectedSession;
+        var isPlaying = false;
+        if (selected is not null)
+        {
+            try { isPlaying = selected.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing; }
+            catch { }
+        }
+        _uiSurface.SetState(new
+        {
+            title = _trackInfo.Text,
+            artist = _artistInfo.Text,
+            artwork = _artworkDataUri,
+            sourceName = _sourceAppName.Text,
+            sourceType = _currentMediaType.ToString(),
+            sourceBadge = _sourceAppBadge.Text,
+            upNext = _upNextText.Visibility == Visibility.Visible ? _upNextText.Text : null,
+            sessions,
+            selectedSessionId = selected?.SourceAppUserModelId ?? "",
+            showSessionSelector = _sessionSelector.Visibility == Visibility.Visible,
+            position = _currentPosition.TotalSeconds,
+            duration = _currentDuration.TotalSeconds,
+            currentTime = _currentTimeText.Text,
+            totalTime = _totalTimeText.Text,
+            isPlaying,
+            canPlay = _playPauseButton.IsEnabled,
+            canPrevious = _prevButton.IsEnabled,
+            canNext = _nextButton.IsEnabled,
+            canShuffle = _shuffleButton.IsEnabled,
+            canRepeat = _repeatButton.IsEnabled,
+            shuffleEnabled = _shuffleEnabled,
+            repeatMode = _repeatMode switch
+            {
+                MediaPlaybackAutoRepeatMode.List => "list",
+                MediaPlaybackAutoRepeatMode.Track => "track",
+                _ => "off"
+            },
+            pinned = _isWindowPinned
+        });
     }
 
     internal static HashSet<string> ParseMediaAppFilterList(string value) => value
@@ -1394,45 +1462,46 @@ internal sealed class MediaFlyoutWindow : Window
 
     private void ApplyTheme()
     {
-        var background = Brush("#0A0A0A");
+        var background = Brush("#1B1B1D");
         var foreground = Brushes.White;
         if (Content is Border card)
         {
             card.Background = background;
-            card.BorderBrush = Brushes.Transparent;
-            card.BorderThickness = new Thickness(0);
+            card.BorderBrush = Brush("#424246");
+            card.BorderThickness = new Thickness(1);
+            card.CornerRadius = new CornerRadius(19);
         }
         foreach (var element in Descendants(this))
         {
             if (element is TextBlock text)
             {
                 text.Foreground = foreground;
-                text.FontWeight = FontWeights.Bold;
             }
             else if (element is Border border)
             {
-                if (border == _progressTrack) border.Background = Brush("#33FFFFFF");
+                if (border == _progressTrack) border.Background = Brush("#57575B");
                 else if (border == _progressFill) { /* kaynağa özel renk korunur */ }
                 else if (border == _progressThumb) border.Background = Brushes.White;
-                else border.Background = Brush("#171717");
-                border.BorderBrush = Brushes.Transparent;
-                border.BorderThickness = new Thickness(0);
+                else border.Background = Brush("#252527");
+                border.BorderBrush = Brush("#39393D");
+                border.BorderThickness = new Thickness(1);
             }
             else if (element is Button button)
             {
                 var isSourceButton = button == _sourceAppButton;
+                button.SetResourceReference(FrameworkElement.StyleProperty, "PopupButton");
                 button.Foreground = isSourceButton ? Brushes.White : Brushes.Black;
                 button.Background = isSourceButton ? Brushes.Transparent : Brushes.White;
-                button.BorderBrush = Brushes.Transparent;
-                button.BorderThickness = new Thickness(0);
-                button.FontWeight = FontWeights.Bold;
+                button.BorderBrush = isSourceButton ? Brushes.Transparent : Brush("#F5F5F5");
+                button.BorderThickness = new Thickness(isSourceButton ? 0 : 1);
+                button.FontWeight = FontWeights.SemiBold;
             }
             else if (element is ComboBox combo)
             {
                 combo.Foreground = Brushes.Black;
-                combo.Background = Brushes.White;
-                combo.BorderBrush = Brushes.Transparent;
-                combo.BorderThickness = new Thickness(0);
+                combo.Background = Brush("#F5F5F5");
+                combo.BorderBrush = Brush("#E5E5E5");
+                combo.BorderThickness = new Thickness(1);
             }
         }
         _sourceAppName.Foreground = Brushes.White;
@@ -1527,6 +1596,7 @@ internal sealed class MediaFlyoutWindow : Window
         finally
         {
             _refreshingMedia = false;
+            PushUiState();
             if (_mediaRefreshPending && !_isClosed)
             {
                 _mediaRefreshPending = false;
@@ -1594,6 +1664,7 @@ internal sealed class MediaFlyoutWindow : Window
         if (string.Equals(_artworkKey, key, StringComparison.Ordinal)) return;
         _artworkKey = key;
         _artwork.Source = null;
+        _artworkDataUri = null;
         if (properties.Thumbnail is null) return;
 
         try
@@ -1615,10 +1686,16 @@ internal sealed class MediaFlyoutWindow : Window
             bitmap.EndInit();
             bitmap.Freeze();
             _artwork.Source = bitmap;
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var encoded = new MemoryStream();
+            encoder.Save(encoded);
+            _artworkDataUri = $"data:image/png;base64,{Convert.ToBase64String(encoded.ToArray())}";
         }
         catch
         {
             _artwork.Source = null;
+            _artworkDataUri = null;
         }
     }
 

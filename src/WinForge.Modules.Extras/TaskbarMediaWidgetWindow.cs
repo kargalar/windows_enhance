@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -15,6 +16,7 @@ namespace WinForge.Modules.Extras;
 internal sealed class TaskbarMediaWidgetWindow : Window
 {
     private readonly Action _openFlyout;
+    private readonly IFeatureUiSurface? _uiSurface;
     private readonly TextBlock _trackInfo;
     private readonly Button _playPauseButton;
     private readonly DispatcherTimer _refreshTimer;
@@ -39,9 +41,11 @@ internal sealed class TaskbarMediaWidgetWindow : Window
     private const double TaskbarGap = 10;
     private const double ScreenEdgeGap = 10;
 
-    public TaskbarMediaWidgetWindow(Action openFlyout)
+    public TaskbarMediaWidgetWindow(Action openFlyout, IFeatureUiService? featureUi = null)
     {
         _openFlyout = openFlyout;
+        _uiSurface = featureUi?.CreateSurface("taskbar-media-widget");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Width = 340;
         Height = 54;
         WindowStyle = WindowStyle.None;
@@ -78,16 +82,17 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         DockPanel.SetDock(controls, Dock.Right);
         row.Children.Add(controls);
         row.Children.Add(_trackInfo);
-        Content = new Border
+        var legacyContent = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(244, 30, 36, 48)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(220, 88, 102, 124)),
+            Background = new SolidColorBrush(Color.FromArgb(248, 27, 27, 29)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(255, 66, 66, 70)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14),
+            CornerRadius = new CornerRadius(16),
             Padding = new Thickness(5, 4, 6, 4),
             Child = row,
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 2, Opacity = 0.3, Color = Colors.Black }
         };
+        Content = _uiSurface?.Element ?? legacyContent;
         PreviewMouseWheel += (_, args) =>
         {
             if (_scrollMode == "off") return;
@@ -137,11 +142,12 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         ContextMenu.Items.Add(CreateMenuItem("Medya denetimlerini aç", (_, _) => _openFlyout()));
         ContextMenu.Items.Add(CreateMenuItem("Windows Ses Ayarları", (_, _) => OpenSoundSettings()));
         ContextMenu.Items.Add(CreateMenuItem("Oynatıcıya geç", (_, _) => OpenPlayer()));
+        if (_uiSurface is not null) ContextMenu = null;
 
         Loaded += async (_, _) => await RefreshAsync();
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += async (_, _) => await RefreshAsync();
-        Closed += (_, _) => _refreshTimer.Stop();
+        Closed += (_, _) => { _refreshTimer.Stop(); _uiSurface?.Dispose(); };
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -337,7 +343,98 @@ internal sealed class TaskbarMediaWidgetWindow : Window
             _session = null;
             Hide();
         }
-        finally { _refreshing = false; }
+        finally
+        {
+            _refreshing = false;
+            PushUiState();
+        }
+    }
+
+    private async void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "widget.open-flyout": _openFlyout(); break;
+            case "widget.previous": await SkipPreviousAsync(); break;
+            case "widget.next": await SkipNextAsync(); break;
+            case "widget.toggle": await TogglePlaybackAsync(); break;
+            case "widget.switch-session": await SwitchSessionAsync(); break;
+            case "widget.select-session":
+                if (payload.TryGetProperty("id", out var id)) SetPinnedSession(id.GetString());
+                break;
+            case "widget.open-player": OpenPlayer(); break;
+            case "widget.open-sound-settings": OpenSoundSettings(); break;
+        }
+    }
+
+    private void PushUiState()
+    {
+        if (_uiSurface is null) return;
+        var sessions = _availableSessions.Select(session => new
+        {
+            id = session.SourceAppUserModelId,
+            label = MediaFlyoutWindow.NormalizeMediaAppId(session.SourceAppUserModelId)
+        }).ToArray();
+        var isPlaying = false;
+        var canPrevious = false;
+        var canNext = false;
+        if (_session is not null)
+        {
+            try
+            {
+                var playback = _session.GetPlaybackInfo();
+                isPlaying = playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+                canPrevious = playback.Controls.IsPreviousEnabled;
+                canNext = playback.Controls.IsNextEnabled;
+            }
+            catch { }
+        }
+        _uiSurface.SetState(new
+        {
+            title = _session is null ? "Medya oturumu yok veya filtrelendi" : _trackInfo.Text,
+            player = GetPlayerName(),
+            isPlaying,
+            canPrevious,
+            canNext,
+            sessions,
+            selectedSessionId = _session?.SourceAppUserModelId ?? "",
+            showSessionSelector = sessions.Length > 1,
+            pinnedSessionId = _pinnedSessionId,
+            scrollMode = _scrollMode
+        });
+    }
+
+    private Task SwitchSessionAsync() => SwitchSessionCoreAsync();
+
+    private async Task SwitchSessionCoreAsync()
+    {
+        if (_availableSessions.Length < 2) return;
+        var index = Array.FindIndex(_availableSessions, session => ReferenceEquals(session, _session));
+        var next = _availableSessions[(index + 1) % _availableSessions.Length];
+        _manualSessionId = next.SourceAppUserModelId;
+        _pinnedSessionId = "";
+        await RefreshAsync();
+    }
+
+    private async Task SkipPreviousAsync()
+    {
+        if (_session is not null) await _session.TrySkipPreviousAsync();
+        await RefreshAsync();
+    }
+
+    private async Task SkipNextAsync()
+    {
+        if (_session is not null) await _session.TrySkipNextAsync();
+        await RefreshAsync();
+    }
+
+    private async Task TogglePlaybackAsync()
+    {
+        if (_session is null) return;
+        var playing = _session.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+        if (playing) await _session.TryPauseAsync();
+        else await _session.TryPlayAsync();
+        await RefreshAsync();
     }
 
     private async void SwitchSession(object? sender, RoutedEventArgs e)
@@ -456,12 +553,14 @@ internal sealed class TaskbarMediaWidgetWindow : Window
             Height = 34,
             Padding = new Thickness(0),
             Margin = new Thickness(1),
-            Background = new SolidColorBrush(Color.FromArgb(255, 42, 50, 64)),
-            Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromArgb(255, 66, 78, 96)),
+            Background = Brushes.White,
+            Foreground = Brushes.Black,
+            BorderBrush = Brushes.White,
+            BorderThickness = new Thickness(1),
             FontSize = 12,
             Cursor = System.Windows.Input.Cursors.Hand
         };
+        button.SetResourceReference(FrameworkElement.StyleProperty, "PopupButton");
         button.Click += action;
         return button;
     }

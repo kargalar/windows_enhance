@@ -3,6 +3,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Text.Json;
+using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
@@ -32,6 +34,7 @@ internal sealed class AdvancedPasteWindow : Window
     private readonly StackPanel _jpegOptions;
     private readonly Slider _jpegQuality;
     private readonly TextBlock _jpegQualityLabel;
+    private readonly IFeatureUiSurface? _uiSurface;
     private Button? _copyButton;
     private Button? _pasteButton;
     private int _previewRevision;
@@ -39,12 +42,15 @@ internal sealed class AdvancedPasteWindow : Window
     public AdvancedPasteWindow(ClipboardTextSnapshot snapshot,
         Func<BitmapSource, Task<string>> recognizeImage,
         Action<AdvancedPasteAction, ClipboardTextSnapshot, string> copy,
-        Action<AdvancedPasteAction, ClipboardTextSnapshot, string> paste)
+        Action<AdvancedPasteAction, ClipboardTextSnapshot, string> paste,
+        IFeatureUiService? featureUi = null)
     {
         _snapshot = snapshot;
         _recognizeImage = recognizeImage;
         _copy = copy;
         _paste = paste;
+        _uiSurface = featureUi?.CreateSurface("advanced-paste");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = "WinForge · Gelişmiş Yapıştır";
         Width = 720;
         Height = 560;
@@ -173,10 +179,11 @@ internal sealed class AdvancedPasteWindow : Window
         Grid.SetRow(source, 4);
         content.Children.Add(source);
         root.Children.Add(content);
-        Content = root;
+        Content = _uiSurface?.Element ?? root;
 
         _actionBox.SelectionChanged += (_, _) => RefreshPreview();
         _jpegQuality.ValueChanged += (_, _) => RefreshPreview();
+        Closed += (_, _) => _uiSurface?.Dispose();
 
         PreviewKeyDown += (_, args) =>
         {
@@ -184,6 +191,45 @@ internal sealed class AdvancedPasteWindow : Window
         };
         RefreshPreview();
     }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "paste.select":
+                if (payload.TryGetProperty("index", out var selected) && selected.TryGetInt32(out var index) && index >= 0 && index < Actions.Length)
+                    _actionBox.SelectedIndex = index;
+                break;
+            case "paste.quality":
+                if (payload.TryGetProperty("quality", out var quality) && quality.TryGetDouble(out var value))
+                    _jpegQuality.Value = Math.Clamp(value, _jpegQuality.Minimum, _jpegQuality.Maximum);
+                break;
+            case "paste.copy": _copy(SelectedAction(), CurrentSnapshot(), _preview.Text); break;
+            case "paste.paste":
+                _paste(SelectedAction(), CurrentSnapshot(), _preview.Text);
+                DialogResult = true;
+                break;
+            case "paste.cancel": DialogResult = false; break;
+        }
+    }
+
+    private void PushUiState() => _uiSurface?.SetState(new
+    {
+        options = Actions.Select(row => new { row.Name, action = row.Action.ToString() }).ToArray(),
+        selectedIndex = _actionBox.SelectedIndex,
+        jpegQuality = _jpegQuality.Value,
+        jpegVisible = _jpegOptions.Visibility == Visibility.Visible,
+        sourceText = _snapshot.Text.Length > 4000 ? _snapshot.Text[..4000] + "…" : _snapshot.Text,
+        sourceLength = _snapshot.Text.Length,
+        hasImage = _snapshot.Image is not null,
+        imageWidth = _snapshot.Image?.PixelWidth ?? 0,
+        imageHeight = _snapshot.Image?.PixelHeight ?? 0,
+        preview = _preview.Text,
+        status = _status.Text,
+        canCopy = _copyButton?.IsEnabled == true,
+        canPaste = _pasteButton?.IsEnabled == true,
+        pasteLabel = _pasteButton?.Content?.ToString() ?? "Yapıştır"
+    });
 
     private AdvancedPasteAction SelectedAction() =>
         _actionBox.SelectedIndex >= 0 && _actionBox.SelectedIndex < Actions.Length
@@ -211,16 +257,19 @@ internal sealed class AdvancedPasteWindow : Window
         {
             _preview.Text = "";
             _status.Text = "Bu işlem için panoda görsel bulunmalı.";
+            PushUiState();
             return;
         }
         if (!requiresImage && !hasText)
         {
             _preview.Text = "";
             _status.Text = "Bu işlem için panoda metin veya HTML bulunmalı.";
+            PushUiState();
             return;
         }
 
         _status.Text = action == AdvancedPasteAction.ImageToText ? "Windows OCR çalışıyor…" : "Önizleme hazırlanıyor…";
+        PushUiState();
         try
         {
             var result = action == AdvancedPasteAction.ImageToText
@@ -232,6 +281,7 @@ internal sealed class AdvancedPasteWindow : Window
             if (action == AdvancedPasteAction.ImageToText && string.IsNullOrWhiteSpace(result))
             {
                 _status.Text = "Görselde metin bulunamadı.";
+                PushUiState();
                 return;
             }
 
@@ -240,12 +290,14 @@ internal sealed class AdvancedPasteWindow : Window
                 : $"{result.Length:N0} karakter · yerel dönüşüm";
             _copyButton.IsEnabled = result.Length > 0;
             _pasteButton.IsEnabled = result.Length > 0;
+            PushUiState();
         }
         catch (Exception exception)
         {
             if (revision != _previewRevision) return;
             _preview.Text = "";
             _status.Text = "Bu içerik seçilen biçime dönüştürülemedi: " + exception.Message;
+            PushUiState();
         }
     }
 

@@ -66,7 +66,8 @@ public sealed class LauncherModule : ITweakModule
     {
         var quickActions = (_context as IQuickActionContext)?.QuickActions;
         _window = new LauncherWindow(Launch, CopyResult, GetAdditionalRoots(), GetAllowedExtensions(),
-            IsContentSearchEnabled(), AreRecentItemsEnabled(), quickActions);
+            IsContentSearchEnabled(), AreRecentItemsEnabled(), quickActions,
+            (_context as IFeatureUiContext)?.FeatureUi);
         RegisterHotkey();
         IsActive = true;
         _context?.Log.Info("Hızlı Başlatıcı etkin.");

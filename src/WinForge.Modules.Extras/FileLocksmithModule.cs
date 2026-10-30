@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -13,22 +14,27 @@ namespace WinForge.Modules.Extras;
 
 public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
 {
-    private readonly SettingDescriptor[] _settings =
-    [
-        new SettingDescriptor
-        {
-            Key = "open",
-            Label = "Dosya kilitlerini bul",
-            Kind = SettingKind.Action,
-            Description = "Dosyayı kullanan uygulama ve hizmetleri listeleyin.",
-            Execute = Open
-        }
-    ];
+    private readonly SettingDescriptor[] _settings;
 
     private readonly ExplorerFileVerb _explorerVerb = new("WinForge.FileLocksmith", "Dosya kilitlerini bul (WinForge)", "--file-locksmith \"%1\"");
     private readonly ExplorerFileVerb _folderVerb = new("WinForge.FileLocksmith", "Dosya kilitlerini bul (WinForge)", "--file-locksmith \"%1\"", false, @"Software\Classes\Directory\shell");
     private bool _isActive;
     private IModuleContext? _context;
+
+    public FileLocksmithModule()
+    {
+        _settings =
+        [
+            new SettingDescriptor
+            {
+                Key = "open",
+                Label = "Dosya kilitlerini bul",
+                Kind = SettingKind.Action,
+                Description = "Dosyayı kullanan uygulama ve hizmetleri listeleyin.",
+                Execute = Open
+            }
+        ];
+    }
 
     public string Id => "file-locksmith";
     public string Name => "Dosya Kilidi Bulucu";
@@ -65,11 +71,11 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
         if (!string.Equals(command, "--file-locksmith", StringComparison.OrdinalIgnoreCase)) return false;
         if (arguments.Count != 1 || !(File.Exists(arguments[0]) || Directory.Exists(arguments[0])))
             throw new FileNotFoundException("Dosya kilitlerini bulmak için geçerli bir dosya veya klasör yolu gerekli.");
-        new FileLocksmithWindow(arguments[0]).ShowDialog();
+        new FileLocksmithWindow(arguments[0], (_context as IFeatureUiContext)?.FeatureUi).ShowDialog();
         return true;
     }
 
-    private static void Open() => new FileLocksmithWindow().ShowDialog();
+    private void Open() => new FileLocksmithWindow(null, (_context as IFeatureUiContext)?.FeatureUi).ShowDialog();
 }
 
 internal sealed class FileLocksmithWindow : Window
@@ -80,11 +86,16 @@ internal sealed class FileLocksmithWindow : Window
     private readonly TextBlock _status = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
     private readonly Button _scan = new() { Content = "Yeniden tara", MinWidth = 100, IsEnabled = false };
     private readonly Button _terminate = new() { Content = "Uygulamayı sonlandır…", MinWidth = 150, IsEnabled = false, Margin = new Thickness(8, 0, 0, 0) };
+    private readonly IFeatureUiSurface? _uiSurface;
+    private LockingProcess? _selectedProcess;
+    private bool _confirmTerminate;
 
     public FileLocksmithWindow() : this(null) { }
 
-    internal FileLocksmithWindow(string? initialPath)
+    internal FileLocksmithWindow(string? initialPath, IFeatureUiService? featureUi = null)
     {
+        _uiSurface = featureUi?.CreateSurface("file-locksmith");
+        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
         Title = "Dosya Kilidi Bulucu";
         Width = 760;
         Height = 460;
@@ -134,7 +145,8 @@ internal sealed class FileLocksmithWindow : Window
         footer.Children.Add(_status);
         Grid.SetRow(footer, 2);
         layout.Children.Add(footer);
-        Content = layout;
+        Content = _uiSurface?.Element ?? layout;
+        Closed += (_, _) => _uiSurface?.Dispose();
 
         if (!string.IsNullOrWhiteSpace(initialPath))
         {
@@ -142,7 +154,42 @@ internal sealed class FileLocksmithWindow : Window
             _scan.IsEnabled = true;
             Scan();
         }
+        else PushUiState();
     }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        switch (command)
+        {
+            case "file-locksmith.choose": ChooseFile(); break;
+            case "file-locksmith.scan": Scan(); break;
+            case "file-locksmith.select":
+                if (payload.TryGetProperty("processId", out var pid) && pid.TryGetUInt32(out var processId))
+                    _selectedProcess = _processes.FirstOrDefault(process => process.ProcessId == processId);
+                UpdateTerminateState();
+                break;
+            case "file-locksmith.terminate":
+                _confirmTerminate = false;
+                if (payload.TryGetProperty("confirm", out var confirmed) && confirmed.ValueKind == JsonValueKind.True) TerminateSelected(true);
+                else PushUiState();
+                break;
+            case "file-locksmith.close": Close(); break;
+        }
+    }
+
+    private void PushUiState() => _uiSurface?.SetState(new
+    {
+        path = _path.Text,
+        status = _status.Text,
+        selectedProcessId = _selectedProcess?.ProcessId,
+        canScan = File.Exists(_path.Text) || Directory.Exists(_path.Text),
+        canTerminate = _selectedProcess?.CanTerminate == true,
+        confirmTerminate = _confirmTerminate,
+        processes = _processes.Select(process => new
+        {
+            process.ProcessId, process.ProcessName, process.ApplicationName, process.Status, process.CanTerminate
+        }).ToArray()
+    });
 
     private void ChooseFile()
     {
@@ -165,11 +212,13 @@ internal sealed class FileLocksmithWindow : Window
         if (!File.Exists(_path.Text) && !Directory.Exists(_path.Text))
         {
             _status.Text = "Dosya/klasör bulunamadı veya artık erişilemiyor.";
+            PushUiState();
             return;
         }
 
         _scan.IsEnabled = false;
         _processes.Clear();
+        _selectedProcess = null;
         try
         {
             var processes = RestartManagerQuery.FindProcesses(_path.Text);
@@ -188,16 +237,30 @@ internal sealed class FileLocksmithWindow : Window
         {
             _scan.IsEnabled = true;
             UpdateTerminateState();
+            PushUiState();
         }
     }
 
-    private void UpdateTerminateState() => _terminate.IsEnabled = (_grid.SelectedItem as LockingProcess)?.CanTerminate == true;
-
-    private void TerminateSelected()
+    private void UpdateTerminateState()
     {
-        if (_grid.SelectedItem is not LockingProcess selected || !selected.CanTerminate) return;
+        if (_uiSurface is null) _selectedProcess = _grid.SelectedItem as LockingProcess;
+        _terminate.IsEnabled = _selectedProcess?.CanTerminate == true;
+        PushUiState();
+    }
 
-        var answer = MessageBox.Show(this,
+    private void TerminateSelected(bool confirmed = false)
+    {
+        var selected = _selectedProcess ?? (_grid.SelectedItem as LockingProcess);
+        if (selected is null || !selected.CanTerminate) return;
+
+        if (_uiSurface is not null && !confirmed)
+        {
+            _confirmTerminate = true;
+            PushUiState();
+            return;
+        }
+
+        var answer = confirmed ? MessageBoxResult.Yes : MessageBox.Show(this,
             $"{selected.ProcessName} (PID {selected.ProcessId}) sonlandırılsın mı?\n\nKaydedilmemiş çalışmalar kaybolabilir. Bu işlem yalnızca seçilen uygulama sürecini etkiler.",
             "Uygulamayı sonlandır", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
         if (answer != MessageBoxResult.Yes) return;
@@ -210,7 +273,8 @@ internal sealed class FileLocksmithWindow : Window
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Süreç sonlandırılamadı", MessageBoxButton.OK, MessageBoxImage.Error);
+            if (_uiSurface is null) MessageBox.Show(this, exception.Message, "Süreç sonlandırılamadı", MessageBoxButton.OK, MessageBoxImage.Error);
+            else _status.Text = exception.Message;
             Scan();
         }
     }

@@ -53,7 +53,7 @@ public sealed class DictationModule : CaptureModuleBase
                 new() { Key = "overlay-position", Label = "Dikte bildiriminin konumu", Kind = SettingKind.Choice, Default = "bottom-right",
                     Options = ["top-left", "top-right", "bottom-left", "bottom-right", "center"],
                     OptionLabels = new Dictionary<string, string> { ["top-left"] = "Sol üst", ["top-right"] = "Sağ üst", ["bottom-left"] = "Sol alt", ["bottom-right"] = "Sağ alt", ["center"] = "Ekran ortası" } },
-                new() { Key = "models", Label = "Modelleri yönet", Kind = SettingKind.Action, Execute = () => new ModelWindow(Store).Show() },
+                new() { Key = "models", Label = "Modelleri yönet", Kind = SettingKind.Action, Execute = () => new ModelWindow(Store, (Context as IFeatureUiContext)?.FeatureUi).Show() },
                 new() { Key = "cancel", Label = "Kaydı / çözümlemeyi iptal et", Kind = SettingKind.Action, Execute = Cancel }
             ];
         }

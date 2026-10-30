@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
+using System.Text.Json;
 using WinForge.Core;
 using WinForge.History;
 
@@ -20,7 +21,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     private bool busy;
     private ScreenRecording? recording;
     private Window? controls;
-    private Window? toolsWindow;
+    private IFeatureUiWindow? toolsWindow;
     public override string Id => "screen-capture";
     public override string Name => "Ekran Yakalama";
     public override string Description => "Bölge/pencere/ekran, kayan yakalama, işaretleme, OCR, video ve GIF kaydı.";
@@ -69,19 +70,34 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     private void ShowTools()
     {
         if (!IsActive) { Context.Notify("Önce Ekran Yakalama modülünü etkinleştirin."); return; }
-        if (toolsWindow is { } existing) { existing.Activate(); return; }
-        var window = new Window { Title = Name, Width = 520, Height = 440 }; toolsWindow = window; window.Closed += (_, _) => toolsWindow = null; CaptureUi.Theme(window);
-        var panel = new WrapPanel { Margin = new(20) }; window.Content = panel;
-        foreach (var (mode, label) in new[]
+        toolsWindow = (Context as IFeatureUiContext)?.FeatureUi?.Open("capture-tools", "capture-tools", Name,
+            new FeatureUiWindowOptions(520, 440, Topmost: true));
+        if (toolsWindow is null)
         {
-            ("region", "Bölge yakala"), ("window", "Pencere yakala"), ("monitor", "Monitör yakala"), ("desktop", "Tüm ekranlar"),
-            ("last", "Son bölge"), ("scroll", "Kayan ekran"), ("video", "Video kaydı"), ("gif", "GIF kaydı"),
-            ("annotate-text", "Ekrana yazı yaz"), ("annotate-shape", "Şekil çiz"), ("annotate-freehand", "Serbest çiz")
-        })
-            panel.Children.Add(CaptureUi.Button(label, () => { window.Close(); _ = CaptureAsync(mode); }));
-        panel.Children.Add(CaptureUi.Button("Çoklu bölge yakala", () => { window.Close(); _ = CaptureAsync("multi-region"); }));
-        panel.Children.Add(CaptureUi.Button("Yerel geçmiş", Open)); window.Show();
+            Context.Notify("React arayüz altyapısı kullanılamıyor.");
+            return;
+        }
+        toolsWindow.MessageReceived -= OnToolsMessage;
+        toolsWindow.MessageReceived += OnToolsMessage;
+        toolsWindow.SetState(new { title = Name });
     }
+
+    private void OnToolsMessage(string command, JsonElement payload)
+    {
+        if (command == "capture-tools.close")
+        {
+            toolsWindow?.Close();
+            toolsWindow = null;
+            return;
+        }
+        if (command != "capture-tools.run" || !payload.TryGetProperty("mode", out var modeElement)) return;
+        var mode = modeElement.GetString();
+        if (string.IsNullOrWhiteSpace(mode)) return;
+        toolsWindow?.Close();
+        toolsWindow = null;
+        _ = CaptureAsync(mode);
+    }
+
     internal async Task CaptureAsync(string mode)
     {
         if (busy || !IsActive) return; busy = true; operation?.Dispose(); operation = new(); var token = operation.Token;

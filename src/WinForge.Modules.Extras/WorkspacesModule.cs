@@ -1,10 +1,8 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -203,9 +201,10 @@ public sealed class WorkspacesModule : ITweakModule, IQuickActionProvider
     private void RestoreWorkspace(string presetId)
     {
         if (!IsActive || _context is null) return;
-        _window ??= new WorkspacesWindow(_context.Settings);
-        _window.Closed += (_, _) => _window = null;
-        if (!_window.IsVisible) _window.Show();
+        var featureUi = (_context as IFeatureUiContext)?.FeatureUi;
+        if (featureUi is null) return;
+        _window ??= new WorkspacesWindow(_context.Settings, featureUi);
+        _window.Show();
         _window.Activate();
         _ = _window.RestorePresetAsync(presetId);
     }
@@ -213,227 +212,144 @@ public sealed class WorkspacesModule : ITweakModule, IQuickActionProvider
     private void OpenManager()
     {
         if (!IsActive || _context is null) return;
-        _window ??= new WorkspacesWindow(_context.Settings);
-        _window.Closed += (_, _) => _window = null;
-        if (!_window.IsVisible) _window.Show();
+        var featureUi = (_context as IFeatureUiContext)?.FeatureUi;
+        if (featureUi is null) return;
+        _window ??= new WorkspacesWindow(_context.Settings, featureUi);
+        _window.Show();
         _window.Activate();
     }
 }
 
-internal sealed class WorkspacesWindow : Window
+internal sealed class WorkspacesWindow
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly IModuleSettings _settings;
-    private readonly ListBox _workspaceList;
-    private readonly TextBox _nameBox;
-    private readonly TextBlock _status;
-    private readonly Button _restoreButton;
-    private readonly Button _deleteButton;
-    private readonly Button _captureButton;
+    private readonly IFeatureUiWindow _window;
+    private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _restoreCancellation;
     private List<WorkspacePreset> _presets;
+    private string _selectedId = "";
+    private string _name = "Yeni çalışma alanı";
+    private string _status = "Hazır";
 
-    public WorkspacesWindow(IModuleSettings settings)
+    public WorkspacesWindow(IModuleSettings settings, IFeatureUiService featureUi)
     {
         _settings = settings;
         _presets = LoadPresets(settings.GetString("presets", "[]"));
-        Title = "WinForge · Çalışma Alanları";
-        Width = 570;
-        Height = 500;
-        MinWidth = 480;
-        MinHeight = 400;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Brush("#171B22");
-        Foreground = Brush("#EEF2F8");
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
+        _window = featureUi.Open("workspaces", "workspaces", "Çalışma Alanları",
+            new FeatureUiWindowOptions(760, 680, ShowInTaskbar: true, Resizable: true));
+        _window.MessageReceived += OnMessage;
+        PushState();
+    }
 
-        var root = new DockPanel { Margin = new Thickness(22) };
-        var heading = new StackPanel { Margin = new Thickness(0, 0, 0, 18) };
-        heading.Children.Add(new TextBlock { Text = "ÇALIŞMA ALANLARI", FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = Brush("#A9B5C8") });
-        heading.Children.Add(new TextBlock { Text = "Uygulamalarını birlikte aç", FontSize = 23, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 5, 0, 5) });
-        heading.Children.Add(new TextBlock { Text = "Açık masaüstü pencerelerini kaydedin; uygulamalar ve düzenleri tek seçimle geri gelsin.", TextWrapping = TextWrapping.Wrap, Foreground = Brush("#B6C0CF"), FontSize = 12 });
-        DockPanel.SetDock(heading, Dock.Top);
-        root.Children.Add(heading);
+    public void Show() => _window.Show();
+    public void Close() { _restoreCancellation?.Cancel(); _lifetime.Cancel(); _window.Close(); }
+    internal Task RestorePresetAsync(string presetId) => RestorePresetCoreAsync(presetId);
 
-        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-        _deleteButton = CreateButton("Sil", false);
-        _deleteButton.Click += (_, _) => DeleteSelected();
-        _restoreButton = CreateButton("Çalışma alanını aç", true);
-        _restoreButton.Click += async (_, _) => await RestoreSelectedAsync();
-        var cancelButton = CreateButton("Durdur", false);
-        cancelButton.Click += (_, _) => _restoreCancellation?.Cancel();
-        footer.Children.Add(cancelButton);
-        footer.Children.Add(_deleteButton);
-        footer.Children.Add(_restoreButton);
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
-        _status = new TextBlock { Text = "Hazır", Foreground = Brush("#AEB9CA"), FontSize = 11, Margin = new Thickness(0, 10, 0, 0) };
-        DockPanel.SetDock(_status, Dock.Bottom);
-        root.Children.Add(_status);
-
-        var body = new StackPanel();
-        _nameBox = new TextBox
+    private void OnMessage(string command, JsonElement payload)
+    {
+        switch (command)
         {
-            Height = 36,
-            Padding = new Thickness(9, 6, 9, 6),
-            Background = Brush("#222936"),
-            Foreground = Brush("#F2F5FA"),
-            BorderBrush = Brush("#3A4557"),
-            ToolTip = "Örnek: Kodlama, Toplantı, Tasarım"
-        };
-        _nameBox.Text = "Yeni çalışma alanı";
-        body.Children.Add(_nameBox);
-        _captureButton = CreateButton("Açık pencereleri kaydet", true);
-        _captureButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        _captureButton.Margin = new Thickness(0, 8, 0, 14);
-        _captureButton.Click += (_, _) => CaptureCurrentWorkspace();
-        body.Children.Add(_captureButton);
-
-        _workspaceList = new ListBox
-        {
-            Background = Brush("#1D232D"),
-            Foreground = Brush("#E8EDF5"),
-            BorderBrush = Brush("#303A49"),
-            Padding = new Thickness(5),
-            DisplayMemberPath = nameof(WorkspaceListItem.Display)
-        };
-        _workspaceList.SelectionChanged += (_, _) => UpdateSelection();
-        body.Children.Add(_workspaceList);
-        root.Children.Add(body);
-        Content = root;
-        RefreshList();
-        Closed += (_, _) => _restoreCancellation?.Cancel();
+            case "workspaces.name": _name = payload.TryGetProperty("name", out var name) ? name.GetString() ?? "" : _name; PushState(); break;
+            case "workspaces.select": _selectedId = payload.TryGetProperty("id", out var id) ? id.GetString() ?? "" : ""; PushState(); break;
+            case "workspaces.capture": CaptureCurrentWorkspace(); break;
+            case "workspaces.restore": if (_selectedId.Length > 0) _ = RestorePresetCoreAsync(_selectedId); break;
+            case "workspaces.delete": DeleteSelected(); break;
+            case "workspaces.cancel": _restoreCancellation?.Cancel(); break;
+            case "workspaces.close": _window.Hide(); break;
+        }
     }
 
     private void CaptureCurrentWorkspace()
     {
-        var name = _nameBox.Text.Trim();
-        if (name.Length is < 1 or > 64)
-        {
-            _status.Text = "Adı 1–64 karakter arasında olmalıdır.";
-            return;
-        }
-
+        var name = _name.Trim();
+        if (name.Length is < 1 or > 64) { _status = "Adı 1–64 karakter arasında olmalıdır."; PushState(); return; }
         try
         {
             var windows = WorkspaceNative.CaptureWindows(_settings.GetBool("capture-command-line-arguments", false));
-            if (windows.Count == 0)
-            {
-                _status.Text = "Kaydedilecek uyumlu, görünür uygulama penceresi bulunamadı.";
-                return;
-            }
-
+            if (windows.Count == 0) { _status = "Kaydedilecek uyumlu, görünür uygulama penceresi bulunamadı."; PushState(); return; }
             var existing = _presets.FindIndex(preset => preset.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-            var preset = new WorkspacePreset(existing >= 0 ? _presets[existing].Id : Guid.NewGuid().ToString("N"),
-                name, DateTimeOffset.Now, windows);
-            if (existing >= 0) _presets[existing] = preset;
-            else _presets.Add(preset);
+            var preset = new WorkspacePreset(existing >= 0 ? _presets[existing].Id : Guid.NewGuid().ToString("N"), name, DateTimeOffset.Now, windows);
+            if (existing >= 0) _presets[existing] = preset; else _presets.Add(preset);
             SavePresets();
-            RefreshList(preset.Id);
-            _status.Text = $"‘{name}’ alanına {windows.Count} pencere kaydedildi.";
+            _selectedId = preset.Id;
+            _status = $"‘{name}’ alanına {windows.Count} pencere kaydedildi.";
         }
-        catch (Exception exception)
-        {
-            _status.Text = "Pencereler kaydedilemedi: " + exception.Message;
-        }
+        catch (Exception exception) { _status = "Pencereler kaydedilemedi: " + exception.Message; }
+        PushState();
     }
 
-    private async Task RestoreSelectedAsync()
-    {
-        if (_workspaceList.SelectedItem is not WorkspaceListItem item) return;
-        await RestorePresetAsync(item.Id);
-    }
-
-    internal async Task RestorePresetAsync(string presetId)
+    private async Task RestorePresetCoreAsync(string presetId)
     {
         if (_restoreCancellation is not null) return;
         var preset = _presets.FirstOrDefault(candidate => candidate.Id == presetId);
         if (preset is null) return;
-
-        _restoreCancellation = new CancellationTokenSource();
-        _restoreButton.IsEnabled = false;
-        _captureButton.IsEnabled = false;
+        _selectedId = presetId;
+        _restoreCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         var restored = 0;
         var skipped = 0;
         var claimedWindows = new HashSet<IntPtr>();
+        PushState();
         try
         {
             for (var index = 0; index < preset.Windows.Count; index++)
             {
                 _restoreCancellation.Token.ThrowIfCancellationRequested();
                 var saved = preset.Windows[index];
-                var appLabel = string.IsNullOrWhiteSpace(saved.ExecutablePath)
-                    ? saved.ProcessName
-                    : Path.GetFileName(saved.ExecutablePath);
-                _status.Text = $"{index + 1}/{preset.Windows.Count}: {appLabel} açılıyor…";
+                var appLabel = string.IsNullOrWhiteSpace(saved.ExecutablePath) ? saved.ProcessName : Path.GetFileName(saved.ExecutablePath);
+                _status = $"{index + 1}/{preset.Windows.Count}: {appLabel} açılıyor…";
+                PushState();
                 var target = await WorkspaceNative.LaunchAndWaitAsync(saved, TimeSpan.FromSeconds(12), claimedWindows, _restoreCancellation.Token);
-                if (target is null)
-                {
-                    skipped++;
-                    continue;
-                }
-
+                if (target is null) { skipped++; continue; }
                 try
                 {
-                    var bounds = WorkspaceNative.MapToCurrentMonitor(saved);
-                    WorkspaceNative.RestoreWindow(target.Handle, bounds, saved.Maximized);
+                    WorkspaceNative.RestoreWindow(target.Handle, WorkspaceNative.MapToCurrentMonitor(saved), saved.Maximized);
                     claimedWindows.Add(target.Handle);
                     restored++;
                 }
                 finally { target.Process?.Dispose(); }
             }
-            _status.Text = $"Tamamlandı: {restored} pencere yerleştirildi; {skipped} pencere açılamadı.";
+            _status = $"Tamamlandı: {restored} pencere yerleştirildi; {skipped} pencere açılamadı.";
         }
-        catch (OperationCanceledException)
-        {
-            _status.Text = $"Geri yükleme durduruldu: {restored} pencere yerleştirildi.";
-        }
-        catch (Exception exception)
-        {
-            _status.Text = $"Geri yükleme hatası: {exception.Message}";
-        }
+        catch (OperationCanceledException) { _status = $"Geri yükleme durduruldu: {restored} pencere yerleştirildi."; }
+        catch (Exception exception) { _status = $"Geri yükleme hatası: {exception.Message}"; }
         finally
         {
             _restoreCancellation.Dispose();
             _restoreCancellation = null;
-            _restoreButton.IsEnabled = true;
-            _captureButton.IsEnabled = true;
+            PushState();
         }
     }
 
     private void DeleteSelected()
     {
-        if (_workspaceList.SelectedItem is not WorkspaceListItem item) return;
-        _presets.RemoveAll(preset => preset.Id == item.Id);
+        if (string.IsNullOrWhiteSpace(_selectedId)) return;
+        _presets.RemoveAll(preset => preset.Id == _selectedId);
+        _selectedId = "";
         SavePresets();
-        RefreshList();
-        _status.Text = "Çalışma alanı silindi.";
-    }
-
-    private void RefreshList(string? selectId = null)
-    {
-        _workspaceList.ItemsSource = _presets.Select(preset =>
-        {
-            var apps = string.Join(", ", preset.Windows.Select(window => window.ProcessName)
-                .Distinct(StringComparer.OrdinalIgnoreCase).Take(3));
-            if (preset.Windows.Select(window => window.ProcessName).Distinct(StringComparer.OrdinalIgnoreCase).Skip(3).Any()) apps += "…";
-            return new WorkspaceListItem(preset.Id,
-                $"{preset.Name}  ·  {preset.Windows.Count} pencere  ·  {apps}  ·  {preset.SavedAt.ToLocalTime():g}");
-        }).ToArray();
-        if (selectId is not null)
-            _workspaceList.SelectedItem = _workspaceList.Items.Cast<WorkspaceListItem>().FirstOrDefault(item => item.Id == selectId);
-        UpdateSelection();
-    }
-
-    private void UpdateSelection()
-    {
-        var selected = _workspaceList.SelectedItem is WorkspaceListItem;
-        _restoreButton.IsEnabled = selected && _restoreCancellation is null;
-        _deleteButton.IsEnabled = selected;
+        _status = "Çalışma alanı silindi.";
+        PushState();
     }
 
     private void SavePresets() => _settings.Set("presets", JsonSerializer.Serialize(_presets, JsonOptions));
+
+    private void PushState() => _window.SetState(new
+    {
+        name = _name,
+        selectedId = _selectedId,
+        status = _status,
+        busy = _restoreCancellation is not null,
+        presets = _presets.Select(preset => new
+        {
+            id = preset.Id,
+            name = preset.Name,
+            savedAt = preset.SavedAt.ToLocalTime().ToString("g"),
+            windowCount = preset.Windows.Count,
+            applications = string.Join(", ", preset.Windows.Select(window => window.ProcessName)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Take(3)) +
+                (preset.Windows.Select(window => window.ProcessName).Distinct(StringComparer.OrdinalIgnoreCase).Skip(3).Any() ? "…" : "")
+        }).ToArray()
+    });
 
     internal static List<WorkspacePreset> LoadPresets(string json)
     {
@@ -445,24 +361,7 @@ internal sealed class WorkspacesWindow : Window
         }
         catch (JsonException) { return []; }
     }
-
-    private static Button CreateButton(string label, bool primary) => new()
-    {
-        Content = label,
-        Height = 36,
-        MinWidth = 94,
-        Margin = new Thickness(4, 0, 0, 0),
-        Padding = new Thickness(12, 4, 12, 4),
-        Background = Brush(primary ? "#3865C8" : "#252D39"),
-        Foreground = Brush("#F3F6FA"),
-        BorderBrush = Brush(primary ? "#4B79DD" : "#3B4655"),
-        Cursor = System.Windows.Input.Cursors.Hand
-    };
-
-    private static SolidColorBrush Brush(string value) => new((Color)ColorConverter.ConvertFromString(value)!);
-    private sealed record WorkspaceListItem(string Id, string Display);
 }
-
 internal static class WorkspaceNative
 {
     private const int GwlExStyle = -20;
@@ -822,3 +721,4 @@ internal static class WorkspaceNative
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetPackageFullName(IntPtr process, ref uint packageFullNameLength, System.Text.StringBuilder? packageFullName);
 }
+
