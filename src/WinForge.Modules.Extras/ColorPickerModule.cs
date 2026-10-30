@@ -1,9 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Interop;
-using System.Windows.Media;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -77,17 +74,19 @@ public sealed class ColorPickerModule : ITweakModule
         context.Log.Info("Renk seçici kısayolu kaydedildi (Win+Alt+C).");
     }
 
-    private void BeginPick()
+    private async void BeginPick()
     {
         if (_picking || _context is null) return;
 
         _picking = true;
         try
         {
-            var overlay = new PickerOverlay();
-            if (overlay.ShowDialog() != true || overlay.ClickPoint is not { } point) return;
+            var featureUi = (_context as IFeatureUiContext)?.FeatureUi
+                ?? throw new InvalidOperationException("React arayüz altyapısı kullanılamıyor.");
+            using var overlay = new PickerOverlay(featureUi);
+            if (await overlay.Completion is not { } point) return;
 
-            Thread.Sleep(150);
+            await Task.Delay(150);
             Capture(point);
         }
         finally
@@ -195,123 +194,67 @@ public sealed class ColorPickerModule : ITweakModule
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr dc);
     [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
-    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int width, int height, uint flags);
 
-    private sealed class PickerOverlay : Window
+    private sealed class PickerOverlay : IDisposable
     {
-        private static readonly Brush ClickCatcher = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
-        private bool _finished;
-        private bool _leftDown;
-        private bool _rightDown;
+        private readonly IFeatureUiWindow _window;
+        private readonly TaskCompletionSource<POINT?> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private POINT? _clickPoint;
+        private bool _disposed;
 
-        public POINT? ClickPoint { get; private set; }
-
-        public PickerOverlay()
+        public PickerOverlay(IFeatureUiService featureUi)
         {
-            WindowStyle = WindowStyle.None;
-            ResizeMode = ResizeMode.NoResize;
-            AllowsTransparency = true;
-            Background = ClickCatcher;
-            Topmost = true;
-            ShowInTaskbar = false;
-            WindowStartupLocation = WindowStartupLocation.Manual;
-            Cursor = Cursors.Cross;
-            Focusable = true;
-
-            Left = SystemParameters.VirtualScreenLeft;
-            Top = SystemParameters.VirtualScreenTop;
-            Width = SystemParameters.VirtualScreenWidth;
-            Height = SystemParameters.VirtualScreenHeight;
-
-            var hint = new Border
-            {
-                Background = new SolidColorBrush(Color.FromArgb(200, 0, 0, 0)),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(12, 8, 12, 8),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 24, 0, 0),
-                IsHitTestVisible = false,
-                Child = new TextBlock
-                {
-                    Text = "Renk seçmek için tıklayın · Esc veya sağ tık: iptal",
-                    Foreground = Brushes.White,
-                    FontSize = 14
-                }
-            };
-
-            Content = new Grid
-            {
-                Background = ClickCatcher,
-                Children = { hint }
-            };
-
-            MouseLeftButtonDown += OnLeftDown;
-            MouseLeftButtonUp += OnLeftUp;
-            MouseRightButtonDown += (_, e) =>
-            {
-                _rightDown = true;
-                e.Handled = true;
-            };
-            MouseRightButtonUp += (_, e) =>
-            {
-                if (!_rightDown) return;
-                _rightDown = false;
-                e.Handled = true;
-                Cancel();
-            };
-            KeyDown += (_, e) =>
-            {
-                if (e.Key != Key.Escape) return;
-                e.Handled = true;
-                Cancel();
-            };
-
-            Loaded += (_, _) =>
-            {
-                var handle = new WindowInteropHelper(this).Handle;
-                SetWindowPos(handle, new IntPtr(-1), 0, 0, 0, 0, 0x0003);
-                SetForegroundWindow(handle);
-            };
+            var left = SystemParameters.VirtualScreenLeft;
+            var top = SystemParameters.VirtualScreenTop;
+            _window = featureUi.Open(
+                "color-picker-" + Guid.NewGuid().ToString("N"),
+                "screen-color-picker",
+                "Renk seçici",
+                new FeatureUiWindowOptions(
+                    SystemParameters.VirtualScreenWidth,
+                    SystemParameters.VirtualScreenHeight,
+                    Topmost: true,
+                    Transparent: true,
+                    Left: left,
+                    Top: top));
+            _window.MessageReceived += OnMessageReceived;
+            _window.ClosedByHost += OnWindowClosed;
+            _window.SetState(new { });
         }
 
-        protected override void OnActivated(EventArgs e)
-        {
-            base.OnActivated(e);
-            Focus();
-        }
+        public Task<POINT?> Completion => _completion.Task;
 
-        private void OnLeftDown(object sender, MouseButtonEventArgs e)
+        private void OnMessageReceived(string command, JsonElement _)
         {
-            if (_finished || _leftDown) return;
-            e.Handled = true;
-
-            if (!Native.GetCursorPos(out var point))
+            if (command == "screen-color-picker.cancel")
             {
-                Cancel();
+                _completion.TrySetResult(null);
+                _window.Close();
                 return;
             }
 
-            ClickPoint = point;
-            _leftDown = true;
+            if (command == "screen-color-picker.begin")
+            {
+                _clickPoint = Native.GetCursorPos(out var point) ? point : null;
+                return;
+            }
+
+            if (command != "screen-color-picker.commit") return;
+            _completion.TrySetResult(_clickPoint);
+            _window.Close();
         }
 
-        private void OnLeftUp(object sender, MouseButtonEventArgs e)
-        {
-            if (!_leftDown) return;
-            _leftDown = false;
-            if (_finished) return;
-            _finished = true;
-            e.Handled = true;
-            DialogResult = true;
-        }
+        private void OnWindowClosed() => _completion.TrySetResult(null);
 
-        private void Cancel()
+        public void Dispose()
         {
-            if (_finished) return;
-            _finished = true;
-            DialogResult = false;
+            if (_disposed) return;
+            _disposed = true;
+            _window.MessageReceived -= OnMessageReceived;
+            _window.ClosedByHost -= OnWindowClosed;
+            _window.Close();
+            _window.Dispose();
+            _completion.TrySetResult(null);
         }
     }
 }

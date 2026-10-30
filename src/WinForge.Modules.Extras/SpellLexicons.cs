@@ -10,6 +10,7 @@ internal static class SpellLexicons
         ["herkez"] = "herkes",
         ["tamma"] = "tamam",
         ["tamm"] = "tamam",
+        ["dıger"] = "diğer",
         ["birsürü"] = "bir sürü",
         ["birsuru"] = "bir sürü",
         ["melela"] = "mesela",

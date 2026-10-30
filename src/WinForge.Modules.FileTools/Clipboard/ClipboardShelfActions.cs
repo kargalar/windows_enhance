@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using WinForge.Core;
 using WinForge.FileTools.UI;
 using WinForge.Modules.TextGrabber;
 using NativeClipboard = System.Windows.Clipboard;
@@ -19,39 +20,8 @@ internal sealed partial class ClipboardShelfWindow
 {
     private string? Prompt(string title, string value = "")
     {
-        var dialog = new Window { Title = title, Owner = this, Width = 450, Height = 180, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        var panel = new StackPanel { Margin = new Thickness(20) }; var input = new TextBox { Text = value, Margin = new Thickness(0, 0, 0, 12) }; panel.Children.Add(input);
-        var save = ActionButton("Tamam", () => dialog.DialogResult = true); save.IsDefault = true; panel.Children.Add(save); dialog.Content = panel;
-        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); }; return dialog.ShowDialog() == true ? input.Text : null;
-    }
-
-    private ContextMenu CreateActionsMenu()
-    {
-        var menu = new ContextMenu(); Guid[] selected = [];
-        menu.Opened += (_, _) => selected = SelectedIds();
-        foreach (var (name, action) in Actions().Where(pair => pair.Name != "Eylemler")) menu.Items.Add(MenuAction(name, () => ExecuteForSelection(selected, action)));
-        return menu;
-    }
-    private void ExecuteForSelection(Guid[] selected, Action action)
-    {
-        _commandSelection = selected;
-        try { action(); }
-        finally { _commandSelection = null; }
-    }
-    private MenuItem MenuAction(string name, Action action)
-    {
-        var item = new MenuItem { Header = name }; item.Click += (_, _) => Execute(action); return item;
-    }
-    private void ShowActions()
-    {
-        var dialog = new Window { Title = "Pano eylemleri · Ctrl+K", Owner = this, Width = 460, Height = 550, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        var panel = new DockPanel { Margin = new Thickness(16) }; var filter = new TextBox(); DockPanel.SetDock(filter, Dock.Top); panel.Children.Add(filter);
-        var list = new ListBox(); panel.Children.Add(list); dialog.Content = panel;
-        var actions = Actions().Where(pair => pair.Name != "Eylemler").ToArray(); var selected = SelectedIds();
-        void Filter() { list.ItemsSource = actions.Where(pair => pair.Name.Contains(filter.Text, StringComparison.CurrentCultureIgnoreCase)).Select(pair => pair.Name).ToArray(); list.SelectedIndex = 0; }
-        void Run() { if (list.SelectedItem is not string name) return; dialog.Close(); Execute(() => ExecuteForSelection(selected, actions.Single(pair => pair.Name == name).Action)); }
-        filter.TextChanged += (_, _) => Filter(); list.MouseDoubleClick += (_, _) => Run(); dialog.PreviewKeyDown += (_, args) => { if (args.Key == Key.Enter) { args.Handled = true; Run(); } else if (args.Key == Key.Escape) dialog.Close(); };
-        Filter(); dialog.Loaded += (_, _) => filter.Focus(); dialog.ShowDialog();
+        var dialog = new ClipboardPromptWindow(this, title, value, (_context as IFeatureUiContext)?.FeatureUi);
+        return dialog.ShowDialog() == true ? dialog.Value : null;
     }
 
     private void NewNote()
@@ -72,10 +42,8 @@ internal sealed partial class ClipboardShelfWindow
     private void AssignFolder(bool pin = false)
     {
         var selected = SelectedIds(); if (selected.Length == 0) return;
-        var menu = new ContextMenu();
-        foreach (var folder in _library.Folders) menu.Items.Add(MenuAction(folder.Name, () => _library.AssignFolder(selected, folder.Id, pin)));
-        menu.Items.Add(MenuAction("+ Yeni klasör", () => { var name = Prompt("Klasör adı"); if (name is not null) { var folder = _library.CreateFolder(name); _library.AssignFolder(selected, folder.Id, pin); } }));
-        menu.PlacementTarget = this; menu.IsOpen = true;
+        _folderPickerPin = pin;
+        _folderPickerGeneration++;
     }
     private void NameAndPin()
     {
@@ -88,7 +56,20 @@ internal sealed partial class ClipboardShelfWindow
     private void DeletePermanently()
     {
         var ids = Selection().Where(item => item.TrashedAt is not null).Select(item => item.Id).ToArray();
-        if (ids.Length > 0 && MessageBox.Show(this, $"{ids.Length} kayıt kalıcı silinsin mi? Bu işlem geri alınamaz.", "Pano çöpünü sil", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes) _library.DeletePermanently(ids);
+        if (ids.Length > 0)
+        {
+            _deleteConfirmGeneration++;
+            PushReactState();
+            return;
+        }
+    }
+
+    private void ConfirmPermanentDelete(bool confirm)
+    {
+        if (!confirm) return;
+        var ids = Selection().Where(item => item.TrashedAt is not null).Select(item => item.Id).ToArray();
+        if (ids.Length > 0) _library.DeletePermanently(ids);
+        ResetAndRender();
     }
     private void AddTags()
     {
@@ -216,7 +197,7 @@ internal sealed partial class ClipboardShelfWindow
     private void EditImage(ClipItem item, string tool)
     {
         var path = tool == "annotate" ? _library.AnnotationBasePath(item) : _library.MediaPath(item); var bitmap = ImageEngine.Load(path);
-        var editor = new ToolEditor(this, tool, tool == "crop" ? "Pano görselini kırp" : "Pano görselini işaretle", path, preview: bitmap);
+        var editor = new ToolEditor(this, tool, tool == "crop" ? "Pano görselini kırp" : "Pano görselini işaretle", path, preview: bitmap, featureUi: (_context as IFeatureUiContext)?.FeatureUi);
         if (tool == "annotate" && item.Annotations.Length > 0) editor.LoadAnnotations(item.Annotations);
         if (editor.ShowDialog() != true) return;
         var destination = Path.Combine(_library.DirectoryPath, "edits", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(destination);
@@ -237,7 +218,7 @@ internal sealed partial class ClipboardShelfWindow
 
     private void Screenshot()
     {
-        Hide(); var overlay = new SelectionOverlay { Owner = this }; overlay.ShowDialog();
+        Hide(); var overlay = new SelectionOverlay((_context as IFeatureUiContext)?.FeatureUi) { Owner = this }; overlay.ShowDialog();
         if (overlay.Result is not { } area) { Show(); return; }
         DwmFlush();
         var (pixels, width, height) = ScreenCapture.Capture((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height);
@@ -260,7 +241,7 @@ internal sealed partial class ClipboardShelfWindow
         Directory.CreateDirectory(directory);
         try
         {
-            var dialog = new RecordingTrimWindow(this, _library.MediaPath(item), directory);
+            var dialog = new RecordingTrimWindow(this, _library.MediaPath(item), directory, (_context as IFeatureUiContext)?.FeatureUi);
             if (dialog.ShowDialog() == true) _library.SaveRecordingEdit(item.Id, item.Content, Path.Combine(directory, "trimmed.mp4"));
         }
         finally
@@ -282,7 +263,7 @@ internal sealed partial class ClipboardShelfWindow
             var current = _library.Items.FirstOrDefault(candidate => candidate.Id == id && candidate.TrashedAt is null);
             if (current is null) return;
             CopyItems([current], paste); if (!paste && dismissShelf && !_libraryMode) ReturnFocus();
-        }, EditRecording, EditImage).Show();
+        }, EditRecording, EditImage, (_context as IFeatureUiContext)?.FeatureUi).Show();
     }
 
     [StructLayout(LayoutKind.Explicit, Size = 40)]

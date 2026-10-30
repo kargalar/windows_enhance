@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Text.Json;
+using WinForge.Core;
 
 namespace WinForge.ClipboardLine;
 
@@ -18,10 +20,11 @@ internal sealed class RecordingTrimWindow : Window
     private readonly Button _save;
     private readonly Slider _timeline = new() { Minimum = 0, Maximum = 1, Margin = new Thickness(6), IsEnabled = false };
     private readonly System.Windows.Threading.DispatcherTimer _playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private readonly IFeatureUiAssetSurface _uiSurface;
     private bool _updatingTimeline;
     private CancellationTokenSource? _operation;
 
-    internal RecordingTrimWindow(Window owner, string source, string directory)
+    internal RecordingTrimWindow(Window owner, string source, string directory, IFeatureUiService? featureUi=null)
     {
         Owner = owner; _source = source; _directory = directory;
         Title = "Ekran kaydını kırp"; Width = 780; Height = 620; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -58,8 +61,15 @@ internal sealed class RecordingTrimWindow : Window
             var seconds = _player.NaturalDuration.TimeSpan.TotalSeconds;
             _end.Text = seconds.ToString("0.###", CultureInfo.CurrentCulture);
             _timeline.Maximum = seconds; _timeline.IsEnabled = seconds > 0; _playbackTimer.Start();
+            PushUiState();
         };
-        Loaded += async (_, _) => { try { var info = await RecordingTools.InspectAsync(_source); _end.Text = info.Duration.TotalSeconds.ToString("0.###", CultureInfo.CurrentCulture); _player.Pause(); } catch (Exception error) { _status.Text = error.Message; _save.IsEnabled = false; } };
+        Loaded += async (_, _) => { try { var info = await RecordingTools.InspectAsync(_source); var duration=info.Duration.TotalSeconds; _end.Text = duration.ToString("0.###", CultureInfo.CurrentCulture); _timeline.Maximum=duration;_timeline.IsEnabled=duration>0;PushUiState(); } catch (Exception error) { _status.Text = error.Message; _save.IsEnabled = false;PushUiState(); } };
+        _uiSurface = featureUi?.CreateSurface("clipboard-recording-trim") as IFeatureUiAssetSurface
+            ?? throw new InvalidOperationException("Kayıt kırpma için React varlık yüzeyi gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
+        Content = _uiSurface.Element;
+        Closed += (_, _) => _uiSurface.Dispose();
+        PushUiState();
         Closing += (_, args) => { if (_operation is not null) { _operation.Cancel(); args.Cancel = true; } };
         Closed += (_, _) => { _playbackTimer.Stop(); _player.Close(); };
         PreviewKeyDown += (_, args) => { if (Keyboard.FocusedElement is TextBox) return; if (args.Key == Key.Escape) Close(); else if (args.Key == Key.Enter) _ = SaveAsync(); else return; args.Handled = true; };
@@ -69,15 +79,38 @@ internal sealed class RecordingTrimWindow : Window
     {
         if (_operation is not null) return;
         if (!double.TryParse(_start.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var start) || !double.TryParse(_end.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var end) || !double.IsFinite(start) || !double.IsFinite(end) || start < 0 || end <= start)
-        { _status.Text = "Geçerli başlangıç ve bitiş saniyeleri girin."; return; }
-        _operation = new CancellationTokenSource(); _save.IsEnabled = false; _player.Pause();
+        { _status.Text = "Geçerli başlangıç ve bitiş saniyeleri girin."; PushUiState(); return; }
+        _operation = new CancellationTokenSource(); _save.IsEnabled = false; PushUiState();
         try
         {
-            await RecordingTools.TrimAsync(_source, _directory, TimeSpan.FromSeconds(start), TimeSpan.FromSeconds(end), new Progress<double>(value => _progress.Value = value), _operation.Token);
+            await RecordingTools.TrimAsync(_source, _directory, TimeSpan.FromSeconds(start), TimeSpan.FromSeconds(end), new Progress<double>(value => { _progress.Value = value; PushUiState(); }), _operation.Token);
             _operation.Dispose(); _operation = null; DialogResult = true;
         }
         catch (OperationCanceledException) { _status.Text = "Kırpma iptal edildi."; }
         catch (Exception error) { _status.Text = error.Message; }
-        finally { _operation?.Dispose(); _operation = null; _save.IsEnabled = true; }
+        finally { _operation?.Dispose(); _operation = null; _save.IsEnabled = true; PushUiState(); }
+    }
+
+    private void OnUiMessage(string command,JsonElement payload)
+    {
+        switch(command)
+        {
+            case "recording-trim.range":
+                _start.Text=payload.GetProperty("start").GetString()??"0";_end.Text=payload.GetProperty("end").GetString()??"";PushUiState();break;
+            case "recording-trim.set-point":
+                var position=payload.GetProperty("position").GetDouble();var field=payload.GetProperty("field").GetString();
+                if(field=="start")_start.Text=position.ToString("0.###",CultureInfo.CurrentCulture);else if(field=="end")_end.Text=position.ToString("0.###",CultureInfo.CurrentCulture);PushUiState();break;
+            case "recording-trim.save":
+                _start.Text=payload.GetProperty("start").GetString()??"0";_end.Text=payload.GetProperty("end").GetString()??"";_ = SaveAsync();break;
+            case "recording-trim.cancel": if(_operation is null)Close();else _operation.Cancel();break;
+        }
+    }
+
+    private void PushUiState()
+    {
+        string mediaUrl="";
+        try{if(File.Exists(_source))mediaUrl=_uiSurface.MapLocalAsset(_source).AbsoluteUri;}catch(Exception error)when(error is IOException or UnauthorizedAccessException or InvalidOperationException){}
+        var duration=_timeline.Maximum;
+        _uiSurface.SetState(new{file=Path.GetFileName(_source),mediaUrl,duration,start=_start.Text,end=_end.Text,progress=_progress.Value/100,status=_status.Text,working=_operation is not null,ready=_timeline.IsEnabled&&duration>0});
     }
 }

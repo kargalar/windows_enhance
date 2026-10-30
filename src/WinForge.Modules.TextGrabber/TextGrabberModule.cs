@@ -70,7 +70,7 @@ public sealed class TextGrabberModule : ITweakModule
         _busy = true;
         try
         {
-            var overlay = new SelectionOverlay();
+            var overlay = new SelectionOverlay((_context as IFeatureUiContext)?.FeatureUi);
             overlay.ShowDialog();
 
             if (overlay.Result is not { } rect) return;

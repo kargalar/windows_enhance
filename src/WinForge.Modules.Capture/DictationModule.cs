@@ -1,7 +1,5 @@
+using System.Runtime.InteropServices;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
-using System.Windows.Interop;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -90,6 +88,13 @@ public sealed class DictationModule : CaptureModuleBase
     {
         if (starting) stopWhenStarted = true;
         else _ = StopAsync();
+    }
+    private void ToggleDictation()
+    {
+        if (recording) { RequestStop(); return; }
+        if (starting) { stopWhenStarted = true; return; }
+        if (busy) { Context.Notify("Dikte çözümlemesi sürüyor."); return; }
+        _ = StartAsync();
     }
     public override void Apply()
     {
@@ -188,12 +193,20 @@ public sealed class DictationModule : CaptureModuleBase
             if (text.Length == 0) { ShowStatus("Metin bulunamadı."); return; }
             await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
             token.ThrowIfCancellationRequested();
+            var copied = TryCopyResult(text);
             var result = await FocusedTextOutput.InsertAsync(target, text, token);
-            ShowResult(text, result == TextInsertion.Inserted ? "Metin yazıldı · " + client.Engine : "Hedef değişti veya yazma engellendi; metin geçmişte.");
+            var copyStatus = copied ? "Panoya kopyalandı" : "Panoya kopyalanamadı";
+            var insertionStatus = result == TextInsertion.Inserted ? "metin yazıldı" : "metin alana yazılamadı";
+            ShowResult(text, $"{copyStatus} · {insertionStatus} · {client.Engine}");
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { Report(error); ShowStatus("Dikte başarısız; yeniden deneyebilirsiniz."); }
         finally { Array.Clear(samples); busy = false; }
+    }
+    private static bool TryCopyResult(string text)
+    {
+        try { Clipboard.SetText(text); return true; }
+        catch (Exception error) when (error is ExternalException or InvalidOperationException) { return false; }
     }
     private void Cancel()
     {
@@ -205,75 +218,167 @@ public sealed class DictationModule : CaptureModuleBase
     private void ShowStatus(string text)
     {
         if (!IsActive) return;
-        overlay ??= new StatusOverlay();
-        overlay.ClearResult();
-        overlay.Message.Text = text;
-        overlay.Show();
-        overlay.Place(Context.Settings.GetString("overlay-position", "bottom-right"));
+            overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
+            overlay.ShowStatus(text);
+            overlay.Place(Context.Settings.GetString("overlay-position", "bottom-right"));
     }
     private void ShowResult(string text, string status)
     {
         if (!IsActive) return;
-        overlay ??= new StatusOverlay();
-        overlay.Message.Text = status;
-        overlay.ShowResult(text, Context.Settings.GetInt("result-duration", 5));
-        overlay.Show();
+            overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
+            overlay.ShowResult(text, status, Context.Settings.GetInt("result-duration", 5));
         overlay.Place(Context.Settings.GetString("overlay-position", "bottom-right"));
     }
-    public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Append(new(Id + ".cancel", "Dikteyi iptal et", "whisper ses", Cancel));
+    public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Concat(new[]
+    {
+        new QuickAction(Id + ".toggle", "Dikteyi başlat / durdur", "whisper ses konuşma yazıya çevir", ToggleDictation),
+        new QuickAction(Id + ".cancel", "Dikteyi iptal et", "whisper ses", Cancel)
+    });
 }
 
-internal sealed class StatusOverlay : Window
+internal sealed class StatusOverlay : IDisposable
 {
+    private const double StatusWidth = 420;
+    private const double StatusHeight = 104;
+    private const double ResultWidth = 480;
+    private const double ResultHeight = 210;
+    private readonly IFeatureUiService? featureUi;
     private readonly DispatcherTimer resultTimer = new();
-    public TextBlock Message { get; } = new() { Margin = new(18), Foreground = Brushes.WhiteSmoke };
-    private readonly ProgressBar audioLevel = new() { Height = 5, Minimum = 0, Maximum = 100, Margin = new Thickness(18, 0, 18, 10), Visibility = Visibility.Collapsed };
-    private readonly TextBox result = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxWidth = 430, MaxHeight = 90, Visibility = Visibility.Collapsed, Margin = new Thickness(18, 0, 18, 10) };
-    private readonly Button copy = new() { Content = "Metni kopyala", Margin = new Thickness(18, 0, 18, 12), Visibility = Visibility.Collapsed };
-    public StatusOverlay()
+    private IFeatureUiWindow? statusWindow;
+    private IFeatureUiWindow? resultWindow;
+    private string message = "";
+    private string result = "";
+    private double audioLevel;
+    private bool recording;
+
+    public StatusOverlay(IFeatureUiService? featureUi)
     {
-        WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; SizeToContent = SizeToContent.WidthAndHeight; Width = 480;
-        ShowActivated = false; ShowInTaskbar = false; Topmost = true; Background = new SolidColorBrush(Color.FromRgb(25, 30, 38));
-        var panel = new StackPanel(); panel.Children.Add(Message); panel.Children.Add(audioLevel); panel.Children.Add(result); panel.Children.Add(copy); Content = panel;
-        copy.Click += (_, _) => { if (!string.IsNullOrEmpty(result.Text)) Clipboard.SetText(result.Text); };
-        resultTimer.Tick += (_, _) => { resultTimer.Stop(); Hide(); };
-        Closed += (_, _) => resultTimer.Stop();
-        Left = SystemParameters.WorkArea.Left + 24; Top = SystemParameters.WorkArea.Bottom - 90;
-        SourceInitialized += (_, _) =>
+        this.featureUi = featureUi;
+        resultTimer.Tick += (_, _) =>
         {
-            var hwnd = new WindowInteropHelper(this).Handle; SetWindowLongPtr(hwnd, -20, GetWindowLongPtr(hwnd, -20) | 0x08000000 | 0x80);
+            resultTimer.Stop();
+            resultWindow?.Hide();
         };
     }
-    public void BeginRecording() { audioLevel.Value = 0; audioLevel.Visibility = Visibility.Visible; }
-    public void SetAudioLevel(double value) { if (IsVisible) audioLevel.Value = value; }
-    public void ShowResult(string text, int durationSeconds)
+
+    public void BeginRecording()
     {
-        resultTimer.Stop();
-        audioLevel.Visibility = Visibility.Collapsed; result.Text = text; result.Visibility = Visibility.Visible; copy.Visibility = Visibility.Visible;
-        if (durationSeconds > 0) { resultTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(durationSeconds, 1, 120)); resultTimer.Start(); }
+        recording = true;
+        audioLevel = 0;
+        PushStatus();
     }
-    public void ClearResult() { resultTimer.Stop(); result.Clear(); result.Visibility = Visibility.Collapsed; copy.Visibility = Visibility.Collapsed; audioLevel.Visibility = Visibility.Collapsed; }
+
+    public void SetAudioLevel(double value)
+    {
+        audioLevel = Math.Clamp(value, 0, 100);
+        PushStatus();
+    }
+
+    public void ShowStatus(string text)
+    {
+        message = text;
+        result = "";
+        recording = text.Contains("Dinleniyor", StringComparison.OrdinalIgnoreCase);
+        resultTimer.Stop();
+        statusWindow ??= OpenStatusWindow();
+        statusWindow?.SetState(new { message, audioLevel, recording });
+        statusWindow?.Show();
+        resultWindow?.Hide();
+    }
+
+    public void ShowResult(string text, string status, int durationSeconds)
+    {
+        message = status;
+        result = text;
+        recording = false;
+        statusWindow?.Hide();
+        resultWindow ??= OpenResultWindow();
+        resultWindow?.SetState(new { message, result, recording = false, audioLevel = 0 });
+        resultWindow?.Show();
+        resultTimer.Stop();
+        if (durationSeconds > 0)
+        {
+            resultTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(durationSeconds, 1, 120));
+            resultTimer.Start();
+        }
+    }
+
     public void Place(string position)
     {
-        if (!IsVisible) return;
-        UpdateLayout();
         var area = SystemParameters.WorkArea;
-        var width = ActualWidth > 0 ? ActualWidth : Width;
-        var height = ActualHeight > 0 ? ActualHeight : Height;
+        PlaceWindow(statusWindow, position, StatusWidth, StatusHeight, area);
+        PlaceWindow(resultWindow, position, ResultWidth, ResultHeight, area);
+    }
+
+    public void Hide()
+    {
+        resultTimer.Stop();
+        statusWindow?.Hide();
+        resultWindow?.Hide();
+    }
+
+    public void Close()
+    {
+        resultTimer.Stop();
+        statusWindow?.Close();
+        resultWindow?.Close();
+        statusWindow = null;
+        resultWindow = null;
+    }
+
+    public void Dispose() => Close();
+
+    private IFeatureUiWindow? OpenStatusWindow()
+    {
+        if (featureUi is null) return null;
+        return featureUi.Open("dictation-status", "dictation-status", "Dictation status",
+            new FeatureUiWindowOptions(StatusWidth, StatusHeight, Topmost: true, ActivateOnShow: false,
+                Transparent: true, ClickThrough: true));
+    }
+
+    private IFeatureUiWindow? OpenResultWindow()
+    {
+        if (featureUi is null) return null;
+        var window = featureUi.Open("dictation-result", "dictation-status", "Dictation result",
+            new FeatureUiWindowOptions(ResultWidth, ResultHeight, Topmost: true, ActivateOnShow: false,
+                Transparent: true));
+        window.MessageReceived += OnResultMessage;
+        return window;
+    }
+
+    private void OnResultMessage(string command, System.Text.Json.JsonElement payload)
+    {
+        if (command != "dictation.copy") return;
+        try
+        {
+            if (!string.IsNullOrEmpty(result)) Clipboard.SetText(result);
+        }
+        catch (InvalidOperationException) { }
+        Hide();
+    }
+
+    private void PushStatus()
+    {
+        statusWindow ??= OpenStatusWindow();
+        statusWindow?.SetState(new { message, audioLevel, recording });
+    }
+
+    private static void PlaceWindow(IFeatureUiWindow? window, string position, double width, double height, Rect area)
+    {
+        if (window is null) return;
         const double margin = 20;
-        Left = position switch
+        var left = position switch
         {
             "top-left" or "bottom-left" => area.Left + margin,
             "center" => area.Left + (area.Width - width) / 2,
             _ => area.Right - width - margin
         };
-        Top = position switch
+        var top = position switch
         {
             "top-left" or "top-right" => area.Top + margin,
             "center" => area.Top + (area.Height - height) / 2,
             _ => area.Bottom - height - margin
         };
+        window.SetBounds(left, top, width, height);
     }
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint window, int index);
-    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint window, int index, nint value);
 }

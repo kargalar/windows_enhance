@@ -1,81 +1,296 @@
+using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using WinForge.Core;
 using WinForge.FileTools.Engine;
+
 namespace WinForge.FileTools.UI;
 
-// One preview lifecycle for Library and Float. Each navigation cancels the previous load.
-internal sealed class FilePreviewWindow:Window
+// React owns the preview presentation; this window manages the native preview lifecycle.
+internal sealed class FilePreviewWindow : Window
 {
-    private readonly string[] paths;private int index;
-    private readonly Toolchain tools;private readonly OfficeRuntime office;private readonly string temporary=Path.Combine(Path.GetTempPath(),"Nashi-quick-preview-"+Guid.NewGuid().ToString("N"));private CancellationTokenSource lifetime=new();
-    private readonly ContentControl content=new();private readonly TextBlock caption=new(){TextTrimming=TextTrimming.CharacterEllipsis,VerticalAlignment=VerticalAlignment.Center};
-    private MediaElement? player;private bool playing;private readonly Slider scrub=new(){Minimum=0,Maximum=1,MinWidth=140};
+    private readonly string[] paths;
+    private readonly Toolchain tools;
+    private readonly OfficeRuntime office;
+    private readonly IFeatureUiAssetSurface uiSurface;
+    private readonly string temporary = Path.Combine(Path.GetTempPath(), "Nashi-quick-preview-" + Guid.NewGuid().ToString("N"));
+    private CancellationTokenSource lifetime = new();
     private PdfRasterDocument? pdfDocument;
-    private readonly System.Windows.Threading.DispatcherTimer timer=new(){Interval=TimeSpan.FromMilliseconds(150)};
-    private readonly StackPanel transport=new(){Orientation=Orientation.Horizontal};private bool updating;
-    internal string PreviewStatus=>content.Content is TextBlock text?text.Text:content.Content?.GetType().Name??"Empty";
-    internal string CurrentPath=>paths[index];internal bool Playing=>playing;
-    internal FilePreviewWindow(Window owner,IEnumerable<string> paths,Toolchain? tools=null,OfficeRuntime? office=null)
+    private int index;
+    private int pdfPage;
+    private int pdfPageCount;
+    private string kind = "message";
+    private string message = "Preparing preview…";
+    private string image = "";
+    private string text = "";
+    private string mediaUrl = "";
+    private bool mediaFallbackAttempted;
+
+    internal string PreviewStatus => message;
+    internal string CurrentPath => paths[index];
+
+    internal FilePreviewWindow(Window owner, IEnumerable<string> paths, Toolchain? tools = null,
+        OfficeRuntime? office = null, IFeatureUiService? featureUi = null)
     {
-        this.tools=tools??new Toolchain(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi","Tools","v1"),Environment.GetEnvironmentVariable("PATH"));
-        this.office=office??new OfficeRuntime(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi","Tools"));
-        this.paths=paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();if(this.paths.Length==0)throw new ArgumentException("Choose a file to preview.");
-        Owner=owner;Title="Preview · Nashi";Width=800;Height=620;MinWidth=560;MinHeight=400;WindowStartupLocation=WindowStartupLocation.CenterOwner;Theme.Attach(this);
-        var root=new DockPanel{Margin=new(20)};Content=root;var header=new DockPanel{Margin=new(0,0,0,14)};DockPanel.SetDock(header,Dock.Top);root.Children.Add(header);
-        var navigation=new StackPanel{Orientation=Orientation.Horizontal};DockPanel.SetDock(navigation,Dock.Right);header.Children.Add(navigation);
-        navigation.Children.Add(MainWindow.Button("←",()=>Navigate(-1)));navigation.Children.Add(MainWindow.Button("→",()=>Navigate(1)));navigation.Children.Add(MainWindow.Button("Open",()=>{if(File.Exists(CurrentPath)||Directory.Exists(CurrentPath))MainWindow.OpenUrl(CurrentPath);}));header.Children.Add(caption);
-        var footer=new StackPanel();DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);transport.Children.Add(MainWindow.Button("Play / pause",Toggle));transport.Children.Add(scrub);footer.Children.Add(transport);
-        footer.Children.Add(L10n.Label(new TextBlock{Text="←/→ files · Media: Space play/pause, ←/→ 1s, Alt+←/→ files · Esc closes",FontSize=11,Foreground=Theme.Brush("Muted"),Margin=new(0,12,0,0)}));root.Children.Add(content);
-        scrub.ValueChanged+=(_,_)=>{if(!updating&&player is not null)player.Position=TimeSpan.FromSeconds(scrub.Value);};
-        timer.Tick+=(_,_)=>{if(player is null)return;updating=true;scrub.Value=player.Position.TotalSeconds;updating=false;};
-        PreviewKeyDown+=(_,e)=>{var key=e.Key==Key.System?e.SystemKey:e.Key;var modifiers=Keyboard.Modifiers;if(key==Key.Escape){Close();e.Handled=true;return;}if(ClipboardImport.IsEditing(Keyboard.FocusedElement as DependencyObject)&&Keyboard.FocusedElement is not TextBox{IsReadOnly:true})return;
-            if(modifiers is not (ModifierKeys.None or ModifierKeys.Alt))return;
-            if(key==Key.Space){if(player is null)Close();else Toggle();e.Handled=true;}
-            else if(key is Key.Left or Key.Right){var direction=key==Key.Left?-1:1;if(player is not null&&modifiers==ModifierKeys.None){player.Position=TimeSpan.FromSeconds(Math.Clamp(player.Position.TotalSeconds+direction,0,scrub.Maximum));}else Navigate(direction);e.Handled=true;}};
-        Loaded+=async(_,_)=>await Load();Closed+=(_,_)=>{lifetime.Cancel();lifetime.Dispose();timer.Stop();CloseMedia();pdfDocument?.Dispose();pdfDocument=null;_ = Cleanup();};
+        this.tools = tools ?? new Toolchain(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi", "Tools", "v1"),
+            Environment.GetEnvironmentVariable("PATH"));
+        this.office = office ?? new OfficeRuntime(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "Nashi", "Tools"));
+        this.paths = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (this.paths.Length == 0) throw new ArgumentException("Choose a file to preview.", nameof(paths));
+
+        Owner = owner;
+        Title = "Preview · Nashi";
+        Width = 800;
+        Height = 620;
+        MinWidth = 560;
+        MinHeight = 400;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        uiSurface = featureUi?.CreateSurface("nashi-file-preview") as IFeatureUiAssetSurface
+            ?? throw new InvalidOperationException("Dosya önizlemesi için React varlık yüzeyi gerekli.");
+        uiSurface.MessageReceived += OnUiMessage;
+        Content = uiSurface.Element;
+        Closed += (_, _) =>
+        {
+            uiSurface.MessageReceived -= OnUiMessage;
+            uiSurface.Dispose();
+            lifetime.Cancel();
+            lifetime.Dispose();
+            pdfDocument?.Dispose();
+            pdfDocument = null;
+            _ = CleanupAsync();
+        };
+        Loaded += async (_, _) => await LoadAsync();
+        PushState();
     }
-    internal void Navigate(int delta){if(paths.Length<2)return;index=(index+delta+paths.Length)%paths.Length;_ = Load();}
-    private void CloseMedia(){player?.Stop();player?.Close();player=null;playing=false;transport.Visibility=Visibility.Collapsed;timer.Stop();}
-    private void Toggle(){if(player is null)return;if(playing)player.Pause();else player.Play();playing=!playing;}
-    private async Task Cleanup(){for(var n=0;n<10;n++){try{if(Directory.Exists(temporary))Directory.Delete(temporary,true);return;}catch(IOException){await Task.Delay(250);}catch(UnauthorizedAccessException){return;}}}
-    private async Task Load()
+
+    internal void Navigate(int delta)
     {
-        lifetime.Cancel();lifetime.Dispose();lifetime=new();var token=lifetime.Token;CloseMedia();pdfDocument?.Dispose();pdfDocument=null;content.Content=L10n.Label(new TextBlock{Text="Preparing preview…",Margin=new(20)});
-        var path=CurrentPath;caption.Text=$"{Path.GetFileName(path)}  ·  {index+1} / {paths.Length}";Title=Path.GetFileName(path)+" · Preview · Nashi";
+        if (paths.Length < 2) return;
+        index = (index + delta + paths.Length) % paths.Length;
+        _ = LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        lifetime.Cancel();
+        lifetime.Dispose();
+        lifetime = new CancellationTokenSource();
+        var token = lifetime.Token;
+        pdfDocument?.Dispose();
+        pdfDocument = null;
+        pdfPage = 0;
+        pdfPageCount = 0;
+        mediaFallbackAttempted = false;
+        image = text = mediaUrl = "";
+        kind = "message";
+        message = "Preparing preview…";
+        PushState();
+
         try
         {
-            if(Directory.Exists(path)){content.Content=L10n.Label(new TextBlock{Text="Folder · "+Path.GetFileName(path)+"\nUse Open to view its contents.",TextWrapping=TextWrapping.Wrap});return;}
-            if(!File.Exists(path))throw new FileNotFoundException("This file has moved or was removed.");
-            if(new[]{"docx","doc","rtf","rtfd","pages","xlsx","xls","ods","pptx","ppt","odp","epub"}.Contains(FeatureCatalog.Extension(path)))
+            var path = CurrentPath;
+            if (Directory.Exists(path))
             {
-                if(office.Executable is null){content.Content=L10n.Label(new TextBlock{Text="Set up office tools in Nashi to preview this document here, or use Open.",TextWrapping=TextWrapping.Wrap});return;}
-                Directory.CreateDirectory(temporary);path=(await new DocumentConversion(office,tools).ConvertAsync([path],"pdf",temporary,new(),null,token))[0];token.ThrowIfCancellationRequested();
+                message = "Folder · " + Path.GetFileName(path) + "\nUse Open to view its contents.";
+                PushState();
+                return;
             }
-            if(FeatureCatalog.IsImage(path))content.Content=new Image{Source=ImageEngine.Load(path),Stretch=Stretch.Uniform};
-            else if(FeatureCatalog.Extension(path)=="pdf")
+            if (!File.Exists(path)) throw new FileNotFoundException("This file has moved or was removed.");
+
+            var extension = FeatureCatalog.Extension(path);
+            if (new[] { "docx", "doc", "rtf", "rtfd", "pages", "xlsx", "xls", "ods", "pptx", "ppt", "odp", "epub" }.Contains(extension))
             {
-                // Load pages on demand rather than decoding every page before showing the first.
-                var pdf=await Task.Run(()=>PdfRasterDocument.Open(path),token);if(token.IsCancellationRequested){pdf.Dispose();return;}pdfDocument=pdf;
-                var pageIndex=0;var panel=new DockPanel();var controls=new StackPanel{Orientation=Orientation.Horizontal};DockPanel.SetDock(controls,Dock.Bottom);panel.Children.Add(controls);var image=new Image{Stretch=Stretch.Uniform};panel.Children.Add(image);
-                async Task Page(int delta){try{token.ThrowIfCancellationRequested();pageIndex=Math.Clamp(pageIndex+delta,0,pdf.PageCount-1);var requested=pageIndex;var png=await Task.Run(()=>pdf.RenderPage(requested,144,token),token);if(!token.IsCancellationRequested&&requested==pageIndex)image.Source=ImageEngine.FromPng(png);}catch(Exception error){if(!token.IsCancellationRequested&&ReferenceEquals(pdfDocument,pdf))content.Content=L10n.Label(new TextBlock{Text="Preview unavailable. "+error.Message,TextWrapping=TextWrapping.Wrap});}}
-                controls.Children.Add(MainWindow.Button("Previous page",async()=>{try{await Page(-1);}catch(OperationCanceledException){}}));controls.Children.Add(MainWindow.Button("Next page",async()=>{try{await Page(1);}catch(OperationCanceledException){}}));controls.Children.Add(new TextBlock{Text=$"{pdf.PageCount} pages",VerticalAlignment=VerticalAlignment.Center});content.Content=panel;await Page(0);
+                if (office.Executable is null)
+                {
+                    message = "Set up office tools in Nashi to preview this document here, or use Open.";
+                    PushState();
+                    return;
+                }
+                Directory.CreateDirectory(temporary);
+                path = (await new DocumentConversion(office, tools).ConvertAsync([path], "pdf", temporary, new(), null, token))[0];
+                token.ThrowIfCancellationRequested();
+                extension = "pdf";
             }
-            else if(FeatureCatalog.IsVideo(path)||FeatureCatalog.IsAudio(path))
+
+            if (FeatureCatalog.IsImage(path))
             {
-                player=new MediaElement{Source=new Uri(path),LoadedBehavior=MediaState.Manual,UnloadedBehavior=MediaState.Close,Stretch=Stretch.Uniform};var current=player;content.Content=player;transport.Visibility=Visibility.Visible;
-                current.MediaOpened+=(_,_)=>{if(current!=player)return;scrub.Maximum=current.NaturalDuration.HasTimeSpan?Math.Max(.001,current.NaturalDuration.TimeSpan.TotalSeconds):1;};current.MediaEnded+=(_,_)=>{if(current==player){current.Pause();playing=false;}};
-                var triedProxy=false;current.MediaFailed+=async(_,e)=>{if(current!=player)return;if(!triedProxy&&tools.Ready){triedProxy=true;try{Directory.CreateDirectory(temporary);var proxy=Path.Combine(temporary,Guid.NewGuid().ToString("N")+(FeatureCatalog.IsAudio(path)?".wav":".mp4"));var args=new List<string>{"-v","error","-nostdin","-i",path};if(FeatureCatalog.IsAudio(path))args.AddRange(["-vn","-c:a","pcm_s16le"]);else args.AddRange(["-vf","scale=w='min(1280,iw)':h=-2","-c:v","libx264","-preset","veryfast","-crf","25","-pix_fmt","yuv420p","-c:a","aac","-movflags","+faststart"]);args.Add(proxy);await ProcessRunner.RunAsync(tools.Executable("ffmpeg"),args,token);if(!token.IsCancellationRequested&&current==player){current.Source=new Uri(proxy);current.Play();current.Pause();}return;}catch(OperationCanceledException){return;}catch(Exception){}}if(!token.IsCancellationRequested&&current==player){CloseMedia();content.Content=L10n.Label(new TextBlock{Text="Set up media tools for this codec, or use Open to preview in its default app.",TextWrapping=TextWrapping.Wrap});}};current.Play();current.Pause();timer.Start();
+                var bitmap = ImageEngine.Load(path);
+                kind = "image";
+                image = ImageDataUri(bitmap);
             }
-            else if(new[]{"txt","md","csv","tsv","srt","vtt","json","html","xml","log"}.Contains(FeatureCatalog.Extension(path)))
+            else if (extension == "pdf")
             {
-                if(new FileInfo(path).Length>2_000_000)throw new InvalidDataException("This text is too large to preview. Use Open to read the complete file.");
-                var text=await File.ReadAllTextAsync(path,token);if(!token.IsCancellationRequested)content.Content=new TextBox{Text=text,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+                pdfDocument = await Task.Run(() => PdfRasterDocument.Open(path), token);
+                pdfPageCount = pdfDocument.PageCount;
+                kind = "pdf";
+                await RenderPdfPageAsync(0, token);
+                return;
             }
-            else content.Content=L10n.Label(new TextBlock{Text="Use Open to preview this document in its default app.",TextWrapping=TextWrapping.Wrap});
+            else if (FeatureCatalog.IsVideo(path) || FeatureCatalog.IsAudio(path))
+            {
+                kind = FeatureCatalog.IsVideo(path) ? "video" : "audio";
+                mediaUrl = uiSurface.MapLocalAsset(path).AbsoluteUri;
+            }
+            else if (new[] { "txt", "md", "json", "xml", "csv", "log", "yaml", "yml", "ini", "toml" }.Contains(extension))
+            {
+                kind = "text";
+                text = await File.ReadAllTextAsync(path, token);
+            }
+            else
+            {
+                message = "Use Open to preview this document in its default app.";
+            }
+
+            token.ThrowIfCancellationRequested();
+            PushState();
         }
-        catch(OperationCanceledException){}
-        catch(Exception error){if(!token.IsCancellationRequested)content.Content=L10n.Label(new TextBlock{Text="Preview unavailable. "+error.Message,TextWrapping=TextWrapping.Wrap});}
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (token.IsCancellationRequested) return;
+            kind = "message";
+            message = "Preview unavailable. " + error.Message;
+            PushState();
+        }
+    }
+
+    private async Task RenderPdfPageAsync(int delta, CancellationToken token)
+    {
+        var document = pdfDocument;
+        if (document is null || document.PageCount == 0) return;
+        pdfPage = Math.Clamp(pdfPage + delta, 0, document.PageCount - 1);
+        try
+        {
+            var requestedPage = pdfPage;
+            var png = await Task.Run(() => document.RenderPage(requestedPage, 144, token), token);
+            if (token.IsCancellationRequested || !ReferenceEquals(pdfDocument, document) || pdfPage != requestedPage) return;
+            image = "data:image/png;base64," + Convert.ToBase64String(png);
+            kind = "pdf";
+            message = "";
+            PushState();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (!token.IsCancellationRequested)
+            {
+                kind = "message";
+                message = "Preview unavailable. " + error.Message;
+                PushState();
+            }
+        }
+    }
+
+    private async void OnUiMessage(string command, JsonElement payload)
+    {
+        try
+        {
+            switch (command)
+            {
+                case "preview.navigate": Navigate(payload.GetProperty("delta").GetInt32()); break;
+                case "preview.open":
+                    if (File.Exists(CurrentPath) || Directory.Exists(CurrentPath)) MainWindow.OpenUrl(CurrentPath);
+                    break;
+                case "preview.close": Close(); break;
+                case "preview.pdf-page": await RenderPdfPageAsync(payload.GetProperty("delta").GetInt32(), lifetime.Token); break;
+                case "preview.media-error": await RetryMediaAsync(); break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            kind = "message";
+            message = "Preview unavailable. " + error.Message;
+            PushState();
+        }
+    }
+
+    private async Task RetryMediaAsync()
+    {
+        if (lifetime.IsCancellationRequested || mediaFallbackAttempted) return;
+        mediaFallbackAttempted = true;
+        if (!tools.Ready)
+        {
+            kind = "message";
+            message = "Set up media tools for this codec, or use Open to preview in its default app.";
+            PushState();
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(temporary);
+            var source = CurrentPath;
+            var audio = FeatureCatalog.IsAudio(source);
+            var proxy = Path.Combine(temporary, Guid.NewGuid().ToString("N") + (audio ? ".wav" : ".mp4"));
+            var arguments = new List<string> { "-v", "error", "-nostdin", "-i", source };
+            if (audio) arguments.AddRange(["-vn", "-c:a", "pcm_s16le"]);
+            else arguments.AddRange(["-vf", "scale=w='min(1280,iw)':h=-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "25", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart"]);
+            arguments.Add(proxy);
+            await ProcessRunner.RunAsync(tools.Executable("ffmpeg"), arguments, lifetime.Token);
+            if (lifetime.IsCancellationRequested) return;
+            mediaUrl = uiSurface.MapLocalAsset(proxy).AbsoluteUri;
+            kind = audio ? "audio" : "video";
+            message = "";
+            PushState();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception error)
+        {
+            kind = "message";
+            message = "Set up media tools for this codec, or use Open to preview in its default app. " + error.Message;
+            PushState();
+        }
+    }
+
+    private static string ImageDataUri(BitmapSource bitmap)
+    {
+        const int maximumDimension = 2400;
+        var scale = Math.Min(1d, maximumDimension / (double)Math.Max(bitmap.PixelWidth, bitmap.PixelHeight));
+        BitmapSource preview = bitmap;
+        if (scale < 1)
+        {
+            var resized = new System.Windows.Media.Imaging.TransformedBitmap(bitmap,
+                new System.Windows.Media.ScaleTransform(scale, scale));
+            resized.Freeze();
+            preview = resized;
+        }
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(preview));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return "data:image/png;base64," + Convert.ToBase64String(stream.ToArray());
+    }
+
+    private void PushState() => uiSurface.SetState(new
+    {
+        file = Path.GetFileName(CurrentPath),
+        index = index + 1,
+        count = paths.Length,
+        kind,
+        message,
+        image,
+        text,
+        mediaUrl,
+        pdfPage = pdfPage + 1,
+        pdfPageCount,
+        canPrevious = index > 0,
+        canNext = index < paths.Length - 1
+    });
+
+    private async Task CleanupAsync()
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true);
+                return;
+            }
+            catch (IOException) { await Task.Delay(250); }
+            catch (UnauthorizedAccessException) { return; }
+        }
     }
 }

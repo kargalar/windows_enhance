@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -213,18 +213,18 @@ public sealed class KeyboardManagerModule : ITweakModule
         var currentActions = Deserialize<List<ShortcutActionMapping>>(settings.GetString("shortcut-actions", ""));
         var currentTextMappings = Deserialize<List<TextMapping>>(settings.GetString("text-mappings", ""));
         var currentAppMappings = Deserialize<List<AppSpecificMapping>>(settings.GetString("app-specific-mappings", ""));
-        var editor = new KeyboardMappingEditor(currentKeys, currentShortcuts, currentAppMappings, currentTextMappings, currentActions)
-        {
-            Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(window => window.IsActive)
-        };
-
-        if (editor.ShowDialog() != true) return;
-        settings.Set("key-mappings", JsonSerializer.Serialize(editor.KeyMappings));
-        settings.Set("shortcut-mappings", JsonSerializer.Serialize(editor.ShortcutMappings));
-        settings.Set("shortcut-actions", JsonSerializer.Serialize(editor.ShortcutActions));
-        settings.Set("text-mappings", JsonSerializer.Serialize(editor.TextMappings));
-        settings.Set("app-specific-mappings", JsonSerializer.Serialize(editor.AppSpecificMappings));
-        if (IsActive) Apply();
+        var featureUi = (_context as IFeatureUiContext)?.FeatureUi;
+        if (featureUi is null) { _context?.Notify("React arayüz altyapısı kullanılamıyor."); return; }
+        _ = new KeyboardMappingEditor(featureUi, currentKeys, currentShortcuts, currentAppMappings, currentTextMappings, currentActions,
+            (keys, shortcuts, apps, text, actions) =>
+            {
+                settings.Set("key-mappings", JsonSerializer.Serialize(keys));
+                settings.Set("shortcut-mappings", JsonSerializer.Serialize(shortcuts));
+                settings.Set("shortcut-actions", JsonSerializer.Serialize(actions));
+                settings.Set("text-mappings", JsonSerializer.Serialize(text));
+                settings.Set("app-specific-mappings", JsonSerializer.Serialize(apps));
+                if (IsActive) Apply();
+            });
     }
 
     private IntPtr HandleKeyboard(int code, IntPtr messagePointer, IntPtr dataPointer)
@@ -748,217 +748,156 @@ public sealed class KeyboardManagerModule : ITweakModule
 
 }
 
-internal sealed class KeyboardMappingEditor : Window
+internal sealed class KeyboardMappingEditor
 {
-    private readonly TextBox _keyMappings;
-    private readonly TextBox _shortcutMappings;
-    private readonly TextBox _appSpecificMappings;
-    private readonly TextBox _textMappings;
-    private readonly TextBox _shortcutActions;
-    private readonly TextBlock _error;
-    private TextBox? _captureTarget;
-    private TextBlock? _captureStatus;
+    private readonly IFeatureUiWindow _window;
+    private readonly Action<List<object>, List<object>, List<object>, List<object>, List<object>> _save;
+    private string _keys;
+    private string _shortcuts;
+    private string _applications;
+    private string _text;
+    private string _actions;
+    private string _error = "";
+    private string? _captureTarget;
+    private string _captureStatus = "İmleci tuşun yazılacağı yere koyup Ata'ya basın.";
     private string? _capturedShortcut;
+    private int _captureStart;
+    private int _captureLength;
 
-    public List<object> KeyMappings { get; private set; } = new();
-    public List<object> ShortcutMappings { get; private set; } = new();
-    public List<object> AppSpecificMappings { get; private set; } = new();
-    public List<object> TextMappings { get; private set; } = new();
-    public List<object> ShortcutActions { get; private set; } = new();
-
-    public KeyboardMappingEditor(IEnumerable<object> keys, IEnumerable<object> shortcuts, IEnumerable<object> appSpecificMappings,
-        IEnumerable<object> textMappings, IEnumerable<object> shortcutActions)
+    internal KeyboardMappingEditor(IFeatureUiService featureUi, IEnumerable<object> keys, IEnumerable<object> shortcuts,
+        IEnumerable<object> appSpecificMappings, IEnumerable<object> textMappings, IEnumerable<object> shortcutActions,
+        Action<List<object>, List<object>, List<object>, List<object>, List<object>> save)
     {
-        Title = "Klavye eşlemeleri";
-        Width = 760;
-        Height = 640;
-        MinWidth = 600;
-        MinHeight = 480;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(27, 31, 40));
-        Foreground = Brushes.White;
-
-        var root = new DockPanel { Margin = new Thickness(18) };
-        var tabs = new TabControl { Margin = new Thickness(0, 0, 0, 12) };
-        _keyMappings = CreateEditor();
-        _shortcutMappings = CreateEditor();
-        _appSpecificMappings = CreateEditor();
-        _textMappings = CreateEditor();
-        _shortcutActions = CreateEditor();
-        PreviewKeyDown += OnCaptureKeyDown;
-        tabs.Items.Add(new TabItem
-        {
-            Header = "Tuş eşlemeleri",
-            Content = EditorPage("Her satırda kaynak tuş = gönderilecek tuş. Örnek: A = B", _keyMappings)
-        });
-        tabs.Items.Add(new TabItem
-        {
-            Header = "Kısayol eşlemeleri",
-            Content = EditorPage("Her satırda kaynak kısayol = gönderilecek kısayol. Örnek: Ctrl+C = Ctrl+Insert", _shortcutMappings)
-        });
-        tabs.Items.Add(new TabItem
-        {
-            Header = "Uygulamaya özel",
-            Content = EditorPage("Her satırda işlem.exe: kaynak = hedef. Örnek: msedge.exe: Ctrl+F = Ctrl+H veya notepad.exe: A = B", _appSpecificMappings)
-        });
-        tabs.Items.Add(new TabItem
-        {
-            Header = "Metin dizileri",
-            Content = EditorPage("Tuş veya kısayol = yazdırılacak metin biçimini kullanın. Örnek: H = Hello! veya Ctrl+Alt+T = Toplantı notları:", _textMappings)
-        });
-        tabs.Items.Add(new TabItem
-        {
-            Header = "Uygulama veya URI aç",
-            Content = EditorPage("URI: Ctrl+Alt+W = uri|https://example.com. Ardışık kısayol: Ctrl+K, Ctrl+C = uri|https://example.com (en fazla dört adım, 2 saniye içinde; öncü kısayol normal şekilde uygulamaya iletilir). Uygulama: Ctrl+Alt+N = app|notepad.exe|argümanlar|çalışma klasörü|normal|new|visible. Son üç alan yetki (normal/elevated/different-user), zaten açıksa davranış (new/show/nothing/close/end-task) ve görünürlük (visible/hidden) seçenekleridir.", _shortcutActions)
-        });
-
-        _error = new TextBlock
-        {
-            Foreground = new SolidColorBrush(Color.FromRgb(255, 130, 130)),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10)
-        };
-        var save = new Button { Content = "Kaydet ve uygula", Padding = new Thickness(14, 8, 14, 8), MinWidth = 130 };
-        save.Click += (_, _) => SaveMappings();
-        var cancel = new Button { Content = "İptal", Padding = new Thickness(14, 8, 14, 8), MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
-        cancel.Click += (_, _) => DialogResult = false;
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(save);
-        var footer = new StackPanel();
-        footer.Children.Add(_error);
-        footer.Children.Add(buttons);
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-        root.Children.Add(tabs);
-        Content = root;
-
-        _keyMappings.Text = string.Join(Environment.NewLine, keys.Select(FormatKeyMapping));
-        _shortcutMappings.Text = string.Join(Environment.NewLine, shortcuts.Select(FormatShortcutMapping));
-        _appSpecificMappings.Text = string.Join(Environment.NewLine, appSpecificMappings.Select(FormatAppSpecificMapping));
-        _textMappings.Text = string.Join(Environment.NewLine, textMappings.Select(FormatTextMapping));
-        _shortcutActions.Text = string.Join(Environment.NewLine, shortcutActions.Select(FormatShortcutAction));
+        _save = save;
+        _keys = string.Join(Environment.NewLine, keys.Select(FormatKeyMapping));
+        _shortcuts = string.Join(Environment.NewLine, shortcuts.Select(FormatShortcutMapping));
+        _applications = string.Join(Environment.NewLine, appSpecificMappings.Select(FormatAppSpecificMapping));
+        _text = string.Join(Environment.NewLine, textMappings.Select(FormatTextMapping));
+        _actions = string.Join(Environment.NewLine, shortcutActions.Select(FormatShortcutAction));
+        _window = featureUi.Open("keyboard-mapping-editor-" + Guid.NewGuid().ToString("N"), "keyboard-mapping-editor", "Klavye eşlemeleri",
+            new FeatureUiWindowOptions(940, 760, ShowInTaskbar: true, Resizable: true));
+        _window.MessageReceived += OnMessage;
+        PushState();
     }
 
-    private static TextBox CreateEditor() => new()
+    private void OnMessage(string command, JsonElement payload)
     {
-        AcceptsReturn = true,
-        AcceptsTab = true,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-        FontFamily = new FontFamily("Cascadia Code, Consolas"),
-        FontSize = 13,
-        TextWrapping = TextWrapping.NoWrap,
-        Background = new SolidColorBrush(Color.FromRgb(35, 41, 52)),
-        Foreground = Brushes.White,
-        BorderBrush = new SolidColorBrush(Color.FromRgb(72, 84, 103)),
-        Padding = new Thickness(10)
-    };
-
-    private UIElement EditorPage(string help, TextBox editor)
-    {
-        var panel = new DockPanel { Margin = new Thickness(10) };
-        var instructions = new TextBlock { Text = help, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) };
-        DockPanel.SetDock(instructions, Dock.Top);
-        panel.Children.Add(instructions);
-
-        var captureRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-        var assign = new Button
+        switch (command)
         {
-            Content = "Ata",
-            Padding = new Thickness(12, 6, 12, 6),
-            MinWidth = 72,
-            Margin = new Thickness(0, 0, 10, 0),
-            ToolTip = "İmlecin bulunduğu yere tuş veya kısayol yakalayın. Enter ile kaydedin."
-        };
-        var status = new TextBlock
-        {
-            Text = "İmleci tuşun yazılacağı yere koyup Ata'ya basın.",
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.FromRgb(180, 190, 205)),
-            TextWrapping = TextWrapping.Wrap
-        };
-        assign.Click += (_, _) => StartShortcutCapture(editor, status);
-        captureRow.Children.Add(assign);
-        captureRow.Children.Add(status);
-        DockPanel.SetDock(captureRow, Dock.Top);
-        panel.Children.Add(captureRow);
-        panel.Children.Add(editor);
-        return panel;
+            case "keyboard-editor.update": UpdateField(payload); break;
+            case "keyboard-editor.capture-start": StartCapture(payload); break;
+            case "keyboard-editor.capture-key": CaptureKey(payload); break;
+            case "keyboard-editor.save": SaveMappings(); break;
+            case "keyboard-editor.cancel": _window.Close(); break;
+        }
     }
 
-    private void StartShortcutCapture(TextBox editor, TextBlock status)
+    private void UpdateField(JsonElement payload)
     {
-        _captureTarget = editor;
-        _captureStatus = status;
+        var field = ReadString(payload, "field");
+        var value = ReadString(payload, "value");
+        switch (field)
+        {
+            case "keys": _keys = value; break;
+            case "shortcuts": _shortcuts = value; break;
+            case "applications": _applications = value; break;
+            case "text": _text = value; break;
+            case "actions": _actions = value; break;
+        }
+        _error = "";
+        PushState();
+    }
+
+    private void StartCapture(JsonElement payload)
+    {
+        _captureTarget = ReadString(payload, "field");
+        _captureStart = ReadInt(payload, "selectionStart");
+        _captureLength = ReadInt(payload, "selectionLength");
         _capturedShortcut = null;
-        status.Text = "Tuşlara basın, ardından Enter ile kaydedin. Esc iptal eder.";
-        editor.Focus();
+        _captureStatus = "Tuşlara basın, ardından Enter ile kaydedin. Esc iptal eder.";
+        PushState();
     }
 
-    private void OnCaptureKeyDown(object sender, KeyEventArgs e)
+    private void CaptureKey(JsonElement payload)
     {
-        if (_captureTarget is null || _captureStatus is null) return;
-
-        if (e.Key == Key.Escape)
+        if (_captureTarget is null) return;
+        var key = ReadString(payload, "key");
+        if (key == "Escape")
         {
             _captureTarget = null;
-            _captureStatus.Text = "Atama iptal edildi.";
-            _captureStatus = null;
             _capturedShortcut = null;
-            e.Handled = true;
+            _captureStatus = "Atama iptal edildi.";
+            PushState();
             return;
         }
-
-        if (e.Key == Key.Enter)
+        if (key == "Enter")
         {
-            if (_capturedShortcut is not null)
-            {
-                var target = _captureTarget;
-                var start = target.SelectionStart;
-                target.SelectedText = _capturedShortcut;
-                target.SelectionStart = start + _capturedShortcut.Length;
-                target.SelectionLength = 0;
-                _captureStatus.Text = $"Eklendi: {_capturedShortcut}";
-                target.Focus();
-                _captureTarget = null;
-                _captureStatus = null;
-                _capturedShortcut = null;
-            }
+            if (_capturedShortcut is null) _captureStatus = "Önce bir tuş veya kısayol kombinasyonu girin.";
             else
             {
-                _captureStatus.Text = "Önce bir tuş veya kısayol kombinasyonu girin.";
+                var current = GetField(_captureTarget);
+                var start = Math.Clamp(_captureStart, 0, current.Length);
+                var length = Math.Clamp(_captureLength, 0, current.Length - start);
+                SetField(_captureTarget, current[..start] + _capturedShortcut + current[(start + length)..]);
+                _captureStart = start + _capturedShortcut.Length;
+                _captureLength = 0;
+                _captureStatus = $"Eklendi: {_capturedShortcut}";
+                _captureTarget = null;
+                _capturedShortcut = null;
             }
-            e.Handled = true;
+            PushState();
             return;
         }
-
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or
-            Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
-            return;
-
+        if (key is "Control" or "Alt" or "Shift" or "Meta") return;
         var parts = new List<string>();
-        var modifiers = Keyboard.Modifiers;
-        if ((modifiers & ModifierKeys.Control) != 0) parts.Add("Ctrl");
-        if ((modifiers & ModifierKeys.Alt) != 0) parts.Add("Alt");
-        if ((modifiers & ModifierKeys.Shift) != 0) parts.Add("Shift");
-        if ((modifiers & ModifierKeys.Windows) != 0) parts.Add("Win");
-        parts.Add(key.ToString());
+        if (ReadBool(payload, "ctrlKey")) parts.Add("Ctrl");
+        if (ReadBool(payload, "altKey")) parts.Add("Alt");
+        if (ReadBool(payload, "shiftKey")) parts.Add("Shift");
+        if (ReadBool(payload, "metaKey")) parts.Add("Win");
+        parts.Add(NormalizeKey(key));
         _capturedShortcut = string.Join('+', parts);
-        _captureStatus.Text = $"Yakalandı: {_capturedShortcut} · Enter ile ekle, Esc ile iptal et.";
-        e.Handled = true;
+        _captureStatus = $"Yakalandı: {_capturedShortcut} · Enter ile ekle, Esc ile iptal et.";
+        PushState();
     }
+
+    private string GetField(string field) => field switch
+    {
+        "keys" => _keys, "shortcuts" => _shortcuts, "applications" => _applications,
+        "text" => _text, "actions" => _actions, _ => ""
+    };
+
+    private void SetField(string field, string value)
+    {
+        switch (field)
+        {
+            case "keys": _keys = value; break;
+            case "shortcuts": _shortcuts = value; break;
+            case "applications": _applications = value; break;
+            case "text": _text = value; break;
+            case "actions": _actions = value; break;
+        }
+    }
+
+    private static string NormalizeKey(string key) => key switch
+    {
+        " " => "Space", "ArrowLeft" => "Left", "ArrowRight" => "Right", "ArrowUp" => "Up", "ArrowDown" => "Down",
+        "Backspace" => "Back", "Delete" => "Delete", "Escape" => "Escape", "PageUp" => "PageUp", "PageDown" => "PageDown",
+        "Home" => "Home", "End" => "End", "Insert" => "Insert", "CapsLock" => "Capital", "ContextMenu" => "Apps",
+        "PrintScreen" => "Snapshot", "ScrollLock" => "Scroll", "NumLock" => "NumLock", "" => "None",
+        _ when key.Length == 1 && char.IsAsciiDigit(key[0]) => "D" + key,
+        _ when key.Length == 1 => key.ToUpperInvariant(),
+        _ => key
+    };
 
     private void SaveMappings()
     {
         try
         {
-            var keyMappings = ParseKeyMappings(_keyMappings.Text);
-            var shortcutMappings = ParseShortcutMappings(_shortcutMappings.Text);
-            var appMappings = ParseAppSpecificMappings(_appSpecificMappings.Text);
-            var textMappings = ParseTextMappings(_textMappings.Text);
-            var shortcutActions = ParseShortcutActions(_shortcutActions.Text);
+            var keyMappings = ParseKeyMappings(_keys);
+            var shortcutMappings = ParseShortcutMappings(_shortcuts);
+            var appMappings = ParseAppSpecificMappings(_applications);
+            var textMappings = ParseTextMappings(_text);
+            var shortcutActions = ParseShortcutActions(_actions);
             var sources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var mapping in keyMappings)
@@ -972,11 +911,8 @@ internal sealed class KeyboardMappingEditor : Window
             }
             foreach (var mapping in textMappings)
             {
-                var source = mapping.FromModifiers == 0
-                    ? $"key:{mapping.FromKey}"
-                    : $"shortcut:{mapping.FromModifiers}:{mapping.FromKey}";
-                if (!sources.Add(source))
-                    throw new FormatException("Aynı kaynak tuş veya kısayol birden fazla kez eşlenemez.");
+                var source = mapping.FromModifiers == 0 ? $"key:{mapping.FromKey}" : $"shortcut:{mapping.FromModifiers}:{mapping.FromKey}";
+                if (!sources.Add(source)) throw new FormatException("Aynı kaynak tuş veya kısayol birden fazla kez eşlenemez.");
                 if (keyMappings.Any(key => key.From == mapping.FromKey))
                     throw new FormatException("Metin kısayolunun son tuşu ayrıca tek tuş olarak eşlenmiş; bu çakışma kısayolu çalışmaz hale getirir.");
             }
@@ -984,8 +920,7 @@ internal sealed class KeyboardMappingEditor : Window
             {
                 var source = string.Join(',', mapping.Sequence.Select(stroke => $"{stroke.Modifiers}:{stroke.Key}"));
                 var sourcePrefix = mapping.Sequence.Count == 1 ? "shortcut:" : "sequence:";
-                if (!sources.Add(sourcePrefix + source))
-                    throw new FormatException("Aynı kaynak kısayol birden fazla kez eşlenemez.");
+                if (!sources.Add(sourcePrefix + source)) throw new FormatException("Aynı kaynak kısayol birden fazla kez eşlenemez.");
                 if (mapping.Sequence.Any(stroke => keyMappings.Any(key => key.From == stroke.Key)))
                     throw new FormatException("Eylem kısayolunun son tuşu ayrıca tek tuş olarak eşlenmiş.");
             }
@@ -993,8 +928,7 @@ internal sealed class KeyboardMappingEditor : Window
             {
                 if (shortcutActions.Any(other => !ReferenceEquals(other, mapping) && other.Sequence.Count == 1 &&
                         SameStroke(other.Sequence[0], mapping.Sequence[0])) ||
-                    mapping.Sequence.Any(stroke =>
-                        shortcutMappings.Any(other => other.FromModifiers == stroke.Modifiers && other.FromKey == stroke.Key) ||
+                    mapping.Sequence.Any(stroke => shortcutMappings.Any(other => other.FromModifiers == stroke.Modifiers && other.FromKey == stroke.Key) ||
                         textMappings.Any(other => other.FromModifiers == stroke.Modifiers && other.FromKey == stroke.Key)))
                     throw new FormatException("Ardışık kısayol adımı başka bir kısayol/metin eşlemesiyle çakışıyor.");
             }
@@ -1011,28 +945,35 @@ internal sealed class KeyboardMappingEditor : Window
             var appSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var mapping in appMappings)
             {
-                var source = mapping.IsShortcut
-                    ? $"{mapping.ProcessName}:shortcut:{mapping.FromModifiers}:{mapping.From}"
-                    : $"{mapping.ProcessName}:key:{mapping.From}";
+                var source = mapping.IsShortcut ? $"{mapping.ProcessName}:shortcut:{mapping.FromModifiers}:{mapping.From}" : $"{mapping.ProcessName}:key:{mapping.From}";
                 if (!appSources.Add(source)) throw new FormatException("Aynı uygulamada aynı kaynak tuş veya kısayol birden fazla kez eşlenemez.");
-                if (mapping.IsShortcut && appMappings.Any(key => !key.IsShortcut &&
-                    key.ProcessName.Equals(mapping.ProcessName, StringComparison.OrdinalIgnoreCase) && key.From == mapping.From))
+                if (mapping.IsShortcut && appMappings.Any(key => !key.IsShortcut && key.ProcessName.Equals(mapping.ProcessName, StringComparison.OrdinalIgnoreCase) && key.From == mapping.From))
                     throw new FormatException("Uygulama kısayolunun son tuşu aynı uygulamada ayrıca tek tuş olarak eşlenmiş.");
             }
 
-            KeyMappings = keyMappings.Cast<object>().ToList();
-            ShortcutMappings = shortcutMappings.Cast<object>().ToList();
-            AppSpecificMappings = appMappings.Cast<object>().ToList();
-            TextMappings = textMappings.Cast<object>().ToList();
-            ShortcutActions = shortcutActions.Cast<object>().ToList();
-            DialogResult = true;
+            _save(keyMappings.Cast<object>().ToList(), shortcutMappings.Cast<object>().ToList(), appMappings.Cast<object>().ToList(),
+                textMappings.Cast<object>().ToList(), shortcutActions.Cast<object>().ToList());
+            _window.Close();
         }
         catch (FormatException exception)
         {
-            _error.Text = exception.Message;
+            _error = exception.Message;
+            PushState();
         }
     }
 
+    private void PushState() => _window.SetState(new
+    {
+        keys = _keys, shortcuts = _shortcuts, applications = _applications, text = _text, actions = _actions,
+        error = _error, captureTarget = _captureTarget, captureStatus = _captureStatus
+    });
+
+    private static string ReadString(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) ? value.GetString() ?? "" : "";
+    private static int ReadInt(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) && value.TryGetInt32(out var number) ? number : 0;
+    private static bool ReadBool(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.True;
     private static bool SameStroke(KeyboardManagerModule.ShortcutStroke first, KeyboardManagerModule.ShortcutStroke second) =>
         first.Modifiers == second.Modifiers && first.Key == second.Key;
 

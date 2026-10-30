@@ -222,6 +222,14 @@ Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/atubakoksal/annotated_
 & tests/WinForge.RegressionTests/bin/x64/Release/net10.0-windows10.0.19041.0/WinForge.RegressionTests.exe --autocorrect-turkish-tweets-benchmark work/corpus/TurkishTweets-data.txt
 ```
 
+2026-10-30 tarihinde ilk 100 satır (193 etiketli hata, 509 değişmemesi gereken
+kelime) üzerinde yapılan karşılaştırmada `dıger → diğer` düzeltmesi ve çoklu
+Türkçe karakter değişimindeki koruma eklendi. Tam düzeltme doğruluğu %62,18'den
+%62,69'a, öneri top-1/top-3 %77,72/%81,87'den %79,27/%82,38'e çıktı; değiştirilen
+sağlam kelime sayısı 7'den 6'ya indi. Bilinmeyen kelimelerde en güçlü yazım adayı
+tamamlamalar şeridi doldurmadan sunulur. Bu küçük tanılama örneği tüm veri kümesi
+veya gerçek kullanım performansını temsil etmez.
+
 2026-10-28 tarihinde veri kümesinin boşlukla ayrılmış token hizalaması korunarak
 2.000 satırın tamamı ölçüldü. 4.061 tek kelimelik hatada tam otomatik düzeltme
 doğruluğu %65,01, kapsama %70,18 ve düzeltme precision'ı %92,63 oldu. Öneri

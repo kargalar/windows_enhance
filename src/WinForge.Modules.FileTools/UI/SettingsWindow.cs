@@ -1,45 +1,124 @@
 using System.Windows;
-using System.Windows.Controls;
-using System.Diagnostics;
 using Microsoft.Win32;
+using System.Text.Json;
+using WinForge.Core;
 using WinForge.FileTools.Engine;
 namespace WinForge.FileTools.UI;
 public sealed partial class SettingsWindow:Window
 {
     private readonly LibraryStore? appearanceStore;
     private readonly PreferencesStore store;private readonly Action changed;
-    private readonly StackPanel page=new(){Margin=new(28)};private readonly ListBox sections=new(){Width=175,ItemsSource=new[]{"General","Formats","Compatibility","Folders","About"},SelectedIndex=0};
-    public SettingsWindow(Window owner,PreferencesStore store,Action changed,Func<Task> update,LibraryStore? appearanceStore=null)
+    private readonly Func<Task> _update;
+    private readonly IFeatureUiSurface _uiSurface;
+    private readonly IFeatureUiService _featureUi;
+    private string _section="General";
+    private string? _selectedFormat;
+    public SettingsWindow(Window owner,PreferencesStore store,Action changed,Func<Task> update,LibraryStore? appearanceStore=null,IFeatureUiService? featureUi=null)
     {
-        this.appearanceStore=appearanceStore;L10n.Choices(sections);
-        this.store=store;this.changed=changed;Owner=owner;Theme.Attach(this);Title="Make it yours · Nashi";Width=850;Height=680;MinWidth=740;MinHeight=500;WindowStartupLocation=WindowStartupLocation.CenterOwner;var root=new DockPanel();Content=root;DockPanel.SetDock(sections,Dock.Left);root.Children.Add(sections);root.Children.Add(new ScrollViewer{Content=page,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});sections.SelectionChanged+=(_,_)=>ShowSection(update);ShowSection(update);PreviewKeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape){Close();e.Handled=true;}};
+        this.appearanceStore=appearanceStore;_featureUi=featureUi??throw new InvalidOperationException("React UI is required for settings.");
+        this.store=store;this.changed=changed;_update=update;Owner=owner;Theme.Attach(this);Title="Nashi settings";Width=850;Height=680;MinWidth=740;MinHeight=500;WindowStartupLocation=WindowStartupLocation.CenterOwner;PreviewKeyDown+=(_,e)=>{if(e.Key==System.Windows.Input.Key.Escape){Close();e.Handled=true;}};
+        _uiSurface = _featureUi.CreateSurface("nashi-settings");
+        _uiSurface.MessageReceived += OnUiMessage;
+        Content = _uiSurface.Element;
+        Closed += (_, _) => _uiSurface.Dispose();
+        PushUiState();
     }
-    private void Save(Preferences value){try{store.Save(value);changed();}catch(Exception error)when(error is IOException or ArgumentException or UnauthorizedAccessException){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Settings could not be saved"));}}
-    private void Heading(string title,string hint){page.Children.Add(L10n.Label(new TextBlock{Text=title,FontSize=28,FontWeight=FontWeights.Bold}));page.Children.Add(L10n.Label(new TextBlock{Text=hint,TextWrapping=TextWrapping.Wrap,Margin=new(0,8,0,20),Foreground=Theme.Brush("Muted")}));}
-    private void Toggle(string title,bool value,Action<bool> save){var box=L10n.Content(new CheckBox{Content=title,IsChecked=value,Margin=new(4,12,4,12)});box.Checked+=(_,_)=>save(true);box.Unchecked+=(_,_)=>save(false);page.Children.Add(box);}
-    private void Pick(string title,string[] values,string value,Action<string> save){page.Children.Add(L10n.Label(new TextBlock{Text=title,Margin=new(4,12,4,0)}));var combo=new ComboBox{ItemsSource=values,SelectedItem=value};combo.SelectionChanged+=(_,_)=>{if(combo.SelectedItem is string selected)save(selected);};page.Children.Add(combo);}
-    private void LanguagePicker()
+    internal void ShowError(string title,string message)=>_ = _featureUi.ShowMessageAsync(L10n.Text(title),L10n.Text(message));
+    private void Save(Preferences value){try{store.Save(value);changed();PushUiState();}catch(Exception error)when(error is IOException or ArgumentException or UnauthorizedAccessException){ShowError("Settings could not be saved",error.Message);}}
+    private void OnUiMessage(string command,JsonElement payload)
     {
-        page.Children.Add(L10n.Label(new TextBlock{Text="Language",Margin=new(4,12,4,0)}));
-        var language=new ComboBox{ItemsSource=new[]{"English","Türkçe"},SelectedIndex=store.Value.Language=="tr"?1:0};
-        System.Windows.Automation.AutomationProperties.SetAutomationId(language,"AppLanguage");
-        language.SelectionChanged+=(_,_)=>Save(store.Value with{Language=language.SelectedIndex==1?"tr":"en"});page.Children.Add(language);
-    }
-    private void ShowSection(Func<Task> update)
-    {
-        page.Children.Clear();switch(sections.SelectedItem as string)
+        try
         {
-            case "General":
-                Heading("Your kind of flow.","A few small preferences. A smoother everyday.");LanguagePicker();if(appearanceStore is not null)Pick("Appearance",["system","light","dark"],appearanceStore.Appearance,v=>{try{appearanceStore.SetAppearance(v);Theme.Apply(v);}catch(Exception error)when(error is IOException or UnauthorizedAccessException){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Appearance could not be saved"));}});Toggle("Enable Nashi drag shortcuts",store.Value.Enabled,v=>Save(store.Value with{Enabled=v}));if(appearanceStore is not null)Toggle("Window management · drag a title bar, then Shift or Alt",appearanceStore.WindowManagementEnabled,v=>{appearanceStore.SetWindowManagement(v);changed();});Toggle("Sound feedback",store.Value.Feedback,v=>Save(store.Value with{Feedback=v}));page.Children.Add(MainWindow.Button("Try feedback",Feedback.Play));Toggle("Subtle animations",store.Value.Animations,v=>Save(store.Value with{Animations=v}));Toggle("Keep running in the system tray",store.Value.KeepInTray,v=>Save(store.Value with{KeepInTray=v}));Toggle("Reveal finished files in Explorer",store.Value.RevealFinished,v=>Save(store.Value with{RevealFinished=v}));
-                Pick("Wheel finish",["glass","solid"],store.Value.WheelFinish,v=>Save(store.Value with{WheelFinish=v}));var size=new Slider{Minimum=.85,Maximum=1.4,Value=store.Value.WheelScale,Margin=new(4,12,4,8),ToolTip="Wheel size"};size.ValueChanged+=(_,_)=>Save(store.Value with{WheelScale=size.Value});page.Children.Add(L10n.Label(new TextBlock{Text="Wheel size"}));page.Children.Add(size);
-                var modifiers=new[]{"Ctrl","Shift","Alt","Ctrl+Shift","Ctrl+Alt","Shift+Alt"};Pick("Tools · while dragging",modifiers.Where(m=>m!=store.Value.ConvertModifier&&m!=store.Value.ActionsModifier).ToArray(),store.Value.ToolsModifier,v=>Save(store.Value with{ToolsModifier=v}));Pick("Convert · while dragging",modifiers.Where(m=>m!=store.Value.ToolsModifier&&m!=store.Value.ActionsModifier).ToArray(),store.Value.ConvertModifier,v=>Save(store.Value with{ConvertModifier=v}));Pick("File actions · while dragging",modifiers.Where(m=>m!=store.Value.ToolsModifier&&m!=store.Value.ConvertModifier).ToArray(),store.Value.ActionsModifier,v=>Save(store.Value with{ActionsModifier=v}));Pick("Float behavior",["createNew","addToExisting"],store.Value.FloatBehavior,v=>Save(store.Value with{FloatBehavior=v}));
-                break;
-            case "Formats":
-                FormatDefaults();break;
-            case "Compatibility":Heading("Everything has a next form.","The same conversion and tool catalog as macOS.");foreach(var pair in FeatureCatalog.Conversions.OrderBy(p=>p.Key))page.Children.Add(new TextBlock{Text=pair.Key.ToUpperInvariant()+"  →  "+string.Join(", ",pair.Value.Select(v=>v.ToUpperInvariant())),TextWrapping=TextWrapping.Wrap,Margin=new(4,8,4,8)});break;
-            case "Folders":Heading("A place for fresh files.","Originals remain safe. Choose where new copies should land.");Pick("Save new copies",["beside","ask","folder"],store.Value.OutputMode,v=>Save(store.Value with{OutputMode=v}));page.Children.Add(MainWindow.Button("Choose output folder…",()=>{var picker=new OpenFolderDialog{Title="Save new copies here"};if(picker.ShowDialog(this)==true){Save(store.Value with{OutputFolder=picker.FolderName,OutputMode="folder"});ShowSection(update);}}));page.Children.Add(new TextBlock{Text=store.Value.OutputFolder,TextWrapping=TextWrapping.Wrap});page.Children.Add(MainWindow.Button("Choose downloads folder…",()=>{var picker=new OpenFolderDialog{Title="Save downloaded media here"};if(picker.ShowDialog(this)==true){Save(store.Value with{DownloadFolder=picker.FolderName});ShowSection(update);}}));page.Children.Add(new TextBlock{Text=store.Value.DownloadFolder,TextWrapping=TextWrapping.Wrap});break;
-            case "Updates":Heading("Fresh things, on their way.","Updates are downloaded from the public Nashi repository and verified before installation. No GitHub account or token is required.");Toggle("Check for updates automatically",store.Value.AutomaticUpdateChecks,v=>Save(store.Value with{AutomaticUpdateChecks=v}));page.Children.Add(MainWindow.Button("Check for updates",async()=>await update()));break;
-            default:Heading("Nashi", "A little pear. A lot of possibility.");page.Children.Add(L10n.Label(new TextBlock{Text="Local by design · MIT source\nVersion "+"WinForge",Margin=new(4,12,4,12)}));page.Children.Add(MainWindow.Button("Source & third-party notices",()=>MainWindow.OpenUrl("https://github.com/orkunisitmak/nashi-app")));break;
+            switch(command)
+            {
+                case "settings.close":Close();break;
+                case "settings.section":
+                    _section=payload.GetProperty("section").GetString()??"General";
+                    break;
+                case "settings.profile.select":
+                    _selectedFormat=payload.GetProperty("format").GetString();
+                    break;
+                case "settings.toggle":UpdateToggle(payload);break;
+                case "settings.pick":UpdatePick(payload);break;
+                case "settings.scale":
+                    if(payload.GetProperty("value").TryGetDouble(out var scale))Save(store.Value with{WheelScale=Math.Clamp(scale,.85,1.4)});
+                    break;
+                case "settings.folder":ChooseFolder(payload.GetProperty("folder").GetString()??"");break;
+                case "settings.profile.save":SaveProfile(payload);break;
+                case "settings.profile.reset":
+                    if(payload.TryGetProperty("format",out var format))store.SetProfile(format.GetString()??"",new());
+                    changed();PushUiState();break;
+                case "settings.updates":_ = _update();break;
+                case "settings.feedback":Feedback.Play();break;
+                case "settings.source":MainWindow.OpenUrl("https://github.com/orkunisitmak/nashi-app");break;
+            }
+            PushUiState();
         }
+        catch(Exception error){ShowError("Settings could not be saved",error.Message);}
+    }
+
+    private void UpdateToggle(JsonElement payload)
+    {
+        var key=payload.GetProperty("key").GetString();var value=payload.GetProperty("value").GetBoolean();
+        switch(key)
+        {
+            case "Enabled":Save(store.Value with{Enabled=value});break;
+            case "Feedback":Save(store.Value with{Feedback=value});break;
+            case "Animations":Save(store.Value with{Animations=value});break;
+            case "KeepInTray":Save(store.Value with{KeepInTray=value});break;
+            case "RevealFinished":Save(store.Value with{RevealFinished=value});break;
+            case "AutomaticUpdateChecks":Save(store.Value with{AutomaticUpdateChecks=value});break;
+            case "WindowManagement" when appearanceStore is not null:appearanceStore.SetWindowManagement(value);changed();PushUiState();break;
+        }
+    }
+
+    private void UpdatePick(JsonElement payload)
+    {
+        var key=payload.GetProperty("key").GetString();var value=payload.GetProperty("value").GetString()??"";
+        switch(key)
+        {
+            case "Language":Save(store.Value with{Language=value=="Türkçe"?"tr":"en"});break;
+            case "Appearance" when appearanceStore is not null:appearanceStore.SetAppearance(value);Theme.Apply(value);changed();PushUiState();break;
+            case "WheelFinish":Save(store.Value with{WheelFinish=value});break;
+            case "FloatBehavior":Save(store.Value with{FloatBehavior=value});break;
+            case "ToolsModifier":Save(store.Value with{ToolsModifier=value});break;
+            case "ConvertModifier":Save(store.Value with{ConvertModifier=value});break;
+            case "ActionsModifier":Save(store.Value with{ActionsModifier=value});break;
+            case "OutputMode":Save(store.Value with{OutputMode=value});break;
+        }
+    }
+
+    private void ChooseFolder(string folder)
+    {
+        var current=folder=="output"?store.Value.OutputFolder:store.Value.DownloadFolder;
+        var picker=new OpenFolderDialog{Title=folder=="output"?"Save new copies here":"Save downloaded media here",InitialDirectory=Directory.Exists(current)?current:Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)};
+        if(picker.ShowDialog(this)!=true)return;
+        if(folder=="output")Save(store.Value with{OutputFolder=picker.FolderName,OutputMode="folder"});
+        else Save(store.Value with{DownloadFolder=picker.FolderName});
+    }
+
+    private void SaveProfile(JsonElement payload)
+    {
+        var format=payload.GetProperty("format").GetString()??throw new InvalidDataException("Choose an output format.");
+        var profile=payload.GetProperty("profile").Deserialize<OutputProfile>(new JsonSerializerOptions(JsonSerializerDefaults.Web))??throw new InvalidDataException("Export defaults are invalid.");
+        store.SetProfile(format,profile);changed();PushUiState();
+    }
+
+    private void PushUiState()
+    {
+        var formats=FeatureCatalog.Conversions.Values.SelectMany(value=>value).Distinct().Order().ToArray();
+        var compatible=FeatureCatalog.Conversions.ToDictionary(pair=>pair.Key,pair=>pair.Value);
+        _selectedFormat ??= formats.FirstOrDefault()??"png";
+        _uiSurface.SetState(new
+        {
+            section=_section,
+            language=store.Value.Language,
+            appearance=appearanceStore?.Appearance??"system",
+            enabled=store.Value.Enabled,feedback=store.Value.Feedback,animations=store.Value.Animations,keepInTray=store.Value.KeepInTray,revealFinished=store.Value.RevealFinished,
+            windowManagement=appearanceStore?.WindowManagementEnabled??false,wheelFinish=store.Value.WheelFinish,wheelScale=store.Value.WheelScale,
+            toolsModifier=store.Value.ToolsModifier,convertModifier=store.Value.ConvertModifier,actionsModifier=store.Value.ActionsModifier,floatBehavior=store.Value.FloatBehavior,
+            outputMode=store.Value.OutputMode,outputFolder=store.Value.OutputFolder,downloadFolder=store.Value.DownloadFolder,automaticUpdateChecks=store.Value.AutomaticUpdateChecks,
+            formats,compatible,profiles=store.Value.Formats,selectedFormat=_selectedFormat,about="Local by design · MIT source · WinForge"
+        });
     }
 }

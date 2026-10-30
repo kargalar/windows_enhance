@@ -1,8 +1,12 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 using WinForge.Core;
 using WinForge.History;
 using WinForge.Modules.Capture;
@@ -268,6 +272,16 @@ internal static class Program
         foreach (var module in new ITweakModule[] { new RecallModule(), new DictationModule(), new ScreenCaptureModule() })
         {
             module.Initialize(context); Check(!module.IsActive, module.Name + " defaults to disabled");
+            if (module is DictationModule dictation)
+                Check(dictation.GetQuickActions("").Any(action => action.Name == "Dikteyi başlat / durdur"),
+                    "Whisper exposes a direct start/stop quick action");
+            if (module is ScreenCaptureModule capture)
+                Check(new[] { "Pencere yakala", "Etkin pencereyi yakala", "Monitörü yakala", "Tüm masaüstünü yakala", "Kayan ekranı yakala", "Ekran videosu kaydet", "Ekran GIF'i kaydet" }
+                    .All(name => capture.GetQuickActions("").Any(action => action.Name == name)),
+                    "ShareX-style capture modes are directly searchable quick actions");
+            if (module is RecallModule recall)
+                Check(recall.GetQuickActions("").Any(action => action.Name == "Ekran geçmişini duraklat / sürdür"),
+                    "Recall exposes its privacy pause action");
             module.Activate(); Check(module.IsActive, module.Name + " activates");
             module.Deactivate(); module.Deactivate(); Check(!module.IsActive && context.Keys.Count == 0, module.Name + " deactivates idempotently and releases shortcuts");
         }
@@ -328,30 +342,184 @@ internal static class Program
     {
         var root = Path.GetFullPath("artifacts/capture-verification"); Directory.CreateDirectory(root);
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/WinForge.CaptureTests;component/TestTheme.xaml", UriKind.Relative) });
         var visual = new DrawingVisual(); using (var context = visual.RenderOpen())
         {
             context.DrawRectangle(Brushes.LightSlateGray, null, new Rect(0, 0, 800, 450));
             context.DrawRectangle(Brushes.DodgerBlue, null, new Rect(60, 60, 300, 200));
         }
         var image = new RenderTargetBitmap(800, 450, 96, 96, PixelFormats.Pbgra32); image.Render(visual); image.Freeze();
-        var store = new HistoryStore(Path.Combine(root, "synthetic-history")); var media = CaptureServices.Save(store, image);
-        store.Add("recall", DateTimeOffset.UtcNow, "Örnek.exe", "Örnek çalışma ekranı", "Türkçe OCR önizlemesi", media);
-        store.AddUsage("Örnek.exe", DateTimeOffset.UtcNow.AddMinutes(-25), DateTimeOffset.UtcNow, 1500);
-        store.AddContextUsage("chrome.exe", "website", "https://example.com/", DateTimeOffset.UtcNow.AddMinutes(-10), DateTimeOffset.UtcNow, 600);
-        foreach (var (window, name) in new (Window, string)[]
+        using var imageStream = new MemoryStream();
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); encoder.Save(imageStream);
+        var imageData = "data:image/png;base64," + Convert.ToBase64String(imageStream.ToArray());
+        var cases = new (string View, string File, double Width, double Height, object State)[]
         {
-            (new HistoryWindow(store, "recall", "Ekran Geçmişi"), "history.png"),
-            (new UsageStatisticsWindow(store, DateTimeOffset.UtcNow.Date, null), "usage-statistics.png"),
-            (new CaptureEditor(store, image), "editor.png")
-        })
+            ("nashi", "nashi.png", 1280, 860, new
+            {
+                page = "home", busy = false, status = "Dosyalar bilgisayarınızda kalır.",
+                files = new[] { new { path = "C:/Belgeler/taslak.docx", name = "taslak.docx", directory = "C:/Belgeler" } },
+                choices = new[] { new { id = "convert", title = "Dönüştür", symbol = "⇄" }, new { id = "compress", title = "Sıkıştır", symbol = "◈" }, new { id = "editImage", title = "Görseli düzenle", symbol = "✎" } },
+                formats = new[] { "pdf", "docx", "png" },
+                library = new[] { new { id = "pdf-tools", name = "PDF araçları", action = "convert", created = "Bugün", paths = new[] { "C:/Belgeler/rapor.pdf" }, available = 1, missing = false } },
+                recent = new[] { new { id = "recent-doc", name = "rapor.pdf", action = "convert", created = "Az önce", paths = new[] { "C:/Belgeler/rapor.pdf" }, available = 1, missing = false } },
+                query = "", recentQuery = "", downloadUrl = "", downloadKind = "video", downloadKinds = new[] { "video", "audio", "thumbnail" }, quality = 80,
+                mediaReady = true, officeReady = false, setupLabel = "Medya araçları hazır", appearance = "system"
+            }),
+            ("capture-history", "history.png", 1180, 780, new
+            {
+                title = "Ekran Geçmişi", kind = "recall", search = "", app = "", tag = "", from = "", until = "", offset = 0,
+                status = "Örnek kayıtlar", selectedId = 1L, selectedText = "Türkçe OCR önizlemesi", selectedTags = "örnek, ekran",
+                preview = imageData, cursor = new { x = 140, y = 110, width = 16, height = 16 }, mediaType = "image", confirmDelete = false,
+                confirmDeleteRange = false, confirmDeleteAll = false,
+                rows = new[] { new { id = 1L, label = "Örnek çalışma ekranı", app = "Örnek.exe", title = "Türkçe OCR önizlemesi", created = DateTimeOffset.Now.ToString("g"), icon = (string?)null, hasMedia = true, mediaType = "image", tags = "örnek, ekran" } }
+            }),
+            ("capture-usage-statistics", "usage-statistics.png", 1080, 700, new
+            {
+                from = DateTimeOffset.Now.Date.ToString("dd.MM.yyyy"), until = "", status = "Örnek kullanım verileri", summary = "Bugün · 25 dakika",
+                applications = new[] { new { app = "Örnek.exe", seconds = 1500, duration = "25 dk", estimated = false } },
+                days = new[] { new { date = "Bugün", active = 1500, idle = 400 } },
+                dayApplications = new[] { new { date = "Bugün", app = "Örnek.exe", duration = "25 dk", estimated = false } },
+                contexts = new[] { new { date = "Bugün", type = "website", app = "chrome.exe", context = "example.com", duration = "10 dk" } },
+                tags = new[] { new { tag = "örnek", seconds = 1500, duration = "25 dk", applications = 1 } }
+            }),
+            ("nashi-tool-editor", "tool-editor.png", 1040, 780, new
+            {
+                title = "Görseli boyutlandır", file = "afiş.png", media = true, playing = false, currentTime = 14.25, duration = 92.4,
+                canPlayRange = true, showComparison = true, comparisonLabel = "İşlenmiş önizleme", processingPreview = false,
+                playbackStatus = "Özgün dosya korunur.",
+                controls = new object[]
+                {
+                    new { type = "help", id = "preserve", label = "Değişiklikler yeni bir kopyaya uygulanır." },
+                    new { type = "text", id = "width", label = "Genişlik", value = "1920" },
+                    new { type = "text", id = "height", label = "Yükseklik", value = "1080" },
+                    new { type = "checkbox", id = "metadata", label = "Metadata korunsun", value = true }
+                }
+            }),
+            ("capture-editor", "editor.png", 1180, 800, new { image = imageData, initialTool = (int)DrawingTool.Freehand, workflowCompletion = false, status = "" }),
+            ("app-dialog", "app-dialog.png", 520, 280, new
+            {
+                title = "Set up media tools",
+                message = "Download FFmpeg (~180 MB), yt-dlp and Deno directly from their official GitHub releases? SHA-256 hashes are verified before use.",
+                confirmLabel = "Download tools", cancelLabel = "Cancel", isConfirmation = true
+            })
+        };
+        var uiDirectory = FindUiDirectory();
+        var webViewProfile = Path.Combine(Path.GetTempPath(), "WinForge-CapturePreview", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(webViewProfile);
+        var webViewEnvironment = CoreWebView2Environment.CreateAsync(null, webViewProfile);
+        foreach (var item in cases)
         {
-            window.Show();
-            for (var i = 0; i < 20; i++) { window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); Thread.Sleep(20); }
-            window.UpdateLayout(); var output = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); output.Render(window);
-            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(output)); using var file = File.Create(Path.Combine(root, name)); encoder.Save(file); window.Close();
+            var window = new ReactCaptureWindow(item.View, item.Width, item.Height, item.State, uiDirectory, webViewEnvironment);
+            try
+            {
+                window.Show();
+                PumpUntil(() => window.IsReady, TimeSpan.FromSeconds(20));
+                PumpFor(TimeSpan.FromMilliseconds(500));
+                var capture = window.CaptureAsync(Path.Combine(root, item.File));
+                PumpUntil(() => capture.IsCompleted, TimeSpan.FromSeconds(20));
+                capture.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                window.Close();
+            }
         }
         app.Shutdown();
+    }
+
+    private static string FindUiDirectory()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            var candidate = Path.Combine(directory.FullName, "src", "WinForge.App", "wwwroot");
+            if (File.Exists(Path.Combine(candidate, "index.html"))) return candidate;
+        }
+        throw new DirectoryNotFoundException("React UI output was not found. Build WinForge.App before rendering UI previews.");
+    }
+
+    private static void PumpFor(TimeSpan duration)
+    {
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        PumpUntil(() => started.Elapsed >= duration, duration + TimeSpan.FromSeconds(2));
+    }
+
+    private static void PumpUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(10) };
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        timer.Tick += (_, _) =>
+        {
+            if (!condition() && started.Elapsed < timeout) return;
+            timer.Stop();
+            frame.Continue = false;
+        };
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+        if (!condition()) throw new TimeoutException("React UI did not become ready before the preview timeout.");
+    }
+
+    private sealed class ReactCaptureWindow : Window
+    {
+        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private readonly string view;
+        private readonly object state;
+        private readonly string uiDirectory;
+        private readonly Task<CoreWebView2Environment> webViewEnvironment;
+        private readonly WebView2 webView = new() { DefaultBackgroundColor = System.Drawing.Color.White };
+        private bool ready;
+        private Exception? initializationError;
+
+        public ReactCaptureWindow(string view, double width, double height, object state, string uiDirectory,
+            Task<CoreWebView2Environment> webViewEnvironment)
+        {
+            this.view = view;
+            this.state = state;
+            this.uiDirectory = uiDirectory;
+            this.webViewEnvironment = webViewEnvironment;
+            Width = width;
+            Height = height;
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            Content = webView;
+            Loaded += OnLoaded;
+            Closed += (_, _) => webView.Dispose();
+        }
+
+        public bool IsReady => ready || initializationError is not null;
+
+        private async void OnLoaded(object sender, RoutedEventArgs args)
+        {
+            try
+            {
+                await webView.EnsureCoreWebView2Async(await webViewEnvironment);
+                var core = webView.CoreWebView2;
+                core.Settings.AreDefaultContextMenusEnabled = false;
+                core.Settings.AreDevToolsEnabled = false;
+                core.SetVirtualHostNameToFolderMapping("appassets.winforge", uiDirectory, CoreWebView2HostResourceAccessKind.DenyCors);
+                core.NavigationStarting += (_, navigation) =>
+                {
+                    if (!navigation.Uri.StartsWith("https://appassets.winforge/", StringComparison.OrdinalIgnoreCase)) navigation.Cancel = true;
+                };
+                core.WebMessageReceived += (_, messageArgs) =>
+                {
+                    using var message = JsonDocument.Parse(messageArgs.WebMessageAsJson);
+                    if (message.RootElement.GetProperty("command").GetString() != "feature.ready") return;
+                    core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "feature.state", payload = state }, JsonOptions));
+                    ready = true;
+                };
+                core.Navigate($"https://appassets.winforge/index.html?view={Uri.EscapeDataString(view)}");
+            }
+            catch (Exception error)
+            {
+                initializationError = error;
+            }
+        }
+
+        public async Task CaptureAsync(string path)
+        {
+            if (initializationError is not null) throw new InvalidOperationException("React UI preview could not initialize.", initializationError);
+            await using var output = File.Create(path);
+            await webView.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, output);
+        }
     }
     private static void NativeCapture()
     {

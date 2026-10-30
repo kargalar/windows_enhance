@@ -70,7 +70,7 @@ public sealed class ScreenRulerModule : ITweakModule
         context.Log.Info("Ekran cetveli kısayolu kaydedildi (Ctrl+Alt+M).");
     }
 
-    private void Measure()
+    private async void Measure()
     {
         var context = _context;
         if (context is null || _busy) return;
@@ -78,10 +78,10 @@ public sealed class ScreenRulerModule : ITweakModule
         _busy = true;
         try
         {
-            var overlay = new RulerOverlay(context.Settings.GetString("unit", Units[0]));
-            overlay.ShowDialog();
-
-            if (overlay.Result is not { } result) return;
+            var featureUi = (context as IFeatureUiContext)?.FeatureUi
+                ?? throw new InvalidOperationException("React arayüz altyapısı kullanılamıyor.");
+            using var overlay = new RulerOverlay(featureUi, context.Settings.GetString("unit", Units[0]));
+            if (await overlay.Completion is not { } result) return;
 
             if (!TryCopy(result))
             {

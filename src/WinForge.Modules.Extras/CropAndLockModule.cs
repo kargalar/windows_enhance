@@ -96,7 +96,7 @@ public sealed class CropAndLockModule : ITweakModule
 
         try
         {
-            var selector = new CropSelectionOverlay(bounds);
+            var selector = new CropSelectionOverlay(bounds, (_context as IFeatureUiContext)?.FeatureUi);
             if (selector.ShowDialog() != true || selector.Selection is not { } selection) return;
             var sourceRect = CropSelectionMath.ToWindowClientRect(selection, bounds);
             if (sourceRect is null)
@@ -106,7 +106,8 @@ public sealed class CropAndLockModule : ITweakModule
             }
 
             _thumbnail?.Close();
-            _thumbnail = new CropThumbnailWindow(source, sourceRect.Value, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
+            _thumbnail = new CropThumbnailWindow(source, sourceRect.Value, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top,
+                (_context as IFeatureUiContext)?.FeatureUi);
             _thumbnail.Closed += (_, _) => _thumbnail = null;
             _thumbnail.Show();
         }
@@ -141,19 +142,16 @@ internal static class CropSelectionMath
 
 internal sealed class CropSelectionOverlay : Window
 {
-    private readonly RECT _sourceBounds;
-    private readonly Canvas _canvas = new();
-    private readonly Border _selection;
-    private readonly Border _hint;
-    private Point? _origin;
+    private readonly RECT sourceBounds;
+    private readonly IFeatureUiSurface uiSurface;
     public CropScreenRect? Selection { get; private set; }
 
-    public CropSelectionOverlay(RECT sourceBounds)
+    public CropSelectionOverlay(RECT sourceBounds, IFeatureUiService? featureUi)
     {
-        _sourceBounds = sourceBounds;
+        this.sourceBounds = sourceBounds;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
-        Background = new SolidColorBrush(Color.FromArgb(88, 4, 8, 16));
+        Background = Brushes.Transparent;
         Topmost = true;
         ShowInTaskbar = false;
         ResizeMode = ResizeMode.NoResize;
@@ -164,86 +162,54 @@ internal sealed class CropSelectionOverlay : Window
         Width = SystemParameters.VirtualScreenWidth;
         Height = SystemParameters.VirtualScreenHeight;
 
-        _selection = new Border
+        uiSurface = featureUi?.CreateSurface("crop-selection")
+            ?? throw new InvalidOperationException("Kırpma seçimi için React arayüzü gerekli.");
+        Content = uiSurface.Element;
+        uiSurface.MessageReceived += OnUiMessage;
+        uiSurface.SetState(new { hint = "Kaynak pencerenin içinde alanı sürükleyerek seçin · Esc iptal" });
+        Closed += (_, _) =>
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(76, 194, 255)),
-            BorderThickness = new Thickness(2),
-            Background = new SolidColorBrush(Color.FromArgb(38, 76, 194, 255)),
-            Visibility = Visibility.Collapsed
+            uiSurface.MessageReceived -= OnUiMessage;
+            uiSurface.Dispose();
         };
-        _hint = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(235, 18, 21, 28)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(76, 194, 255)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(16, 9, 16, 9),
-            Child = new TextBlock
-            {
-                Text = "Kaynak pencerenin içinde alanı sürükleyerek seçin · Esc iptal",
-                Foreground = Brushes.White,
-                FontSize = 13
-            }
-        };
-        _canvas.Children.Add(_selection);
-        _canvas.Children.Add(_hint);
-        Content = _canvas;
         Loaded += (_, _) =>
         {
             Activate();
             Focus();
             Keyboard.Focus(this);
-            _hint.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Canvas.SetLeft(_hint, Math.Max(0, (Width - _hint.DesiredSize.Width) / 2));
-            Canvas.SetTop(_hint, 36);
         };
-        MouseLeftButtonDown += OnMouseDown;
-        MouseMove += OnMouseMove;
-        MouseLeftButtonUp += OnMouseUp;
-        KeyDown += (_, args) =>
+    }
+
+    private void OnUiMessage(string command, System.Text.Json.JsonElement payload)
+    {
+        if (command == "crop-selection.cancel")
         {
-            if (args.Key == Key.Escape) { DialogResult = false; Close(); }
-        };
-    }
+            DialogResult = false;
+            Close();
+            return;
+        }
+        if (command != "crop-selection.complete" ||
+            !payload.TryGetProperty("x", out var xValue) ||
+            !payload.TryGetProperty("y", out var yValue) ||
+            !payload.TryGetProperty("width", out var widthValue) ||
+            !payload.TryGetProperty("height", out var heightValue)) return;
 
-    private void OnMouseDown(object sender, MouseButtonEventArgs args)
-    {
-        _origin = args.GetPosition(_canvas);
-        _hint.Visibility = Visibility.Collapsed;
-        _selection.Visibility = Visibility.Visible;
-        CaptureMouse();
-    }
-
-    private void OnMouseMove(object sender, MouseEventArgs args)
-    {
-        if (_origin is not { } origin) return;
-        var current = args.GetPosition(_canvas);
-        Canvas.SetLeft(_selection, Math.Min(origin.X, current.X));
-        Canvas.SetTop(_selection, Math.Min(origin.Y, current.Y));
-        _selection.Width = Math.Abs(current.X - origin.X);
-        _selection.Height = Math.Abs(current.Y - origin.Y);
-    }
-
-    private void OnMouseUp(object sender, MouseButtonEventArgs args)
-    {
-        if (_origin is null) return;
-        ReleaseMouseCapture();
-        var local = new Rect(Canvas.GetLeft(_selection), Canvas.GetTop(_selection), _selection.Width, _selection.Height);
+        var matrix = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
         var handle = new WindowInteropHelper(this).Handle;
         Native.GetWindowRect(handle, out var overlayBounds);
-        var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
-        var start = transform.Transform(local.TopLeft);
-        var end = transform.Transform(local.BottomRight);
+        var left = (int)Math.Round(xValue.GetDouble() * matrix.M11);
+        var top = (int)Math.Round(yValue.GetDouble() * matrix.M22);
+        var right = (int)Math.Round((xValue.GetDouble() + widthValue.GetDouble()) * matrix.M11);
+        var bottom = (int)Math.Round((yValue.GetDouble() + heightValue.GetDouble()) * matrix.M22);
         Selection = new CropScreenRect(
-            overlayBounds.Left + (int)Math.Round(start.X),
-            overlayBounds.Top + (int)Math.Round(start.Y),
-            overlayBounds.Left + (int)Math.Round(end.X),
-            overlayBounds.Top + (int)Math.Round(end.Y));
-        DialogResult = CropSelectionMath.ToWindowClientRect(Selection.Value, _sourceBounds) is not null;
+            overlayBounds.Left + left,
+            overlayBounds.Top + top,
+            overlayBounds.Left + right,
+            overlayBounds.Top + bottom);
+        DialogResult = CropSelectionMath.ToWindowClientRect(Selection.Value, sourceBounds) is not null;
         Close();
     }
 }
-
 internal sealed class CropThumbnailWindow : Window
 {
     private const uint ThumbnailSourceClientAreaOnlyFlag = 0x00000010;
@@ -254,8 +220,9 @@ internal sealed class CropThumbnailWindow : Window
     private IntPtr _thumbnail;
     private readonly IntPtr _source;
     private readonly RECT _sourceRect;
+    private readonly IFeatureUiSurface _uiSurface;
 
-    public CropThumbnailWindow(IntPtr source, RECT sourceRect, int sourceWidth, int sourceHeight)
+    public CropThumbnailWindow(IntPtr source, RECT sourceRect, int sourceWidth, int sourceHeight, IFeatureUiService? featureUi)
     {
         _source = source;
         _sourceRect = sourceRect;
@@ -267,27 +234,26 @@ internal sealed class CropThumbnailWindow : Window
         ResizeMode = ResizeMode.CanResizeWithGrip;
         ShowInTaskbar = false;
         Topmost = true;
-        Background = new SolidColorBrush(Color.FromRgb(24, 29, 38));
-        var root = new DockPanel();
-        var header = new DockPanel { Height = 32, Margin = new Thickness(9, 4, 5, 0) };
-        var close = new Button { Content = "×", Width = 32, Height = 27, FontSize = 18, Padding = new Thickness(0), ToolTip = "Kırpılmış görünümü kapat" };
-        close.Click += (_, _) => Close();
-        DockPanel.SetDock(close, Dock.Right);
-        header.Children.Add(close);
-        header.Children.Add(new TextBlock
+        Background = Brushes.Transparent;
+        _uiSurface = featureUi?.CreateSurface("crop-thumbnail")
+            ?? throw new InvalidOperationException("Kırpma önizlemesi için React arayüzü gerekli.");
+        Content = _uiSurface.Element;
+        _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface.SetState(new { title = "Canlı kırpma", subtitle = "Kaynak uygulama denetlenemez" });
+        Closed += (_, _) =>
         {
-            Text = "CANLI KIRPMA · Kaynak uygulama denetlenemez",
-            Foreground = Brushes.White,
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
-        Content = root;
+            _uiSurface.MessageReceived -= OnUiMessage;
+            _uiSurface.Dispose();
+        };
         SourceInitialized += (_, _) => RegisterThumbnail();
         Loaded += (_, _) => UpdateThumbnail();
         SizeChanged += (_, _) => UpdateThumbnail();
         Closed += (_, _) => UnregisterThumbnail();
+    }
+
+    private void OnUiMessage(string command, System.Text.Json.JsonElement payload)
+    {
+        if (command == "crop-thumbnail.close") Close();
     }
 
     private void RegisterThumbnail()

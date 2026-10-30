@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -15,7 +16,15 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
     private readonly Dictionary<string, ReactFeatureWindow> _windows = new(StringComparer.OrdinalIgnoreCase);
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly string _uiDirectory = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+    private readonly Task<CoreWebView2Environment> _webViewEnvironment;
     private bool _disposed;
+
+    public ReactWindowHostService()
+    {
+        var userDataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "WebView2");
+        Directory.CreateDirectory(userDataDirectory);
+        _webViewEnvironment = CoreWebView2Environment.CreateAsync(null, userDataDirectory);
+    }
 
     public IFeatureUiWindow Open(string key, string view, string title, FeatureUiWindowOptions options)
     {
@@ -33,7 +42,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             return existing;
         }
 
-        var window = new ReactFeatureWindow(key, view, title, options, _uiDirectory, HostName, _jsonOptions);
+        var window = new ReactFeatureWindow(key, view, title, options, _uiDirectory, HostName, _jsonOptions, _webViewEnvironment);
         window.Closed += OnWindowClosed;
         _windows[key] = window;
         window.Show();
@@ -44,7 +53,46 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
     {
         if (string.IsNullOrWhiteSpace(view)) throw new ArgumentException("Arayüz görünümü boş olamaz.", nameof(view));
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return new ReactFeatureSurface(view, _uiDirectory, HostName, _jsonOptions);
+        return new ReactFeatureSurface(view, _uiDirectory, HostName, _jsonOptions, _webViewEnvironment);
+    }
+
+    public Task<bool> ConfirmAsync(string title, string message, string confirmLabel = "Continue", string cancelLabel = "Cancel") =>
+        ShowDialogAsync(title, message, confirmLabel, cancelLabel, isConfirmation: true);
+
+    public async Task ShowMessageAsync(string title, string message, string closeLabel = "Close") =>
+        _ = await ShowDialogAsync(title, message, closeLabel, "", isConfirmation: false);
+
+    private Task<bool> ShowDialogAsync(string title, string message, string confirmLabel, string cancelLabel, bool isConfirmation)
+    {
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var window = Open($"app-dialog-{Guid.NewGuid():N}", "app-dialog", title,
+            new FeatureUiWindowOptions(520, 280, Topmost: true));
+
+        void Complete(bool confirmed)
+        {
+            window.MessageReceived -= OnMessage;
+            window.ClosedByHost -= OnClosed;
+            window.Close();
+            completion.TrySetResult(confirmed);
+        }
+
+        void OnMessage(string command, JsonElement payload)
+        {
+            if (command != "dialog.resolve") return;
+            Complete(payload.TryGetProperty("confirmed", out var value) && value.ValueKind == JsonValueKind.True);
+        }
+
+        void OnClosed()
+        {
+            window.MessageReceived -= OnMessage;
+            window.ClosedByHost -= OnClosed;
+            completion.TrySetResult(false);
+        }
+
+        window.MessageReceived += OnMessage;
+        window.ClosedByHost += OnClosed;
+        window.SetState(new { title, message, confirmLabel, cancelLabel, isConfirmation });
+        return completion.Task;
     }
 
     private void OnWindowClosed(object? sender, EventArgs args)
@@ -74,27 +122,30 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
         private readonly string _uiDirectory;
         private readonly string _hostName;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly Task<CoreWebView2Environment> _webViewEnvironment;
         private readonly WebView2 _webView;
         private readonly bool _resizable;
         private object? _state;
         private bool _disposed;
 
         public ReactFeatureWindow(string key, string view, string title, FeatureUiWindowOptions options,
-            string uiDirectory, string hostName, JsonSerializerOptions jsonOptions)
+            string uiDirectory, string hostName, JsonSerializerOptions jsonOptions,
+            Task<CoreWebView2Environment> webViewEnvironment)
         {
             Key = key;
             _view = view;
             _uiDirectory = uiDirectory;
             _hostName = hostName;
             _jsonOptions = jsonOptions;
+            _webViewEnvironment = webViewEnvironment;
             _resizable = options.Resizable;
             Title = title;
             Width = options.Width;
             Height = options.Height;
-            MinWidth = options.Width;
-            MinHeight = options.Height;
-            MaxWidth = options.Width;
-            MaxHeight = options.Height;
+            MinWidth = options.Resizable ? Math.Min(options.Width, 480) : options.Width;
+            MinHeight = options.Resizable ? Math.Min(options.Height, 320) : options.Height;
+            MaxWidth = options.Resizable ? double.PositiveInfinity : options.Width;
+            MaxHeight = options.Resizable ? double.PositiveInfinity : options.Height;
             WindowStyle = WindowStyle.None;
             ResizeMode = options.Resizable ? ResizeMode.CanResize : ResizeMode.NoResize;
             ShowInTaskbar = options.ShowInTaskbar;
@@ -102,7 +153,13 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             Topmost = options.Topmost;
             AllowsTransparency = options.Transparent;
             Background = options.Transparent ? Brushes.Transparent : new SolidColorBrush(Color.FromRgb(16, 16, 16));
-            WindowStartupLocation = WindowStartupLocation.Manual;
+            WindowStartupLocation = options.Transparent ? WindowStartupLocation.Manual : WindowStartupLocation.CenterScreen;
+            if (options.Left is not null || options.Top is not null)
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = options.Left ?? 0;
+                Top = options.Top ?? 0;
+            }
             IsHitTestVisible = !options.ClickThrough;
 
             _webView = new WebView2
@@ -114,18 +171,20 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             Content = _webView;
             SourceInitialized += (_, _) => ApplyWindowStyles(options);
             Loaded += OnLoaded;
+            Closed += (_, _) => ClosedByHost?.Invoke();
         }
 
         public string Key { get; }
         public bool IsOpen => !_disposed;
         public new bool IsVisible => !_disposed && (Dispatcher.CheckAccess() ? base.IsVisible : Dispatcher.Invoke(() => base.IsVisible));
         public event Action<string, JsonElement>? MessageReceived;
+        public event Action? ClosedByHost;
 
         private async void OnLoaded(object sender, RoutedEventArgs args)
         {
             try
             {
-                await _webView.EnsureCoreWebView2Async();
+                await _webView.EnsureCoreWebView2Async(await _webViewEnvironment);
                 var core = _webView.CoreWebView2;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.AreDevToolsEnabled = false;
@@ -141,6 +200,10 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
                 core.NewWindowRequested += (_, request) => request.Handled = true;
                 core.WebMessageReceived += OnWebMessageReceived;
                 core.Navigate($"https://{_hostName}/index.html?view={Uri.EscapeDataString(_view)}");
+            }
+            catch (COMException) when (_disposed)
+            {
+                // Closing a transient window can cancel WebView2 controller creation.
             }
             catch (Exception exception)
             {
@@ -159,6 +222,12 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
                 if (command == "feature.ready")
                 {
                     PostState();
+                    return;
+                }
+                if (command == "feature.drag")
+                {
+                    try { DragMove(); }
+                    catch (InvalidOperationException) { }
                     return;
                 }
 
@@ -224,10 +293,12 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
 
         public void SetState(object state)
         {
-            if (_disposed) return;
-            _state = state;
-            if (_webView.CoreWebView2 is null) return;
-            Dispatcher.Invoke(PostState);
+            Dispatcher.Invoke(() =>
+            {
+                if (_disposed) return;
+                _state = state;
+                PostState();
+            });
         }
 
         private void PostState()
@@ -252,6 +323,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             if (_disposed) return;
             _disposed = true;
             MessageReceived = null;
+            ClosedByHost = null;
             _webView.Dispose();
         }
 
@@ -262,23 +334,28 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
         private static extern IntPtr SetWindowLongPtr(IntPtr handle, int index, IntPtr value);
     }
 
-    private sealed class ReactFeatureSurface : IFeatureUiSurface
+    private sealed class ReactFeatureSurface : IFeatureUiAssetSurface
     {
         private readonly string _view;
         private readonly string _uiDirectory;
         private readonly string _hostName;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly Task<CoreWebView2Environment> _webViewEnvironment;
         private readonly WebView2 _webView;
+        private readonly Dictionary<string,string> _assetHosts = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string,Uri> _mappedAssets = new(StringComparer.OrdinalIgnoreCase);
         private object? _state;
         private bool _ready;
         private bool _disposed;
 
-        public ReactFeatureSurface(string view, string uiDirectory, string hostName, JsonSerializerOptions jsonOptions)
+        public ReactFeatureSurface(string view, string uiDirectory, string hostName, JsonSerializerOptions jsonOptions,
+            Task<CoreWebView2Environment> webViewEnvironment)
         {
             _view = view;
             _uiDirectory = uiDirectory;
             _hostName = hostName;
             _jsonOptions = jsonOptions;
+            _webViewEnvironment = webViewEnvironment;
             _webView = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.FromArgb(0, 0, 0, 0) };
             _webView.Loaded += OnLoaded;
         }
@@ -290,7 +367,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
         {
             try
             {
-                await _webView.EnsureCoreWebView2Async();
+                await _webView.EnsureCoreWebView2Async(await _webViewEnvironment);
                 var core = _webView.CoreWebView2;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.AreDevToolsEnabled = false;
@@ -298,6 +375,8 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
                 core.Settings.IsZoomControlEnabled = false;
                 core.SetVirtualHostNameToFolderMapping(_hostName, _uiDirectory,
                     CoreWebView2HostResourceAccessKind.DenyCors);
+                foreach(var mapping in _assetHosts)
+                    core.SetVirtualHostNameToFolderMapping(mapping.Key,mapping.Value,CoreWebView2HostResourceAccessKind.Allow);
                 core.NavigationStarting += (_, navigation) =>
                 {
                     if (!navigation.Uri.StartsWith($"https://{_hostName}/", StringComparison.OrdinalIgnoreCase))
@@ -337,12 +416,30 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
 
         public void SetState(object state)
         {
-            if (_disposed) return;
-            _state = state;
-            if (!_ready || _webView.CoreWebView2 is null) return;
-            var dispatcher = _webView.Dispatcher;
-            if (dispatcher.CheckAccess()) PostState();
-            else dispatcher.BeginInvoke(PostState);
+            _webView.Dispatcher.Invoke(() =>
+            {
+                if (_disposed) return;
+                _state = state;
+                PostState();
+            });
+        }
+
+        public Uri MapLocalAsset(string filePath)
+        {
+            var fullPath=Path.GetFullPath(filePath);
+            if(!File.Exists(fullPath))throw new FileNotFoundException("Preview file was not found.",fullPath);
+            if(_mappedAssets.TryGetValue(fullPath,out var existing))return existing;
+            var directory=Path.GetDirectoryName(fullPath)??throw new InvalidOperationException("Preview file has no parent directory.");
+            var hostName="asset-"+Guid.NewGuid().ToString("N")+".winforge";
+            _assetHosts.Add(hostName,directory);
+            if(_webView.CoreWebView2 is { } core)
+            {
+                if(_webView.Dispatcher.CheckAccess())core.SetVirtualHostNameToFolderMapping(hostName,directory,CoreWebView2HostResourceAccessKind.Allow);
+                else _webView.Dispatcher.Invoke(()=>core.SetVirtualHostNameToFolderMapping(hostName,directory,CoreWebView2HostResourceAccessKind.Allow));
+            }
+            var uri=new Uri($"https://{hostName}/{Uri.EscapeDataString(Path.GetFileName(fullPath))}");
+            _mappedAssets[fullPath]=uri;
+            return uri;
         }
 
         private void PostState()

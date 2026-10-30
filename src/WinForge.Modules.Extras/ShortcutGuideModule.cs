@@ -274,16 +274,16 @@ internal sealed class ShortcutGuideWindow : Window
         new("WinForge", "Win + Shift + /", "Bu kısayol rehberini aç")
     ];
 
-    private readonly TextBox _search;
-    private readonly DataGrid _grid;
-    private readonly IFeatureUiSurface? _uiSurface;
+    private readonly IFeatureUiSurface _uiSurface;
+    private string _query = "";
 
     public ShortcutGuideWindow() : this(nonActivating: false) { }
 
     public ShortcutGuideWindow(bool nonActivating = false, IFeatureUiService? featureUi = null)
     {
-        _uiSurface = featureUi?.CreateSurface("shortcut-guide");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("shortcut-guide")
+            ?? throw new InvalidOperationException("The React shortcut guide view is required.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Title = "Kısayol Rehberi";
         Width = 760;
         Height = 600;
@@ -295,64 +295,28 @@ internal sealed class ShortcutGuideWindow : Window
         ShowActivated = !nonActivating;
         Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(28, 34, 44));
 
-        var content = new DockPanel { Margin = new Thickness(18) };
-        _search = new TextBox
-        {
-            Name = "ShortcutGuideSearch",
-            Height = 38,
-            FontSize = 15,
-            Margin = new Thickness(0, 0, 0, 12),
-            ToolTip = "Kısayol, kategori veya açıklama ara"
-        };
-        DockPanel.SetDock(_search, Dock.Top);
-        content.Children.Add(_search);
+        Content = _uiSurface.Element;
 
-        _grid = new DataGrid
-        {
-            Name = "ShortcutGuideEntries",
-            IsReadOnly = true,
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            ItemsSource = Entries,
-            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(35, 42, 54)),
-            Foreground = System.Windows.Media.Brushes.White,
-            RowHeaderWidth = 0
-        };
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Kategori", Binding = new System.Windows.Data.Binding(nameof(ShortcutGuideEntry.Category)), Width = 120 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Kısayol", Binding = new System.Windows.Data.Binding(nameof(ShortcutGuideEntry.Keys)), Width = 190 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "İşlev", Binding = new System.Windows.Data.Binding(nameof(ShortcutGuideEntry.Description)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        content.Children.Add(_grid);
-        _search.TextChanged += (_, _) => Filter();
-        Content = _uiSurface?.Element ?? content;
-        PreviewKeyDown += (_, args) =>
-        {
-            if (args.Key == System.Windows.Input.Key.Escape) Close();
-        };
-        Loaded += (_, _) => _search.Focus();
-        Closed += (_, _) => _uiSurface?.Dispose();
+        Closed += (_, _) => _uiSurface.Dispose();
         Filter();
     }
 
     private void Filter()
     {
-        var query = _search.Text.Trim();
+        var query = _query.Trim();
         var entries = string.IsNullOrWhiteSpace(query)
             ? Entries
             : Entries.Where(entry => entry.Category.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
                                      entry.Keys.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
                                      entry.Description.Contains(query, StringComparison.CurrentCultureIgnoreCase)).ToArray();
-        _grid.ItemsSource = entries;
-        _uiSurface?.SetState(new { query, entries = entries.Select(entry => new { category = entry.Category, keys = entry.Keys, description = entry.Description }).ToArray() });
+        _uiSurface.SetState(new { query, entries = entries.Select(entry => new { category = entry.Category, keys = entry.Keys, description = entry.Description }).ToArray() });
     }
 
     private void OnUiMessage(string command, JsonElement payload)
     {
         if (command == "shortcut-guide.search")
         {
-            _search.Text = payload.TryGetProperty("query", out var query) ? query.GetString() ?? "" : "";
+            _query = payload.TryGetProperty("query", out var query) ? query.GetString() ?? "" : "";
             Filter();
         }
         else if (command == "shortcut-guide.close") Close();

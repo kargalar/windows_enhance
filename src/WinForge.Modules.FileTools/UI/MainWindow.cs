@@ -7,6 +7,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using System.Text.Json;
+using WinForge.Core;
 using WinForge.FileTools.Engine;
 namespace WinForge.FileTools.UI;
 
@@ -22,11 +24,15 @@ public sealed partial class MainWindow:Window
     private readonly Toolchain tools=new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WinForge","Nashi","Tools","v1"),Environment.GetEnvironmentVariable("PATH"));
     private readonly LibraryStore library;
     private readonly PreferencesStore preferences;private GlobalDragController? globalDrag;
+    private readonly IFeatureUiSurface _uiSurface;
+    private readonly IFeatureUiService? _featureUi;
+    private string _page = "home";
     private readonly StackPanel home=new(),libraryPage=new(),libraryRows=new(),recentRows=new();
     private readonly TextBox recentSearch=new(){ToolTip="Find a recent file",Width=165};private readonly TextBlock recentCount=Text("0",11,"Muted");private Button? chooseFilesButton,openWheelButton;private readonly TextBlock fileDescription=Text("Images, videos, documents, and all the little things in between.",12,"Muted");
     private readonly TextBox search=new(){ToolTip="Find a file or tool in Library",MinWidth=200};
-    private readonly DockPanel manage=new();private readonly FileGarden garden=new();private readonly StackPanel webContent=new();private Window? webWindow;
-    internal Window DownloadWindow=>webWindow??this;
+    private readonly DockPanel manage=new();private readonly FileGarden garden=new();private readonly StackPanel webContent=new();
+    internal Window DownloadWindow=>this;
+    internal IFeatureUiService? FeatureUi=>_featureUi;
     private readonly Button homeButton,libraryButton,updateButton,toolsSetupButton;private readonly ComboBox appearance;
     private readonly StackPanel workArea=new();
     private readonly ScrollViewer homeScroll=new(),libraryScroll=new();
@@ -38,9 +44,10 @@ public sealed partial class MainWindow:Window
     internal bool LibraryVisible=>libraryPage.Visibility==Visibility.Visible;
     internal TextBox SearchField=>search;
     internal TextBox LinkField=>link;
-    public MainWindow(string[]? initial=null,LibraryStore? library=null,bool checkForUpdates=true,bool offerToolSetup=true)
+    public MainWindow(string[]? initial=null,LibraryStore? library=null,bool checkForUpdates=true,bool offerToolSetup=true,IFeatureUiService? featureUi=null)
     {
         monitorToolSetup=checkForUpdates;
+        _featureUi=featureUi;
         this.library=library??new LibraryStore();preferences=new(this.library.DirectoryPath);ApplyPreferences();Theme.Apply(this.library.Appearance);Theme.Attach(this);
         Title="WinForge · Dosya Araçları";Width=820;Height=780;MinWidth=700;MinHeight=580;WindowStartupLocation=WindowStartupLocation.CenterScreen;AllowDrop=true;
         Icon=BitmapFrame.Create(new Uri("pack://application:,,,/WinForge.Modules.FileTools;component/Assets/NashiIcon.png"));
@@ -81,6 +88,12 @@ public sealed partial class MainWindow:Window
         if(initial is not null)Add(initial);else Refresh();ShowLibrary(false);RenderLibrary();Loaded+=(_,_)=>Theme.Entrance(LibraryVisible?libraryPage:home);
         if(this.library.RecoveryNotice is {} notice)L10n.SetText(status,notice);
         else if(preferences.RecoveryNotice is {} settingsNotice)L10n.SetText(status,settingsNotice);
+        _uiSurface = featureUi?.CreateSurface("nashi")
+            ?? throw new InvalidOperationException("Nashi arayüzü için React yüzeyi gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
+        Content = _uiSurface.Element;
+        Closed += (_, _) => _uiSurface.Dispose();
+        PushUiState();
         if(checkForUpdates)
         {
             Loaded+=(_,_)=>SetupDesktop();Closed+=(_,_)=>globalDrag?.Dispose();
@@ -123,10 +136,11 @@ public sealed partial class MainWindow:Window
     private void Add(IEnumerable<string> paths){foreach(var path in paths.Where(p=>File.Exists(p)||Directory.Exists(p))){var full=Path.GetFullPath(path);if(!files.Contains(full))files.Add(full);}Refresh();}
     internal void ShowLibrary(bool visible)
     {
+        _page=visible?"library":"home";
         var changed=LibraryVisible!=visible;
         if(!busy)L10n.SetText(status,"Files stay on your computer.");
         selectedLibraryId=selectedLibraryId??library.Entries.FirstOrDefault()?.Id;home.Visibility=visible?Visibility.Collapsed:Visibility.Visible;libraryPage.Visibility=visible?Visibility.Visible:Visibility.Collapsed;homeScroll.IsHitTestVisible=!visible;libraryScroll.IsHitTestVisible=visible;
-        homeButton.SetResourceReference(Control.BackgroundProperty,visible?"Surface":"Sage");libraryButton.SetResourceReference(Control.BackgroundProperty,visible?"Sage":"Surface");if(visible)RenderLibrary();if(changed&&IsLoaded)Theme.Entrance(visible?libraryPage:home);
+        homeButton.SetResourceReference(Control.BackgroundProperty,visible?"Surface":"Sage");libraryButton.SetResourceReference(Control.BackgroundProperty,visible?"Sage":"Surface");if(visible)RenderLibrary();if(changed&&IsLoaded)Theme.Entrance(visible?libraryPage:home);PushUiState();
     }
     private void Record(string label,IReadOnlyList<string> paths)
     {
@@ -179,6 +193,7 @@ public sealed partial class MainWindow:Window
         foreach(var entry in filtered)libraryRows.Children.Add(LibraryRow(entry));
         recentCount.Text=library.Entries.Count.ToString();foreach(var entry in SearchLibrary(recentSearch.Text).Take(3))recentRows.Children.Add(LibraryRow(entry,true));
         if(library.Entries.Count==0)recentRows.Children.Add(Card(Text("Your next fresh copy will land here.",13,"Muted")));
+        PushUiState();
     }
     private Border LibraryRow(LibraryEntry entry,bool compact=false)
     {
@@ -191,14 +206,108 @@ public sealed partial class MainWindow:Window
     }
     private void OpenDownload()
     {
-        if(webWindow?.IsVisible==true){webWindow.Activate();link.Focus();return;}
-        var dialog=new Window{Owner=this,Title="Download from the web · Nashi",Width=800,Height=650,MinWidth=640,MinHeight=400,WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=webContent,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};Theme.Attach(dialog);webWindow=dialog;
-        dialog.Closing+=(_,e)=>{if(busy){e.Cancel=true;L10n.SetText(status,"Finish or cancel the current operation first.");}};
-        dialog.Closed+=(_,_)=>{inspection?.Cancel();if(dialog.Content is ScrollViewer scroll)scroll.Content=null;dialog.Content=null;webWindow=null;};dialog.PreviewKeyDown+=(_,e)=>{if(e.Key==Key.Escape&&!busy){dialog.Close();e.Handled=true;}};dialog.Show();link.Focus();
+        _page = "download";
+        PushUiState();
     }
-    private void SetBusy(bool value){busy=value;updateButton.IsEnabled=!value;workArea.IsEnabled=!value;webContent.IsEnabled=!value;L10n.Bind(toolsSetupButton,ContentControl.ContentProperty,tools.Ready&&officeRuntime.Executable is not null?"Tools ready":"Finish setup");RenderLibrary();}
+    private void SetBusy(bool value){busy=value;updateButton.IsEnabled=!value;workArea.IsEnabled=!value;webContent.IsEnabled=!value;L10n.Bind(toolsSetupButton,ContentControl.ContentProperty,tools.Ready&&officeRuntime.Executable is not null?"Tools ready":"Finish setup");RenderLibrary();PushUiState();}
+    internal Task<bool> ConfirmAsync(string title,string message,string confirmLabel="Continue",string cancelLabel="Cancel") => _featureUi!.ConfirmAsync(L10n.Text(title),L10n.Text(message),L10n.Text(confirmLabel),L10n.Text(cancelLabel));
+    internal Task ShowMessageAsync(string title,string message,string closeLabel="Close") => _featureUi!.ShowMessageAsync(L10n.Text(title),L10n.Text(message),L10n.Text(closeLabel));
+    private void OnUiMessage(string command,JsonElement payload)
+    {
+        try
+        {
+            switch(command)
+            {
+                case "nashi.navigate":
+                    var page=payload.TryGetProperty("page",out var pageValue)?pageValue.GetString():null;
+                    if(page=="home")ShowLibrary(false);else if(page=="library")ShowLibrary(true);else if(page=="download")OpenDownload();
+                    break;
+                case "nashi.choose": Choose(); break;
+                case "nashi.paste": PasteClipboard(); break;
+                case "nashi.paste-link": OpenCopiedLink();break;
+                case "nashi.open-wheel": ShowWheel();break;
+                case "nashi.clear": files.Clear();Refresh(); break;
+                case "nashi.remove":
+                    if(payload.TryGetProperty("path",out var removePath)&&removePath.GetString() is { } path)files.Remove(path);
+                    Refresh();
+                    break;
+                case "nashi.search": search.Text=payload.TryGetProperty("query",out var query)?query.GetString()??"":"";break;
+                case "nashi.recent-search": recentSearch.Text=payload.TryGetProperty("query",out var recentQuery)?recentQuery.GetString()??"":"";break;
+                case "nashi.library-action": HandleLibraryAction(payload);break;
+                case "nashi.tool": RunTool(payload);break;
+                case "nashi.download-update": UpdateDownloadForm(payload);break;
+                case "nashi.download": _=DownloadAsync();break;
+                case "nashi.setup-media": _=SetupAsync();break;
+                case "nashi.setup-office": _=SetupOfficeAsync();break;
+                case "nashi.settings": ShowSettings();break;
+                case "nashi.shortcuts": ShowShortcuts();break;
+                case "nashi.updates": _=CheckUpdatesAsync(true);break;
+                case "nashi.close": Close();break;
+            }
+            PushUiState();
+        }
+        catch(Exception error){L10n.SetText(status,error.Message);PushUiState();}
+    }
+    private void HandleLibraryAction(JsonElement payload)
+    {
+        if(!payload.TryGetProperty("id",out var idValue)||!Guid.TryParse(idValue.GetString(),out var id))return;
+        var entry=library.Entries.FirstOrDefault(item=>item.Id==id);
+        if(entry is null)return;
+        var action=payload.TryGetProperty("action",out var actionValue)?actionValue.GetString():null;
+        switch(action)
+        {
+            case "preview":PreviewEntry(entry);break;
+            case "use":
+                var available=entry.AvailablePaths;
+                if(available.Length==0){L10n.SetText(status,"These files have moved or were deleted.");break;}
+                files.Clear();Add(available);ShowLibrary(false);break;
+            case "reveal":if(entry.AvailablePaths.FirstOrDefault() is { } path)Reveal(path);break;
+        }
+    }
+    private void RunTool(JsonElement payload)
+    {
+        if(!payload.TryGetProperty("id",out var idValue)||idValue.GetString() is not { } id)return;
+        if(id=="convert"){ShowConversionWheel();return;}
+        if(id.StartsWith("convert:",StringComparison.Ordinal)){_ = EditAsync(new(id,"Convert","↗"));return;}
+        var choice=Choices().FirstOrDefault(item=>item.Id==id);
+        if(choice is not null)_=EditAsync(choice);
+    }
+    private void UpdateDownloadForm(JsonElement payload)
+    {
+        if(payload.TryGetProperty("url",out var url))link.Text=url.GetString()??"";
+        if(payload.TryGetProperty("kind",out var kindValue)&&kindValue.GetString() is { } kind)
+        {
+            if(!downloadKind.Items.Contains(kind))downloadKind.ItemsSource=new[]{kind};
+            downloadKind.SelectedItem=kind;
+        }
+        if(payload.TryGetProperty("quality",out var qualityValue)&&qualityValue.TryGetInt32(out var quality))webQuality.SelectedIndex=Math.Clamp(quality,0,2);
+    }
+    private void PushUiState()
+    {
+        _uiSurface.SetState(new
+        {
+            page=_page,
+            busy,
+            status=status.Text,
+            files=files.Select(path=>new{path,name=Path.GetFileName(path),directory=Path.GetDirectoryName(path)}).ToArray(),
+            choices=Choices().Select(choice=>new{id=choice.Id,title=choice.Title,symbol=choice.Symbol}).ToArray(),
+            formats=FeatureCatalog.Formats(files),
+            library=SearchLibrary(search.Text).Select(entry=>new{id=entry.Id,name=entry.Name,action=entry.Action,created=entry.Created.ToLocalTime().ToString("g"),paths=entry.Paths,available=entry.AvailablePaths.Length,missing=entry.AvailablePaths.Length<entry.Paths.Length}).ToArray(),
+            recent=SearchLibrary(recentSearch.Text).Take(3).Select(entry=>new{id=entry.Id,name=entry.Name,action=entry.Action,created=entry.Created.ToLocalTime().ToString("g"),paths=entry.Paths,available=entry.AvailablePaths.Length,missing=entry.AvailablePaths.Length<entry.Paths.Length}).ToArray(),
+            query=search.Text,
+            recentQuery=recentSearch.Text,
+            downloadUrl=link.Text,
+            downloadKind=downloadKind.SelectedItem as string??"video",
+            downloadKinds=(downloadKind.ItemsSource as IEnumerable<string>)?.ToArray()??["video","audio","thumbnail"],
+            quality=webQuality.SelectedIndex,
+            mediaReady=tools.Ready,
+            officeReady=officeRuntime.Executable is not null,
+            setupLabel=tools.Ready&&officeRuntime.Executable is not null?"Tools ready":"Finish setup",
+            appearance=library.Appearance
+        });
+    }
     internal const string ShortcutHelp="Ctrl+O  Choose files\nCtrl+V  Paste files, text, an image or link\nCtrl+Space / Enter  Open tools and conversions\nDelete  Remove selected files from Nashi\nCtrl+1 / Ctrl+2  Home / Library\nCtrl+F  Find in Library\nCtrl+Shift+D  Use a copied download link\nCtrl+U  Check for updates\n\nWheel: arrows / Tab to choose, Enter to open, Esc to close\nMedia: Space play/pause, ←/→ 1 second, Shift+←/→ 1/30s, I/O set range\nCrop: drag, Shift locks ratio, Enter saves\nEditing text: normal paste and arrow keys are preserved.";
-    private void ShowShortcuts()=>MessageBox.Show(this,L10n.Text(ShortcutHelp),L10n.Text("Nashi · Features & shortcuts"));
+    private async void ShowShortcuts()=>await ShowMessageAsync("Nashi · Features & shortcuts",ShortcutHelp,"Got it");
     private sealed class FileNameConverter:System.Windows.Data.IValueConverter
     {
         public object Convert(object value,Type type,object parameter,System.Globalization.CultureInfo culture)=>Path.GetFileName((string)value);
@@ -224,12 +333,12 @@ public sealed partial class MainWindow:Window
     private void ShowWheel()
     {
         if(busy)return;var choices=Choices().ToList();if(FeatureCatalog.Formats(files).Length>0)choices.Insert(0,new("convert","Convert","⇄"));
-        if(choices.Count>0)new WheelWindow(this,choices,async choice=>{if(choice.Id=="convert")ShowConversionWheel();else await EditAsync(choice);}).Show();
+        if(choices.Count>0)new WheelWindow(this,choices,async choice=>{if(choice.Id=="convert")ShowConversionWheel();else await EditAsync(choice);},featureUi:_featureUi).Show();
     }
     private void ShowConversionWheel()
     {
         if(busy)return;var choices=FeatureCatalog.Formats(files).Select(format=>new ToolChoice("convert:"+format,format.ToUpperInvariant(),"↗")).ToArray();
-        if(choices.Length>0)new WheelWindow(this,choices,async choice=>await EditAsync(choice)).Show();
+        if(choices.Length>0)new WheelWindow(this,choices,async choice=>await EditAsync(choice),featureUi:_featureUi).Show();
     }
     private async Task EditAsync(ToolChoice choice)
     {
@@ -244,7 +353,7 @@ public sealed partial class MainWindow:Window
             if(imageSelection)preview=ImageEngine.Load(input);
             else if(mediaSelection)
             {
-                if(!tools.Ready){MessageBox.Show(this,L10n.Text("Choose Set up media tools once to enable media editing."),L10n.Text("Media setup"));return;}
+                if(!tools.Ready){await ShowMessageAsync("Media setup","Choose Set up media tools once to enable media editing.");return;}
                 var engine=new MediaEngine(tools.Executable("ffmpeg"),tools.Executable("ffprobe"));info=await engine.InspectAsync(input);
                 if(choice.Id is "cropVideo" or "redactVideo")
                 {
@@ -252,7 +361,7 @@ public sealed partial class MainWindow:Window
                     await ProcessRunner.RunAsync(tools.Executable("ffmpeg"),["-v","error","-i",input,"-frames:v","1",temporary]);preview=ImageEngine.Load(temporary);
                 }
             }
-            SetBusy(false);var editor=new ToolEditor(this,choice.Id,choice.Title,input,info,preview,selected,choice.Id=="convert"?FeatureCatalog.Formats(selected):null);editor.ConfigureProfiles(preferences,requestedFormat);editor.ConfigureMediaRuntime(tools);var accepted=editor.ShowDialog()==true;if(temporary is not null)File.Delete(temporary);if(!accepted)return;
+            SetBusy(false);var editor=new ToolEditor(this,choice.Id,choice.Title,input,info,preview,selected,choice.Id=="convert"?FeatureCatalog.Formats(selected):null,_featureUi);editor.ConfigureProfiles(preferences,requestedFormat);editor.ConfigureMediaRuntime(tools);var accepted=editor.ShowDialog()==true;if(temporary is not null)File.Delete(temporary);if(!accepted)return;
             var inputs=choice.Id is "cropVideo" or "redactVideo" or "annotate"?new[]{input}:editor.OrderedInputs;
             if(imageSelection)await RunAsync(async(destination,p,t)=>
             {
@@ -267,18 +376,18 @@ public sealed partial class MainWindow:Window
             else if(choice.Id is "unzip" or "extractArchive")await RunAsync((destination,p,t)=>Task.Run<IReadOnlyList<string>>(()=>{using var tx=new ExportTransaction(destination);var outputs=inputs.SelectMany(file=>ArchiveEngine.Extract(file,tx.StagingDirectory,editor.DocumentOptions.Password,p,t)).ToList();return tx.Publish(outputs,t);},t));
             else await RunAsync((destination,p,t)=>Task.Run(()=>DocumentEngine.Pdf(choice.Id,inputs,destination,editor.Pages,t),t),choice.Title);
         }
-        catch(Exception error){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Couldn’t open this tool"),MessageBoxButton.OK,MessageBoxImage.Information);}
+        catch(Exception error){await ShowMessageAsync("Couldn’t open this tool",error.Message);}
         finally{if(temporary is not null&&File.Exists(temporary))File.Delete(temporary);SetBusy(false);}
     }
     private async Task RunAsync(Func<string,IProgress<OperationProgress>,CancellationToken,Task<IReadOnlyList<string>>> work,string label="Fresh copy")
     {
-        if(busy)return;var owner=webWindow?.IsActive==true?webWindow:this;string destination;
-        if(label=="Move"||preferences.Value.OutputMode=="ask"||(files.Count==0&&owner==this)){var folder=new OpenFolderDialog{Title=L10n.Text("Save new files to…"),InitialDirectory=Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)};if(folder.ShowDialog(owner)!=true)return;destination=folder.FolderName;}
-        else destination=owner==webWindow?preferences.Value.DownloadFolder:preferences.Value.OutputMode=="folder"&&!string.IsNullOrWhiteSpace(preferences.Value.OutputFolder)?preferences.Value.OutputFolder:Path.GetDirectoryName(files[0])!;
-        SetBusy(true);using var cancellation=new CancellationTokenSource();var toast=new ToastWindow(owner,cancellation.Cancel);toast.Show();
+        if(busy)return;string destination;
+        if(label=="Move"||preferences.Value.OutputMode=="ask"||(files.Count==0&&_page=="download")){var folder=new OpenFolderDialog{Title=L10n.Text("Save new files to…"),InitialDirectory=Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)};if(folder.ShowDialog(this)!=true)return;destination=folder.FolderName;}
+        else destination=_page=="download"?preferences.Value.DownloadFolder:preferences.Value.OutputMode=="folder"&&!string.IsNullOrWhiteSpace(preferences.Value.OutputFolder)?preferences.Value.OutputFolder:Path.GetDirectoryName(files[0])!;
+        SetBusy(true);using var cancellation=new CancellationTokenSource();var toast=new ToastWindow(this,cancellation.Cancel,_featureUi);toast.Show();
         try{var outputs=await work(destination,new Progress<OperationProgress>(toast.Update),cancellation.Token);toast.Complete(outputs);Record(label,outputs);L10n.SetText(status,$"Saved {outputs.Count} new {(outputs.Count==1?"file":"files")}. Originals kept.");if(preferences.Value.RevealFinished&&outputs.Count>0)Reveal(outputs[0]);}
         catch(OperationCanceledException){toast.Close();L10n.SetText(status,"Cancelled. Originals kept.");}
-        catch(Exception error){toast.Close();MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Couldn’t finish"),MessageBoxButton.OK,MessageBoxImage.Information);}
+        catch(Exception error){toast.Close();await ShowMessageAsync("Couldn’t finish",error.Message);}
         finally{SetBusy(false);}
     }
     private static Task<IReadOnlyList<string>> OnStaAsync(Func<IReadOnlyList<string>> work)
@@ -290,17 +399,17 @@ public sealed partial class MainWindow:Window
     {
         if(busy)return;
         var payload=WebMediaPayload.Parse(link.Text);var kind=downloadKind.SelectedItem as string??"video";
-        if(!tools.Ready&&kind!="image"&&payload?.Kind!="image"&&!(kind=="thumbnail"&&payload?.Kind=="youtube")){MessageBox.Show(webWindow??this,L10n.Text("Choose Set up media tools once to enable web downloads."),L10n.Text("Media setup"));return;}
+        if(!tools.Ready&&kind!="image"&&payload?.Kind!="image"&&!(kind=="thumbnail"&&payload?.Kind=="youtube")){await ShowMessageAsync("Media setup","Choose Set up media tools once to enable web downloads.");return;}
         if(kind=="photos"&&inspectedLink!=link.Text){await InspectWebLinkAsync();return;}
-        try{var url=WebDownload.Validate(payload?.Url??link.Text).AbsoluteUri;await RunAsync((destination,p,t)=>new WebDownload(tools).DownloadAsync(url,kind,destination,p,t,webQuality.SelectedIndex==1?1080:webQuality.SelectedIndex==2?720:null,kind=="photos"?new HashSet<int>(selectedWebPhotos):null),"Download "+kind);}catch(Exception error){MessageBox.Show(webWindow??this,L10n.Text(error.Message),L10n.Text("Check your link"));}
+        try{var url=WebDownload.Validate(payload?.Url??link.Text).AbsoluteUri;await RunAsync((destination,p,t)=>new WebDownload(tools).DownloadAsync(url,kind,destination,p,t,webQuality.SelectedIndex==1?1080:webQuality.SelectedIndex==2?720:null,kind=="photos"?new HashSet<int>(selectedWebPhotos):null),"Download "+kind);}catch(Exception error){await ShowMessageAsync("Check your link",error.Message);}
     }
     private async Task SetupAsync()
     {
         if(busy)return;if(tools.Ready){L10n.SetText(status,"Media tools are already installed.");return;}
-        if(MessageBox.Show(this,L10n.Text("Download FFmpeg (~180 MB), yt-dlp and Deno directly from their official GitHub releases? SHA-256 hashes are verified before use. FFmpeg is GPL; the other upstream licenses and source links are listed on our Features page. No administrator password is needed."),L10n.Text("Set up media tools"),MessageBoxButton.OKCancel,MessageBoxImage.Information)!=MessageBoxResult.OK)return;
-        SetBusy(true);using var cancellation=new CancellationTokenSource();var toast=new ToastWindow(this,cancellation.Cancel);toast.Show();
+        if(!await ConfirmAsync("Set up media tools","Download FFmpeg (~180 MB), yt-dlp and Deno directly from their official GitHub releases? SHA-256 hashes are verified before use. FFmpeg is GPL; the other upstream licenses and source links are listed on our Features page. No administrator password is needed.","Download tools","Cancel"))return;
+        SetBusy(true);using var cancellation=new CancellationTokenSource();var toast=new ToastWindow(this,cancellation.Cancel,_featureUi);toast.Show();
         try{await tools.InstallAsync(new Progress<OperationProgress>(toast.Update),cancellation.Token);toast.Close();L10n.SetText(status,"Media tools ready. You can edit, convert and download media.");}
-        catch(OperationCanceledException){toast.Close();L10n.SetText(status,"Setup cancelled.");}catch(Exception error){toast.Close();MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Setup couldn’t finish"));}finally{SetBusy(false);}
+        catch(OperationCanceledException){toast.Close();L10n.SetText(status,"Setup cancelled.");}catch(Exception error){toast.Close();await ShowMessageAsync("Setup couldn’t finish",error.Message);}finally{SetBusy(false);}
     }
     private Task CheckUpdatesAsync(bool user) { if(user)L10n.SetText(status,"Bu özellik WinForge ile birlikte güncellenir."); return Task.CompletedTask; }
 }

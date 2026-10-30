@@ -64,11 +64,16 @@ public sealed class RecallModule : CaptureModuleBase
         var now = DateTimeOffset.UtcNow; var tick = Environment.TickCount64;
         usage?.Observe(null, now, tick); idleUsage?.Observe(null, now, tick); lifetime?.Cancel();
         contextUsage?.Observe(null, null, null, now, tick);
-        lock (recordingGate) { }
-        try { ocr?.GetAwaiter().GetResult(); }
+        var stoppedOcr = ocr; var stoppedLifetime = lifetime;
+        ocr = null; lifetime = null; store = null; usage = null; idleUsage = null; contextUsage = null; contextRead = null; base.Deactivate();
+        _ = FinishOcrAsync(stoppedOcr, stoppedLifetime);
+    }
+    private async Task FinishOcrAsync(Task? stoppedOcr, CancellationTokenSource? stoppedLifetime)
+    {
+        try { if (stoppedOcr is not null) await stoppedOcr.ConfigureAwait(false); }
         catch (OperationCanceledException) { }
         catch (Exception error) { Context.Log.Error("OCR kuyruğu durdurulurken hata", error); }
-        lifetime?.Dispose(); lifetime = null; store = null; usage = null; idleUsage = null; contextUsage = null; contextRead = null; base.Deactivate();
+        finally { stoppedLifetime?.Dispose(); }
     }
     private void TogglePause()
     {

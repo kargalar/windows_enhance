@@ -1,10 +1,7 @@
 using Microsoft.Win32;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using WinForge.Core;
 using WinForge.History;
 
@@ -57,214 +54,132 @@ public static class CaptureImageEffects
     }
 }
 
-internal sealed class CaptureEditor : Window
+internal sealed class CaptureEditor
 {
-    private const long UndoBudgetBytes = 128L * 1024 * 1024;
-    private static readonly string[] ToolLabels = ["Serbest çizim", "Dikdörtgen", "Elips", "Çizgi", "Ok", "Metin", "Numaralı adım", "Vurgula", "Bulanıklaştır", "Pikselleştir", "Opak kapat", "Kırp", "Seç / taşı"];
-    private readonly Canvas canvas = new();
-    private readonly ComboBox tools = new() { ItemsSource = ToolLabels, SelectedIndex = 0, Width = 150, Margin = new(4) };
-    private readonly TextBox text = new() { Width = 150, Text = "Metin", Margin = new(4), ToolTip = "Metin içeriği" };
-    private readonly ComboBox colors = new() { ItemsSource = new[] { "Kırmızı", "Mavi", "Yeşil", "Sarı", "Siyah", "Beyaz" }, SelectedIndex = 0, Margin = new(4) };
-    private readonly Stack<BitmapSource> undo = [], redo = [];
-    private readonly TextBlock status = new() { Margin = new(6) };
-    private readonly HistoryStore store;
-    private BitmapSource current;
-    public BitmapSource? CompletedImage { get; private set; }
-    private Point? origin;
-    private Shape? mark;
-    private FrameworkElement? selectedMark;
-    private Matrix selectedBaseTransform;
-    private Rect selectedBounds;
-    private bool resizingMark;
-    private BitmapSource? beforeAction;
-    private int step = 1;
-    public CaptureEditor(HistoryStore store, BitmapSource image, DrawingTool? initialTool = null, bool workflowCompletion = false)
+    private readonly HistoryStore _store;
+    private readonly IFeatureUiService? _featureUi;
+    private readonly TaskCompletionSource<BitmapSource?> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly IFeatureUiWindow? _window;
+    private readonly string _image;
+    private readonly int _initialTool;
+    private readonly bool _workflowCompletion;
+    private string _status = string.Empty;
+
+    public CaptureEditor(HistoryStore store, BitmapSource image, DrawingTool? initialTool = null, bool workflowCompletion = false,
+        IFeatureUiService? featureUi = null)
     {
-        this.store = store; current = image; Title = "Ekran görüntüsünü düzenle"; Width = 1180; Height = 800; MinWidth = 850; CaptureUi.Theme(this);
-        if (initialTool is { } selectedTool) tools.SelectedIndex = (int)selectedTool;
-        var root = new DockPanel { Margin = new(12) }; Content = root;
-        var toolbar = new WrapPanel(); DockPanel.SetDock(toolbar, Dock.Top); root.Children.Add(toolbar);
-        toolbar.Children.Add(tools);
-        toolbar.Children.Add(CaptureUi.Button("Metin yaz", () => SelectTool(DrawingTool.Text)));
-        toolbar.Children.Add(CaptureUi.Button("Şekil çiz", () => SelectTool(DrawingTool.Rectangle)));
-        toolbar.Children.Add(CaptureUi.Button("Serbest çiz", () => SelectTool(DrawingTool.Freehand)));
-        toolbar.Children.Add(CaptureUi.Button("Seç / taşı", () => SelectTool(DrawingTool.Select)));
-        toolbar.Children.Add(CaptureUi.Button("Alanı seç / kırp", () => SelectTool(DrawingTool.Crop)));
-        toolbar.Children.Add(colors); toolbar.Children.Add(text);
-        toolbar.Children.Add(CaptureUi.Button("Geri al", () => Restore(undo, redo))); toolbar.Children.Add(CaptureUi.Button("İleri al", () => Restore(redo, undo)));
-        toolbar.Children.Add(CaptureUi.Button("Seçileni sil", DeleteSelected));
-        toolbar.Children.Add(CaptureUi.Button("Öne al", () => ReorderSelected(true)));
-        toolbar.Children.Add(CaptureUi.Button("Arkaya al", () => ReorderSelected(false)));
-        toolbar.Children.Add(CaptureUi.Button("Kopyala", () => Guard(() => Clipboard.SetImage(Snapshot()))));
-        toolbar.Children.Add(CaptureUi.Button("Kaydet", Save));
-        toolbar.Children.Add(CaptureUi.Button("Geçmişe kaydet", () => Guard(() => { var media = CaptureServices.Save(store, Snapshot()); store.Add("capture", DateTimeOffset.UtcNow, title: "Düzenlenmiş görüntü", media: media); status.Text = "Geçmişe kaydedildi."; })));
-        toolbar.Children.Add(CaptureUi.Button("Sabitle", () => new ImagePreviewWindow(Snapshot(), true).Show()));
-        if (workflowCompletion) toolbar.Children.Add(CaptureUi.Button("Düzenlemeyi tamamla", CompleteEditing));
-        var effects = new ContextMenu();
-        foreach (var (preset, label) in new[] { ("grayscale", "Siyah-beyaz"), ("sepia", "Sepya"), ("invert", "Renkleri ters çevir") })
+        _store = store;
+        _featureUi = featureUi;
+        _initialTool = (int)(initialTool ?? DrawingTool.Freehand);
+        _workflowCompletion = workflowCompletion;
+        _image = ToDataUri(image);
+        Completion = _completion.Task;
+        if (featureUi is null)
         {
-            var item = new MenuItem { Header = label }; item.Click += (_, _) => ApplyEffect(preset); effects.Items.Add(item);
-        }
-        var effectButton = CaptureUi.Button("Görsel efektleri", () => effects.IsOpen = true); effectButton.ContextMenu = effects; toolbar.Children.Add(effectButton);
-        toolbar.Children.Add(CaptureUi.Button("OCR", async () =>
-        {
-            try { var result = await OcrRecognitionService.RecognizeAsync(Snapshot()); Clipboard.SetText(result); status.Text = "OCR metni panoya kopyalandı."; }
-            catch (Exception error) { status.Text = error.Message; }
-        }));
-        DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status);
-        var view = new Viewbox { Child = canvas, Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly };
-        root.Children.Add(new ScrollViewer { Content = view, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        ResetCanvas(); canvas.MouseLeftButtonDown += Begin; canvas.MouseMove += Move; canvas.MouseLeftButtonUp += End;
-        KeyDown += (_, e) => { if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z) Restore(undo, redo); };
-    }
-    private void SelectTool(DrawingTool tool) => tools.SelectedIndex = (int)tool;
-    private Brush Ink => colors.SelectedIndex switch { 1 => Brushes.DodgerBlue, 2 => Brushes.LimeGreen, 3 => Brushes.Gold, 4 => Brushes.Black, 5 => Brushes.White, _ => Brushes.Red };
-    private void ResetCanvas()
-    {
-        canvas.Children.Clear(); canvas.Width = current.PixelWidth; canvas.Height = current.PixelHeight;
-        canvas.Children.Add(new Image { Source = current, Width = canvas.Width, Height = canvas.Height });
-    }
-    internal BitmapSource Snapshot()
-    {
-        canvas.Measure(new Size(canvas.Width, canvas.Height)); canvas.Arrange(new Rect(0, 0, canvas.Width, canvas.Height));
-        var bitmap = new RenderTargetBitmap((int)canvas.Width, (int)canvas.Height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(canvas); bitmap.Freeze(); return bitmap;
-    }
-    private void Begin(object sender, MouseButtonEventArgs e)
-    {
-        var point = e.GetPosition(canvas);
-        var tool = (DrawingTool)tools.SelectedIndex;
-        if (tool == DrawingTool.Select)
-        {
-            selectedMark = canvas.InputHitTest(point) as FrameworkElement;
-            if (selectedMark is null or Image) return;
-            selectedBounds = selectedMark.TransformToAncestor(canvas).TransformBounds(new Rect(selectedMark.RenderSize));
-            selectedBaseTransform = selectedMark.RenderTransform.Value;
-            resizingMark = Math.Abs(point.X - selectedBounds.Right) <= 12 && Math.Abs(point.Y - selectedBounds.Bottom) <= 12;
-            origin = point; beforeAction = Snapshot(); canvas.CaptureMouse(); return;
-        }
-        selectedMark = null; origin = point; beforeAction = Snapshot(); canvas.CaptureMouse();
-        mark = tool switch
-        {
-            DrawingTool.Freehand => new Polyline { Stroke = Ink, StrokeThickness = 4 },
-            DrawingTool.Ellipse => new Ellipse { Stroke = Ink, StrokeThickness = 4 },
-            DrawingTool.Line or DrawingTool.Arrow => new Line { Stroke = Ink, StrokeThickness = 4 },
-            _ => new Rectangle { Stroke = Ink, StrokeThickness = 3, Fill = tool == DrawingTool.Redact ? Brushes.Black : tool == DrawingTool.Highlight ? Brushes.Yellow : Brushes.Transparent, Opacity = tool == DrawingTool.Highlight ? 0.4 : 1 }
-        };
-        canvas.Children.Add(mark); Move(sender, e);
-    }
-    private void Move(object sender, MouseEventArgs e)
-    {
-        if (origin is not { } start) return;
-        var point = e.GetPosition(canvas); point.X = Math.Clamp(point.X, 0, canvas.Width); point.Y = Math.Clamp(point.Y, 0, canvas.Height);
-        if (selectedMark is { } selected)
-        {
-            if (resizingMark && selected is Shape or TextBlock)
-            {
-                selected.Width = Math.Max(8, selectedBounds.Width + point.X - start.X);
-                selected.Height = Math.Max(8, selectedBounds.Height + point.Y - start.Y);
-            }
-            else
-            {
-                var transform = selectedBaseTransform; transform.Translate(point.X - start.X, point.Y - start.Y);
-                selected.RenderTransform = new MatrixTransform(transform);
-            }
+            _completion.TrySetResult(null);
             return;
         }
-        if (mark is null) return;
-        if (mark is Polyline line) { line.Points.Add(point); return; }
-        if (mark is Line segment) { segment.X1 = start.X; segment.Y1 = start.Y; segment.X2 = point.X; segment.Y2 = point.Y; return; }
-        Canvas.SetLeft(mark, Math.Min(start.X, point.X)); Canvas.SetTop(mark, Math.Min(start.Y, point.Y)); mark.Width = Math.Abs(start.X - point.X); mark.Height = Math.Abs(start.Y - point.Y);
+
+        _window = featureUi.Open("capture-editor-" + Guid.NewGuid().ToString("N"), "capture-editor", "Ekran görüntüsünü düzenle",
+            new FeatureUiWindowOptions(1180, 800, Resizable: true, ShowInTaskbar: true));
+        _window.MessageReceived += OnMessage;
+        _window.SetState(new { image = _image, initialTool = _initialTool, workflowCompletion = _workflowCompletion, status = _status });
     }
-    private async void End(object sender, MouseButtonEventArgs e)
+
+    public Task<BitmapSource?> Completion { get; }
+    public void Show() => _window?.Show();
+
+    private async void OnMessage(string command, System.Text.Json.JsonElement payload)
     {
-        if (origin is not { } start) return;
-        var end = e.GetPosition(canvas); origin = null; canvas.ReleaseMouseCapture(); var tool = (DrawingTool)tools.SelectedIndex;
-        var before = beforeAction ?? current; beforeAction = null;
-        if (tool == DrawingTool.Select)
-        {
-            if (selectedMark is not null && (Math.Abs(end.X - start.X) > 1 || Math.Abs(end.Y - start.Y) > 1))
-            { undo.Push(before); redo.Clear(); TrimUndo(); }
-            resizingMark = false; return;
-        }
-        if (mark is null) return;
         try
         {
-            var x = (int)Math.Clamp(Math.Min(start.X, end.X), 0, current.PixelWidth - 1); var y = (int)Math.Clamp(Math.Min(start.Y, end.Y), 0, current.PixelHeight - 1);
-            var area = new Int32Rect(x, y, Math.Clamp((int)Math.Abs(end.X - start.X), 1, current.PixelWidth - x), Math.Clamp((int)Math.Abs(end.Y - start.Y), 1, current.PixelHeight - y));
-            if (tool is DrawingTool.Text or DrawingTool.Step)
+            switch (command)
             {
-                canvas.Children.Remove(mark); var label = new TextBlock { Text = tool == DrawingTool.Step ? (step++).ToString() : text.Text, Foreground = Ink, FontSize = tool == DrawingTool.Step ? 32 : 24, FontWeight = FontWeights.Bold, Background = tool == DrawingTool.Step ? Brushes.White : Brushes.Transparent };
-                Canvas.SetLeft(label, start.X); Canvas.SetTop(label, start.Y); canvas.Children.Add(label);
+                case "capture-editor.copy":
+                    Clipboard.SetImage(ReadImage(payload));
+                    SetStatus("Görsel panoya kopyalandı.");
+                    break;
+                case "capture-editor.save-history":
+                    var media = CaptureServices.Save(_store, ReadImage(payload));
+                    _store.Add("capture", DateTimeOffset.UtcNow, title: "Düzenlenmiş görüntü", media: media);
+                    SetStatus("Geçmişe kaydedildi.");
+                    break;
+                case "capture-editor.save-file":
+                    SaveFile(ReadImage(payload));
+                    break;
+                case "capture-editor.pin":
+                    new ImagePreviewWindow(ReadImage(payload), true, _featureUi);
+                    break;
+                case "capture-editor.ocr":
+                    var text = await OcrRecognitionService.RecognizeAsync(ReadImage(payload));
+                    Clipboard.SetText(text);
+                    SetStatus("OCR metni panoya kopyalandı.");
+                    break;
+                case "capture-editor.complete":
+                    _completion.TrySetResult(ReadImage(payload));
+                    _window?.Close();
+                    break;
+                case "capture-editor.close":
+                    _completion.TrySetResult(null);
+                    _window?.Close();
+                    break;
             }
-            if (tool == DrawingTool.Arrow)
-            {
-                var vector = start - end; vector.Normalize(); var normal = new Vector(-vector.Y, vector.X);
-                if (!double.IsNaN(vector.X)) canvas.Children.Add(new Polyline { Stroke = Ink, StrokeThickness = 4, Points = [end + vector * 18 + normal * 9, end, end + vector * 18 - normal * 9] });
-            }
-            if (tool is DrawingTool.Blur or DrawingTool.Pixelate or DrawingTool.Crop)
-            {
-                canvas.Children.Remove(mark);
-                var flattened = Snapshot();
-                current = tool == DrawingTool.Crop ? new CroppedBitmap(flattened, area) : await Task.Run(() => CaptureImageEffects.Apply(flattened, area, tool == DrawingTool.Blur));
-                current.Freeze();
-            }
-            undo.Push(before); redo.Clear();
-            if (tool is DrawingTool.Blur or DrawingTool.Pixelate or DrawingTool.Crop) ResetCanvas();
-            TrimUndo();
         }
-        catch (Exception error) { current = before; ResetCanvas(); status.Text = error.Message; }
-        finally { mark = null; }
+        catch (Exception error) { SetStatus(error.Message); }
     }
-    private void TrimUndo()
+
+    private void SetStatus(string status)
     {
-        var budget = 0L; var retained = undo.TakeWhile(frame => (budget += (long)frame.PixelWidth * frame.PixelHeight * 4) <= UndoBudgetBytes).Take(20).ToArray();
-        if (retained.Length == 0 && undo.TryPeek(out var latest)) retained = [latest];
-        undo.Clear(); foreach (var frame in retained.Reverse()) undo.Push(frame);
+        _status = status;
+        _window?.SetState(new { image = _image, initialTool = _initialTool, workflowCompletion = _workflowCompletion, status = _status });
     }
-    private void Restore(Stack<BitmapSource> source, Stack<BitmapSource> destination)
-    { if (source.TryPop(out var image)) { destination.Push(Snapshot()); current = image; ResetCanvas(); } }
-    private void ApplyEffect(string preset)
+
+    private static BitmapSource ReadImage(System.Text.Json.JsonElement payload)
     {
-        try { var before = Snapshot(); var output = CaptureImageEffects.ApplyPreset(before, preset); undo.Push(before); redo.Clear(); current = output; ResetCanvas(); TrimUndo(); status.Text = "Görsel efekti uygulandı; geri al ile kaldırabilirsiniz."; }
-        catch (Exception error) { status.Text = error.Message; }
+        var value = payload.GetProperty("image").GetString() ?? throw new InvalidDataException("Düzenlenmiş görüntü alınamadı.");
+        var separator = value.IndexOf(',');
+        if (separator < 0) throw new InvalidDataException("Görüntü biçimi geçersiz.");
+        using var stream = new MemoryStream(Convert.FromBase64String(value[(separator + 1)..]));
+        var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var image = decoder.Frames[0];
+        image.Freeze();
+        return image;
     }
-    private void CompleteEditing()
+
+    private static string ToDataUri(BitmapSource image)
     {
-        CompletedImage = Snapshot();
-        DialogResult = true;
+        using var stream = new MemoryStream();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(image));
+        encoder.Save(stream);
+        return "data:image/png;base64," + Convert.ToBase64String(stream.ToArray());
     }
-    private void DeleteSelected()
-    {
-        if (selectedMark is not { } selected || !canvas.Children.Contains(selected)) return;
-        undo.Push(Snapshot()); redo.Clear(); canvas.Children.Remove(selected); selectedMark = null; TrimUndo();
-    }
-    private void ReorderSelected(bool toFront)
-    {
-        if (selectedMark is not { } selected || !canvas.Children.Contains(selected)) return;
-        undo.Push(Snapshot()); redo.Clear(); canvas.Children.Remove(selected);
-        if (toFront) canvas.Children.Add(selected); else canvas.Children.Insert(Math.Min(1, canvas.Children.Count), selected);
-        TrimUndo();
-    }
-    private void Save()
+
+    private void SaveFile(BitmapSource image)
     {
         var dialog = new SaveFileDialog { Filter = "PNG görüntüsü|*.png|JPEG görüntüsü|*.jpg", FileName = "WinForge-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") };
-        if (dialog.ShowDialog(this) != true) return;
-        Guard(() =>
-        {
-            BitmapEncoder encoder = dialog.FilterIndex == 2 ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(Snapshot()));
-            using var output = File.Create(dialog.FileName); encoder.Save(output); status.Text = "Görüntü kaydedildi.";
-        });
+        if (dialog.ShowDialog() != true) return;
+        BitmapEncoder encoder = dialog.FilterIndex == 2 ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(image));
+        using var output = File.Create(dialog.FileName);
+        encoder.Save(output);
+        SetStatus("Görüntü kaydedildi.");
     }
-    private void Guard(Action action) { try { action(); } catch (Exception error) { status.Text = error.Message; } }
 }
-
-internal sealed class ImagePreviewWindow : Window
+internal sealed class ImagePreviewWindow
 {
-    public ImagePreviewWindow(BitmapSource image, bool pinned)
+    public ImagePreviewWindow(BitmapSource image, bool pinned, IFeatureUiService? featureUi)
     {
-        Title = pinned ? "Sabit görüntü · Esc ile kapat" : "Görsel önizlemesi";
-        Width = Math.Min(pinned ? 700 : 1100, SystemParameters.WorkArea.Width - 60); Height = Math.Min(pinned ? 500 : 750, SystemParameters.WorkArea.Height - 60);
-        Topmost = pinned; Content = new Image { Source = image, Stretch = Stretch.Uniform }; CaptureUi.Theme(this);
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) Close(); };
+        if (featureUi is null) return;
+        using var stream = new MemoryStream();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(image));
+        encoder.Save(stream);
+        var data = "data:image/png;base64," + Convert.ToBase64String(stream.ToArray());
+        var window = featureUi.Open("capture-image-preview-" + Guid.NewGuid().ToString("N"), "capture-image-preview",
+            pinned ? "Sabit görüntü" : "Görsel önizlemesi",
+            new FeatureUiWindowOptions(pinned ? 700 : 1100, pinned ? 500 : 750, Topmost: pinned, Resizable: true, ShowInTaskbar: !pinned));
+        window.SetState(new { image = data, pinned });
+        window.MessageReceived += (command, _) => { if (command == "capture-image-preview.close") window.Close(); };
     }
 }

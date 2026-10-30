@@ -693,7 +693,6 @@ internal static class LockKeysStatusWindow
     public static void Show(string key, bool enabled)
     {
         if (_featureUi is null) return;
-        _instance?.Close();
         var bounds = SystemParameters.WorkArea;
         _instance = _featureUi.Open("lock-keys-status", "lock-keys-status", "Kilit tuşu durumu",
             new FeatureUiWindowOptions(230, 76, Topmost: true, ActivateOnShow: false, Transparent: true));
@@ -727,7 +726,7 @@ internal sealed class MediaFlyoutWindow : Window
     private readonly DispatcherTimer _upNextTimer;
     private readonly DispatcherTimer _dismissTimer;
     private readonly TextBlock _upNextText;
-    private readonly IFeatureUiSurface? _uiSurface;
+    private readonly IFeatureUiSurface _uiSurface;
     private string? _artworkDataUri;
 
     // Kaynak uygulama tespiti ve yönlendirme
@@ -791,8 +790,9 @@ internal sealed class MediaFlyoutWindow : Window
 
     public MediaFlyoutWindow(IFeatureUiService? featureUi = null)
     {
-        _uiSurface = featureUi?.CreateSurface("media-flyout");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("media-flyout")
+            ?? throw new InvalidOperationException("Medya flyout'u için React arayüzü gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Title = "Medya ve Ses";
         Width = 360;
         Height = 300;
@@ -1089,16 +1089,7 @@ internal sealed class MediaFlyoutWindow : Window
         mediaControls.Children.Add(_nextButton);
         content.Children.Add(mediaControls);
 
-        var legacyContent = new Border
-        {
-            Background = Brush("#F21B1B1D"),
-            BorderBrush = Brush("#FF424246"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(19),
-            Child = content,
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 28, ShadowDepth = 5, Opacity = 0.35, Color = Colors.Black }
-        };
-        Content = _uiSurface?.Element ?? legacyContent;
+        Content = _uiSurface.Element;
 
         SourceInitialized += (_, _) =>
         {
@@ -1164,7 +1155,7 @@ internal sealed class MediaFlyoutWindow : Window
             _upNextTimer.Stop();
             _dismissTimer.Stop();
             DetachMediaEventHandlers();
-            _uiSurface?.Dispose();
+            _uiSurface.Dispose();
         };
         Loaded += async (_, _) => await RefreshAsync();
     }
@@ -1339,7 +1330,7 @@ internal sealed class MediaFlyoutWindow : Window
 
     private void PushUiState()
     {
-        if (_uiSurface is null || _isClosed) return;
+        if (_isClosed) return;
         var sessions = (_sessionSelector.ItemsSource as IEnumerable<MediaSessionChoice>)?.Select(choice => new
         {
             id = choice.Session.SourceAppUserModelId,

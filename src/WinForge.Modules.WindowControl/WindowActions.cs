@@ -353,9 +353,17 @@ internal sealed class WindowActions : IDisposable
 
     private static void RestoreBeforeResize(IntPtr window)
     {
+        if (Native.GetWindowThreadProcessId(window, out _) == GetCurrentThreadId())
+        {
+            ShowWindowSynchronously(window, Restore);
+            if (IsZoomed(window))
+                throw new InvalidOperationException("Büyütülmüş pencere yerleştirmeden önce normal boyutuna döndürülemedi.");
+            return;
+        }
         ShowWindowAsync(window, Restore);
-        if (SendWindowMessageTimeout(window, 0, IntPtr.Zero, IntPtr.Zero, Native.SMTO_ABORTIFHUNG,
-            ActivationTimeoutMilliseconds, out _) == IntPtr.Zero || IsZoomed(window))
+        var deadline = Environment.TickCount64 + ActivationTimeoutMilliseconds;
+        while (IsZoomed(window) && Environment.TickCount64 < deadline) Thread.Sleep(5);
+        if (IsZoomed(window))
             throw new InvalidOperationException("Büyütülmüş pencere yerleştirmeden önce normal boyutuna döndürülemedi.");
     }
 

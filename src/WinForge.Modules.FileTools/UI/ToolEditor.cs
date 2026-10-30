@@ -5,6 +5,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using System.Text.Json;
+using WinForge.Core;
 using WinForge.FileTools.Engine;
 namespace WinForge.FileTools.UI;
 
@@ -15,9 +17,11 @@ public sealed partial class ToolEditor:Window
     private readonly ComboBox format=new();private readonly ComboBox drawingTool=new(){ItemsSource=new[]{"Marker","Rectangle"},SelectedIndex=0};
     private readonly Canvas drawing=new(){Background=Brushes.Transparent,Focusable=true};private Rectangle? selection,activeRectangle;private Polyline? activeStroke;private Point origin;private bool dragging;
     private readonly MediaElement player=new(){LoadedBehavior=MediaState.Manual,UnloadedBehavior=MediaState.Close,Stretch=Stretch.Uniform,Height=260};private bool playing;
-    private readonly Slider scrubber=new(){Minimum=0,Margin=new(4,12,4,8),ToolTip="Preview position"};
     private readonly StackPanel previewStack=new();
     private readonly RangeTimeline timeline=new();private readonly TextBlock time=new(){Margin=new(4,6,4,10)};private double duration=1;
+    private readonly IFeatureUiSurface optionsSurface;
+    private readonly Dictionary<string,FrameworkElement> optionControls=[];
+    private readonly Dictionary<FrameworkElement,string> optionIds=[];
     internal double PreviewSeconds=>player.Position.TotalSeconds;
     internal bool Playing=>playing;
     internal RangeTimeline Timeline=>timeline;
@@ -26,14 +30,13 @@ public sealed partial class ToolEditor:Window
     internal void SelectDrawingToolForTest(int index) => drawingTool.SelectedIndex = index;
     internal bool AcceptForTest()=>ReadSettings(false);
     private readonly string input;private readonly MediaInfo? media;private readonly StackPanel options=new(){Margin=new(18,0,0,0)};
-    public ToolEditor(Window owner,string tool,string title,string input,MediaInfo? media=null,BitmapSource? preview=null,IReadOnlyList<string>? inputs=null,string[]? outputFormats=null)
+    public ToolEditor(Window owner,string tool,string title,string input,MediaInfo? media=null,BitmapSource? preview=null,IReadOnlyList<string>? inputs=null,string[]? outputFormats=null,IFeatureUiService? featureUi=null)
     {
         Theme.Attach(this);
         Owner=owner;this.tool=tool;this.input=input;this.media=media;bitmap=preview;Title=title+" · Nashi";Width=1060;Height=780;MinWidth=800;MinHeight=560;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        var grid=new Grid{Margin=new(28)};grid.RowDefinitions.Add(new(){Height=GridLength.Auto});grid.RowDefinitions.Add(new(){Height=new(1,GridUnitType.Star)});grid.RowDefinitions.Add(new(){Height=GridLength.Auto});Content=grid;
-        var heading=new StackPanel();heading.Children.Add(L10n.Label(new TextBlock{Text=title,FontSize=30,FontWeight=FontWeights.Bold}));heading.Children.Add(new TextBlock{Text=Path.GetFileName(input)+" · "+L10n.Text("Original stays safe"),Foreground=Theme.Brush("Muted"),Margin=new(0,5,0,22)});grid.Children.Add(heading);
-        var body=new Grid();body.ColumnDefinitions.Add(new(){Width=new(1.6,GridUnitType.Star)});body.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});Grid.SetRow(body,1);grid.Children.Add(body);
-        previewStack.Children.Add(L10n.Label(new TextBlock{Text="PREVIEW",FontSize=11,FontWeight=FontWeights.SemiBold,Foreground=Theme.Brush("Muted"),Margin=new(4,0,0,16)}));options.Children.Add(L10n.Label(new TextBlock{Text="MAKE IT YOURS",FontSize=11,FontWeight=FontWeights.SemiBold,Foreground=Theme.Brush("Muted"),Margin=new(4,0,0,16)}));body.Children.Add(new ScrollViewer{Content=previewStack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});Grid.SetColumn(options,1);body.Children.Add(new ScrollViewer{Content=options,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});Grid.SetColumn(body.Children[^1],1);
+        var grid=new Grid{Margin=new(24)};grid.RowDefinitions.Add(new(){Height=new(1,GridUnitType.Star)});Content=grid;
+        var body=new Grid();body.ColumnDefinitions.Add(new(){Width=new(1.6,GridUnitType.Star)});body.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});grid.Children.Add(body);
+        previewStack.Children.Add(L10n.Label(new TextBlock{Text="PREVIEW",FontSize=11,FontWeight=FontWeights.SemiBold,Foreground=Theme.Brush("Muted"),Margin=new(4,0,0,16)}));options.Children.Add(L10n.Label(new TextBlock{Text="MAKE IT YOURS",FontSize=11,FontWeight=FontWeights.SemiBold,Foreground=Theme.Brush("Muted"),Margin=new(4,0,0,16)}));body.Children.Add(new ScrollViewer{Content=previewStack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});Grid.SetColumn(options,1);var optionsViewport=new ScrollViewer{Content=options,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled};body.Children.Add(optionsViewport);Grid.SetColumn(optionsViewport,1);
         if(bitmap is not null)
         {
             drawing.Width=bitmap.PixelWidth;drawing.Height=bitmap.PixelHeight;
@@ -51,18 +54,7 @@ public sealed partial class ToolEditor:Window
         if(media is not null)
         {
             player.ScrubbingEnabled=true;player.Loaded+=(_,_)=>{player.Play();player.Pause();};player.MediaFailed+=async(_,_)=>await CreatePreviewProxy();
-            if(tool is "trimVideo" or "trimAudio" or "redactAudio")
-            {
-                timeline.Set(duration,0,duration);previewStack.Children.Add(timeline);timeline.Changed+=(a,b)=>{var valid=double.TryParse(fields["Start"].Text,NumberStyles.Float,CultureInfo.CurrentCulture,out var previousStart)&&double.IsFinite(previousStart);fields["Start"].Text=Number(a);fields["End"].Text=Number(b);Seek(!valid||Math.Abs(a-previousStart)>.0001?a:b);};
-            }
-            var controls=new StackPanel{Orientation=Orientation.Horizontal};var play=MainWindow.Button("▶ / Ⅱ",TogglePlayback);controls.Children.Add(MainWindow.Button("−1s",()=>Seek(player.Position.TotalSeconds-1)));controls.Children.Add(play);controls.Children.Add(MainWindow.Button("+1s",()=>Seek(player.Position.TotalSeconds+1)));previewStack.Children.Add(controls);previewStack.Children.Add(time);
-            if((media.Video is null&&tool is "normalizeAudio" or "audioChannels" or "redactAudio")||tool is "redactVideo" or "splitVideo" or "audioToVideo")
-            {
-                var comparison=new StackPanel{Orientation=Orientation.Horizontal};comparison.Children.Add(MainWindow.Button("Original",PlayOriginalPreview));processedButton=MainWindow.Button(tool=="splitVideo"?"Play Result":tool=="audioToVideo"?"Preview Visualization":"Preview Processed",async()=>await PreviewProcessed());comparison.Children.Add(processedButton);previewStack.Children.Add(comparison);
-            }
-            scrubber.Maximum=duration;scrubber.ValueChanged+=(_,_)=>{if(scrubber.IsMouseCaptureWithin||scrubber.IsKeyboardFocusWithin)Seek(scrubber.Value);};previewStack.Children.Add(scrubber);
-            if(tool is "trimAudio" or "trimVideo" or "redactAudio")previewStack.Children.Add(MainWindow.Button("Play selected range",PlayRange));
-            previewStack.Children.Add(L10n.Label(new TextBlock{Text="Space play/pause · ←/→ 1s · Shift+←/→ 1 frame (video), 0.1s (audio) · I/O set range · Enter save",TextWrapping=TextWrapping.Wrap,Foreground=Theme.Brush("Muted")}));
+            if(tool is "trimVideo" or "trimAudio" or "redactAudio")timeline.Set(duration,0,duration);
         }
         if(tool=="convert")
         {
@@ -95,13 +87,139 @@ public sealed partial class ToolEditor:Window
         }
         BuildPhotoOptions(inputs??[input]);BuildInputOrder(inputs??[input]);BuildCropOptions();BuildCompressionOptions();BuildDocumentOptions();BuildMediaOptions();
         if(options.Children.Count==1)options.Children.Add(L10n.Label(new TextBlock{Text="Ready to make a fresh copy. No extra settings needed.",TextWrapping=TextWrapping.Wrap,Margin=new(4,20,4,0)}));
-        var footer=new DockPanel{Margin=new(0,20,0,0),LastChildFill=false};Grid.SetRow(footer,2);grid.Children.Add(footer);var save=MainWindow.Button("Save new copy  ↗",Save);save.Background=Theme.Primary;save.Foreground=new SolidColorBrush(Color.FromRgb(43,54,28));DockPanel.SetDock(save,Dock.Right);footer.Children.Add(save);var cancel=MainWindow.Button("Cancel",()=>DialogResult=false);DockPanel.SetDock(cancel,Dock.Left);footer.Children.Add(cancel);var reset=MainWindow.Button("↶ Reset",Reset);DockPanel.SetDock(reset,Dock.Left);footer.Children.Add(reset);var safe=L10n.Label(new TextBlock{Text="Original stays safe",Foreground=Theme.Brush("Muted"),FontSize=12,VerticalAlignment=VerticalAlignment.Center,Margin=new(0,0,16,0)});DockPanel.SetDock(safe,Dock.Right);footer.Children.Add(safe);
+        optionsSurface=(featureUi??throw new InvalidOperationException("The React tool editor view is required.")).CreateSurface("nashi-tool-editor");
+        optionsSurface.MessageReceived+=OnOptionsMessage;
+        optionsViewport.Content=optionsSurface.Element;
+        Closed+=(_,_)=>optionsSurface.Dispose();
+        PushOptionsState();
         var clock=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(100)};
-        clock.Tick+=(_,_)=>{if(!scrubber.IsMouseCaptureWithin&&!scrubber.IsKeyboardFocusWithin)scrubber.Value=Math.Clamp(player.Position.TotalSeconds,0,duration);if(playing){time.Text=$"{player.Position:mm\\:ss\\.fff} / {TimeSpan.FromSeconds(duration):mm\\:ss\\.fff}";if(playingRange&&player.Position.TotalSeconds>=rangePlaybackEnd){player.Pause();playing=false;playingRange=false;}}};
+        clock.Tick+=(_,_)=>{if(playing){time.Text=$"{player.Position:mm\\:ss\\.fff} / {TimeSpan.FromSeconds(duration):mm\\:ss\\.fff}";if(playingRange&&player.Position.TotalSeconds>=rangePlaybackEnd){player.Pause();playing=false;playingRange=false;}PushOptionsState();}};
         player.MediaEnded+=(_,_)=>{playing=false;player.Pause();};clock.Start();
         PreviewKeyDown+=OnKey;Closed+=(_,_)=>{clock.Stop();player.Close();previewLifetime.Cancel();DeletePreviewFiles();};
     }
     private static string Number(double n)=>n.ToString("0.###",CultureInfo.CurrentCulture);
+    private string OptionId(FrameworkElement element)
+    {
+        if(optionIds.TryGetValue(element,out var id))return id;
+        id=element is TextBox textBox?System.Windows.Automation.AutomationProperties.GetAutomationId(textBox):string.Empty;
+        if(string.IsNullOrWhiteSpace(id))id=$"option-{optionIds.Count+1}";
+        optionIds[element]=id;optionControls[id]=element;return id;
+    }
+    private object[] OptionDescriptors()
+    {
+        var result=new List<object>();string? label=null;
+        foreach(var item in options.Children)
+        {
+            if(item is TextBlock text)
+            {
+                label=text.Text;
+                if(text.TextWrapping==TextWrapping.Wrap&&text.Margin.Top>=4)result.Add(new{type="help",id=OptionId(text),label=text.Text});
+                continue;
+            }
+            if(item is not FrameworkElement element)continue;
+            var id=OptionId(element);
+            switch(element)
+            {
+                case TextBox field: result.Add(new{type="text",id,label=label??id,value=field.Text});break;
+                case PasswordBox password: result.Add(new{type="password",id,label=label??id,value=password.Password});break;
+                case ComboBox combo:
+                    result.Add(new{type="select",id,label=label??id,value=combo.SelectedIndex,options=combo.Items.Cast<object>().Select(value=>value?.ToString()??"").ToArray()});break;
+                case CheckBox check: result.Add(new{type="checkbox",id,label=check.Content?.ToString()??label??id,value=check.IsChecked==true});break;
+                case Slider slider: result.Add(new{type="range",id,label=slider.ToolTip?.ToString()??label??id,value=slider.Value,minimum=slider.Minimum,maximum=slider.Maximum});break;
+                case Button button: result.Add(new{type="button",id,label=button.Content?.ToString()??label??id});break;
+                case ListBox list:
+                    result.Add(new{type="list",id,label=label??id,value=list.SelectedIndex,reorderable=ReferenceEquals(list,inputOrder)||ReferenceEquals(list,imageOrder),items=list.Items.Cast<object>().Select(value=>value is ListBoxItem row?row.Content?.ToString()??"":value?.ToString()??"").ToArray()});break;
+                case WrapPanel panel:
+                    foreach(var child in panel.Children.OfType<Button>())
+                    {
+                        var childId=OptionId(child);result.Add(new{type="button",id=childId,label=child.Content?.ToString()??childId});
+                    }
+                    break;
+                case DockPanel row:
+                    var rowLabel=row.Children.OfType<TextBlock>().FirstOrDefault()?.Text;
+                    foreach(var child in row.Children.OfType<FrameworkElement>())
+                    {
+                        var childId=OptionId(child);
+                        if(child is TextBox nestedField)result.Add(new{type="text",id=childId,label=rowLabel??childId,value=nestedField.Text});
+                        else if(child is Slider nestedSlider)result.Add(new{type="range",id=childId,label=nestedSlider.ToolTip?.ToString()??rowLabel??childId,value=nestedSlider.Value,minimum=nestedSlider.Minimum,maximum=nestedSlider.Maximum});
+                    }
+                    break;
+            }
+            label=null;
+        }
+        return result.ToArray();
+    }
+    private bool ShowPlaybackComparison => media is not null &&
+        ((media.Video is null && tool is ("normalizeAudio" or "audioChannels" or "redactAudio")) ||
+         tool is ("redactVideo" or "splitVideo" or "audioToVideo"));
+    private string PlaybackComparisonLabel => tool switch
+    {
+        "splitVideo" => "Play Result",
+        "audioToVideo" => "Preview Visualization",
+        _ => "Preview Processed"
+    };
+    private void PushOptionsState()=>optionsSurface.SetState(new
+    {
+        title=Title,
+        file=Path.GetFileName(input),
+        controls=OptionDescriptors(),
+        media=media is not null,
+        playing,
+        currentTime=player.Position.TotalSeconds,
+        duration,
+        canPlayRange=tool is "trimAudio" or "trimVideo" or "redactAudio",
+        showComparison=ShowPlaybackComparison,
+        comparisonLabel=PlaybackComparisonLabel,
+        processingPreview,
+        playbackStatus=time.Text
+    });
+    private void OnOptionsMessage(string command,JsonElement payload)
+    {
+        if(command is "tool-editor.save"){Save();return;}
+        if(command is "tool-editor.reset"){Reset();PushOptionsState();return;}
+        if(command is "tool-editor.cancel"){DialogResult=false;return;}
+        if(command is "tool-editor.playback")
+        {
+            var action=payload.TryGetProperty("action",out var actionValue)?actionValue.GetString():null;
+            switch(action)
+            {
+                case "toggle":TogglePlayback();break;
+                case "back":Seek(player.Position.TotalSeconds-1);break;
+                case "forward":Seek(player.Position.TotalSeconds+1);break;
+                case "seek" when payload.TryGetProperty("value",out var seekValue):Seek(seekValue.GetDouble());break;
+                case "range":PlayRange();break;
+                case "original":PlayOriginalPreview();break;
+                case "processed":_ = PreviewProcessed();break;
+            }
+            PushOptionsState();
+            return;
+        }
+        if(!payload.TryGetProperty("id",out var idValue)||idValue.GetString() is not{} id||!optionControls.TryGetValue(id,out var control))return;
+        if(command is "tool-editor.change"&&payload.TryGetProperty("value",out var value))
+        {
+            switch(control)
+            {
+                case TextBox field: field.Text=value.GetString()??"";break;
+                case PasswordBox password: password.Password=value.GetString()??"";break;
+                case ComboBox combo: combo.SelectedIndex=value.GetInt32();break;
+                case CheckBox check: check.IsChecked=value.GetBoolean();break;
+                case Slider slider: slider.Value=value.GetDouble();break;
+                case ListBox list: list.SelectedIndex=value.GetInt32();break;
+            }
+        }
+        else if(command is "tool-editor.activate"&&control is Button button)button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        else if(command is "tool-editor.move"&&control is ListBox list&&payload.TryGetProperty("delta",out var deltaValue))
+        {
+            var current=list.SelectedIndex;var target=current+deltaValue.GetInt32();
+            if(current>=0&&target>=0&&target<list.Items.Count)
+            {
+                var selected=list.Items[current];list.Items.RemoveAt(current);list.Items.Insert(target,selected);list.SelectedIndex=target;
+                if(ReferenceEquals(list,inputOrder))OrderedInputs=list.Items.Cast<ListBoxItem>().Select(row=>(string)row.Tag).ToArray();
+                if(ReferenceEquals(list,imageOrder))QueuePhotoPreview();
+            }
+        }
+        PushOptionsState();
+    }
     // Fields show milliseconds, so the default End can round up to half a millisecond
     // past ffprobe's duration. MediaEngine allows the same slack; it gets the clamped End.
     private const double RangeSlack=.001;
@@ -116,7 +234,7 @@ public sealed partial class ToolEditor:Window
     private void UsePlayerDuration()
     {
         if(media is not {Duration:<=0}||!player.NaturalDuration.HasTimeSpan)return;
-        duration=player.NaturalDuration.TimeSpan.TotalSeconds;scrubber.Maximum=duration;
+        duration=player.NaturalDuration.TimeSpan.TotalSeconds;
         if(fields.TryGetValue("End",out var end)&&end.Text==defaults["End"])end.Text=defaults["End"]=Number(duration);
         try{SyncTimeline();}catch(ArgumentException){}
     }
@@ -148,7 +266,7 @@ public sealed partial class ToolEditor:Window
         if(tool is not ("crop" or "cropVideo" or "redactVideo" or "redactImage" or "annotate"))return;
         drawing.Focus();origin=e.GetPosition(drawing);dragging=drawing.CaptureMouse();
         if(BeginCropGesture(origin)){e.Handled=true;return;}
-        if(tool=="annotate"){try{AnnotationStart();}catch(ArgumentException error){dragging=false;drawing.ReleaseMouseCapture();MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Check drawing settings"));}e.Handled=true;return;}
+        if(tool=="annotate"){try{AnnotationStart();}catch(ArgumentException error){dragging=false;drawing.ReleaseMouseCapture();SetEditorStatus(error.Message);}e.Handled=true;return;}
         if(tool=="annotate"&&drawingTool.SelectedIndex==0){activeStroke=new Polyline{Stroke=new SolidColorBrush(Color.FromArgb(160,234,181,40)),StrokeThickness=Math.Max(3,drawing.Width/100),StrokeLineJoin=PenLineJoin.Round};activeStroke.Points.Add(origin);drawing.Children.Add(activeStroke);}
         else
         {
@@ -186,7 +304,7 @@ public sealed partial class ToolEditor:Window
             // A click or a too-small drag must not leave a cover that is never exported;
             // Undo and Remove also pair canvas boxes with regions by position.
             if(!committed&&tool is "redactImage" or "redactVideo"&&activeRectangle is not null)drawing.Children.Remove(activeRectangle);
-            dragging=false;cropGesture=null;activeStroke=null;activeRectangle=null;annotationShape=null;drawing.ReleaseMouseCapture();e.Handled=true;
+            dragging=false;cropGesture=null;activeStroke=null;activeRectangle=null;annotationShape=null;drawing.ReleaseMouseCapture();e.Handled=true;PushOptionsState();
         }
     }
     private void Seek(double seconds){playingRange=false;player.Position=TimeSpan.FromSeconds(Math.Clamp(seconds,0,duration));time.Text=$"{player.Position:mm\\:ss\\.fff} / {TimeSpan.FromSeconds(duration):mm\\:ss\\.fff}";}
@@ -208,11 +326,16 @@ public sealed partial class ToolEditor:Window
             switch(e.Key){case Key.Space:if(modifiers.HasFlag(ModifierKeys.Shift)){PlayRange();break;}TogglePlayback();break;case Key.Left:Seek(player.Position.TotalSeconds-(modifiers.HasFlag(ModifierKeys.Shift)?FineSeekStep:1));break;case Key.Right:Seek(player.Position.TotalSeconds+(modifiers.HasFlag(ModifierKeys.Shift)?FineSeekStep:1));break;case Key.I:if(fields.TryGetValue("Start",out var start)&&player.Position.TotalSeconds<Value("End",duration))start.Text=Number(player.Position.TotalSeconds);SyncTimeline();break;case Key.O:if(fields.TryGetValue("End",out var end)&&player.Position.TotalSeconds>Value("Start"))end.Text=Number(player.Position.TotalSeconds);SyncTimeline();break;default:return;}
         }
         catch(ArgumentException error){time.Text=error.Message;}
-        e.Handled=true;
+        e.Handled=true;PushOptionsState();
     }
     private void SyncTimeline(){if(fields.ContainsKey("Start")&&fields.ContainsKey("End"))timeline.Set(duration,Value("Start"),Value("End",duration));}
     private double FineSeekStep=>media?.Video is {} video?1/Math.Max(1,video.FrameRate):.1;
     private void Save()=>ReadSettings(true);
+    private void SetEditorStatus(string message)
+    {
+        time.Text=L10n.Text(message);
+        PushOptionsState();
+    }
     private bool ReadSettings(bool accept)
     {
         try
@@ -235,6 +358,6 @@ public sealed partial class ToolEditor:Window
             if(tool=="organizePDF")Pages=fields["Page numbers"].Text.Split(',',StringSplitOptions.RemoveEmptyEntries).Select(s=>int.Parse(s.Trim(),CultureInfo.InvariantCulture)).ToArray();
             DocumentOptions=new((int)Value("DPI",144),documentLayout.SelectedItem as string??"editable",epubLayout.SelectedItem as string??"reflowable",archivePassword.Password);if(accept)DialogResult=true;return true;
         }
-        catch(Exception error)when(error is ArgumentException or FormatException or OverflowException){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Check your settings"),MessageBoxButton.OK,MessageBoxImage.Information);return false;}
+        catch(Exception error)when(error is ArgumentException or FormatException or OverflowException){SetEditorStatus(error.Message);return false;}
     }
 }

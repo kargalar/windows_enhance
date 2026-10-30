@@ -44,11 +44,11 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) =>
         {
             Logger?.Error("Beklenmeyen hata.", args.Exception);
-            MessageBox.Show(
-                "Beklenmeyen bir hata oluştu. Ayrıntılar log dosyasında.\n\n" + args.Exception.Message,
-                "WinForge",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            var message = "Beklenmeyen bir hata oluştu. Ayrıntılar log dosyasında.\n\n" + args.Exception.Message;
+            if (FeatureUi is { } featureUi)
+                _ = featureUi.ShowMessageAsync("WinForge", message, "Kapat");
+            else
+                MessageBox.Show(message, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
 
@@ -71,7 +71,6 @@ public partial class App : Application
         Host = new ModuleHost(Store, Logger, Hotkeys, modulesDirectory, OsdWindow.Toast, OsdWindow.ShowBrightness,
             OsdWindow.ShowVolume, FeatureUi);
         Host.Load();
-        Host.StartEnabled();
 
         var initialCommand = IsModuleCommand(e.Args);
         MainView = new MainWindow();
@@ -83,8 +82,16 @@ public partial class App : Application
 
         _commandServerCancellation = new CancellationTokenSource();
         _ = Task.Run(() => RunCommandServerAsync(_commandServerCancellation.Token));
-        if (initialCommand)
-            Dispatcher.BeginInvoke(new Action(() => DispatchCommand(e.Args)));
+        _ = StartModulesAsync(initialCommand ? e.Args : null);
+    }
+
+    private async Task StartModulesAsync(string[]? initialCommand)
+    {
+        await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        await Host.StartEnabledAsync();
+        if (IsExiting) return;
+        MainView?.RefreshState();
+        if (initialCommand is not null) DispatchCommand(initialCommand);
     }
 
     public void ShowMain()
@@ -182,15 +189,17 @@ public partial class App : Application
             catch (Exception exception)
             {
                 Logger.Error($"Gezgin komutu işlenemedi: {command}", exception);
-                MessageBox.Show(exception.Message, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
+                _ = FeatureUi.ShowMessageAsync("WinForge", exception.Message, "Kapat");
                 return;
             }
         }
     }
 
-    public void ExitApp()
+    public async void ExitApp()
     {
+        if (IsExiting) return;
         IsExiting = true;
+        if (Host is not null) await Host.StopAllAsync();
         Shutdown();
     }
 

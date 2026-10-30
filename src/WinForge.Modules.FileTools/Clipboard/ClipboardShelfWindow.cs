@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -22,6 +23,8 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
     private readonly ClipboardLibrary _library;
     private readonly ClipboardCapture _capture;
     private readonly IModuleContext _context;
+    private readonly IFeatureUiAssetSurface _uiSurface;
+    private readonly Dictionary<string,string> _assetUris = new(StringComparer.OrdinalIgnoreCase);
     private readonly TextBox _search = new() { MinWidth = 220, ToolTip = "Metin, OCR, başlık, not ve etiket ara" };
     private readonly TextBlock _status = new() { Margin = new Thickness(8), TextWrapping = TextWrapping.Wrap };
     private readonly CheckBox _pinned = new() { Content = "Sabitlenenler", Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Center };
@@ -54,11 +57,15 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
     private bool _draftDirty;
     private bool _settingDraft;
     private Guid? _editingId;
-    private Guid[]? _commandSelection;
     private Guid[]? _batchSelection;
     private Guid? _folder;
     private string? _tag;
     private int _libraryPage;
+    private int _searchFocusGeneration;
+    private int _actionsOpenGeneration;
+    private int _folderPickerGeneration;
+    private bool _folderPickerPin;
+    private int _deleteConfirmGeneration;
     private ListBox? _activeRow;
     private IntPtr _previousWindow;
     private PasteTarget? _pasteTarget;
@@ -137,7 +144,7 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
         _type.SelectionChanged += (_, _) => ResetAndRender(); _date.SelectionChanged += (_, _) => ResetAndRender();
         _pinned.Click += (_, _) => ResetAndRender(); _trash.Click += (_, _) => { SetMode(true); ResetAndRender(); };
         _library.Changed += LibraryChanged;
-        _saveTimer.Tick += (_, _) => SaveDraft();
+        _saveTimer.Tick += (_, _) => { SaveDraft(); PushReactState(); };
         PreviewKeyDown += OnKey;
         AllowDrop = true; Drop += (_, args) => { if (args.Data.GetData(DataFormats.FileDrop) is string[] files) foreach (var file in files.Take(100)) _capture.ImportFile(file); args.Handled = true; };
         SourceInitialized += (_, _) =>
@@ -149,6 +156,14 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
         Closed += (_, _) => { _activationSource?.RemoveHook(TrackActivation); _thumbnailLifetime.Cancel(); _saveTimer.Stop(); _library.Changed -= LibraryChanged; };
         SetMode(false);
         _status.Text = library.RecoveryNotice ?? "Metin ve görsel yakalamayı Ayarlar’dan açabilirsiniz. Space: önizle · Enter: kopyala · P: sabitle · S: raftan kaldır.";
+        var featureUi = (context as IFeatureUiContext)?.FeatureUi
+            ?? throw new InvalidOperationException("Pano rafı için React arayüzü gerekli.");
+        _uiSurface = featureUi.CreateSurface("clipboard-shelf") as IFeatureUiAssetSurface
+            ?? throw new InvalidOperationException("Pano rafı için React varlık yüzeyi gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
+        Content = _uiSurface.Element;
+        Closed += (_, _) => _uiSurface.Dispose();
+        PushReactState();
     }
 
     private GridSplitter WorkspaceSplitter()
@@ -256,13 +271,14 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
         yield return ("Raftan kaldır", () => _library.TakeDown(SelectedIds()));
         yield return ("Çöpe taşı", () => _library.Trash(SelectedIds())); yield return ("Geri yükle", () => _library.Restore(SelectedIds()));
         yield return ("Geri al", _library.Undo); yield return ("Yinele", _library.Redo);
-        yield return ("Eylemler", ShowActions); yield return ("Ayarlar", Settings);
+        yield return ("Ayarlar", Settings);
     }
 
     private void Execute(Action action)
     {
         try { if (SaveDraft()) action(); }
         catch (Exception error) { _context.Log.Error("Pano eylemi tamamlanamadı.", error); _status.Text = error.Message; }
+        PushReactState();
     }
 
     private void SetMode(bool library)
@@ -371,11 +387,276 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
                 }
             }
             _activeRow ??= _libraryMode ? _libraryList : _rows.FirstOrDefault(row => row.Items.Count > 0);
-            if (_activeRow is not null && _activeRow.SelectedItems.Count == 0 && _activeRow.Items.Count > 0) _activeRow.SelectedIndex = Math.Min(previousIndex, _activeRow.Items.Count - 1);
+            if (_batchSelection?.Length != 0 && _activeRow is not null && _activeRow.SelectedItems.Count == 0 && _activeRow.Items.Count > 0) _activeRow.SelectedIndex = Math.Min(previousIndex, _activeRow.Items.Count - 1);
         }
         finally { _refreshing = false; }
         FillInspector();
+        PushReactState();
     }
+
+    private void PushReactState()
+    {
+        var result = Results();
+        var selected = SelectedIds().Select(id => id.ToString("D")).ToArray();
+        object Card(ClipItem item) => new
+        {
+            id = item.Id.ToString("D"), kind = item.Kind.ToString().ToLowerInvariant(), title = item.DisplayTitle,
+            description = item.Kind == ClipKind.Text ? item.Content : item.Kind == ClipKind.Link ? item.Content : "",
+            created = item.CreatedAt.ToLocalTime().ToString("g"), tags = item.Tags, pinned = item.Pinned,
+            saved = item.Saved, preview = AssetUri(item)
+        };
+        var rows = Enumerable.Range(0, 3).Select(index =>
+        {
+            var values = result.Where(item => RowFor(item.Kind) == index).ToArray();
+            var size = Math.Max(1, _pageSizes[index]);
+            return new
+            {
+                index, title = new[] { "Görseller ve kayıtlar", "Metinler", "Bağlantılar" }[index],
+                visible = _library.Visible(index == 0 ? ClipKind.Image : index == 1 ? ClipKind.Text : ClipKind.Link),
+                count = values.Length, page = _pages[index], pageCount = Math.Max(1, (values.Length + size - 1) / size),
+                items = values.Skip(_pages[index] * size).Take(size).Select(Card).ToArray()
+            };
+        }).ToArray();
+        var libraryItems = result.Skip(_libraryPage * LibraryPageSize).Take(LibraryPageSize).Select(Card).ToArray();
+        var selectedItem = Selection().FirstOrDefault();
+        _uiSurface.SetState(new
+        {
+            libraryMode = _libraryMode, status = _status.Text, query = _search.Text, searchMode = _searchMode.SelectedIndex,
+            pinnedOnly = _pinned.IsChecked == true, trash = _trash.IsChecked == true, selectMode = _selectMode.IsChecked == true,
+            type = _type.SelectedIndex, date = _date.SelectedIndex, domain = _domain.Text, tagsFilter = _filterTags.Text,
+            sort = _sort.SelectedIndex, scope = _libraryScope.ToString().ToLowerInvariant(), selected,
+            title = _title.Text, content = _content.Text, notes = _notes.Text, itemTags = _tags.Text,
+            inspectorEnabled = selectedItem is not null, inspectorContentReadOnly = selectedItem is null || selectedItem.Kind is ClipKind.Image or ClipKind.Recording,
+            folders = OrderedFolders(_library.Folders).Select(entry => new { id = entry.Folder.Id.ToString("D"), name = entry.Folder.Name, depth = entry.Depth, selected = _folder == entry.Folder.Id }).ToArray(),
+            tagList = _library.Items.SelectMany(item => item.Tags).Distinct(StringComparer.OrdinalIgnoreCase).Order().Select(tag => new { name = tag, selected = string.Equals(_tag, tag, StringComparison.OrdinalIgnoreCase) }).ToArray(),
+            actions = Actions().Select((entry, index) => new { id = index, name = entry.Name }).ToArray(),
+            rows, items = libraryItems, page = _libraryPage, pageCount = Math.Max(1, (result.Count + LibraryPageSize - 1) / LibraryPageSize),
+            listView = _library.Preferences.ListView, cardSize = _library.Preferences.CardSize,
+            showImages = _library.Preferences.ShowImages, showTexts = _library.Preferences.ShowTexts, showLinks = _library.Preferences.ShowLinks,
+            count = result.Count, selectionCount = selected.Length, searchFocusGeneration = _searchFocusGeneration,
+            actionsOpenGeneration = _actionsOpenGeneration, folderPickerGeneration = _folderPickerGeneration,
+            folderPickerPin = _folderPickerPin, deleteConfirmGeneration = _deleteConfirmGeneration,
+            permanentDeleteCount = SelectedIds().Count(id => _library.Items.Any(item => item.Id == id && item.TrashedAt is not null))
+        });
+    }
+
+    private string AssetUri(ClipItem item)
+    {
+        if (item.Kind is not (ClipKind.Image or ClipKind.Link)) return "";
+        try
+        {
+            var path = item.Kind == ClipKind.Image ? _library.MediaPath(item) : item.LinkThumbnail.Length > 0 ? _library.ThumbnailPath(item) : "";
+            if (path.Length == 0 || !File.Exists(path)) return "";
+            if (!_assetUris.TryGetValue(path, out var uri)) _assetUris[path] = uri = _uiSurface.MapLocalAsset(path).AbsoluteUri;
+            return uri;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException) { return ""; }
+    }
+
+    private void OnUiMessage(string command, JsonElement payload)
+    {
+        try
+        {
+            switch (command)
+            {
+                case "clipboard.mode": SetMode(payload.GetProperty("library").GetBoolean()); break;
+                case "clipboard.search": _search.Text = payload.GetProperty("value").GetString() ?? ""; break;
+                case "clipboard.filter": ApplyUiFilter(payload); break;
+                case "clipboard.scope": SetLibraryScope(Enum.Parse<ClipboardLibraryScope>(payload.GetProperty("value").GetString()!, true)); break;
+                case "clipboard.page": ChangeUiPage(payload); break;
+                case "clipboard.select": ApplyUiSelection(payload); break;
+                case "clipboard.quick-copy": ApplyUiSelection(payload); Execute(() => Copy(false)); break;
+                case "clipboard.preview": ApplyUiSelection(payload); Execute(Preview); break;
+                case "clipboard.action": RunUiAction(payload.GetProperty("id").GetInt32()); break;
+                case "clipboard.detail": UpdateUiDetail(payload); break;
+                case "clipboard.preference": UpdateUiPreference(payload); break;
+                case "clipboard.folder": _folder = Guid.Parse(payload.GetProperty("id").GetString()!); _tag = null; ResetAndRender(); break;
+                case "clipboard.tag": _tag = payload.GetProperty("value").GetString(); _folder = null; ResetAndRender(); break;
+                case "clipboard.folder.rename": RenameFolderFromReact(payload); break;
+                case "clipboard.folder.remove": RemoveFolderFromReact(payload); break;
+                case "clipboard.tag.rename": RenameTagFromReact(payload); break;
+                case "clipboard.tag.remove": RemoveTagFromReact(payload); break;
+                case "clipboard.assign-folder": AssignFolderFromReact(payload); break;
+                case "clipboard.folder.create": CreateFolderFromReact(payload); break;
+                case "clipboard.delete-confirm": ConfirmPermanentDelete(payload.GetProperty("confirm").GetBoolean()); break;
+                case "clipboard.key": RunUiKey(payload); break;
+            }
+        }
+        catch (Exception error) { _context.Log.Error("React pano arayüzü komutu tamamlanamadı.", error); _status.Text = error.Message; PushReactState(); }
+    }
+
+    private void RenameFolderFromReact(JsonElement payload)
+    {
+        if (!Guid.TryParse(payload.GetProperty("id").GetString(), out var id) ||
+            _library.Folders.FirstOrDefault(folder => folder.Id == id) is not { } folder) return;
+        var name = Prompt("Klasör adı", folder.Name);
+        if (name is not null) _library.RenameFolder(id, name);
+        ResetAndRender();
+    }
+
+    private void RemoveFolderFromReact(JsonElement payload)
+    {
+        if (!Guid.TryParse(payload.GetProperty("id").GetString(), out var id)) return;
+        _library.RemoveFolder(id);
+        if (_folder == id) _folder = null;
+        ResetAndRender();
+    }
+
+    private void RenameTagFromReact(JsonElement payload)
+    {
+        var oldName = payload.GetProperty("name").GetString();
+        if (string.IsNullOrWhiteSpace(oldName)) return;
+        var newName = Prompt("Etiket adı", oldName);
+        if (newName is not null) _library.RenameTag(oldName, newName);
+        ResetAndRender();
+    }
+
+    private void RemoveTagFromReact(JsonElement payload)
+    {
+        var name = payload.GetProperty("name").GetString();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        _library.RenameTag(name, null);
+        if (string.Equals(_tag, name, StringComparison.OrdinalIgnoreCase)) _tag = null;
+        ResetAndRender();
+    }
+
+    private void AssignFolderFromReact(JsonElement payload)
+    {
+        if (!Guid.TryParse(payload.GetProperty("id").GetString(), out var folderId) ||
+            !_library.Folders.Any(folder => folder.Id == folderId)) return;
+        var selected = ReadSelection(payload);
+        if (selected.Length == 0) return;
+        _library.AssignFolder(selected, folderId, _folderPickerPin);
+        ResetAndRender();
+    }
+
+    private void CreateFolderFromReact(JsonElement payload)
+    {
+        var selected = ReadSelection(payload);
+        if (selected.Length == 0) return;
+        var name = Prompt("Klasör adı");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var folder = _library.CreateFolder(name, _folder);
+        _library.AssignFolder(selected, folder.Id, _folderPickerPin);
+        ResetAndRender();
+    }
+
+    private static Guid[] ReadSelection(JsonElement payload) =>
+        payload.TryGetProperty("ids", out var ids)
+            ? ids.EnumerateArray().Select(value => Guid.TryParse(value.GetString(), out var id) ? id : Guid.Empty)
+                .Where(id => id != Guid.Empty).Distinct().ToArray()
+            : [];
+
+    private void ApplyUiFilter(JsonElement payload)
+    {
+        var key = payload.GetProperty("key").GetString(); var value = payload.GetProperty("value");
+        switch (key)
+        {
+            case "searchMode": _searchMode.SelectedIndex = value.GetInt32(); break;
+            case "pinned": _pinned.IsChecked = value.GetBoolean(); break;
+            case "trash": _trash.IsChecked = value.GetBoolean(); if (_trash.IsChecked == true) SetMode(true); break;
+            case "selectMode": _selectMode.IsChecked = value.GetBoolean(); break;
+            case "type": _type.SelectedIndex = value.GetInt32(); break;
+            case "date": _date.SelectedIndex = value.GetInt32(); break;
+            case "domain": _domain.Text = value.GetString() ?? ""; break;
+            case "tags": _filterTags.Text = value.GetString() ?? ""; break;
+            case "sort": _sort.SelectedIndex = value.GetInt32(); break;
+        }
+        ResetAndRender();
+    }
+
+    private void ChangeUiPage(JsonElement payload)
+    {
+        var delta = payload.GetProperty("delta").GetInt32();
+        if (_libraryMode) _libraryPage = Math.Clamp(_libraryPage + delta, 0, Math.Max(0, (Results().Count - 1) / LibraryPageSize));
+        else
+        {
+            var row = payload.GetProperty("row").GetInt32();
+            if (row is < 0 or >= 3) return;
+            _pages[row] = Math.Max(0, _pages[row] + delta); _activeRow = _rows[row];
+        }
+        Render();
+    }
+
+    private void ApplyUiSelection(JsonElement payload)
+    {
+        var ids = payload.GetProperty("ids").EnumerateArray().Select(value => Guid.Parse(value.GetString()!)).ToArray();
+        _batchSelection = ids;
+        if (ids.Length > 0)
+        {
+            var item = _library.Items.FirstOrDefault(value => value.Id == ids[0]);
+            _activeRow = _libraryMode ? _libraryList : item is null ? _activeRow : _rows[RowFor(item.Kind)];
+        }
+        Render();
+    }
+
+    private void RunUiAction(int index)
+    {
+        var actions = Actions().ToArray();
+        if (index < 0 || index >= actions.Length) return;
+        Execute(actions[index].Action); PushReactState();
+    }
+
+    private void UpdateUiDetail(JsonElement payload)
+    {
+        var key = payload.GetProperty("key").GetString(); var value = payload.GetProperty("value").GetString() ?? "";
+        _settingDraft = true;
+        try
+        {
+            switch (key) { case "title": _title.Text = value; break; case "content": _content.Text = value; break; case "notes": _notes.Text = value; break; case "tags": _tags.Text = value; break; }
+        }
+        finally { _settingDraft = false; }
+        if (_editingId is not null) { _draftDirty = true; _saveTimer.Stop(); _saveTimer.Start(); }
+        PushReactState();
+    }
+
+    private void UpdateUiPreference(JsonElement payload)
+    {
+        var key = payload.GetProperty("key").GetString(); var value = payload.GetProperty("value"); var preferences = _library.Preferences;
+        preferences = key switch
+        {
+            "showImages" => preferences with { ShowImages = value.GetBoolean() },
+            "showTexts" => preferences with { ShowTexts = value.GetBoolean() },
+            "showLinks" => preferences with { ShowLinks = value.GetBoolean() },
+            "listView" => preferences with { ListView = value.GetBoolean() },
+            "cardSize" => preferences with { CardSize = value.GetString() ?? "medium" },
+            _ => preferences
+        };
+        _library.SetPreferences(preferences); ResetAndRender();
+    }
+
+    private void RunUiKey(JsonElement payload)
+    {
+        var keyName=payload.GetProperty("key").GetString()??"";
+        var key=ClipboardKeymap.ParseWebKey(keyName);
+        if(key==Key.None)return;
+        var modifiers=ModifierKeys.None;
+        if(payload.TryGetProperty("ctrl",out var ctrl)&&ctrl.GetBoolean())modifiers|=ModifierKeys.Control;
+        if(payload.TryGetProperty("shift",out var shift)&&shift.GetBoolean())modifiers|=ModifierKeys.Shift;
+        if(payload.TryGetProperty("alt",out var alt)&&alt.GetBoolean())modifiers|=ModifierKeys.Alt;
+        var command=ClipboardKeymap.Match(key,modifiers,_library.Preferences.LocalShortcuts);
+        Action? action=command switch
+        {
+            "onizle"=>Preview,
+            "tur-tumu" when _libraryMode=>()=>ApplyReactType(0),"tur-gorsel" when _libraryMode=>()=>ApplyReactType(1),"tur-metin" when _libraryMode=>()=>ApplyReactType(2),"tur-baglanti" when _libraryMode=>()=>ApplyReactType(3),
+            "raf-gorsel" when !_libraryMode=>()=>ToggleShelfVisibility(ClipKind.Image),"raf-metin" when !_libraryMode=>()=>ToggleShelfVisibility(ClipKind.Text),"raf-baglanti" when !_libraryMode=>()=>ToggleShelfVisibility(ClipKind.Link),
+            "yapistir"=>()=>Copy(true),"disa-aktar"=>Export,"etiket-ekle"=>AddTags,"baglanti-ac"=>OpenLink,"ocr-kopyala"=>CopyRecognizedText,
+            "kopyala"=>()=>{Copy(false);if(!_libraryMode)ReturnFocus();},"sabitle"=>()=>_library.TogglePin(SelectedIds()),"klasore-sabitle"=>()=>AssignFolder(pin:true),"adlandir-sabitle"=>NameAndPin,
+            "kaydi-kirp"=>()=>{if(Selection().FirstOrDefault() is{Kind:ClipKind.Recording} item)EditRecording(item);},"raftan-kaldir"=>()=>_library.TakeDown(SelectedIds()),
+            "geri-al" or "duzenlemeyi-geri-al"=>_library.Undo,"kutuphane"=>()=>SetMode(true),"cope-tasi"=>()=>_library.Trash(SelectedIds()),"arama" or "ara"=>()=>_searchFocusGeneration++,"yinele"=>_library.Redo,
+            "tumunu-sec"=>SelectAllResults,"kopyala-acik"=>()=>Copy(false),"eylemler"=>()=>_actionsOpenGeneration++,"sonraki-raf" or "asagi-raf" when !_libraryMode=>()=>SwitchRow(1),"onceki-raf" or "yukari-raf" when !_libraryMode=>()=>SwitchRow(-1),
+            "onceki-sayfa"=>()=>ChangePage(-1),"sonraki-sayfa"=>()=>ChangePage(1),"ilk-oge"=>()=>SelectBoundary(false),"son-oge"=>()=>SelectBoundary(true),"sabit-filtre"=>()=>{_pinned.IsChecked=_pinned.IsChecked!=true;ResetAndRender();},_=>null
+        };
+        if(key==Key.Escape&&command is null){ReturnFocus();return;}
+        if(action is not null){Execute(action);return;}
+        if(command is null&&modifiers==ModifierKeys.None&&key is >= Key.D1 and <= Key.D9&&_activeRow is not null)
+        {
+            var index=key-Key.D1;if(index<_activeRow.Items.Count){_activeRow.SelectedIndex=index;_batchSelection=[(Guid)((ListBoxItem)_activeRow.Items[index]).Tag];Render();}
+            return;
+        }
+    }
+
+    private void ApplyReactType(int index){_type.SelectedIndex=index;ResetAndRender();}
 
     private static int CardWidth(string size) => size switch { "small" => 135, "large" => 240, _ => 180 };
     internal static int ShelfPageCapacity(double width, string cardSize)
@@ -538,10 +819,9 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
             if (ItemsControl.ContainerFromElement(list, source) is ListBoxItem { Tag: Guid id } && _library.Items.FirstOrDefault(item => item.Id == id && item.TrashedAt is null) is { } item)
                 Execute(() => CopyItems([item], false));
         };
-        list.ContextMenu = CreateActionsMenu();
     }
 
-    private Guid[] SelectedIds() => _commandSelection ?? _batchSelection ?? (_activeRow?.SelectedItems.Cast<ListBoxItem>().Select(item => (Guid)item.Tag) ?? []).ToArray();
+    private Guid[] SelectedIds() => _batchSelection ?? (_activeRow?.SelectedItems.Cast<ListBoxItem>().Select(item => (Guid)item.Tag) ?? []).ToArray();
     private ClipItem[] Selection() { var selected = SelectedIds().ToHashSet(); return _library.Items.Where(item => selected.Contains(item.Id)).OrderBy(item => Array.IndexOf(SelectedIds(), item.Id)).ToArray(); }
     private void ChangeShelfPage(int index, int delta) { _pages[index] = Math.Max(0, _pages[index] + delta); _activeRow = _rows[index]; Render(); }
 
@@ -577,13 +857,13 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
                 var ids = InternalDragIds(args.Data); args.Handled = true;
                 if (ids.Count > 0 && _library.Folders.Any(candidate => candidate.Id == folder.Id)) Execute(() => _library.AssignFolder(ids, folder.Id));
             };
-            var menu = new ContextMenu(); menu.Items.Add(MenuAction("Yeniden adlandır", () => { var name = Prompt("Klasör adı", folder.Name); if (name is not null) _library.RenameFolder(folder.Id, name); })); menu.Items.Add(MenuAction("Klasörü kaldır", () => { _library.RemoveFolder(folder.Id); if (_folder is { } current && !_library.Folders.Any(value => value.Id == current)) { _folder = null; ResetAndRender(); } })); button.ContextMenu = menu; _sidebar.Children.Add(button);
+            _sidebar.Children.Add(button);
         }
         _sidebar.Children.Add(new TextBlock { Text = "Etiketler", Margin = new Thickness(5, 16, 5, 5) });
         foreach (var tag in _library.Items.SelectMany(item => item.Tags).Distinct(StringComparer.OrdinalIgnoreCase).Order())
         {
             var button = ActionButton("# " + tag, () => { _tag = tag; _folder = null; ResetAndRender(); });
-            var menu = new ContextMenu(); menu.Items.Add(MenuAction("Etiketi yeniden adlandır", () => { var name = Prompt("Etiket adı", tag); if (name is not null) _library.RenameTag(tag, name); })); menu.Items.Add(MenuAction("Etiketi kaldır", () => _library.RenameTag(tag, null))); button.ContextMenu = menu; _sidebar.Children.Add(button);
+            _sidebar.Children.Add(button);
         }
         _sidebar.Children.Add(ActionButton("‹ Önceki", () => { _libraryPage = Math.Max(0, _libraryPage - 1); Render(); }));
         _sidebar.Children.Add(ActionButton("Sonraki ›", () => { _libraryPage++; Render(); }));
@@ -655,7 +935,7 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
             "yinele" => _library.Redo,
             "tumunu-sec" => SelectAllResults,
             "kopyala-acik" => () => Copy(false),
-            "eylemler" => ShowActions,
+            "eylemler" => () => _actionsOpenGeneration++,
             "sonraki-raf" or "asagi-raf" when !_libraryMode => () => SwitchRow(1),
             "onceki-raf" or "yukari-raf" when !_libraryMode => () => SwitchRow(-1),
             "onceki-sayfa" => () => ChangePage(-1),

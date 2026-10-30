@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinForge.Core;
 using WinForge.FileTools.Engine;
 
 namespace WinForge.FileTools.UI;
@@ -24,14 +25,15 @@ internal sealed class WindowManagement:IDisposable
     internal bool WheelReady=>wheelReady;
     private readonly Action<string> notice;
     private readonly Func<bool> enabled;
+    private readonly IFeatureUiService? featureUi;
     internal Action<string>? Trace { get; set; }
     private static readonly WindowPlacement[] placements=Enum.GetValues<WindowPlacement>();
     internal WheelWindow? ActiveWheel=>wheel;
     internal bool PlacementPending { get; private set; }
 
-    internal WindowManagement(Action<string>? notice=null,Func<bool>? isEnabled=null)
+    internal WindowManagement(Action<string>? notice=null,Func<bool>? isEnabled=null,IFeatureUiService? featureUi=null)
     {
-        this.notice=notice??(_=>{});enabled=isEnabled??(()=>true);
+        this.notice=notice??(_=>{});enabled=isEnabled??(()=>true);this.featureUi=featureUi;
         var dispatcher=Dispatcher.CurrentDispatcher;
         callback=(handle,type,window,objectId,childId,thread,time)=>
         {
@@ -119,7 +121,7 @@ internal sealed class WindowManagement:IDisposable
     }
     private void ShowWheel(Native.Point point)
     {
-        wheel=new WheelWindow(null,placements.Select(p=>new ToolChoice(p.ToString(),p.Title(),"",p)).ToArray(),_=>{},externalDrag:true);
+        wheel=new WheelWindow(null,placements.Select(p=>new ToolChoice(p.ToString(),p.Title(),"",p)).ToArray(),_=>{},externalDrag:true,featureUi:featureUi);
         PassThrough(wheel);wheel.Show();
         var dpi=Native.GetDpiForWindow(target);var size=(int)Math.Round(WheelPresentation.Diameter*(dpi>0?dpi:96)/96d);
         var work=WorkArea(point);

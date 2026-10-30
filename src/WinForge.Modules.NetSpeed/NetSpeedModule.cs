@@ -10,7 +10,7 @@ public sealed class NetSpeedModule : ITweakModule
     public string Id => "net-speed";
     public string Name => "İnternet Hızı";
     public string Category => "Taskbar";
-    public string Description => "İndirme ve yükleme hızını görev çubuğunun üstünde, bildirim alanına hizalı gösterir.";
+    public string Description => "İndirme ve yükleme hızını görev çubuğunda, bildirim alanına hizalı gösterir.";
     public string? Warning => null;
     public bool IsActive { get; private set; }
 
@@ -45,7 +45,7 @@ public sealed class NetSpeedModule : ITweakModule
             Label = "Gösterim konumu",
             Kind = SettingKind.Choice,
             Options = new[] { NetSpeedWindow.AboveTaskbar, NetSpeedWindow.InsideTaskbar },
-            Default = NetSpeedWindow.AboveTaskbar,
+            Default = NetSpeedWindow.InsideTaskbar,
             Description = "Gösterge görev çubuğunun üstünde veya içinde, bildirim alanının solunda durur."
         },
         new SettingDescriptor
@@ -109,6 +109,6 @@ public sealed class NetSpeedModule : ITweakModule
             settings.GetInt("right-offset", 10),
             settings.GetString("unit", "Otomatik"),
             settings.GetInt("interval", 1000),
-            settings.GetString("position", NetSpeedWindow.AboveTaskbar));
+            settings.GetString("position", NetSpeedWindow.InsideTaskbar));
     }
 }

@@ -3,7 +3,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -16,9 +15,7 @@ namespace WinForge.Modules.Extras;
 internal sealed class TaskbarMediaWidgetWindow : Window
 {
     private readonly Action _openFlyout;
-    private readonly IFeatureUiSurface? _uiSurface;
-    private readonly TextBlock _trackInfo;
-    private readonly Button _playPauseButton;
+    private readonly IFeatureUiSurface _uiSurface;
     private readonly DispatcherTimer _refreshTimer;
     private GlobalSystemMediaTransportControlsSessionManager? _sessionManager;
     private GlobalSystemMediaTransportControlsSession? _session;
@@ -28,7 +25,8 @@ internal sealed class TaskbarMediaWidgetWindow : Window
     private Action<string?>? _savePinnedSession;
     private bool _refreshing;
     private readonly MediaSessionTracker _tracker = new();
-    private readonly Button _switchButton;
+    private string _trackInfoText = "Medya oturumu aranıyor";
+    private string _trackTooltip = "";
     private GlobalSystemMediaTransportControlsSession[] _availableSessions = [];
     private string _manualSessionId = "";
     private string _scrollMode = "master-volume";
@@ -44,8 +42,9 @@ internal sealed class TaskbarMediaWidgetWindow : Window
     public TaskbarMediaWidgetWindow(Action openFlyout, IFeatureUiService? featureUi = null)
     {
         _openFlyout = openFlyout;
-        _uiSurface = featureUi?.CreateSurface("taskbar-media-widget");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("taskbar-media-widget")
+            ?? throw new InvalidOperationException("Görev çubuğu medya bileşeni için React arayüzü gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Width = 340;
         Height = 54;
         WindowStyle = WindowStyle.None;
@@ -57,42 +56,7 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         Background = Brushes.Transparent;
         WindowStartupLocation = WindowStartupLocation.Manual;
 
-        _trackInfo = new TextBlock
-        {
-            Text = "Medya oturumu aranıyor",
-            Foreground = Brushes.White,
-            FontSize = 12,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
-            Cursor = System.Windows.Input.Cursors.Hand,
-            Margin = new Thickness(12, 0, 8, 0)
-        };
-        _trackInfo.MouseLeftButtonUp += (_, _) => _openFlyout();
-
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        _switchButton = CreateButton("⇄", "Başka medya oturumuna geç", SwitchSession);
-        _switchButton.Visibility = Visibility.Collapsed;
-        controls.Children.Add(_switchButton);
-        controls.Children.Add(CreateButton("⏮", "Önceki parça", SkipPrevious));
-        _playPauseButton = CreateButton("▶", "Oynat veya duraklat", TogglePlayback);
-        controls.Children.Add(_playPauseButton);
-        controls.Children.Add(CreateButton("⏭", "Sonraki parça", SkipNext));
-
-        var row = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(controls, Dock.Right);
-        row.Children.Add(controls);
-        row.Children.Add(_trackInfo);
-        var legacyContent = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(248, 27, 27, 29)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(255, 66, 66, 70)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(5, 4, 6, 4),
-            Child = row,
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 2, Opacity = 0.3, Color = Colors.Black }
-        };
-        Content = _uiSurface?.Element ?? legacyContent;
+        Content = _uiSurface.Element;
         PreviewMouseWheel += (_, args) =>
         {
             if (_scrollMode == "off") return;
@@ -110,7 +74,7 @@ internal sealed class TaskbarMediaWidgetWindow : Window
                         .ToArray();
                     if (playerKey.Length == 0 || audioSessions.Length == 0)
                     {
-                        _trackInfo.ToolTip = $"{GetPlayerName()} · etkin ses oturumu bulunamadı\nTekerlek: oynatıcı sesi\nSağ tık: seçenekler";
+                        _trackTooltip = $"{GetPlayerName()} · etkin ses oturumu bulunamadı\nTekerlek: oynatıcı sesi\nSağ tık: seçenekler";
                         args.Handled = true;
                         return;
                     }
@@ -119,31 +83,24 @@ internal sealed class TaskbarMediaWidgetWindow : Window
                     foreach (var session in audioSessions)
                         if (AudioSessionService.SetVolume(session.InstanceId,
                                 Math.Clamp(session.Volume + delta, 0, 100))) updated++;
-                    _trackInfo.ToolTip = updated > 0
+                    _trackTooltip = updated > 0
                         ? $"{GetPlayerName()} · {Math.Clamp(audioSessions[0].Volume + delta, 0, 100)}% uygulama sesi\nTekerlek: oynatıcı sesini değiştirir\nSağ tık: seçenekler"
                         : $"{GetPlayerName()} · uygulama sesi değiştirilemedi\nSağ tık: seçenekler";
                 }
                 else
                 {
                     var volume = VolumeService.Step(delta);
-                    _trackInfo.ToolTip = $"{GetPlayerName()} · {volume}% ana ses\nTekerlek: ana ses düzeyini değiştirir\nSağ tık: seçenekler";
+                    _trackTooltip = $"{GetPlayerName()} · {volume}% ana ses\nTekerlek: ana ses düzeyini değiştirir\nSağ tık: seçenekler";
                 }
             }
             catch
             {
-                _trackInfo.ToolTip = _scrollMode == "player-volume"
+                _trackTooltip = _scrollMode == "player-volume"
                     ? "Oynatıcı uygulamasının ses düzeyi değiştirilemedi."
                     : "Ana ses düzeyi değiştirilemedi.";
             }
             args.Handled = true;
         };
-        ContextMenu = new ContextMenu();
-        ContextMenu.Opened += (_, _) => RefreshSessionMenu();
-        ContextMenu.Items.Add(CreateMenuItem("Medya denetimlerini aç", (_, _) => _openFlyout()));
-        ContextMenu.Items.Add(CreateMenuItem("Windows Ses Ayarları", (_, _) => OpenSoundSettings()));
-        ContextMenu.Items.Add(CreateMenuItem("Oynatıcıya geç", (_, _) => OpenPlayer()));
-        if (_uiSurface is not null) ContextMenu = null;
-
         Loaded += async (_, _) => await RefreshAsync();
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _refreshTimer.Tick += async (_, _) => await RefreshAsync();
@@ -180,42 +137,6 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         _pinnedSessionId = pinnedSessionId;
         _savePinnedSession = savePinnedSession;
         _ = RefreshAsync();
-    }
-
-    private void RefreshSessionMenu()
-    {
-        if (ContextMenu is null || _sessionManager is null) return;
-
-        while (ContextMenu.Items.Count > 3) ContextMenu.Items.RemoveAt(0);
-        ContextMenu.Items.Insert(0, new Separator());
-        var sessions = _sessionManager.GetSessions()
-            .Where(session => MediaFlyoutWindow.IsMediaAppAllowed(
-                session.SourceAppUserModelId, _filterMode, _filterList))
-            .ToArray();
-        var currentSession = sessions.FirstOrDefault(session =>
-            string.Equals(session.SourceAppUserModelId, _pinnedSessionId, StringComparison.OrdinalIgnoreCase))
-            ?? _sessionManager.GetCurrentSession();
-        var automaticItem = CreateSessionMenuItem("Otomatik seç", currentSession is null ||
-            string.IsNullOrWhiteSpace(_pinnedSessionId), () => SetPinnedSession(null));
-        ContextMenu.Items.Insert(0, automaticItem);
-        foreach (var session in sessions.Reverse())
-        {
-            var appId = session.SourceAppUserModelId;
-            var name = MediaFlyoutWindow.NormalizeMediaAppId(appId);
-            if (string.IsNullOrWhiteSpace(name)) name = "Medya oynatıcı";
-            var item = CreateSessionMenuItem(name,
-                string.Equals(appId, _pinnedSessionId, StringComparison.OrdinalIgnoreCase),
-                () => SetPinnedSession(appId));
-            ContextMenu.Items.Insert(0, item);
-        }
-        ContextMenu.Items.Insert(0, new MenuItem { Header = "Medya oturumu", IsEnabled = false });
-    }
-
-    private MenuItem CreateSessionMenuItem(string label, bool isChecked, Action action)
-    {
-        var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = isChecked };
-        item.Click += (_, _) => action();
-        return item;
     }
 
     private void SetPinnedSession(string? appId)
@@ -304,7 +225,6 @@ internal sealed class TaskbarMediaWidgetWindow : Window
             if (_tracker.Update(sessions)) _manualSessionId = "";
             sessions = _tracker.Order(sessions);
             _availableSessions = sessions;
-            _switchButton.Visibility = sessions.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
             _session = sessions.FirstOrDefault(session => string.Equals(session.SourceAppUserModelId,
                 _pinnedSessionId, StringComparison.OrdinalIgnoreCase))
                 ?? sessions.FirstOrDefault(session => string.Equals(session.SourceAppUserModelId,
@@ -312,17 +232,17 @@ internal sealed class TaskbarMediaWidgetWindow : Window
                 ?? sessions.FirstOrDefault();
             if (_session is null)
             {
-                _trackInfo.Text = "Medya oturumu yok veya filtrelendi";
+                _trackInfoText = "Medya oturumu yok veya filtrelendi";
                 Hide();
                 return;
             }
 
             var properties = await _session.TryGetMediaPropertiesAsync();
             var title = string.IsNullOrWhiteSpace(properties.Title) ? "Bilinmeyen parça" : properties.Title;
-            _trackInfo.Text = string.IsNullOrWhiteSpace(properties.Artist)
+            _trackInfoText = string.IsNullOrWhiteSpace(properties.Artist)
                 ? title
                 : $"{title} · {properties.Artist}";
-            _trackInfo.ToolTip = $"{GetPlayerName()} · {GetCurrentVolumeText()} ana ses\n" +
+            _trackTooltip = $"{GetPlayerName()} · {GetCurrentVolumeText()} ana ses\n" +
                 (_scrollMode switch
                 {
                     "off" => "Tekerlek: kapalı",
@@ -330,8 +250,6 @@ internal sealed class TaskbarMediaWidgetWindow : Window
                     _ => "Tekerlek: ana ses düzeyi"
                 }) +
                 "\nSağ tık: seçenekler";
-            _playPauseButton.Content = _session.GetPlaybackInfo().PlaybackStatus ==
-                GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing ? "❚❚" : "▶";
             if (!IsVisible)
             {
                 PositionAboveTaskbar();
@@ -369,7 +287,6 @@ internal sealed class TaskbarMediaWidgetWindow : Window
 
     private void PushUiState()
     {
-        if (_uiSurface is null) return;
         var sessions = _availableSessions.Select(session => new
         {
             id = session.SourceAppUserModelId,
@@ -391,7 +308,8 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         }
         _uiSurface.SetState(new
         {
-            title = _session is null ? "Medya oturumu yok veya filtrelendi" : _trackInfo.Text,
+            title = _trackInfoText,
+            tooltip = _trackTooltip,
             player = GetPlayerName(),
             isPlaying,
             canPrevious,
@@ -433,38 +351,6 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         if (_session is null) return;
         var playing = _session.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
         if (playing) await _session.TryPauseAsync();
-        else await _session.TryPlayAsync();
-        await RefreshAsync();
-    }
-
-    private async void SwitchSession(object? sender, RoutedEventArgs e)
-    {
-        if (_availableSessions.Length < 2) return;
-        var index = Array.FindIndex(_availableSessions, session => ReferenceEquals(session, _session));
-        var next = _availableSessions[(index + 1) % _availableSessions.Length];
-        _manualSessionId = next.SourceAppUserModelId;
-        _pinnedSessionId = "";
-        await RefreshAsync();
-    }
-
-    private async void SkipPrevious(object? sender, RoutedEventArgs e)
-    {
-        if (_session is not null) await _session.TrySkipPreviousAsync();
-        await RefreshAsync();
-    }
-
-    private async void SkipNext(object? sender, RoutedEventArgs e)
-    {
-        if (_session is not null) await _session.TrySkipNextAsync();
-        await RefreshAsync();
-    }
-
-    private async void TogglePlayback(object? sender, RoutedEventArgs e)
-    {
-        if (_session is null) return;
-        var isPlaying = _session.GetPlaybackInfo().PlaybackStatus ==
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
-        if (isPlaying) await _session.TryPauseAsync();
         else await _session.TryPlayAsync();
         await RefreshAsync();
     }
@@ -526,7 +412,7 @@ internal sealed class TaskbarMediaWidgetWindow : Window
         }
         catch
         {
-            _trackInfo.ToolTip = "Oynatıcı açılamadı; uygulamayı Başlat menüsünden açın.";
+            _trackTooltip = "Oynatıcı açılamadı; uygulamayı Başlat menüsünden açın.";
         }
     }
 
@@ -534,35 +420,6 @@ internal sealed class TaskbarMediaWidgetWindow : Window
     {
         try { Process.Start(new ProcessStartInfo("ms-settings:sound") { UseShellExecute = true }); }
         catch { }
-    }
-
-    private static MenuItem CreateMenuItem(string label, RoutedEventHandler action)
-    {
-        var item = new MenuItem { Header = label };
-        item.Click += action;
-        return item;
-    }
-
-    private static Button CreateButton(string label, string tooltip, RoutedEventHandler action)
-    {
-        var button = new Button
-        {
-            Content = label,
-            ToolTip = tooltip,
-            Width = 34,
-            Height = 34,
-            Padding = new Thickness(0),
-            Margin = new Thickness(1),
-            Background = Brushes.White,
-            Foreground = Brushes.Black,
-            BorderBrush = Brushes.White,
-            BorderThickness = new Thickness(1),
-            FontSize = 12,
-            Cursor = System.Windows.Input.Cursors.Hand
-        };
-        button.SetResourceReference(FrameworkElement.StyleProperty, "PopupButton");
-        button.Click += action;
-        return button;
     }
 
     private const int GwlExStyle = -20;

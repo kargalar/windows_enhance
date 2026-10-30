@@ -2,10 +2,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Threading;
 using Microsoft.Win32;
 using WinForge.Core;
 
@@ -132,7 +130,8 @@ public sealed class PeekModule : ITweakModule, IAppCommandModule
         catch (Exception exception)
         {
             _context?.Log.Error("Dosya önizlemesi açılamadı.", exception);
-            MessageBox.Show(exception.Message, "Dosya önizlenemedi", MessageBoxButton.OK, MessageBoxImage.Error);
+            if ((_context as IFeatureUiContext)?.FeatureUi is { } featureUi)
+                await featureUi.ShowMessageAsync("Dosya önizlenemedi", exception.Message, "Kapat");
         }
         finally
         {
@@ -159,7 +158,8 @@ public sealed class PeekModule : ITweakModule, IAppCommandModule
         catch (Exception exception)
         {
             _context?.Log.Error("Dosya önizlemesi açılamadı.", exception);
-            MessageBox.Show(exception.Message, "Dosya önizlenemedi", MessageBoxButton.OK, MessageBoxImage.Error);
+            if ((_context as IFeatureUiContext)?.FeatureUi is { } featureUi)
+                await featureUi.ShowMessageAsync("Dosya önizlenemedi", exception.Message, "Kapat");
         }
         finally
         {
@@ -175,7 +175,7 @@ public sealed class PeekModule : ITweakModule, IAppCommandModule
         var pdfLimit = Math.Clamp(context?.Settings.GetInt("pdf-limit-mb", 100) ?? 100, 1, 500);
         var document = await PeekPreviewLoader.LoadAsync(path, textLimit * 1024,
             imageLimit * 1024L * 1024L, pdfLimit * 1024L * 1024L);
-        var preview = new PeekPreviewWindow(path, document);
+        var preview = new PeekPreviewWindow(path, document, (context as IFeatureUiContext)?.FeatureUi);
         preview.ShowDialog();
     }
 }
@@ -309,257 +309,84 @@ internal static class PeekPreviewLoader
 
 internal sealed class PeekPreviewWindow : Window
 {
-    private MediaElement? _mediaElement;
-    private Slider? _mediaTimeline;
-    private TextBlock? _mediaPosition;
-    private TextBlock? _mediaStatus;
-    private Button? _playButton;
-    private DispatcherTimer? _playbackTimer;
-    private bool _mediaOpened;
+    private readonly string path;
+    private readonly PeekPreviewDocument document;
+    private readonly IFeatureUiAssetSurface uiSurface;
+    private string status = "";
 
-    public PeekPreviewWindow(string path, PeekPreviewDocument document)
+    public PeekPreviewWindow(string path, PeekPreviewDocument document, IFeatureUiService? featureUi)
     {
-        Title = Path.GetFileName(path) + " · Önizleme";
+        this.path = path;
+        this.document = document;
+        Title = Path.GetFileName(path) + " · Preview";
         Width = 900;
         Height = 650;
         MinWidth = 480;
         MinHeight = 320;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
-        Background = new SolidColorBrush(Color.FromRgb(24, 27, 33));
-        Foreground = Brushes.White;
 
-        var layout = new DockPanel { Margin = new Thickness(18) };
-        var header = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
-        header.Children.Add(new TextBlock { Text = Path.GetFileName(path), FontSize = 20, FontWeight = FontWeights.SemiBold });
-        header.Children.Add(new TextBlock { Text = path, Opacity = 0.7, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = path });
-        header.Children.Add(new TextBlock { Text = document.Summary, Opacity = 0.7, Margin = new Thickness(0, 4, 0, 0) });
-        DockPanel.SetDock(header, Dock.Top);
-        layout.Children.Add(header);
-
-        var openButton = new Button { Content = "Varsayılan uygulamada aç", Padding = new Thickness(10, 6, 10, 6), Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
-        openButton.Click += (_, _) =>
-        {
-            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
-            catch (Exception exception) { MessageBox.Show(this, exception.Message, "Dosya açılamadı", MessageBoxButton.OK, MessageBoxImage.Error); }
-        };
-        DockPanel.SetDock(openButton, Dock.Bottom);
-        layout.Children.Add(openButton);
-
-        if (document.Truncated)
-        {
-            var notice = new TextBlock { Text = "Dosya sınırlandırılmış boyutta gösteriliyor.", Foreground = Brushes.Gold, Margin = new Thickness(0, 0, 0, 8) };
-            var body = new DockPanel();
-            DockPanel.SetDock(notice, Dock.Top);
-            body.Children.Add(notice);
-            body.Children.Add(CreateContent(document));
-            layout.Children.Add(body);
-        }
-        else
-        {
-            layout.Children.Add(CreateContent(document));
-        }
-
-        Content = layout;
+        uiSurface = featureUi?.CreateSurface("peek-preview") as IFeatureUiAssetSurface
+            ?? throw new InvalidOperationException("Hızlı önizleme için React varlık yüzeyi gerekli.");
+        Content = uiSurface.Element;
+        uiSurface.MessageReceived += OnUiMessage;
         Closed += (_, _) =>
         {
-            _playbackTimer?.Stop();
-            _mediaElement?.Close();
+            uiSurface.MessageReceived -= OnUiMessage;
+            uiSurface.Dispose();
         };
+        PushState();
     }
 
-    private FrameworkElement CreateContent(PeekPreviewDocument document)
+    private void OnUiMessage(string command, System.Text.Json.JsonElement payload)
     {
-        if (document.Image is not null)
-            return new Border
-            {
-                Background = Brushes.Black,
-                Child = new ScrollViewer
-                {
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    Content = new Image { Source = document.Image, Stretch = Stretch.Uniform, MaxWidth = 840, MaxHeight = 490, HorizontalAlignment = HorizontalAlignment.Center }
-                }
-            };
-
-        if (document.Kind is "audio" or "video") return CreateMediaContent(document);
-
-        return new ScrollViewer
+        switch (command)
         {
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Content = new TextBox
-            {
-                Text = document.Text,
-                IsReadOnly = true,
-                AcceptsReturn = true,
-                AcceptsTab = true,
-                TextWrapping = document.Kind == "text" ? TextWrapping.NoWrap : TextWrapping.Wrap,
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 14,
-                Background = new SolidColorBrush(Color.FromRgb(17, 19, 23)),
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(12)
-            }
-        };
-    }
-
-    private FrameworkElement CreateMediaContent(PeekPreviewDocument document)
-    {
-        var mediaLayout = new DockPanel { LastChildFill = false };
-        if (document.Kind == "video")
-        {
-            _mediaElement = new MediaElement
-            {
-                Source = new Uri(document.MediaPath!, UriKind.Absolute),
-                LoadedBehavior = MediaState.Manual,
-                UnloadedBehavior = MediaState.Stop,
-                Stretch = Stretch.Uniform,
-                ScrubbingEnabled = true,
-                Volume = 0.7,
-                MinHeight = 180
-            };
-            DockPanel.SetDock(_mediaElement, Dock.Top);
-            mediaLayout.Children.Add(_mediaElement);
-        }
-        else
-        {
-            var audioVisual = new Border
-            {
-                Background = new SolidColorBrush(Color.FromRgb(17, 19, 23)),
-                Child = new TextBlock
-                {
-                    Text = "♫  Ses önizlemesi",
-                    FontSize = 28,
-                    Foreground = Brushes.White,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            };
-            DockPanel.SetDock(audioVisual, Dock.Top);
-            mediaLayout.Children.Add(audioVisual);
-            _mediaElement = new MediaElement
-            {
-                Source = new Uri(document.MediaPath!, UriKind.Absolute),
-                LoadedBehavior = MediaState.Manual,
-                UnloadedBehavior = MediaState.Stop,
-                ScrubbingEnabled = true,
-                Volume = 0.7,
-                Visibility = Visibility.Collapsed
-            };
-            mediaLayout.Children.Add(_mediaElement);
-        }
-
-        var controls = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-        var timelineRow = new DockPanel();
-        _mediaPosition = new TextBlock { Text = "0:00 / --:--", MinWidth = 100, VerticalAlignment = VerticalAlignment.Center };
-        DockPanel.SetDock(_mediaPosition, Dock.Right);
-        timelineRow.Children.Add(_mediaPosition);
-        _mediaTimeline = new Slider { Minimum = 0, Maximum = 1, IsEnabled = false, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        _mediaTimeline.ValueChanged += (_, _) =>
-        {
-            if (_mediaOpened && _mediaElement is not null &&
-                (_mediaTimeline.IsMouseCaptureWithin || _mediaTimeline.IsKeyboardFocusWithin))
-                _mediaElement.Position = TimeSpan.FromSeconds(_mediaTimeline.Value);
-        };
-        timelineRow.Children.Add(_mediaTimeline);
-        controls.Children.Add(timelineRow);
-
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        _playButton = new Button { Content = "▶ Oynat", Padding = new Thickness(12, 6, 12, 6), MinWidth = 92 };
-        _playButton.Click += (_, _) => TogglePlayback();
-        buttons.Children.Add(_playButton);
-        var stop = new Button { Content = "■ Durdur", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(6, 0, 12, 0) };
-        stop.Click += (_, _) => StopPlayback();
-        buttons.Children.Add(stop);
-        buttons.Children.Add(new TextBlock { Text = "Ses", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
-        var volume = new Slider { Minimum = 0, Maximum = 100, Value = 70, Width = 110, VerticalAlignment = VerticalAlignment.Center };
-        volume.ValueChanged += (_, _) => { if (_mediaElement is not null) _mediaElement.Volume = volume.Value / 100; };
-        buttons.Children.Add(volume);
-        controls.Children.Add(buttons);
-
-        _mediaStatus = new TextBlock { Text = "Oynatmak için düğmeye basın.", Opacity = 0.75, Margin = new Thickness(0, 5, 0, 0) };
-        controls.Children.Add(_mediaStatus);
-        DockPanel.SetDock(controls, Dock.Bottom);
-        mediaLayout.Children.Add(controls);
-
-        _mediaElement!.MediaOpened += (_, _) =>
-        {
-            _mediaOpened = true;
-            var duration = _mediaElement.NaturalDuration.HasTimeSpan ? _mediaElement.NaturalDuration.TimeSpan : TimeSpan.Zero;
-            _mediaTimeline.Maximum = Math.Max(1, duration.TotalSeconds);
-            _mediaTimeline.IsEnabled = duration > TimeSpan.Zero;
-            _mediaStatus.Text = duration > TimeSpan.Zero ? "Hazır · ses dosyalarında oynatma kullanıcı başlatana kadar duraklatılmıştır." : "Hazır";
-            UpdateMediaPosition();
-        };
-        _mediaElement.MediaFailed += (_, args) =>
-        {
-            _mediaStatus!.Text = "Bu dosyanın codec'i Windows'ta bulunamadı veya dosya bozuk.";
-            _playButton!.IsEnabled = false;
-            _mediaTimeline!.IsEnabled = false;
-        };
-        _mediaElement.MediaEnded += (_, _) =>
-        {
-            _playButton!.Content = "▶ Yeniden oynat";
-            _mediaStatus!.Text = "Tamamlandı";
-        };
-        // Manual MediaElement instances remain closed until a playback operation is requested.
-        // Pause opens and buffers the source without playing sound, enabling the first Play click.
-        _mediaElement.Loaded += (_, _) => _mediaElement.Pause();
-        _playbackTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
-        _playbackTimer.Tick += (_, _) => UpdateMediaPosition();
-        _playbackTimer.Start();
-        return mediaLayout;
-    }
-
-    private void TogglePlayback()
-    {
-        if (!_mediaOpened || _mediaElement is null) return;
-        var hasDuration = _mediaElement.NaturalDuration.HasTimeSpan;
-        if (_mediaElement.CanPause && (!hasDuration || _mediaElement.Position < _mediaElement.NaturalDuration.TimeSpan))
-        {
-            if (_playButton?.Content?.ToString()?.Contains("Duraklat", StringComparison.Ordinal) == true)
-            {
-                _mediaElement.Pause();
-                _playButton.Content = "▶ Devam";
-                _mediaStatus!.Text = "Duraklatıldı";
-            }
-            else
-            {
-                _mediaElement.Play();
-                _playButton!.Content = "Ⅱ Duraklat";
-                _mediaStatus!.Text = "Oynatılıyor";
-            }
-        }
-        else
-        {
-            _mediaElement.Position = TimeSpan.Zero;
-            _mediaElement.Play();
-            _playButton!.Content = "Ⅱ Duraklat";
+            case "peek.close":
+                Close();
+                break;
+            case "peek.open":
+                try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+                catch (Exception exception) { status = exception.Message; PushState(); }
+                break;
         }
     }
 
-    private void StopPlayback()
+    private void PushState()
     {
-        if (!_mediaOpened || _mediaElement is null) return;
-        _mediaElement.Stop();
-        _playButton!.Content = "▶ Oynat";
-        _mediaStatus!.Text = "Durduruldu";
-        UpdateMediaPosition();
+        var image = document.Image is BitmapSource bitmap ? ToDataUri(bitmap) : "";
+        var media = document.MediaPath is { } mediaPath
+            ? uiSurface.MapLocalAsset(mediaPath).AbsoluteUri
+            : "";
+        uiSurface.SetState(new
+        {
+            file = Path.GetFileName(path),
+            path,
+            kind = document.Kind,
+            summary = document.Summary,
+            text = document.Text,
+            image,
+            media,
+            truncated = document.Truncated,
+            pageCount = document.PageCount,
+            status
+        });
     }
 
-    private void UpdateMediaPosition()
+    private static string ToDataUri(BitmapSource image)
     {
-        if (!_mediaOpened || _mediaElement is null || _mediaTimeline is null || _mediaPosition is null) return;
-        var position = _mediaElement.Position;
-        if (!_mediaTimeline.IsMouseCaptureWithin && !_mediaTimeline.IsKeyboardFocusWithin)
-            _mediaTimeline.Value = Math.Clamp(position.TotalSeconds, _mediaTimeline.Minimum, _mediaTimeline.Maximum);
-        var duration = _mediaElement.NaturalDuration.HasTimeSpan ? _mediaElement.NaturalDuration.TimeSpan : TimeSpan.Zero;
-        _mediaPosition.Text = $"{FormatTime(position)} / {(duration == TimeSpan.Zero ? "--:--" : FormatTime(duration))}";
+        const int maximumPreviewDimension = 2200;
+        var scale = Math.Min(1d, maximumPreviewDimension / (double)Math.Max(image.PixelWidth, image.PixelHeight));
+        if (scale < 1)
+        {
+            var resized = new TransformedBitmap(image, new ScaleTransform(scale, scale));
+            resized.Freeze();
+            image = resized;
+        }
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(image));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return "data:image/png;base64," + Convert.ToBase64String(stream.ToArray());
     }
-
-    private static string FormatTime(TimeSpan value) => value.TotalHours >= 1
-        ? value.ToString(@"h\:mm\:ss")
-        : value.ToString(@"m\:ss");
 }

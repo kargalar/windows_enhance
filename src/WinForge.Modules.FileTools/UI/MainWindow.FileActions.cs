@@ -6,7 +6,7 @@ public sealed partial class MainWindow
     private readonly List<FloatShelf> shelves=[];
     private void ShowFileActions()
     {
-        if(busy||files.Count==0)return;var choices=new[]{new ToolChoice("share","Share","◉"),new("float","Float","▣"),new("copy","Copy","▱"),new("move","Move","↗"),new("copyPath","Copy Path","↪"),new("terminal","Terminal",">_")};new WheelWindow(this,choices,async c=>await PerformFileAction(c.Id,files.ToArray())).Show();
+        if(busy||files.Count==0)return;var choices=new[]{new ToolChoice("share","Share","◉"),new("float","Float","▣"),new("copy","Copy","▱"),new("move","Move","↗"),new("copyPath","Copy Path","↪"),new("terminal","Terminal",">_")};new WheelWindow(this,choices,async c=>await PerformFileAction(c.Id,files.ToArray()),featureUi:_featureUi).Show();
     }
     internal async Task PerformFileAction(string action,IReadOnlyList<string> paths)
     {
@@ -20,9 +20,9 @@ public sealed partial class MainWindow
                 case "share":ShowMain();FileActions.Share(this,paths);break;
                 case "float":
                     if(preferences.Value.FloatBehavior=="addToExisting"&&shelves.LastOrDefault(s=>s.IsVisible) is {} existing){existing.Add(paths);existing.Activate();break;}
-                    var shelf=new FloatShelf(paths,async(p,a)=>await PerformFileAction(a,p),p=>{files.Clear();Add(p);ShowLibrary(false);ShowMain();});shelves.Add(shelf);shelf.Closed+=(_,_)=>shelves.Remove(shelf);shelf.Show();break;
+                    var shelf=new FloatShelf(paths,async(p,a)=>await PerformFileAction(a,p),p=>{files.Clear();Add(p);ShowLibrary(false);ShowMain();},_featureUi);shelves.Add(shelf);shelf.Closed+=(_,_)=>shelves.Remove(shelf);shelf.Show();break;
                 case "move":await RunAsync((destination,p,t)=>FileActions.MoveAsync(paths,destination,p,t),"Move");files.Clear();Refresh();break;
             }
-        }catch(Exception error){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("File action could not finish"));}
+        }catch(Exception error){await ShowMessageAsync("File action could not finish",error.Message);}
     }
 }

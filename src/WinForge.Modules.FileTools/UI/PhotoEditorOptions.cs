@@ -109,7 +109,7 @@ public sealed partial class ToolEditor
     private void SetPhotoPreview(BitmapSource result){drawing.Width=result.PixelWidth;drawing.Height=result.PixelHeight;if(drawing.Children[0] is Image image){image.Source=result;image.Width=result.PixelWidth;image.Height=result.PixelHeight;}}
     private async Task DetectPhoto(bool text,bool faces)
     {
-        if(bitmap is null)return;try{var regions=await NativePdf.DetectAsync(bitmap,text,faces);foreach(var r in regions){photoRegions.Add(r);var shape=new Rectangle{Width=r.Width,Height=r.Height,Fill=Brushes.Black,Stroke=Brushes.Gold,StrokeThickness=2,IsHitTestVisible=false};Canvas.SetLeft(shape,r.X);Canvas.SetTop(shape,r.Y);drawing.Children.Add(shape);}if(regions.Length==0)MessageBox.Show(this,L10n.Text("No matching regions were detected. You can still draw areas by hand."),L10n.Text("Redact Photo"));}catch(Exception error){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Detection unavailable"));}
+        if(bitmap is null)return;try{var regions=await NativePdf.DetectAsync(bitmap,text,faces);foreach(var r in regions){photoRegions.Add(r);var shape=new Rectangle{Width=r.Width,Height=r.Height,Fill=Brushes.Black,Stroke=Brushes.Gold,StrokeThickness=2,IsHitTestVisible=false};Canvas.SetLeft(shape,r.X);Canvas.SetTop(shape,r.Y);drawing.Children.Add(shape);}if(regions.Length==0)SetEditorStatus("No matching regions were detected. You can still draw areas by hand.");else PushOptionsState();}catch(Exception error){SetEditorStatus(error.Message);}
     }
     private void AnnotationStart()
     {
@@ -216,9 +216,9 @@ public sealed partial class ToolEditor
         try
         {
             if (!ApplySelectedAnnotationStyle(fields["Ink color"].Text, Value("Stroke width", 3), Value("Font size", 24), fields["Annotation text"].Text))
-                MessageBox.Show(this, L10n.Text("Select a mark first."), L10n.Text("Annotation"));
+                SetEditorStatus("Select a mark first.");
         }
-        catch (ArgumentException error) { MessageBox.Show(this, L10n.Text(error.Message), L10n.Text("Check drawing settings")); }
+        catch (ArgumentException error) { SetEditorStatus(error.Message); }
     }
 
     internal bool ResizeSelectedAnnotation(double width, double height, bool recordHistory = true)
@@ -248,9 +248,9 @@ public sealed partial class ToolEditor
         try
         {
             if (!ResizeSelectedAnnotation(Value("Mark width", 100), Value("Mark height", 100)))
-                MessageBox.Show(this, L10n.Text("Select a mark first."), L10n.Text("Annotation"));
+                SetEditorStatus("Select a mark first.");
         }
-        catch (ArgumentException error) { MessageBox.Show(this, L10n.Text(error.Message), L10n.Text("Check drawing settings")); }
+        catch (ArgumentException error) { SetEditorStatus(error.Message); }
     }
 
     internal void RecordAnnotationChange()

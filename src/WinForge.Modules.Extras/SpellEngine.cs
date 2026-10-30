@@ -190,6 +190,15 @@ internal sealed class SpellEngine
             foreach (var candidate in rankedKnownWordCorrections) AddSuggestion(candidate.Word);
         }
 
+        // Keep a likely spelling correction visible even when prefix completions
+        // would otherwise fill the entire strip for an unknown word.
+        var rankedCorrections = word.Length >= 3 && word.All(char.IsLetter) && !isKnownWord
+            ? GetRankedCandidates(word.ToLower(culture), GetCandidates(word.ToLower(culture), isTurkish),
+                string.IsNullOrWhiteSpace(previousWords) ? null : previousWords.ToLower(culture),
+                allowContext, allowLearning, languageTag, maximumResults)
+            : [];
+        if (rankedCorrections.Count > 0) AddSuggestion(rankedCorrections[0].Word);
+
         if (allowContext && !string.IsNullOrWhiteSpace(previousWords))
         {
             foreach (var suggestion in SpellContextModel.GetNextWordSuggestions(previousWords, word, languageTag, maximumResults))
@@ -212,10 +221,6 @@ internal sealed class SpellEngine
         if (word.Length >= 3 && word.All(char.IsLetter) && !isKnownWord)
         {
             var lowerWord = word.ToLower(culture);
-            var rankedCorrections = GetRankedCandidates(word.ToLower(culture),
-                GetCandidates(lowerWord, isTurkish),
-                string.IsNullOrWhiteSpace(previousWords) ? null : previousWords.ToLower(culture),
-                allowContext, allowLearning, languageTag, maximumResults);
             foreach (var candidate in rankedCorrections) AddSuggestion(candidate.Word);
 
             if (isTurkish && suggestions.Count < maximumResults)
@@ -401,14 +406,6 @@ internal sealed class SpellEngine
                 return null;
         }
 
-        if (editDistance > MaximumKnownTurkishDiacriticPositions)
-        {
-            var isUniqueMultipleDiacriticCandidate = CountTurkishDiacriticVariants(word) > MaximumKnownTurkishDiacriticPositions &&
-                                                     rankedCandidates.Count == 1 &&
-                                                     best.Score <= MaximumUniqueMultipleDiacriticCandidateScore;
-            return isUniqueMultipleDiacriticCandidate ? best.Word : null;
-        }
-
         if (CountTurkishDiacritics(best.Word) < CountTurkishDiacritics(word))
         {
             var typedContextBonus = allowContext
@@ -420,6 +417,15 @@ internal sealed class SpellEngine
             return lessDiacriticContextBonus - typedContextBonus >= MinimumCandidateMargin
                 ? best.Word
                 : null;
+        }
+
+        if (editDistance > MaximumKnownTurkishDiacriticPositions)
+        {
+            if (best.Word.Count(c => c == 'ı') < word.Count(c => c == 'ı')) return null;
+            var isUniqueMultipleDiacriticCandidate = CountTurkishDiacriticVariants(word) > MaximumKnownTurkishDiacriticPositions &&
+                                                     rankedCandidates.Count == 1 &&
+                                                     best.Score <= MaximumUniqueMultipleDiacriticCandidateScore;
+            return isUniqueMultipleDiacriticCandidate ? best.Word : null;
         }
 
         if (editDistance == 2)

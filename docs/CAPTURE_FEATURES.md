@@ -11,8 +11,8 @@ Yeni kurulumda üçü de kapalıdır. Geçmiş görüntülemek veya eski kayıtl
 | Sesle Yazma | `Shift+Space` kısa basışla başlat/durdur, 300 ms veya daha uzun basılı tutup bırakınca durdur; Esc ile iptal; mikrofon, dil, Turbo/Large ve CPU/otomatik seçim; İngilizce çeviri için Large |
 | Ekran Yakalama | `Win+Alt+S` bölge seçimi; panelden monitör, pencere, masaüstü, son bölge, kayan yakalama, video/GIF; pencereye gelince kenarlıkla mıknatıslı seçim, tıklamayla pencere veya sürüklemeyle serbest bölge |
 
-Dikte sonuçları yalnız kayıt başındaki düzenlenebilir alan hâlâ odaktaysa yazılır. Hedef değişirse
-metin geçmişte kalır. Ses bellekte tutulur; ham dikte sesi dosyaya kaydedilmez. GPU başarısızsa
+Dikte sonuçları otomatik olarak panoya kopyalanır ve kayıt başındaki düzenlenebilir alan hâlâ
+odaktaysa o alana yazılır. Hedef değişirse metin panoda ve geçmişte kalır. Ses bellekte tutulur; ham dikte sesi dosyaya kaydedilmez. GPU başarısızsa
 CPU'ya geçilir ve sonraki aynı ayarlardaki kayıtlar yüklenen CPU modelini kullanır.
 
 Yakalama panelinde tam ekran üzerinde metin, şekil veya serbest çizim başlatan düğmeler vardır;

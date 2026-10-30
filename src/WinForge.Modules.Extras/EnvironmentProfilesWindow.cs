@@ -1,9 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Media;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -11,15 +8,15 @@ namespace WinForge.Modules.Extras;
 internal sealed class EnvironmentProfilesWindow : Window
 {
     private readonly EnvironmentProfileService _service;
-    private readonly IFeatureUiSurface? _uiSurface;
-    private readonly ObservableCollection<UserEnvironmentProfile> _profiles = new();
-    private readonly ObservableCollection<UserEnvironmentVariable> _variables = new();
-    private readonly ComboBox _profileBox;
-    private readonly TextBox _profileName;
-    private readonly TextBox _newProfileName;
-    private readonly CheckBox _enabled;
-    private readonly DataGrid _grid;
-    private readonly TextBlock _status;
+    private readonly IFeatureUiSurface _uiSurface;
+    private readonly List<UserEnvironmentProfile> _profiles = [];
+    private readonly ObservableCollection<UserEnvironmentVariable> _variables = [];
+    private string? _selectedId;
+    private string _profileName = "";
+    private string _newProfileName = "";
+    private string _statusText = "";
+    private bool _enabled;
+    private bool _enabledAllowed;
     private bool _loading;
     private bool _deleteConfirmedFromUi;
     private bool _confirmDelete;
@@ -27,8 +24,9 @@ internal sealed class EnvironmentProfilesWindow : Window
     public EnvironmentProfilesWindow(EnvironmentProfileService service, IFeatureUiService? featureUi = null)
     {
         _service = service;
-        _uiSurface = featureUi?.CreateSurface("environment-profiles");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("environment-profiles")
+            ?? throw new InvalidOperationException("The React environment profiles view is required.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Title = "Ortam Değişkeni Profilleri";
         Width = 900;
         Height = 600;
@@ -36,173 +34,30 @@ internal sealed class EnvironmentProfilesWindow : Window
         MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
-        Background = new SolidColorBrush(Color.FromRgb(25, 29, 38));
-        Foreground = Brushes.White;
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
+        Content = _uiSurface.Element;
 
-        var root = new DockPanel { Margin = new Thickness(18) };
-        var heading = new TextBlock
-        {
-            Text = "Ortam değişkeni profilleri",
-            FontSize = 20,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-        DockPanel.SetDock(heading, Dock.Top);
-        root.Children.Add(heading);
-
-        var description = new TextBlock
-        {
-            Text = "Profiller kullanıcı değişkenlerini birlikte uygular. Aynı anda yalnızca bir profil etkin olabilir; kapatınca profil öncesi değerler geri yüklenir.",
-            Foreground = new SolidColorBrush(Color.FromRgb(155, 165, 180)),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 14)
-        };
-        DockPanel.SetDock(description, Dock.Top);
-        root.Children.Add(description);
-
-        var profilePanel = new Grid { Margin = new Thickness(0, 0, 0, 10) };
-        profilePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        profilePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        profilePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        profilePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        profilePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        _profileBox = new ComboBox { ItemsSource = _profiles, DisplayMemberPath = nameof(UserEnvironmentProfile.Name), MinWidth = 150, Margin = new Thickness(0, 0, 8, 0) };
-        _profileBox.SelectionChanged += OnProfileChanged;
-        profilePanel.Children.Add(_profileBox);
-
-        _profileName = new TextBox { Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(8, 5, 8, 5), ToolTip = "Seçili profilin adı" };
-        Grid.SetColumn(_profileName, 1);
-        profilePanel.Children.Add(_profileName);
-
-        _newProfileName = new TextBox { Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(8, 5, 8, 5), ToolTip = "Yeni profil adı" };
-        Grid.SetColumn(_newProfileName, 2);
-        profilePanel.Children.Add(_newProfileName);
-        Grid.SetColumn(profilePanel.Children[2], 2);
-
-        profilePanel.Children.Add(CreateButton("Yeni", CreateProfile, 3));
-        profilePanel.Children.Add(CreateButton("Profili sil", DeleteProfile, 4));
-        DockPanel.SetDock(profilePanel, Dock.Top);
-        root.Children.Add(profilePanel);
-
-        _enabled = new CheckBox
-        {
-            Content = "Bu profili kullanıcı ortam değişkenlerine uygula",
-            Margin = new Thickness(0, 0, 0, 10),
-            Foreground = Brushes.White
-        };
-        _enabled.Checked += (_, _) => SetProfileEnabled(true);
-        _enabled.Unchecked += (_, _) => SetProfileEnabled(false);
-        DockPanel.SetDock(_enabled, Dock.Top);
-        root.Children.Add(_enabled);
-
-        _grid = new DataGrid
-        {
-            ItemsSource = _variables,
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            SelectionMode = DataGridSelectionMode.Single,
-            SelectionUnit = DataGridSelectionUnit.FullRow,
-            Background = new SolidColorBrush(Color.FromRgb(31, 36, 46)),
-            Foreground = Brushes.White,
-            RowBackground = new SolidColorBrush(Color.FromRgb(31, 36, 46)),
-            AlternatingRowBackground = new SolidColorBrush(Color.FromRgb(37, 43, 54)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(67, 77, 94)),
-            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Değişken",
-            Binding = new Binding(nameof(UserEnvironmentVariable.Name)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(220)
-        });
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Değer",
-            Binding = new Binding(nameof(UserEnvironmentVariable.Value)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
-        });
-        _grid.Columns.Add(new DataGridCheckBoxColumn
-        {
-            Header = "%...% genişlet",
-            Binding = new Binding(nameof(UserEnvironmentVariable.Expandable)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(130)
-        });
-        root.Children.Add(_grid);
-
-        var footer = new DockPanel();
-        _status = new TextBlock
-        {
-            Foreground = new SolidColorBrush(Color.FromRgb(155, 165, 180)),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        footer.Children.Add(_status);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(CreateButton("Değişken ekle", AddVariable));
-        buttons.Children.Add(CreateButton("Seçileni sil", RemoveVariable));
-        buttons.Children.Add(CreateButton("Kaydet", SaveProfile));
-        buttons.Children.Add(CreateButton("Kapat", Close));
-        DockPanel.SetDock(buttons, Dock.Right);
-        footer.Children.Add(buttons);
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
-        Content = _uiSurface?.Element ?? root;
         RefreshProfiles(null);
-        Closed += (_, _) => _uiSurface?.Dispose();
+        Closed += (_, _) => _uiSurface.Dispose();
     }
 
-    private static Button CreateButton(string label, Action action, int column = -1)
-    {
-        var button = new Button
-        {
-            Content = label,
-            Padding = new Thickness(11, 7, 11, 7),
-            Margin = new Thickness(5, 0, 0, 0),
-            MinWidth = 72
-        };
-        button.Click += (_, _) => action();
-        if (column >= 0) Grid.SetColumn(button, column);
-        return button;
-    }
+    private UserEnvironmentProfile? SelectedProfile => _profiles.FirstOrDefault(profile => profile.Id == _selectedId);
 
     private void RefreshProfiles(string? selectedId)
     {
-        _loading = true;
-        try
-        {
-            _profiles.Clear();
-            foreach (var profile in _service.Profiles.OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase))
-                _profiles.Add(profile);
-            _profileBox.SelectedItem = selectedId is null
-                ? _profiles.FirstOrDefault(profile => profile.Id == _service.ActiveProfileId) ?? _profiles.FirstOrDefault()
-                : _profiles.FirstOrDefault(profile => profile.Id == selectedId);
-            LoadSelectedProfile();
-        }
-        finally
-        {
-            _loading = false;
-        }
-        PushUiState();
+        _profiles.Clear();
+        _profiles.AddRange(_service.Profiles.OrderBy(profile => profile.Name, StringComparer.CurrentCultureIgnoreCase));
+        _selectedId = _profiles.FirstOrDefault(profile => profile.Id == selectedId)?.Id
+            ?? _profiles.FirstOrDefault(profile => profile.Id == _service.ActiveProfileId)?.Id
+            ?? _profiles.FirstOrDefault()?.Id;
+        LoadSelectedProfile();
     }
 
-    private void OnProfileChanged(object sender, SelectionChangedEventArgs args)
+    private void SelectProfile(string? id)
     {
-        if (_loading) return;
-        if (args.RemovedItems.OfType<UserEnvironmentProfile>().FirstOrDefault() is { } previous)
-        {
-            if (!SaveProfileData(previous.Id, _profileName.Text, _variables.ToArray(), showErrors: false))
-            {
-                _loading = true;
-                _profileBox.SelectedItem = previous;
-                _loading = false;
-                return;
-            }
-        }
+        if (_loading || id == _selectedId) return;
+        if (_selectedId is { } currentId && !SaveProfileData(currentId, _profileName, _variables.ToArray(), showErrors: false))
+            return;
+        _selectedId = _profiles.FirstOrDefault(profile => profile.Id == id)?.Id;
         LoadSelectedProfile();
     }
 
@@ -212,24 +67,21 @@ internal sealed class EnvironmentProfilesWindow : Window
         try
         {
             _variables.Clear();
-            if (_profileBox.SelectedItem is UserEnvironmentProfile profile)
+            if (SelectedProfile is { } profile)
             {
-                _profileName.Text = profile.Name;
-                foreach (var entry in profile.Variables) _variables.Add(new UserEnvironmentVariable(entry.Name, entry.Value, entry.Expandable));
-                _enabled.IsChecked = _service.ActiveProfileId == profile.Id;
-                _enabled.IsEnabled = true;
-                _grid.IsEnabled = true;
-                _profileName.IsEnabled = true;
-                _status.Text = _service.ActiveProfileId == profile.Id ? "Etkin profil" : "Etkin değil";
+                _profileName = profile.Name;
+                foreach (var entry in profile.Variables)
+                    _variables.Add(new UserEnvironmentVariable(entry.Name, entry.Value, entry.Expandable));
+                _enabled = _service.ActiveProfileId == profile.Id;
+                _enabledAllowed = true;
+                _statusText = _enabled ? "Etkin profil" : "Etkin değil";
             }
             else
             {
-                _profileName.Clear();
-                _enabled.IsChecked = false;
-                _enabled.IsEnabled = false;
-                _grid.IsEnabled = false;
-                _profileName.IsEnabled = false;
-                _status.Text = "Önce bir profil oluşturun.";
+                _profileName = "";
+                _enabled = false;
+                _enabledAllowed = false;
+                _statusText = "Önce bir profil oluşturun.";
             }
         }
         finally
@@ -244,38 +96,56 @@ internal sealed class EnvironmentProfilesWindow : Window
         switch (command)
         {
             case "profiles.select":
-                var id = payload.TryGetProperty("id", out var profileId) ? profileId.GetString() : null;
-                _profileBox.SelectedItem = _profiles.FirstOrDefault(profile => profile.Id == id);
+                SelectProfile(payload.TryGetProperty("id", out var profileId) ? profileId.GetString() : null);
                 break;
-            case "profiles.name": _profileName.Text = ReadString(payload, "name"); PushUiState(); break;
-            case "profiles.new-name": _newProfileName.Text = ReadString(payload, "name"); PushUiState(); break;
-            case "profiles.new": _newProfileName.Text = ReadString(payload, "name"); CreateProfile(); break;
+            case "profiles.name":
+                _profileName = ReadString(payload, "name");
+                PushUiState();
+                break;
+            case "profiles.new-name":
+                _newProfileName = ReadString(payload, "name");
+                PushUiState();
+                break;
+            case "profiles.new":
+                _newProfileName = ReadString(payload, "name");
+                CreateProfile();
+                break;
             case "profiles.delete": DeleteProfile(); break;
             case "profiles.delete-confirm":
                 var accepted = payload.TryGetProperty("confirm", out var confirm) && confirm.ValueKind == JsonValueKind.True;
                 _confirmDelete = false;
-                if (accepted) { _deleteConfirmedFromUi = true; DeleteProfile(); _deleteConfirmedFromUi = false; }
+                if (accepted)
+                {
+                    _deleteConfirmedFromUi = true;
+                    DeleteProfile();
+                    _deleteConfirmedFromUi = false;
+                }
                 else PushUiState();
                 break;
             case "profiles.toggle":
                 if (payload.TryGetProperty("enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False)
-                    _enabled.IsChecked = enabled.GetBoolean();
-                PushUiState(); break;
+                    SetProfileEnabled(enabled.GetBoolean());
+                break;
             case "profiles.variable-update":
                 if (payload.TryGetProperty("index", out var row) && row.TryGetInt32(out var rowIndex) && rowIndex >= 0 && rowIndex < _variables.Count)
                 {
                     var variable = _variables[rowIndex];
                     if (payload.TryGetProperty("name", out var name)) variable.Name = name.GetString() ?? "";
                     if (payload.TryGetProperty("value", out var value)) variable.Value = value.GetString() ?? "";
-                    if (payload.TryGetProperty("expandable", out var expansion) && expansion.ValueKind is JsonValueKind.True or JsonValueKind.False) variable.Expandable = expansion.GetBoolean();
+                    if (payload.TryGetProperty("expandable", out var expansion) && expansion.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                        variable.Expandable = expansion.GetBoolean();
                     PushUiState();
                 }
                 break;
-            case "profiles.variable-add": AddVariable(); PushUiState(); break;
+            case "profiles.variable-add":
+                AddVariable();
+                PushUiState();
+                break;
             case "profiles.variable-remove":
                 if (payload.TryGetProperty("index", out var removeIndex) && removeIndex.TryGetInt32(out var index) && index >= 0 && index < _variables.Count)
                     _variables.RemoveAt(index);
-                PushUiState(); break;
+                PushUiState();
+                break;
             case "profiles.save": SaveProfile(); break;
             case "profiles.close": Close(); break;
         }
@@ -284,15 +154,15 @@ internal sealed class EnvironmentProfilesWindow : Window
     private static string ReadString(JsonElement payload, string name) =>
         payload.TryGetProperty(name, out var value) ? value.GetString() ?? "" : "";
 
-    private void PushUiState() => _uiSurface?.SetState(new
+    private void PushUiState() => _uiSurface.SetState(new
     {
         profiles = _profiles.Select(profile => new { id = profile.Id, name = profile.Name }).ToArray(),
-        selectedId = (_profileBox.SelectedItem as UserEnvironmentProfile)?.Id ?? "",
-        profileName = _profileName.Text,
-        newProfileName = _newProfileName.Text,
-        enabled = _enabled.IsChecked == true,
-        enabledAllowed = _enabled.IsEnabled,
-        status = _status.Text,
+        selectedId = _selectedId ?? "",
+        profileName = _profileName,
+        newProfileName = _newProfileName,
+        enabled = _enabled,
+        enabledAllowed = _enabledAllowed,
+        status = _statusText,
         confirmDelete = _confirmDelete,
         variables = _variables.Select(variable => new { variable.Name, variable.Value, variable.Expandable }).ToArray()
     });
@@ -302,62 +172,66 @@ internal sealed class EnvironmentProfilesWindow : Window
         try
         {
             if (!SaveCurrentProfile(showErrors: true)) return;
-            var id = _service.CreateProfile(_newProfileName.Text);
-            _newProfileName.Clear();
+            var id = _service.CreateProfile(_newProfileName);
+            _newProfileName = "";
             RefreshProfiles(id);
         }
-        catch (Exception exception) { ShowError("Profil oluşturulamadı.", exception); }
+        catch (Exception exception)
+        {
+            ShowError("Profil oluşturulamadı.", exception);
+        }
     }
 
     private void DeleteProfile()
     {
-        if (_profileBox.SelectedItem is not UserEnvironmentProfile profile) return;
-        if (_uiSurface is not null && !_deleteConfirmedFromUi) { _confirmDelete = true; PushUiState(); return; }
-        if (!_deleteConfirmedFromUi && MessageBox.Show(this, $"'{profile.Name}' profili silinsin mi? Etkinse değişkenleri geri yüklenir.",
-                "Ortam Değişkenleri", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (SelectedProfile is not { } profile) return;
+        if (!_deleteConfirmedFromUi)
+        {
+            _confirmDelete = true;
+            PushUiState();
+            return;
+        }
+
         try
         {
             _service.DeleteProfile(profile.Id);
             RefreshProfiles(null);
         }
-        catch (Exception exception) { ShowError("Profil silinemedi.", exception); }
+        catch (Exception exception)
+        {
+            ShowError("Profil silinemedi.", exception);
+        }
     }
 
     private void SetProfileEnabled(bool enabled)
     {
-        if (_loading || _profileBox.SelectedItem is not UserEnvironmentProfile profile) return;
+        if (_loading || SelectedProfile is not { } profile) return;
         try
         {
-            SaveCurrentProfile(showErrors: true);
+            if (!SaveCurrentProfile(showErrors: true)) return;
             _service.SetActiveProfile(enabled ? profile.Id : null);
             LoadSelectedProfile();
         }
         catch (Exception exception)
         {
-            _loading = true;
-            _enabled.IsChecked = !enabled;
-            _loading = false;
+            _enabled = !enabled;
             ShowError("Profil uygulanamadı.", exception);
         }
     }
 
-    private void SaveProfile() { SaveCurrentProfile(showErrors: true); PushUiState(); }
-
-    private bool SaveCurrentProfile(bool showErrors)
+    private void SaveProfile()
     {
-        if (_profileBox.SelectedItem is not UserEnvironmentProfile profile) return true;
-        return SaveProfileData(profile.Id, _profileName.Text, _variables.ToArray(), showErrors);
+        SaveCurrentProfile(showErrors: true);
+        PushUiState();
     }
+
+    private bool SaveCurrentProfile(bool showErrors) => SelectedProfile is not { } profile ||
+        SaveProfileData(profile.Id, _profileName, _variables.ToArray(), showErrors);
 
     private bool SaveProfileData(string id, string name, IReadOnlyCollection<UserEnvironmentVariable> variables, bool showErrors)
     {
         try
         {
-            if (_uiSurface is null)
-            {
-                _grid.CommitEdit(DataGridEditingUnit.Cell, true);
-                _grid.CommitEdit(DataGridEditingUnit.Row, true);
-            }
             _service.SaveProfile(id, name, variables);
             var profile = _profiles.FirstOrDefault(item => item.Id == id);
             if (profile is not null)
@@ -365,7 +239,7 @@ internal sealed class EnvironmentProfilesWindow : Window
                 profile.Name = name.Trim();
                 profile.Variables = variables.Select(entry => new UserEnvironmentVariable(entry.Name, entry.Value, entry.Expandable)).ToList();
             }
-            _status.Text = _service.ActiveProfileId == id ? "Etkin profil kaydedildi ve yeniden uygulandı." : "Profil kaydedildi.";
+            _statusText = _service.ActiveProfileId == id ? "Etkin profil kaydedildi ve yeniden uygulandı." : "Profil kaydedildi.";
             return true;
         }
         catch (Exception exception)
@@ -375,28 +249,11 @@ internal sealed class EnvironmentProfilesWindow : Window
         }
     }
 
-    private void AddVariable()
-    {
-        var entry = new UserEnvironmentVariable("", "", false);
-        _variables.Add(entry);
-        if (_uiSurface is null)
-        {
-            _grid.SelectedItem = entry;
-            _grid.ScrollIntoView(entry);
-            _grid.BeginEdit();
-        }
-    }
-
-    private void RemoveVariable()
-    {
-        if (_grid.SelectedItem is UserEnvironmentVariable entry)
-            _variables.Remove(entry);
-    }
+    private void AddVariable() => _variables.Add(new UserEnvironmentVariable("", "", false));
 
     private void ShowError(string message, Exception exception)
     {
-        _status.Text = message + " " + exception.Message;
-        if (_uiSurface is null) MessageBox.Show(this, _status.Text, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
-        else PushUiState();
+        _statusText = message + " " + exception.Message;
+        PushUiState();
     }
 }

@@ -16,6 +16,8 @@ public sealed class ModuleHost
     private readonly Dictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
     private readonly IQuickActionService _quickActions;
     private readonly IFeatureUiService? _featureUi;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    private bool _stopping;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
         Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null,
@@ -103,6 +105,104 @@ public sealed class ModuleHost
                 CleanupFailedActivation(module);
             }
         }
+    }
+
+    public async Task StartEnabledAsync()
+    {
+        foreach (var module in _modules)
+        {
+            await _lifecycleGate.WaitAsync();
+            try
+            {
+                if (_stopping) return;
+                if (!_store.Enabled.Contains(module.Id) || module.IsActive) continue;
+                try
+                {
+                    if (module is IAsyncTweakModule asyncModule) await asyncModule.ActivateAsync();
+                    else module.Activate();
+                    _errors.Remove(module.Id);
+                }
+                catch (Exception ex)
+                {
+                    _errors[module.Id] = ex.Message;
+                    _log.Error($"Modül etkinleştirilemedi: {module.Id}", ex);
+                    if (module is IAsyncTweakModule asyncModule)
+                    {
+                        try { await asyncModule.DeactivateAsync(); }
+                        catch (Exception cleanup) { _log.Error($"Geri alma başarısız: {module.Id}", cleanup); }
+                    }
+                    else CleanupFailedActivation(module);
+                }
+            }
+            finally { _lifecycleGate.Release(); }
+            await Task.Yield();
+        }
+    }
+
+    public async Task SetEnabledAsync(ITweakModule module, bool enabled)
+    {
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            if (!enabled && !module.IsActive && _store.Enabled.Remove(module.Id))
+            {
+                _store.Save();
+                return;
+            }
+            if (module is not IAsyncTweakModule asyncModule) { SetEnabled(module, enabled); return; }
+            if (enabled == module.IsActive) return;
+            try
+            {
+                if (enabled) await asyncModule.ActivateAsync();
+                else await asyncModule.DeactivateAsync();
+                if (module.IsActive) _store.Enabled.Add(module.Id); else _store.Enabled.Remove(module.Id);
+                _errors.Remove(module.Id);
+                _store.Save();
+            }
+            catch (Exception ex)
+            {
+                _errors[module.Id] = ex.Message;
+                _log.Error($"Modül değiştirilemedi: {module.Id}", ex);
+                if (enabled) { try { await asyncModule.DeactivateAsync(); } catch (Exception cleanup) { _log.Error($"Geri alma başarısız: {module.Id}", cleanup); } }
+                if (module.IsActive) _store.Enabled.Add(module.Id); else _store.Enabled.Remove(module.Id);
+                _store.Save();
+                throw;
+            }
+        }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    public async Task ApplyAsync(ITweakModule module)
+    {
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            if (module is not IAsyncTweakModule asyncModule) { Apply(module); return; }
+            try { if (module.IsActive) await asyncModule.ApplyAsync(); _errors.Remove(module.Id); }
+            catch (Exception ex) { _errors[module.Id] = ex.Message; _log.Error($"Ayar uygulanamadı: {module.Id}", ex); }
+        }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    public async Task StopAllAsync()
+    {
+        _stopping = true;
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            foreach (var module in _modules)
+            {
+                if (!module.IsActive || module.IsPersistent) continue;
+                try
+                {
+                    if (module is IAsyncTweakModule asyncModule) await asyncModule.DeactivateAsync();
+                    else module.Deactivate();
+                }
+                catch (Exception ex) { _log.Error($"Modül kapatılamadı: {module.Id}", ex); }
+                await Task.Yield();
+            }
+        }
+        finally { _lifecycleGate.Release(); }
     }
 
     public void SetEnabled(ITweakModule module, bool enabled)

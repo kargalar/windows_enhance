@@ -21,7 +21,7 @@ public sealed partial class ToolEditor
         }
         if(tool=="redactAudio")
         {
-            options.Children.Add(L10n.Label(new TextBlock{Text="Replace selected audio with"}));options.Children.Add(bleepMode);options.Children.Add(MainWindow.Button("Add selected range",()=>{try{var (a,b)=ReadPlaybackRange("Choose a valid range first.");bleepRanges.Add(new(a,b));ReloadRanges();}catch(ArgumentException error){MessageBox.Show(this,L10n.Text(error.Message),L10n.Text("Check selected range"));}}));options.Children.Add(rangesList);options.Children.Add(MainWindow.Button("Remove selected range",()=>{if(rangesList.SelectedIndex is var i&&i>=0&&i<bleepRanges.Count){bleepRanges.RemoveAt(i);ReloadRanges();}}));
+            options.Children.Add(L10n.Label(new TextBlock{Text="Replace selected audio with"}));options.Children.Add(bleepMode);options.Children.Add(MainWindow.Button("Add selected range",()=>{try{var (a,b)=ReadPlaybackRange("Choose a valid range first.");bleepRanges.Add(new(a,b));ReloadRanges();PushOptionsState();}catch(ArgumentException error){SetEditorStatus(error.Message);}}));options.Children.Add(rangesList);options.Children.Add(MainWindow.Button("Remove selected range",()=>{if(rangesList.SelectedIndex is var i&&i>=0&&i<bleepRanges.Count){bleepRanges.RemoveAt(i);ReloadRanges();PushOptionsState();}}));
         }
         if(tool=="redactVideo"){options.Children.Add(L10n.Label(new TextBlock{Text="Cover style"}));options.Children.Add(redactMode);options.Children.Add(rangesList);options.Children.Add(MainWindow.Button("Remove selected area",()=>{var i=rangesList.SelectedIndex;if(i>=0&&i<videoRegions.Count){videoRegions.RemoveAt(i);var shape=drawing.Children.OfType<System.Windows.Shapes.Rectangle>().ElementAtOrDefault(i);if(shape is not null)drawing.Children.Remove(shape);ReloadRanges();}}));}
     }
@@ -35,7 +35,7 @@ public sealed partial class ToolEditor
     private void PlayRange()
     {
         try{var (a,b)=ReadPlaybackRange();Seek(a);rangePlaybackEnd=b;playingRange=true;player.Play();playing=true;}
-        catch(ArgumentException error){player.Pause();playing=false;playingRange=false;time.Text=error.Message;}
+        catch(ArgumentException error){player.Pause();playing=false;playingRange=false;SetEditorStatus(error.Message);}
     }
     private MediaOptions MoreMediaSettings(MediaOptions original)
     {

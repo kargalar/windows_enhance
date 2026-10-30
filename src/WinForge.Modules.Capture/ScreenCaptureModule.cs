@@ -20,7 +20,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     private CancellationTokenSource? operation;
     private bool busy;
     private ScreenRecording? recording;
-    private Window? controls;
+    private IFeatureUiWindow? controls;
     private IFeatureUiWindow? toolsWindow;
     public override string Id => "screen-capture";
     public override string Name => "Ekran Yakalama";
@@ -145,7 +145,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
             }
             token.ThrowIfCancellationRequested();
             if (annotationTool is null) await ProcessAfterCaptureAsync(image!, store, foreground.App, title, token);
-            else new CaptureEditor(store, image!, annotationTool).Show();
+            else new CaptureEditor(store, image!, annotationTool, featureUi: (Context as IFeatureUiContext)?.FeatureUi).Show();
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { Report(error); }
@@ -181,9 +181,11 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                     Clipboard.SetImage(image);
                     break;
                 case "edit" when Context.Settings.GetBool("edit", true):
-                    var editor = new CaptureEditor(store, image, workflowCompletion: true);
-                    if (editor.ShowDialog() != true || editor.CompletedImage is null) return;
-                    image = editor.CompletedImage;
+                    var editor = new CaptureEditor(store, image, workflowCompletion: true,
+                        featureUi: (Context as IFeatureUiContext)?.FeatureUi);
+                    var editedImage = await editor.Completion;
+                    if (editedImage is null) return;
+                    image = editedImage;
                     break;
                 case "upload" when Context.Settings.GetBool("upload"):
                     var link = await ImageUploadService.UploadAsync(image, Context.Settings.GetString("upload-url"), token);
@@ -233,26 +235,64 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     }
     private void ShowRecordingControls(bool gif, HistoryStore store)
     {
-        var window = new Window { Title = "Kayıt sürüyor", Width = 440, Height = 150, Topmost = true }; controls = window; CaptureUi.Theme(window);
-        var panel = new WrapPanel { Margin = new(14) }; window.Content = panel;
-        var pause = CaptureUi.Button("Duraklat", () => { recording?.TogglePause(); window.Title = recording?.Paused == true ? "Kayıt duraklatıldı" : "Kayıt sürüyor"; }); panel.Children.Add(pause);
-        panel.Children.Add(CaptureUi.Button("Bitir ve kaydet", async () =>
+        var featureUi = (Context as IFeatureUiContext)?.FeatureUi
+            ?? throw new InvalidOperationException("The React recording controls are required.");
+        controls = featureUi.Open("capture-recording", "capture-recording", "Kayıt sürüyor",
+            new FeatureUiWindowOptions(440, 170, Topmost: true));
+        controls.MessageReceived += OnRecordingMessage;
+        PushRecordingState(gif, busy: false, "Kayıt sürüyor");
+        controls.Show();
+
+        async void OnRecordingMessage(string command, JsonElement _)
         {
-            if (recording is not { } session) return; recording = null; window.IsEnabled = false;
-            var token = operation!.Token;
-            try
+            switch (command)
             {
-                var file = await session.FinishAsync(gif, token); var media = await store.ImportMediaAsync(file, token); token.ThrowIfCancellationRequested();
-                store.Add("capture", DateTimeOffset.UtcNow, title: gif ? "GIF kaydı" : "Video kaydı", media: media);
-                Context.Notify(session.Error is null ? "Kayıt geçmişe kaydedildi." : "Kısmi kayıt kaydedildi: " + session.Error);
+                case "capture-recording.pause":
+                    recording?.TogglePause();
+                    PushRecordingState(gif, busy: false, recording?.Paused == true ? "Kayıt duraklatıldı" : "Kayıt sürüyor");
+                    break;
+                case "capture-recording.finish":
+                    await FinishRecordingAsync(gif, store);
+                    break;
+                case "capture-recording.cancel":
+                    Cancel();
+                    break;
             }
-            catch (OperationCanceledException) { }
-            catch (Exception error) { Report(error); }
-            finally { await session.DisposeAsync(); busy = false; window.Close(); }
-        }));
-        panel.Children.Add(CaptureUi.Button("İptal", Cancel));
-        window.Closed += (_, _) => { if (recording is not null) Cancel(); }; window.Show();
+        }
     }
+
+    private async Task FinishRecordingAsync(bool gif, HistoryStore store)
+    {
+        if (recording is not { } session) return;
+        recording = null;
+        var token = operation!.Token;
+        PushRecordingState(gif, busy: true, "Kayıt tamamlanıyor…");
+        try
+        {
+            var file = await session.FinishAsync(gif, token);
+            var media = await store.ImportMediaAsync(file, token);
+            token.ThrowIfCancellationRequested();
+            store.Add("capture", DateTimeOffset.UtcNow, title: gif ? "GIF kaydı" : "Video kaydı", media: media);
+            Context.Notify(session.Error is null ? "Kayıt geçmişe kaydedildi." : "Kısmi kayıt kaydedildi: " + session.Error);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error) { Report(error); }
+        finally
+        {
+            await session.DisposeAsync();
+            busy = false;
+            controls?.Close();
+            controls = null;
+        }
+    }
+
+    private void PushRecordingState(bool gif, bool busy, string status) => controls?.SetState(new
+    {
+        gif,
+        busy,
+        paused = recording?.Paused == true,
+        status
+    });
     private async void Cancel()
     {
         operation?.Cancel(); var session = recording; recording = null;
@@ -263,7 +303,14 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Concat(new[]
     {
         new QuickAction(Id + ".region", "Ekrandan bölge yakala", "sharex screenshot", () => _ = CaptureAsync("region")),
+        new QuickAction(Id + ".window", "Pencere yakala", "sharex screenshot window", () => _ = CaptureAsync("window")),
+        new QuickAction(Id + ".active-window", "Etkin pencereyi yakala", "sharex screenshot active window", () => _ = CaptureAsync("active-window")),
+        new QuickAction(Id + ".monitor", "Monitörü yakala", "sharex screenshot display", () => _ = CaptureAsync("monitor")),
+        new QuickAction(Id + ".desktop", "Tüm masaüstünü yakala", "sharex screenshot desktop", () => _ = CaptureAsync("desktop")),
         new QuickAction(Id + ".multi-region", "Birden fazla bölge yakala", "sharex multiple screenshot", () => _ = CaptureAsync("multi-region")),
+        new QuickAction(Id + ".scroll", "Kayan ekranı yakala", "sharex scrolling screenshot", () => _ = CaptureAsync("scroll")),
+        new QuickAction(Id + ".video", "Ekran videosu kaydet", "sharex video recording", () => _ = CaptureAsync("video")),
+        new QuickAction(Id + ".gif", "Ekran GIF'i kaydet", "sharex gif recording", () => _ = CaptureAsync("gif")),
         new QuickAction(Id + ".tools", "Ekran yakalama araçları", "video gif kayan ekran", ShowTools)
     });
 }

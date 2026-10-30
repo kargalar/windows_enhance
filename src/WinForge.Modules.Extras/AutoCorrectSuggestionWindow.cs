@@ -1,7 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using WinForge.Core;
@@ -15,16 +14,15 @@ internal sealed class AutoCorrectSuggestionWindow : Window
     private const long NoActivateStyle = 0x08000000;
     private const long ToolWindowStyle = 0x00000080;
     private const double VerticalOffset = 44;
-    private readonly StackPanel _suggestions = new() { Orientation = Orientation.Horizontal };
     private readonly Action<string> _acceptSuggestion;
-    private readonly IFeatureUiSurface? _uiSurface;
+    private readonly IFeatureUiSurface _uiSurface;
 
     internal AutoCorrectSuggestionWindow(Action<string> acceptSuggestion, IFeatureUiService? featureUi = null)
     {
         _acceptSuggestion = acceptSuggestion;
-        _uiSurface = featureUi?.CreateSurface("autocorrect-suggestions");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
-        if (_uiSurface is not null) { Width = 300; Height = 46; SizeToContent = SizeToContent.Manual; }
+        _uiSurface = featureUi?.CreateSurface("autocorrect-suggestions")
+            ?? throw new InvalidOperationException("The React autocorrect suggestions view is required.");
+        _uiSurface.MessageReceived += OnUiMessage;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -33,18 +31,12 @@ internal sealed class AutoCorrectSuggestionWindow : Window
         Focusable = false;
         Topmost = true;
         SizeToContent = SizeToContent.WidthAndHeight;
-        var legacyContent = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(35, 38, 45)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(76, 80, 90)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(4),
-            Child = _suggestions
-        };
-        Content = _uiSurface?.Element ?? legacyContent;
+        Width = 300;
+        Height = 46;
+        SizeToContent = SizeToContent.Manual;
+        Content = _uiSurface.Element;
         SourceInitialized += ApplyNonActivatingStyle;
-        Closed += (_, _) => _uiSurface?.Dispose();
+        Closed += (_, _) => _uiSurface.Dispose();
     }
 
     internal void ShowSuggestions(IReadOnlyList<string> suggestions, IntPtr targetWindow, POINT caret)
@@ -55,34 +47,13 @@ internal sealed class AutoCorrectSuggestionWindow : Window
             return;
         }
 
-        _suggestions.Children.Clear();
-        foreach (var suggestion in suggestions)
-        {
-            var button = new Button
-            {
-                Content = suggestion,
-                Padding = new Thickness(10, 5, 10, 5),
-                Margin = new Thickness(2, 0, 2, 0),
-                Background = Brushes.Transparent,
-                Foreground = Brushes.White,
-                BorderThickness = new Thickness(0),
-                Focusable = false,
-                IsTabStop = false,
-                FontSize = 13,
-                Cursor = System.Windows.Input.Cursors.Hand
-            };
-            button.Click += (_, _) => _acceptSuggestion(suggestion);
-            _suggestions.Children.Add(button);
-        }
-
-        if (_uiSurface is not null)
-            Width = Math.Clamp(48 + suggestions.Sum(suggestion => Math.Clamp(suggestion.Length, 5, 24) * 7), 150, 560);
+        Width = Math.Clamp(48 + suggestions.Sum(suggestion => Math.Clamp(suggestion.Length, 5, 24) * 7), 150, 560);
 
         var dpi = GetDpiForWindow(targetWindow);
         var scale = dpi == 0 ? 1.0 : 96.0 / dpi;
         Left = caret.X * scale;
         Top = Math.Max(0, caret.Y * scale - VerticalOffset);
-        _uiSurface?.SetState(new { suggestions = suggestions.ToArray() });
+        _uiSurface.SetState(new { suggestions = suggestions.ToArray() });
         if (!IsVisible) Show();
     }
 

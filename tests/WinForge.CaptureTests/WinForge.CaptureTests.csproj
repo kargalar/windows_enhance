@@ -10,8 +10,10 @@
     <ApplicationManifest>../../src/WinForge.App/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <Page Include="../../src/WinForge.App/Theme.xaml" Link="TestTheme.xaml" />
     <Using Include="System.IO" />
+    <ProjectReference Include="../../src/WinForge.App/WinForge.App.csproj" />
     <ProjectReference Include="../../src/WinForge.Modules.Capture/WinForge.Modules.Capture.csproj" />
   </ItemGroup>
 </Project>

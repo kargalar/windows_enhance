@@ -536,6 +536,31 @@ ve SHA-256 ile doğrulanır. Üçüncü taraf kaynak ve lisans bilgileri
 `Directory.Build.targets` doğrudan paket referanslarını yalnızca tanımlı projelerde
 kabul eder.
 
+### Masaüstü arayüz mimarisi
+
+WinForge'un kullanıcı arayüzü React ve TypeScript bileşenlerinden oluşur; Vite bunları
+derler, uygulama da yerel dosyaları Microsoft WebView2 içinde yükler. WPF uygulama
+başlangıcı, pencere yaşam döngüsü, tepsi simgesi ve Windows'a özgü pencere/ekran
+işlemleri için host katmanı olarak kalır. Modül mantığı ve sistem servisleri .NET'te
+kalır; arayüz ile servisler sınırlı JSON mesajları ve durum güncellemeleri üzerinden
+konuşur. Electron kullanılmaz, çünkü mevcut hedef Windows ve WebView2 zaten
+uygulamanın arayüzünü çalıştırır; Electron eklemek ikinci bir masaüstü çalışma zamanı
+ve ayrı bir ana-süreç/IPC katmanı getirir.
+
+| Katman | Kullanılan teknoloji | Sorumluluk |
+| --- | --- | --- |
+| Görsel arayüz | React, TypeScript, CSS | Sayfalar, pencereler, durum ve kullanıcı etkileşimi |
+| Masaüstü host | WPF, WebView2 | Pencere yaşam döngüsü, yerel UI barındırma ve mesaj köprüsü |
+| İş mantığı | .NET modülleri | Dosya, medya, OCR, kısayol ve Windows servisleri |
+| İşletim sistemi entegrasyonu | Win32, COM, WinRT | Ekran, imleç, görev çubuğu ve pencere koordinatları |
+
+Bu seçim mevcut C# modüllerini korur, React bileşenlerini uygulama pencereleri arasında
+paylaştırır ve Electron'a özgü ayrı bir uygulama süreci gerektirmez. Karşılığında
+uygulama Windows ve WebView2 Runtime'a bağlıdır; çoklu monitör/DPI, şeffaf ekran
+katmanları ve medya çizim yüzeyleri gerektiğinde native host kodu taşımaya devam eder.
+Yeni normal ekranlar React görünümü olarak eklenir; native katman yalnızca Windows
+özellikleri veya yüksek etkileşimli çizim alanı gerçekten gerektiğinde kullanılır.
+
 Eski AltSnap modülünün WinForge'da kayıtlı ortak ayarları `window-control`
 modülüne taşınır. Yeni modülün mevcut ayarları önceliklidir. Kaldırılan Windhawk
 modülünün kayıtları yeniden etkinleştirilmez. Kullanıcının ayrıca kurduğu

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Input;
@@ -69,7 +70,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
+    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
         try
         {
@@ -80,8 +81,8 @@ public partial class MainWindow : Window
             object? result = command switch
             {
                 "ui.ready" => BuildState(),
-                "module.toggle" => ToggleModule(payload),
-                "setting.update" => UpdateSetting(payload),
+                "module.toggle" => await ToggleModule(payload),
+                "setting.update" => await UpdateSetting(payload),
                 "setting.execute" => ExecuteSetting(payload),
                 "appearance.update" => UpdateAppearance(payload),
                 "system.openLogs" => OpenLogs(),
@@ -157,14 +158,14 @@ public partial class MainWindow : Window
         };
     }
 
-    private object ToggleModule(JsonElement payload)
+    private async Task<object> ToggleModule(JsonElement payload)
     {
         var module = FindModule(payload.GetProperty("id").GetString());
-        App.Instance.Host.SetEnabled(module, payload.GetProperty("enabled").GetBoolean());
+        await App.Instance.Host.SetEnabledAsync(module, payload.GetProperty("enabled").GetBoolean());
         return BuildState();
     }
 
-    private object UpdateSetting(JsonElement payload)
+    private async Task<object> UpdateSetting(JsonElement payload)
     {
         var module = FindModule(payload.GetProperty("moduleId").GetString());
         var key = payload.GetProperty("key").GetString();
@@ -180,7 +181,7 @@ public partial class MainWindow : Window
         };
 
         App.Instance.Host.SettingsOf(module).Set(descriptor.Key, settingValue);
-        App.Instance.Host.Apply(module);
+        await App.Instance.Host.ApplyAsync(module);
         return BuildState();
     }
 
@@ -226,11 +227,42 @@ public partial class MainWindow : Window
 
     private void PostMessage(object message)
     {
+        if (App.Instance.IsExiting) return;
         if (UiWebView.CoreWebView2 is null) return;
         UiWebView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, _jsonOptions));
     }
 
+    internal void RefreshState() => PostMessage(new { type = "state", payload = BuildState() });
+
     private void ApplyAppearance() => Appearance.Apply();
+
+    private void OnTitleBarMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+            ToggleMaximize();
+        else if (e.ButtonState == MouseButtonState.Pressed)
+            DragMove();
+    }
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeClick(object sender, RoutedEventArgs e) => ToggleMaximize();
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
+
+    private void ToggleMaximize() => WindowState = WindowState == WindowState.Maximized
+        ? WindowState.Normal
+        : WindowState.Maximized;
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        var maximized = WindowState == WindowState.Maximized;
+        MaximizeButton.Content = maximized ? "\uE923" : "\uE922";
+        var label = maximized ? "?nceki boyuta getir" : "Ekran? kapla";
+        MaximizeButton.ToolTip = label;
+        System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, label);
+    }
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {

@@ -18,6 +18,22 @@ internal static class ClipboardKeymap
         ["yapistir"] = "Ctrl+Enter", ["disa-aktar"] = "Ctrl+Shift+E", ["etiket-ekle"] = "Ctrl+Shift+T", ["baglanti-ac"] = "Ctrl+O", ["ocr-kopyala"] = "Ctrl+Shift+C"
     };
 
+    internal static Key ParseWebKey(string key) => key switch
+    {
+        " " => Key.Space,
+        "ArrowLeft" => Key.Left,
+        "ArrowRight" => Key.Right,
+        "ArrowUp" => Key.Up,
+        "ArrowDown" => Key.Down,
+        "Backspace" => Key.Back,
+        "PageUp" => Key.PageUp,
+        "PageDown" => Key.PageDown,
+        "Home" => Key.Home,
+        "End" => Key.End,
+        _ when key.Length == 1 && char.IsDigit(key[0]) => Enum.Parse<Key>("D" + key),
+        _ => Enum.TryParse<Key>(key, true, out var parsed) ? parsed : Key.None
+    };
+
     internal static IReadOnlyDictionary<string, string> ParseOverrides(string text)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);

@@ -61,13 +61,16 @@ public sealed record FeatureUiWindowOptions(
     bool ShowInTaskbar = false,
     bool Transparent = false,
     bool ClickThrough = false,
-    bool Resizable = false);
+    bool Resizable = false,
+    double? Left = null,
+    double? Top = null);
 
 /// <summary>Controls a React-rendered feature window hosted by the desktop application.</summary>
 public interface IFeatureUiWindow : IDisposable
 {
     bool IsVisible { get; }
     event Action<string, System.Text.Json.JsonElement>? MessageReceived;
+    event Action? ClosedByHost;
     void Show();
     void Hide();
     void Close();
@@ -80,6 +83,8 @@ public interface IFeatureUiService
 {
     IFeatureUiWindow Open(string key, string view, string title, FeatureUiWindowOptions options);
     IFeatureUiSurface CreateSurface(string view);
+    Task<bool> ConfirmAsync(string title, string message, string confirmLabel = "Continue", string cancelLabel = "Cancel");
+    Task ShowMessageAsync(string title, string message, string closeLabel = "Close");
 }
 
 /// <summary>Embeds a React-rendered feature view inside a native window owned by a module.</summary>
@@ -88,6 +93,12 @@ public interface IFeatureUiSurface : IDisposable
     System.Windows.FrameworkElement Element { get; }
     event Action<string, System.Text.Json.JsonElement>? MessageReceived;
     void SetState(object state);
+}
+
+/// <summary>Allows trusted feature views to load a specific local file through a WebView2 virtual host.</summary>
+public interface IFeatureUiAssetSurface : IFeatureUiSurface
+{
+    Uri MapLocalAsset(string filePath);
 }
 
 /// <summary>Available to modules hosted by an application with the shared React UI runtime.</summary>
@@ -164,6 +175,14 @@ public interface ITweakModule
 
     /// <summary>Settings changed; re-read them and apply live.</summary>
     void Apply();
+}
+
+/// <summary>Modules with potentially slow lifecycle operations can keep the UI dispatcher responsive.</summary>
+public interface IAsyncTweakModule
+{
+    Task ActivateAsync();
+    Task DeactivateAsync();
+    Task ApplyAsync();
 }
 
 /// <summary>Handles a small, validated command forwarded to the running application.</summary>

@@ -1,12 +1,7 @@
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Threading;
 using WinForge.Core;
 
 namespace WinForge.Modules.Launcher;
@@ -44,10 +39,10 @@ internal sealed class LauncherWindow : Window
     private readonly Action<string> _launch;
     private readonly Action<string> _copyResult;
     private readonly IQuickActionService? _quickActions;
-    private readonly IFeatureUiSurface? _uiSurface;
-    private readonly ObservableCollection<LauncherEntry> _results = new();
-    private readonly TextBox _searchBox;
-    private readonly ListBox _resultList;
+    private readonly IFeatureUiSurface _uiSurface;
+    private readonly List<LauncherEntry> _results = new();
+    private string _query = "";
+    private int _selectedIndex = -1;
     private string[] _additionalRoots;
     private IReadOnlySet<string> _allowedExtensions;
     private bool _contentSearchEnabled;
@@ -71,8 +66,9 @@ internal sealed class LauncherWindow : Window
         _contentSearchEnabled = contentSearchEnabled;
         _recentItemsEnabled = recentItemsEnabled;
         _quickActions = quickActions;
-        _uiSurface = featureUi?.CreateSurface("launcher");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("launcher")
+            ?? throw new InvalidOperationException("Başlatıcı için React arayüzü gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Title = "WinForge Hızlı Başlatıcı";
         Width = 680;
         Height = 480;
@@ -84,83 +80,21 @@ internal sealed class LauncherWindow : Window
         ShowActivated = true;
         Topmost = true;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = new SolidColorBrush(Color.FromRgb(25, 29, 38));
-        Foreground = Brushes.White;
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
         AllowsTransparency = false;
 
-        var root = new Grid { Margin = new Thickness(18) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition());
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var heading = new TextBlock
-        {
-            Text = "WinForge · Hızlı Başlatıcı",
-            FontSize = 13,
-            FontWeight = FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(Color.FromRgb(140, 195, 255)),
-            Margin = new Thickness(2, 0, 0, 10)
-        };
-        root.Children.Add(heading);
-
-        _searchBox = new TextBox
-        {
-            FontSize = 22,
-            Padding = new Thickness(12, 10, 12, 10),
-            Margin = new Thickness(0, 0, 0, 12),
-            Background = new SolidColorBrush(Color.FromRgb(38, 44, 56)),
-            Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(74, 88, 110)),
-            CaretBrush = Brushes.White
-        };
-        Grid.SetRow(_searchBox, 1);
-        root.Children.Add(_searchBox);
-
-        _resultList = new ListBox
-        {
-            ItemsSource = _results,
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Foreground = Brushes.White,
-            Padding = new Thickness(0),
-            DisplayMemberPath = nameof(LauncherEntry.Name)
-        };
-        Grid.SetRow(_resultList, 2);
-        root.Children.Add(_resultList);
-
-        var hint = new TextBlock
-        {
-            Text = "↑ ↓ seç · Enter aç / sonucu kopyala · = hesapla · Esc kapat",
-            Foreground = new SolidColorBrush(Color.FromRgb(155, 165, 180)),
-            FontSize = 11,
-            Margin = new Thickness(2, 10, 0, 0)
-        };
-        Grid.SetRow(hint, 3);
-        root.Children.Add(hint);
-        Content = _uiSurface?.Element ?? root;
-
-        _searchBox.TextChanged += (_, _) => UpdateResults();
-        _searchBox.PreviewKeyDown += OnSearchKeyDown;
-        _resultList.PreviewKeyDown += OnSearchKeyDown;
-        _resultList.MouseDoubleClick += (_, _) => LaunchSelected();
+        Content = _uiSurface.Element;
         Deactivated += (_, _) => Hide();
-        Closed += (_, _) => { CancelContentSearch(); _uiSurface?.Dispose(); };
+        Closed += (_, _) => { CancelContentSearch(); _uiSurface.Dispose(); };
     }
 
     public void Open()
     {
-        _searchBox.Clear();
+        _query = "";
+        _selectedIndex = -1;
         UpdateResults();
         if (!IsVisible) Show();
         WindowState = WindowState.Normal;
         Activate();
-        Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
-        {
-            _searchBox.Focus();
-            _searchBox.SelectAll();
-        }));
         _focusGeneration++;
         PushUiState();
         if (DateTime.UtcNow - _lastIndexRefreshUtc > IndexCacheDuration) _ = RefreshIndexAsync();
@@ -213,33 +147,10 @@ internal sealed class LauncherWindow : Window
         if (IsVisible) _ = RefreshIndexAsync();
     }
 
-    private void OnSearchKeyDown(object sender, KeyEventArgs args)
-    {
-        switch (args.Key)
-        {
-            case Key.Escape:
-                Hide();
-                args.Handled = true;
-                break;
-            case Key.Enter:
-                LaunchSelected();
-                args.Handled = true;
-                break;
-            case Key.Down when sender == _searchBox && _results.Count > 0:
-                _resultList.Focus();
-                _resultList.SelectedIndex = Math.Max(0, _resultList.SelectedIndex);
-                args.Handled = true;
-                break;
-            case Key.Up when sender == _resultList && _resultList.SelectedIndex <= 0:
-                _searchBox.Focus();
-                args.Handled = true;
-                break;
-        }
-    }
-
     private void LaunchSelected()
     {
-        if (_resultList.SelectedItem is not LauncherEntry selected) return;
+        if (_selectedIndex < 0 || _selectedIndex >= _results.Count) return;
+        var selected = _results[_selectedIndex];
         Hide();
         if (selected.IsCalculation)
         {
@@ -257,12 +168,12 @@ internal sealed class LauncherWindow : Window
     private void UpdateResults()
     {
         CancelContentSearch();
-        var query = _searchBox.Text.Trim();
+        var query = _query.Trim();
         if (query.StartsWith('=') && CalculatorParser.TryEvaluate(query[1..], out var result))
         {
             _results.Clear();
             _results.Add(new LauncherEntry($"Sonucu kopyala: {query[1..].Trim()} = {result}", result, true));
-            _resultList.SelectedIndex = 0;
+            _selectedIndex = 0;
             PushUiState();
             return;
         }
@@ -271,7 +182,7 @@ internal sealed class LauncherWindow : Window
         {
             _results.Clear();
             _results.Add(new LauncherEntry(directResult, directTarget));
-            _resultList.SelectedIndex = 0;
+            _selectedIndex = 0;
             PushUiState();
             return;
         }
@@ -290,7 +201,7 @@ internal sealed class LauncherWindow : Window
 
         _results.Clear();
         foreach (var match in matches) _results.Add(match);
-        _resultList.SelectedIndex = _results.Count > 0 ? 0 : -1;
+        _selectedIndex = _results.Count > 0 ? 0 : -1;
         if (_contentSearchEnabled && query.Length >= 3) ScheduleContentSearch(query);
         PushUiState();
     }
@@ -300,22 +211,23 @@ internal sealed class LauncherWindow : Window
         switch (command)
         {
             case "launcher.search":
-                _searchBox.Text = payload.TryGetProperty("query", out var query) ? query.GetString() ?? "" : "";
+                _query = payload.TryGetProperty("query", out var query) ? query.GetString() ?? "" : "";
+                UpdateResults();
                 break;
             case "launcher.select":
                 if (payload.TryGetProperty("index", out var selected) && selected.TryGetInt32(out var index))
-                    _resultList.SelectedIndex = Math.Clamp(index, -1, _results.Count - 1);
+                    _selectedIndex = Math.Clamp(index, -1, _results.Count - 1);
                 PushUiState();
                 break;
             case "launcher.move":
                 if (_results.Count == 0) break;
                 var delta = payload.TryGetProperty("delta", out var amount) && amount.TryGetInt32(out var value) ? value : 0;
-                _resultList.SelectedIndex = Math.Clamp(_resultList.SelectedIndex + delta, 0, _results.Count - 1);
+                _selectedIndex = Math.Clamp(_selectedIndex + delta, 0, _results.Count - 1);
                 PushUiState();
                 break;
             case "launcher.activate":
                 if (payload.TryGetProperty("index", out var activateIndex) && activateIndex.TryGetInt32(out var itemIndex))
-                    _resultList.SelectedIndex = Math.Clamp(itemIndex, -1, _results.Count - 1);
+                    _selectedIndex = Math.Clamp(itemIndex, -1, _results.Count - 1);
                 LaunchSelected();
                 break;
             case "launcher.dismiss": Hide(); break;
@@ -324,11 +236,10 @@ internal sealed class LauncherWindow : Window
 
     private void PushUiState()
     {
-        if (_uiSurface is null) return;
         _uiSurface.SetState(new
         {
-            query = _searchBox.Text,
-            selectedIndex = _resultList.SelectedIndex,
+            query = _query,
+            selectedIndex = _selectedIndex,
             focusGeneration = _focusGeneration,
             results = _results.Select(entry => new { entry.Name, entry.Path, entry.IsCalculation, entry.IsRecent }).ToArray()
         });
@@ -351,7 +262,7 @@ internal sealed class LauncherWindow : Window
             var results = await Task.Run(() => SearchFileContents(candidates, query, ContentResultLimit,
                 ContentFileScanLimit, MaxContentCharacters, cancellationToken), cancellationToken);
             if (cancellationToken.IsCancellationRequested || !IsVisible ||
-                !string.Equals(_searchBox.Text.Trim(), query, StringComparison.Ordinal)) return;
+                !string.Equals(_query.Trim(), query, StringComparison.Ordinal)) return;
 
             foreach (var result in results)
             {

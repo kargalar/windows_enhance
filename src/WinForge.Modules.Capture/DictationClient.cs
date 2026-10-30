@@ -82,7 +82,7 @@ internal sealed class DictationClient(string? workerDirectory = null) : IDisposa
         loaded = null; pipe?.Dispose(); pipe = null;
         if (process is not null)
         {
-            try { if (!process.HasExited) process.Kill(true); process.WaitForExit(5000); } catch (InvalidOperationException) { }
+            try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { }
             process.Dispose(); process = null;
         }
     }

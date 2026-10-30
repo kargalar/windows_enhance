@@ -205,7 +205,6 @@ public sealed class WorkspacesModule : ITweakModule, IQuickActionProvider
         if (featureUi is null) return;
         _window ??= new WorkspacesWindow(_context.Settings, featureUi);
         _window.Show();
-        _window.Activate();
         _ = _window.RestorePresetAsync(presetId);
     }
 
@@ -216,7 +215,6 @@ public sealed class WorkspacesModule : ITweakModule, IQuickActionProvider
         if (featureUi is null) return;
         _window ??= new WorkspacesWindow(_context.Settings, featureUi);
         _window.Show();
-        _window.Activate();
     }
 }
 

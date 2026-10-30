@@ -61,6 +61,10 @@ internal static class AutoCorrectQualityChecks
         check(KeyboardCost('e', 'r') < KeyboardCost('e', 'd') && KeyboardCost('e', 'd') < KeyboardCost('e', 'b'),
             "Keyboard typo costs rise smoothly from an adjacent key through a diagonal to a distant key");
         var getSuggestions = engineType.GetMethod("GetSuggestions", PrivateInstance)!;
+        var typoSuggestions = (IReadOnlyList<string>)getSuggestions.Invoke(engine,
+            ["braz", "tr-TR", "ben zayflayaym", true, true, false, false, null, 3])!;
+        check(typoSuggestions.Contains("biraz", StringComparer.OrdinalIgnoreCase),
+            "A likely typo correction remains visible alongside prefix completions");
         var prefixSuggestions = (IReadOnlyList<string>)getSuggestions.Invoke(engine,
             ["merh", "tr-TR", null, true, true, false, false, null, 3])!;
         check(prefixSuggestions.Contains("merhaba", StringComparer.OrdinalIgnoreCase),
@@ -158,6 +162,10 @@ internal static class AutoCorrectQualityChecks
         }
         finally { trackerType.GetMethod("Clear")!.Invoke(personalizedTracker, null); }
         var find = engineType.GetMethods().Single(method => method.Name == "FindCorrection" && method.GetParameters().Length == 8);
+        check((string?)find.Invoke(engine, ["dıger", "tr-TR", "sayenizde", true, true, false, false, null]) == "diğer",
+            "A common Turkish dotted and dotless i typo is corrected");
+        check((string?)find.Invoke(engine, ["haksızlığın", "tr-TR", "her şeyden önce", true, true, false, false, null]) is null,
+            "A valid Turkish word does not lose dotless i characters without supporting context");
         string? Correct(string word, string tag = "tr-TR", string? history = null, bool context = true,
             bool deasciify = true, bool expansions = true, IReadOnlyDictionary<string, string>? custom = null) =>
             (string?)find.Invoke(engine, [word, tag, history, context, deasciify, expansions, false, custom]);
@@ -379,6 +387,12 @@ internal static class AutoCorrectQualityChecks
     private static void VerifyHistory(Assembly extras, Action<bool, string> check)
     {
         var moduleType = extras.GetType("WinForge.Modules.Extras.AutoCorrectModule")!;
+        var learnableHistory = moduleType.GetMethod("GetLearnableHistory", PrivateStatic)!;
+        Func<string, bool> known = word => word != "unknown";
+        string History(string text) => (string)learnableHistory.Invoke(null, [text, known])!;
+        check(History("known unknown") == "", "Unknown adjacent words prevent learning a false bigram");
+        check(History("unknown known") == "known", "Learning retains only the known contiguous suffix");
+        check(History("first second") == "first second", "Learning retains a fully known two-word context");
         var module = Activator.CreateInstance(moduleType)!;
         var resolve = moduleType.GetMethod("ResolveLanguageTags", PrivateStatic)!;
         check(((IReadOnlyList<string>)resolve.Invoke(null, ["Deutsch", "tr-TR"])!).SequenceEqual(new[] { "de-DE" }),

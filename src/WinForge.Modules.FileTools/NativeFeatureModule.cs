@@ -129,7 +129,8 @@ public sealed class NashiModule : NativeFeatureModule
     public override string Description => "Win+Alt+N: görsel, PDF, belge, arşiv ve medya dönüştürme; kırpma, işaretleme, QR, web indirme, sürükleme çarkı ve dosya kütüphanesi.";
     public override string? Warning => "Medya, Office ve metadata işlemleri için paneldeki araç kurulumunu tamamlayın. Özgün dosyalar korunur.";
     protected override uint ShortcutKey => 'N';
-    protected override Window CreateWindow() => (_windowFactory?.Invoke() ?? new UI.MainWindow(offerToolSetup: false)).UseModuleLifetime();
+    protected override Window CreateWindow() => (_windowFactory?.Invoke() ?? new UI.MainWindow(offerToolSetup: false,
+        featureUi: (Context as IFeatureUiContext)?.FeatureUi)).UseModuleLifetime();
     public override void Activate()
     {
         if (IsActive) return;

@@ -20,7 +20,7 @@ public sealed class NetSpeedWindow
     private bool _showDownload = true;
     private bool _showUpload = true;
     private string _unit = "Otomatik";
-    private string _position = AboveTaskbar;
+    private string _position = InsideTaskbar;
     private int _intervalMilliseconds = 1000;
     private int _running;
     private int _tickInProgress;
@@ -103,9 +103,11 @@ public sealed class NetSpeedWindow
         }
         else
         {
-            left = (rect.Left + rect.Right) / 2.0 < screenCenterX
-                ? rect.Right / scale + 2
-                : rect.Left / scale - OverlayWidth - 2;
+            left = inside
+                ? rect.Left / scale + (width / scale - OverlayWidth) / 2
+                : (rect.Left + rect.Right) / 2.0 < screenCenterX
+                    ? rect.Right / scale + 2
+                    : rect.Left / scale - OverlayWidth - 2;
             top = inside
                 ? rect.Top / scale + (height / scale - OverlayHeight) / 2
                 : trayRect.Top / scale - OverlayHeight - _trayGap;

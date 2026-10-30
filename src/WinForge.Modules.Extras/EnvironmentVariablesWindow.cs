@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Media;
 using WinForge.Core;
 
@@ -12,8 +10,7 @@ internal sealed class EnvironmentVariablesWindow : Window
 {
     private readonly IEnvironmentVariableStore _store;
     private readonly ObservableCollection<UserEnvironmentVariable> _entries = new();
-    private readonly DataGrid _grid;
-    private readonly IFeatureUiSurface? _uiSurface;
+    private readonly IFeatureUiSurface _uiSurface;
     private readonly string _descriptionText;
     private string _statusText = "";
     private string[] _originalNames = Array.Empty<string>();
@@ -29,8 +26,9 @@ internal sealed class EnvironmentVariablesWindow : Window
     {
         _store = store;
         _descriptionText = descriptionText;
-        _uiSurface = featureUi?.CreateSurface("environment-variables");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("environment-variables")
+            ?? throw new InvalidOperationException("The React environment variables view is required.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Title = title;
         Width = 820;
         Height = 540;
@@ -42,77 +40,9 @@ internal sealed class EnvironmentVariablesWindow : Window
         Foreground = Brushes.White;
         FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
 
-        var root = new DockPanel { Margin = new Thickness(18) };
-        var heading = new TextBlock
-        {
-            Text = title,
-            FontSize = 20,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 6)
-        };
-        DockPanel.SetDock(heading, Dock.Top);
-        root.Children.Add(heading);
-
-        var description = new TextBlock
-        {
-            Text = descriptionText,
-            Foreground = new SolidColorBrush(Color.FromRgb(155, 165, 180)),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 14)
-        };
-        DockPanel.SetDock(description, Dock.Top);
-        root.Children.Add(description);
-
-        _grid = new DataGrid
-        {
-            ItemsSource = _entries,
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            IsReadOnly = false,
-            SelectionMode = DataGridSelectionMode.Single,
-            SelectionUnit = DataGridSelectionUnit.FullRow,
-            Background = new SolidColorBrush(Color.FromRgb(31, 36, 46)),
-            Foreground = Brushes.White,
-            RowBackground = new SolidColorBrush(Color.FromRgb(31, 36, 46)),
-            AlternatingRowBackground = new SolidColorBrush(Color.FromRgb(37, 43, 54)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(67, 77, 94)),
-            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Değişken",
-            Binding = new Binding(nameof(UserEnvironmentVariable.Name)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(220)
-        });
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Değer",
-            Binding = new Binding(nameof(UserEnvironmentVariable.Value)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
-        });
-        _grid.Columns.Add(new DataGridCheckBoxColumn
-        {
-            Header = "%...% genişlet",
-            Binding = new Binding(nameof(UserEnvironmentVariable.Expandable)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged },
-            Width = new DataGridLength(130)
-        });
-        root.Children.Add(_grid);
-
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(CreateButton("Değişken ekle", AddEntry));
-        buttons.Children.Add(CreateButton("Seçileni sil", RemoveSelected));
-        buttons.Children.Add(CreateButton("Yenile", Reload));
-        buttons.Children.Add(CreateButton("Kaydet", Save));
-        buttons.Children.Add(CreateButton("Kapat", Close));
-        DockPanel.SetDock(buttons, Dock.Bottom);
-        root.Children.Add(buttons);
-
-        Content = _uiSurface?.Element ?? root;
+        Content = _uiSurface.Element;
         Reload();
-        Closed += (_, _) => _uiSurface?.Dispose();
+        Closed += (_, _) => _uiSurface.Dispose();
     }
 
     private void OnUiMessage(string command, JsonElement payload)
@@ -139,7 +69,7 @@ internal sealed class EnvironmentVariablesWindow : Window
         }
     }
 
-    private void PushUiState() => _uiSurface?.SetState(new
+    private void PushUiState() => _uiSurface.SetState(new
     {
         title = Title,
         description = _descriptionText,
@@ -147,35 +77,10 @@ internal sealed class EnvironmentVariablesWindow : Window
         rows = _entries.Select(row => new { row.Name, row.Value, row.Expandable }).ToArray()
     });
 
-    private static Button CreateButton(string text, Action action)
-    {
-        var button = new Button
-        {
-            Content = text,
-            Padding = new Thickness(12, 8, 12, 8),
-            Margin = new Thickness(5, 0, 0, 0),
-            MinWidth = 74
-        };
-        button.Click += (_, _) => action();
-        return button;
-    }
-
     private void AddEntry()
     {
         var row = new UserEnvironmentVariable("", "", false);
         _entries.Add(row);
-        if (_uiSurface is null)
-        {
-            _grid.SelectedItem = row;
-            _grid.ScrollIntoView(row);
-            _grid.BeginEdit();
-        }
-    }
-
-    private void RemoveSelected()
-    {
-        if (_grid.SelectedItem is UserEnvironmentVariable selected)
-            _entries.Remove(selected);
     }
 
     private void Reload()
@@ -199,11 +104,6 @@ internal sealed class EnvironmentVariablesWindow : Window
     {
         try
         {
-            if (_uiSurface is null)
-            {
-                _grid.CommitEdit(DataGridEditingUnit.Cell, true);
-                _grid.CommitEdit(DataGridEditingUnit.Row, true);
-            }
             _store.Save(_originalNames, _entries.ToArray());
             Reload();
             _statusText = "Ortam değişkenleri kaydedildi.";
@@ -218,9 +118,6 @@ internal sealed class EnvironmentVariablesWindow : Window
     private void ShowError(string message, Exception exception)
     {
         _statusText = message + " " + exception.Message;
-        if (_uiSurface is null)
-            MessageBox.Show(this, _statusText, "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
-        else
-            PushUiState();
+        PushUiState();
     }
 }

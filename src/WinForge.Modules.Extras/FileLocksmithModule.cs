@@ -1,4 +1,3 @@
-﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -6,7 +5,6 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
-using System.Windows.Controls;
 using Microsoft.Win32;
 using WinForge.Core;
 
@@ -80,13 +78,10 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
 
 internal sealed class FileLocksmithWindow : Window
 {
-    private readonly ObservableCollection<LockingProcess> _processes = new();
-    private readonly TextBox _path = new() { IsReadOnly = true, MinWidth = 420 };
-    private readonly DataGrid _grid;
-    private readonly TextBlock _status = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
-    private readonly Button _scan = new() { Content = "Yeniden tara", MinWidth = 100, IsEnabled = false };
-    private readonly Button _terminate = new() { Content = "Uygulamayı sonlandır…", MinWidth = 150, IsEnabled = false, Margin = new Thickness(8, 0, 0, 0) };
-    private readonly IFeatureUiSurface? _uiSurface;
+    private readonly List<LockingProcess> _processes = [];
+    private readonly IFeatureUiSurface _uiSurface;
+    private string _path = "";
+    private string _status = "";
     private LockingProcess? _selectedProcess;
     private bool _confirmTerminate;
 
@@ -94,8 +89,9 @@ internal sealed class FileLocksmithWindow : Window
 
     internal FileLocksmithWindow(string? initialPath, IFeatureUiService? featureUi = null)
     {
-        _uiSurface = featureUi?.CreateSurface("file-locksmith");
-        if (_uiSurface is not null) _uiSurface.MessageReceived += OnUiMessage;
+        _uiSurface = featureUi?.CreateSurface("file-locksmith")
+            ?? throw new InvalidOperationException("The React file locksmith view is required.");
+        _uiSurface.MessageReceived += OnUiMessage;
         Title = "Dosya Kilidi Bulucu";
         Width = 760;
         Height = 460;
@@ -104,54 +100,12 @@ internal sealed class FileLocksmithWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
 
-        _grid = new DataGrid
-        {
-            AutoGenerateColumns = false,
-            IsReadOnly = true,
-            CanUserAddRows = false,
-            ItemsSource = _processes,
-            Margin = new Thickness(0, 12, 0, 0)
-        };
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Süreç", Binding = new System.Windows.Data.Binding(nameof(LockingProcess.ProcessName)), Width = 150 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Uygulama / hizmet", Binding = new System.Windows.Data.Binding(nameof(LockingProcess.ApplicationName)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "PID", Binding = new System.Windows.Data.Binding(nameof(LockingProcess.ProcessId)), Width = 80 });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "Durum", Binding = new System.Windows.Data.Binding(nameof(LockingProcess.Status)), Width = 150 });
-
-        var choose = new Button { Content = "Dosya seç…", Padding = new Thickness(10, 6, 10, 6) };
-        choose.Click += (_, _) => ChooseFile();
-        _scan.Click += (_, _) => Scan();
-        _grid.SelectionChanged += (_, _) => UpdateTerminateState();
-        _terminate.Click += (_, _) => TerminateSelected();
-
-        var layout = new Grid { Margin = new Thickness(18) };
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var selectedFile = new StackPanel { Orientation = Orientation.Horizontal };
-        selectedFile.Children.Add(choose);
-        selectedFile.Children.Add(_path);
-        Grid.SetRow(selectedFile, 0);
-        layout.Children.Add(selectedFile);
-        Grid.SetRow(_grid, 1);
-        layout.Children.Add(_grid);
-
-        var footer = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        actions.Children.Add(_scan);
-        actions.Children.Add(_terminate);
-        DockPanel.SetDock(actions, Dock.Right);
-        footer.Children.Add(actions);
-        footer.Children.Add(_status);
-        Grid.SetRow(footer, 2);
-        layout.Children.Add(footer);
-        Content = _uiSurface?.Element ?? layout;
-        Closed += (_, _) => _uiSurface?.Dispose();
+        Content = _uiSurface.Element;
+        Closed += (_, _) => _uiSurface.Dispose();
 
         if (!string.IsNullOrWhiteSpace(initialPath))
         {
-            _path.Text = initialPath;
-            _scan.IsEnabled = true;
+            _path = initialPath;
             Scan();
         }
         else PushUiState();
@@ -177,12 +131,12 @@ internal sealed class FileLocksmithWindow : Window
         }
     }
 
-    private void PushUiState() => _uiSurface?.SetState(new
+    private void PushUiState() => _uiSurface.SetState(new
     {
-        path = _path.Text,
-        status = _status.Text,
+        path = _path,
+        status = _status,
         selectedProcessId = _selectedProcess?.ProcessId,
-        canScan = File.Exists(_path.Text) || Directory.Exists(_path.Text),
+        canScan = File.Exists(_path) || Directory.Exists(_path),
         canTerminate = _selectedProcess?.CanTerminate == true,
         confirmTerminate = _confirmTerminate,
         processes = _processes.Select(process => new
@@ -202,40 +156,37 @@ internal sealed class FileLocksmithWindow : Window
         };
         if (dialog.ShowDialog(this) != true) return;
 
-        _path.Text = dialog.FileName;
-        _scan.IsEnabled = true;
+        _path = dialog.FileName;
         Scan();
     }
 
     private void Scan()
     {
-        if (!File.Exists(_path.Text) && !Directory.Exists(_path.Text))
+        if (!File.Exists(_path) && !Directory.Exists(_path))
         {
-            _status.Text = "Dosya/klasör bulunamadı veya artık erişilemiyor.";
+            _status = "Dosya/klasör bulunamadı veya artık erişilemiyor.";
             PushUiState();
             return;
         }
 
-        _scan.IsEnabled = false;
         _processes.Clear();
         _selectedProcess = null;
         try
         {
-            var processes = RestartManagerQuery.FindProcesses(_path.Text);
+            var processes = RestartManagerQuery.FindProcesses(_path);
             foreach (var process in processes.OrderBy(item => item.ProcessName, StringComparer.CurrentCultureIgnoreCase))
                 _processes.Add(process);
 
-            _status.Text = processes.Count == 0
+            _status = processes.Count == 0
                 ? "Restart Manager bu dosyayı kullanan bir uygulama veya hizmet bildirmedi."
                 : $"{processes.Count} uygulama veya hizmet bulundu. Tarama salt okunurdur; sonlandırma ayrıca onay ister.";
         }
         catch (Exception exception)
         {
-            _status.Text = "Sorgu başarısız: " + exception.Message;
+            _status = "Sorgu başarısız: " + exception.Message;
         }
         finally
         {
-            _scan.IsEnabled = true;
             UpdateTerminateState();
             PushUiState();
         }
@@ -243,38 +194,30 @@ internal sealed class FileLocksmithWindow : Window
 
     private void UpdateTerminateState()
     {
-        if (_uiSurface is null) _selectedProcess = _grid.SelectedItem as LockingProcess;
-        _terminate.IsEnabled = _selectedProcess?.CanTerminate == true;
         PushUiState();
     }
 
     private void TerminateSelected(bool confirmed = false)
     {
-        var selected = _selectedProcess ?? (_grid.SelectedItem as LockingProcess);
+        var selected = _selectedProcess;
         if (selected is null || !selected.CanTerminate) return;
 
-        if (_uiSurface is not null && !confirmed)
+        if (!confirmed)
         {
             _confirmTerminate = true;
             PushUiState();
             return;
         }
 
-        var answer = confirmed ? MessageBoxResult.Yes : MessageBox.Show(this,
-            $"{selected.ProcessName} (PID {selected.ProcessId}) sonlandırılsın mı?\n\nKaydedilmemiş çalışmalar kaybolabilir. Bu işlem yalnızca seçilen uygulama sürecini etkiler.",
-            "Uygulamayı sonlandır", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes) return;
-
         try
         {
             RestartManagerQuery.Terminate(selected);
-            _status.Text = $"{selected.ProcessName} sonlandırıldı. Kilit durumunu yeniden tarıyorum…";
+            _status = $"{selected.ProcessName} sonlandırıldı. Kilit durumunu yeniden tarıyorum…";
             Scan();
         }
         catch (Exception exception)
         {
-            if (_uiSurface is null) MessageBox.Show(this, exception.Message, "Süreç sonlandırılamadı", MessageBoxButton.OK, MessageBoxImage.Error);
-            else _status.Text = exception.Message;
+            _status = exception.Message;
             Scan();
         }
     }

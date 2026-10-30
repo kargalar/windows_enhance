@@ -6,7 +6,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Taskbar;
 
-public sealed class ShellCustomizationModule : ITweakModule
+public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
 {
     private static readonly TimeSpan ApplicationTimeout = TimeSpan.FromSeconds(3);
     private IModuleContext? _context;
@@ -17,6 +17,7 @@ public sealed class ShellCustomizationModule : ITweakModule
     private string _lastRules = "";
     private string? _error;
     private int _observedErrors;
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
 
     public string Id => "shell-customization";
     public string Name => "Görev Çubuğu Tasarımı";
@@ -59,9 +60,43 @@ public sealed class ShellCustomizationModule : ITweakModule
         ApplyRules(force: true);
     }
 
-    private void OnTick(object? sender, EventArgs arguments)
+    public async Task ActivateAsync()
     {
-        try { EnsureConnection(); ApplyRules(force: false); _error = null; }
+        await _operationGate.WaitAsync();
+        try
+        {
+            if (IsActive) return;
+            var rules = TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
+            try
+            {
+                await Task.Run(() => { EnsureConnection(); ApplyRules(force: true, rules); });
+                _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, OnTick, Dispatcher.CurrentDispatcher);
+                IsActive = true;
+            }
+            catch { await Task.Run(ReleaseConnection); throw; }
+        }
+        finally { _operationGate.Release(); }
+    }
+
+    public async Task ApplyAsync() => await UpdateAsync(force: true);
+
+    private async Task UpdateAsync(bool force)
+    {
+        await _operationGate.WaitAsync();
+        try
+        {
+            if (!IsActive) return;
+            var rules = TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
+            await Task.Run(() => { EnsureConnection(); ApplyRules(force, rules); });
+            _error = null;
+        }
+        finally { _operationGate.Release(); }
+    }
+
+    private async void OnTick(object? sender, EventArgs arguments)
+    {
+        if (_operationGate.CurrentCount == 0) return;
+        try { await UpdateAsync(force: false); }
         catch (Exception exception)
         {
             if (_error != exception.Message) _context?.Log.Error("Kabuk özelleştirmesi uygulanamadı.", exception);
@@ -92,7 +127,7 @@ public sealed class ShellCustomizationModule : ITweakModule
         }
     }
 
-    private void ApplyRules(bool force)
+    private void ApplyRules(bool force, IReadOnlyList<ShellStyleRule>? preparedRules = null)
     {
         var session = _session!;
         if (!force && session.Status.Errors != _observedErrors)
@@ -102,7 +137,7 @@ public sealed class ShellCustomizationModule : ITweakModule
             _lastRules = "";
             throw new InvalidOperationException("Windows görev çubuğu değişikliğini koruyamadı; özelleştirme geri alındı.");
         }
-        var rules = TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
+        var rules = preparedRules ?? TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
         var serialized = JsonSerializer.Serialize(rules);
         if (!force && serialized == _lastRules) return;
         var before = session.Status.Errors;
@@ -129,6 +164,24 @@ public sealed class ShellCustomizationModule : ITweakModule
         _timer?.Stop();
         if (_timer is not null) _timer.Tick -= OnTick;
         _timer = null;
+        ReleaseConnection();
+    }
+
+    public async Task DeactivateAsync()
+    {
+        await _operationGate.WaitAsync();
+        try
+        {
+            _timer?.Stop();
+            if (_timer is not null) _timer.Tick -= OnTick;
+            _timer = null;
+            await Task.Run(ReleaseConnection);
+        }
+        finally { _operationGate.Release(); }
+    }
+
+    private void ReleaseConnection()
+    {
         try { _lease?.Dispose(); }
         finally
         {

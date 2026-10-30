@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Text.Json;
+using WinForge.Core;
 using WinForge.FileTools.UI;
 
 using WinForge.FileTools;
@@ -19,6 +21,7 @@ internal sealed class ClipboardPreviewWindow : Window
     private readonly Action<Guid, bool, bool> _copy;
     private readonly Action<ClipItem> _trim;
     private readonly Action<ClipItem, string> _editImage;
+    private readonly IFeatureUiAssetSurface _uiSurface;
     private readonly Button _crop;
     private readonly Button _annotate;
     private readonly Button _editText;
@@ -33,7 +36,7 @@ internal sealed class ClipboardPreviewWindow : Window
     internal double ImageScaleForTest => _preview.Content is ScrollViewer { Content: Image { LayoutTransform: ScaleTransform scale } } ? scale.ScaleX : 0;
     internal Guid CurrentItemIdForTest => _items[_index].Id;
 
-    internal ClipboardPreviewWindow(ClipboardShelfWindow owner, ClipboardLibrary library, ClipItem[] items, Guid selected, Action<Guid, bool, bool> copy, Action<ClipItem> trim, Action<ClipItem, string> editImage)
+    internal ClipboardPreviewWindow(ClipboardShelfWindow owner, ClipboardLibrary library, ClipItem[] items, Guid selected, Action<Guid, bool, bool> copy, Action<ClipItem> trim, Action<ClipItem, string> editImage, IFeatureUiService? featureUi=null)
     {
         _library = library; _items = items; _copy = copy; _trim = trim; _editImage = editImage; _index = Array.FindIndex(items, item => item.Id == selected);
         Owner = owner; Title = "Pano önizleme"; Width = 900; Height = 670; WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -54,6 +57,11 @@ internal sealed class ClipboardPreviewWindow : Window
         {
             HandlePreviewKey(args);
         };
+        _uiSurface = featureUi?.CreateSurface("clipboard-preview") as IFeatureUiAssetSurface
+            ?? throw new InvalidOperationException("Pano önizlemesi için React varlık yüzeyi gerekli.");
+        _uiSurface.MessageReceived += OnUiMessage;
+        Content = _uiSurface.Element;
+        Closed += (_, _) => _uiSurface.Dispose();
         ShowItem();
     }
 
@@ -138,25 +146,91 @@ internal sealed class ClipboardPreviewWindow : Window
     private void ShowItem()
     {
         _editor = null; _player = null; var item = _library.Items.FirstOrDefault(item => item.Id == _items[_index].Id);
-        if (item is null) { _preview.Content = new TextBlock { Text = "Bu kayıt kaldırıldı." }; return; }
+        if (item is null) { _preview.Content = new TextBlock { Text = "Bu kayıt kaldırıldı." }; PushUiState(); return; }
         _heading.Text = item.DisplayTitle; _zoom.Visibility = item.Kind == ClipKind.Image ? Visibility.Visible : Visibility.Collapsed;
         _crop.Visibility = _annotate.Visibility = item.Kind == ClipKind.Image ? Visibility.Visible : Visibility.Collapsed;
         _editText.Visibility = item.Kind is ClipKind.Text or ClipKind.Link ? Visibility.Visible : Visibility.Collapsed;
         _openLink.Visibility = item.Kind == ClipKind.Link ? Visibility.Visible : Visibility.Collapsed;
         if (item.Kind == ClipKind.Image) ShowImage(item);
         else if (item.Kind == ClipKind.Link) ShowLink(item);
-        else if (item.Kind == ClipKind.Recording)
-        {
-            _player = new MediaElement { Source = new Uri(_library.MediaPath(item)), LoadedBehavior = MediaState.Manual, UnloadedBehavior = MediaState.Close, Stretch = Stretch.Uniform };
-            var panel = new DockPanel(); var toolbar = new WrapPanel(); DockPanel.SetDock(toolbar, Dock.Bottom); panel.Children.Add(toolbar);
-            toolbar.Children.Add(ClipboardShelfWindow.ActionButton("Oynat", _player.Play)); toolbar.Children.Add(ClipboardShelfWindow.ActionButton("Duraklat", _player.Pause));
-            toolbar.Children.Add(ClipboardShelfWindow.ActionButton("Kırp", () => { _player.Close(); _trim(item); ShowItem(); })); panel.Children.Add(_player); _preview.Content = panel;
-        }
-        else
+        else if(item.Kind is ClipKind.Text or ClipKind.Link)
         {
             _editor = new TextBox { Text = item.Content, IsReadOnly = true, Focusable = false, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontSize = 16 };
             _editor.TextChanged += (_, _) => { _dirty = true; _save.Stop(); _save.Start(); }; _preview.Content = _editor;
         }
+        else _preview.Content=new TextBlock{Text="Kayıt önizlemesi React oynatıcısında gösteriliyor."};
+        PushUiState();
+    }
+
+    private void PushUiState(string? status=null)
+    {
+        var item=_library.Items.FirstOrDefault(value=>value.Id==_items[_index].Id);
+        if(item is null){_uiSurface.SetState(new{file="Kayıt kaldırıldı",index=_index+1,count=_items.Length,kind="message",message="Bu kayıt artık bulunamıyor.",image="",mediaUrl="",text="",author="",zoom=_zoom.Value,editingText=false,canPrevious=_index>0,canNext=_index+1<_items.Length,canEditImage=false,canEditText=false,canOpenLink=false,canTrim=false});return;}
+        string Map(string path)
+        {
+            try{return path.Length>0&&File.Exists(path)?_uiSurface.MapLocalAsset(path).AbsoluteUri:"";}
+            catch(Exception error)when(error is IOException or UnauthorizedAccessException or InvalidOperationException){return "";}
+        }
+        var image=item.Kind==ClipKind.Image?Map(_library.MediaPath(item)):item.Kind==ClipKind.Link&&item.LinkThumbnail.Length>0?Map(_library.ThumbnailPath(item)):"";
+        var media=item.Kind==ClipKind.Recording?Map(_library.MediaPath(item)):"";
+        _uiSurface.SetState(new
+        {
+            file=item.DisplayTitle,index=_index+1,count=_items.Length,kind=item.Kind switch{ClipKind.Image=>"image",ClipKind.Link=>"link",ClipKind.Recording=>"recording",_=>"text"},
+            message=status??"",image,mediaUrl=media,text=_editor?.Text??item.Content,author=item.LinkAuthor,zoom=_zoom.Value,editingText=_editor is{IsReadOnly:false},
+            canPrevious=_index>0,canNext=_index+1<_items.Length,canEditImage=item.Kind==ClipKind.Image,canEditText=item.Kind is ClipKind.Text or ClipKind.Link,
+            canOpenLink=item.Kind==ClipKind.Link&&ClipboardLibrary.IsStandaloneLink(item.Content),canTrim=item.Kind==ClipKind.Recording
+        });
+    }
+
+    private void OnUiMessage(string command,JsonElement payload)
+    {
+        try
+        {
+            switch(command)
+            {
+                case "clipboard-preview.close": if(Save())Close();break;
+                case "clipboard-preview.navigate": Navigate(payload.GetProperty("delta").GetInt32());break;
+                case "clipboard-preview.copy": Copy(false);break;
+                case "clipboard-preview.paste": Paste();break;
+                case "clipboard-preview.zoom": _zoom.Value=Math.Clamp(payload.GetProperty("value").GetDouble(),_zoom.Minimum,_zoom.Maximum);PushUiState();break;
+                case "clipboard-preview.text-change": if(_editor is not null){_editor.Text=payload.GetProperty("value").GetString()??"";PushUiState();}break;
+                case "clipboard-preview.text-edit": if(_editor is not null){_editor.IsReadOnly=false;_editor.Focusable=true;}PushUiState();break;
+                case "clipboard-preview.text-finish": if(_editor is not null&&Save()){_editor.IsReadOnly=true;_editor.Focusable=false;}PushUiState();break;
+                case "clipboard-preview.edit-image": EditImage(payload.GetProperty("tool").GetString()??"crop");break;
+                case "clipboard-preview.open-link": OpenLink();PushUiState();break;
+                case "clipboard-preview.trim": TrimCurrent();break;
+                case "clipboard-preview.key": HandleUiKey(payload);break;
+            }
+        }
+        catch(Exception error)when(error is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException){PushUiState(error.Message);}
+    }
+
+    private void TrimCurrent()
+    {
+        if(_library.Items.FirstOrDefault(item=>item.Id==_items[_index].Id&&item.Kind==ClipKind.Recording) is not{} recording)return;
+        _player?.Close();_trim(recording);ShowItem();
+    }
+
+    private void HandleUiKey(JsonElement payload)
+    {
+        var keyName=payload.GetProperty("key").GetString()??"";
+        var key=ClipboardKeymap.ParseWebKey(keyName);
+        if(key==Key.None)return;
+        var modifiers=ModifierKeys.None;
+        if(payload.TryGetProperty("ctrl",out var ctrl)&&ctrl.GetBoolean())modifiers|=ModifierKeys.Control;
+        if(payload.TryGetProperty("shift",out var shift)&&shift.GetBoolean())modifiers|=ModifierKeys.Shift;
+        if(payload.TryGetProperty("alt",out var alt)&&alt.GetBoolean())modifiers|=ModifierKeys.Alt;
+        if(_editor is{IsReadOnly:false})
+        {
+            if(key==Key.Escape){FinishTextEdit();PushUiState();}
+            else if(key==Key.Enter&&modifiers==ModifierKeys.Control)Paste();
+            return;
+        }
+        if(key==Key.Escape||key==Key.Space){Close();return;}
+        var command=ClipboardKeymap.Match(key,modifiers,_library.Preferences.LocalShortcuts);
+        if(command is not null&&RunShortcut(command)){PushUiState();return;}
+        if(key is Key.Left or Key.Up)Navigate(-1);
+        else if(key is Key.Right or Key.Down)Navigate(1);
     }
 
     private void ShowLink(ClipItem item)

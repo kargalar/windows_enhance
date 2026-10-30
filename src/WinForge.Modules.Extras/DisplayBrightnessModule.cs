@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -1078,10 +1078,12 @@ public sealed class DisplayBrightnessModule : ITweakModule
     {
         try
         {
-            _window ??= new DisplayBrightnessWindow(_context?.Settings);
-            _window.Closed += (_, _) => _window = null;
-            if (!_window.IsVisible) _window.Show();
-            _window.Activate();
+            var featureUi = (_context as IFeatureUiContext)?.FeatureUi
+                ?? throw new InvalidOperationException("React arayüz altyapısı kullanılamıyor.");
+            if (_window is null || !_window.IsVisible)
+                _window = new DisplayBrightnessWindow(_context?.Settings, featureUi);
+            else
+                _window.Show();
         }
         catch (Exception exception)
         {
@@ -1091,188 +1093,163 @@ public sealed class DisplayBrightnessModule : ITweakModule
     }
 }
 
-internal sealed class DisplayBrightnessWindow : Window
+internal sealed class DisplayBrightnessWindow
 {
-    private readonly StackPanel _monitorList = new();
     private readonly Dictionary<string, int> _pendingBrightness = new(StringComparer.Ordinal);
     private readonly Dictionary<(string Id, byte Code), uint> _pendingVcpFeatures = new();
     private readonly DispatcherTimer _applyTimer;
-    private readonly TextBlock _status;
-    private readonly CheckBox _linkLevels;
     private readonly IModuleSettings? _settings;
-    private readonly TextBox _profileName;
-    private readonly ComboBox _profileSelector;
+    private readonly IFeatureUiWindow _window;
     private List<DisplaySettingsProfile> _profiles;
     private DisplayBrightnessSession? _session;
-    private bool _updating;
+    private bool _linkLevels;
     private bool _isClosed;
     private int _refreshGeneration;
+    private string _status = "Ekran bilgileri yükleniyor…";
+    private string _profileName = "Yeni profil";
+    private string _selectedProfileName = "";
+    private PendingColorPreset? _confirmColor;
 
-    public DisplayBrightnessWindow(IModuleSettings? settings = null)
+    public DisplayBrightnessWindow(IModuleSettings? settings, IFeatureUiService featureUi)
     {
         _settings = settings;
         _profiles = DisplaySettingsProfiles.Load(settings?.GetString("profiles", "[]") ?? "[]");
-        Title = "Power Display · Ekran Denetimi";
-        Width = 690;
-        Height = 540;
-        MinWidth = 520;
-        MinHeight = 360;
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        ShowInTaskbar = false;
-        Background = new SolidColorBrush(Color.FromRgb(25, 29, 38));
-        Foreground = Brushes.White;
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
-
-        var root = new DockPanel { Margin = new Thickness(20) };
-        var footer = new StackPanel();
-        var profileRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        _profileName = new TextBox
-        {
-            Text = "Yeni profil",
-            Width = 140,
-            Height = 32,
-            Padding = new Thickness(7, 4, 7, 4),
-            Margin = new Thickness(0, 0, 6, 0),
-            ToolTip = "Profil adı"
-        };
-        _profileSelector = new ComboBox { Name = "DisplayProfileSelector", Width = 160, Height = 32, Margin = new Thickness(0, 0, 6, 0), ToolTip = "Kaydedilmiş ekran profili" };
-        _profileSelector.SelectionChanged += (_, _) =>
-        {
-            if (_profileSelector.SelectedItem is string name) _profileName.Text = name;
-        };
-        profileRow.Children.Add(_profileName);
-        profileRow.Children.Add(_profileSelector);
-        profileRow.Children.Add(CreateButton("Profili kaydet", SaveProfile));
-        profileRow.Children.Add(CreateButton("Uygula", ApplyProfile));
-        profileRow.Children.Add(CreateButton("Profili sil", DeleteProfile));
-        footer.Children.Add(profileRow);
-
-        var actionRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        _linkLevels = new CheckBox
-        {
-            Content = "Parlaklık seviyelerini bağla",
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 12, 0),
-            Foreground = Brushes.White
-        };
-        actionRow.Children.Add(_linkLevels);
-        actionRow.Children.Add(CreateButton("Yenile", Refresh));
-        actionRow.Children.Add(CreateButton("Kapat", Close));
-        footer.Children.Add(actionRow);
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
-
-        _status = new TextBlock
-        {
-            Foreground = new SolidColorBrush(Color.FromRgb(155, 165, 180)),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-        DockPanel.SetDock(_status, Dock.Top);
-        root.Children.Add(_status);
-
-        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        scroll.Content = _monitorList;
-        root.Children.Add(scroll);
-        Content = root;
-        RefreshProfiles();
-
-        _applyTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(180)
-        };
-        _applyTimer.Tick += (_, _) => FlushPendingChanges();
-
-        Loaded += (_, _) => Refresh();
-        Closed += (_, _) =>
-        {
-            _isClosed = true;
-            _refreshGeneration++;
-            FlushPendingChanges();
-            _applyTimer.Stop();
-            _session?.Dispose();
-        };
+        _window = featureUi.Open("display-brightness-" + Guid.NewGuid().ToString("N"), "display-brightness",
+            "Power Display · Ekran Denetimi",
+            new FeatureUiWindowOptions(920, 760, ShowInTaskbar: true, Resizable: true));
+        _window.MessageReceived += OnMessage;
+        _applyTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(180) };
+        _applyTimer.Tick += (_, _) => { FlushPendingChanges(); PushState(); };
+        PushState();
+        Refresh();
     }
 
-    private static Button CreateButton(string label, Action action)
+    public void Close()
     {
-        var button = new Button { Content = label, Padding = new Thickness(12, 7, 12, 7), Margin = new Thickness(4, 0, 0, 0) };
-        button.Click += (_, _) => action();
-        return button;
+        if (_isClosed) return;
+        _isClosed = true;
+        _refreshGeneration++;
+        FlushPendingChanges();
+        _applyTimer.Stop();
+        _session?.Dispose();
+        _session = null;
+        _window.Close();
     }
 
-    private void RefreshProfiles(string? selectedName = null)
+    public bool IsVisible => _window.IsVisible;
+    public void Show() => _window.Show();
+
+    private void OnMessage(string command, JsonElement payload)
     {
-        _profileSelector.ItemsSource = _profiles.Select(profile => profile.Name).ToArray();
-        var preferredName = selectedName ?? _profiles.FirstOrDefault(profile =>
-            profile.Name.Equals(_profileName.Text, StringComparison.OrdinalIgnoreCase))?.Name ?? _profiles.FirstOrDefault()?.Name;
-        _profileSelector.SelectedItem = _profileSelector.Items.Cast<string>()
-            .FirstOrDefault(name => name.Equals(preferredName, StringComparison.OrdinalIgnoreCase));
+        switch (command)
+        {
+            case "display.close": Close(); break;
+            case "display.refresh": Refresh(); break;
+            case "display.link-levels": _linkLevels = TryGetBool(payload, "enabled"); PushState(); break;
+            case "display.profile-name": _profileName = TryGetString(payload, "name"); PushState(); break;
+            case "display.profile-select": SelectProfile(TryGetString(payload, "name")); break;
+            case "display.profile-save": SaveProfile(); break;
+            case "display.profile-apply": ApplyProfile(); break;
+            case "display.profile-delete": DeleteProfile(); break;
+            case "display.slider": UpdateSlider(payload); break;
+            case "display.selector": SelectFeature(payload); break;
+            case "display.color-confirm": ConfirmColorPreset(TryGetBool(payload, "confirm")); break;
+        }
+    }
+
+    private void SelectProfile(string name)
+    {
+        _selectedProfileName = name;
+        if (!string.IsNullOrEmpty(name)) _profileName = name;
+        PushState();
+    }
+
+    private void UpdateSlider(JsonElement payload)
+    {
+        var id = TryGetString(payload, "id");
+        var codeValue = TryGetInt(payload, "code");
+        var percent = Math.Clamp(TryGetInt(payload, "value"), 0, 100);
+        if (string.IsNullOrEmpty(id) || codeValue is < 0 or > 255) return;
+        var code = (byte)codeValue;
+        if (code == 0x10)
+        {
+            ScheduleBrightness(id, percent);
+            if (_linkLevels)
+            {
+                foreach (var sibling in _session?.Monitors.Where(monitor => monitor.Id != id &&
+                             (monitor.SupportsBrightness || monitor.VcpBrightness is not null)) ?? [])
+                    ScheduleBrightness(sibling.Id, percent);
+            }
+        }
+        else if (GetFeature(id, code) is { } feature)
+            ScheduleFeature(id, code, (uint)Math.Round(percent * feature.Maximum / 100d, MidpointRounding.AwayFromZero));
+        PushState();
+    }
+
+    private void SelectFeature(JsonElement payload)
+    {
+        var id = TryGetString(payload, "id");
+        var codeValue = TryGetInt(payload, "code");
+        var value = TryGetUInt(payload, "value");
+        if (string.IsNullOrEmpty(id) || codeValue is < 0 or > 255 || value is null) return;
+        var code = (byte)codeValue;
+        if (code == 0x14)
+        {
+            _confirmColor = new PendingColorPreset(id, value.Value);
+            PushState();
+            return;
+        }
+        ScheduleFeature(id, code, value.Value);
+        PushState();
+    }
+
+    private void ConfirmColorPreset(bool confirmed)
+    {
+        if (_confirmColor is { } selection && confirmed) ScheduleFeature(selection.Id, 0x14, selection.Value);
+        _confirmColor = null;
+        PushState();
     }
 
     private void SaveProfile()
     {
         FlushPendingChanges();
-        var name = _profileName.Text.Trim();
-        if (name.Length is < 1 or > 48)
-        {
-            _status.Text = "Profil adı 1–48 karakter arasında olmalıdır.";
-            return;
-        }
-        if (_session is null || _session.Monitors.Count == 0)
-        {
-            _status.Text = "Profil kaydetmek için önce uyumlu bir ekran bulunmalıdır.";
-            return;
-        }
-
+        var name = _profileName.Trim();
+        if (name.Length is < 1 or > 48) { _status = "Profil adı 1–48 karakter arasında olmalıdır."; PushState(); return; }
+        if (_session is null || _session.Monitors.Count == 0) { _status = "Profil kaydetmek için önce uyumlu bir ekran bulunmalıdır."; PushState(); return; }
         var profile = DisplaySettingsProfiles.Capture(name, _session.Monitors);
         var existing = _profiles.FindIndex(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-        if (existing >= 0) _profiles[existing] = profile;
-        else _profiles.Add(profile);
+        if (existing >= 0) _profiles[existing] = profile; else _profiles.Add(profile);
         PersistProfiles();
-        _profileName.Text = name;
-        RefreshProfiles(name);
-        _status.Text = $"‘{name}’ profili {_session.Monitors.Count} ekranın desteklenen parlaklık, kontrast, sesi ve renk ön ayarlarıyla kaydedildi.";
+        _profileName = name;
+        _selectedProfileName = name;
+        _status = $"‘{name}’ profili {_session.Monitors.Count} ekranın desteklenen denetimleriyle kaydedildi.";
+        PushState();
     }
 
     private void ApplyProfile()
     {
-        if (_profileSelector.SelectedItem is not string selectedName || _session is null)
-        {
-            _status.Text = "Önce uygulanacak bir profil seçin.";
-            return;
-        }
-        var profile = _profiles.FirstOrDefault(item => item.Name.Equals(selectedName, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(_selectedProfileName) || _session is null)
+        { _status = "Önce uygulanacak bir profil seçin."; PushState(); return; }
+        var profile = _profiles.FirstOrDefault(item => item.Name.Equals(_selectedProfileName, StringComparison.OrdinalIgnoreCase));
         if (profile is null) return;
-
         FlushPendingChanges();
-        var monitors = _session.Monitors;
         var missingMonitors = 0;
         var unsupportedValues = 0;
         var requested = 0;
         foreach (var saved in profile.Monitors)
         {
-            var monitor = monitors.FirstOrDefault(current => DisplaySettingsProfiles.Matches(saved, current));
-            if (monitor is null)
-            {
-                missingMonitors++;
-                continue;
-            }
-
+            var monitor = _session.Monitors.FirstOrDefault(current => DisplaySettingsProfiles.Matches(saved, current));
+            if (monitor is null) { missingMonitors++; continue; }
             if (saved.Brightness is { } brightness && (monitor.SupportsBrightness || monitor.VcpBrightness is not null))
-            {
-                ScheduleBrightness(monitor.Id, brightness);
-                requested++;
-            }
+            { ScheduleBrightness(monitor.Id, brightness); requested++; }
             else if (saved.Brightness is not null) unsupportedValues++;
-
-            ScheduleProfileFeature(monitor, 0x12, saved.Contrast is { } contrastPercent ? (uint)contrastPercent : null, ref requested, ref unsupportedValues, percent: true);
-            ScheduleProfileFeature(monitor, 0x62, saved.Volume is { } volumePercent ? (uint)volumePercent : null, ref requested, ref unsupportedValues, percent: true);
+            ScheduleProfileFeature(monitor, 0x12, saved.Contrast is { } contrast ? (uint)contrast : null, ref requested, ref unsupportedValues, percent: true);
+            ScheduleProfileFeature(monitor, 0x62, saved.Volume is { } volume ? (uint)volume : null, ref requested, ref unsupportedValues, percent: true);
             ScheduleProfileFeature(monitor, 0x14, saved.ColorPreset, ref requested, ref unsupportedValues, percent: false);
         }
-
         var (applied, failed) = FlushPendingChanges();
-        _status.Text = $"‘{profile.Name}’ profili: {applied}/{requested} denetim uygulandı; {failed} hata, {missingMonitors} ekran bulunamadı, {unsupportedValues} denetim desteklenmiyor.";
+        _status = $"‘{profile.Name}’ profili: {applied}/{requested} denetim uygulandı; {failed} hata, {missingMonitors} ekran bulunamadı, {unsupportedValues} denetim desteklenmiyor.";
+        PushState();
     }
 
     private void ScheduleProfileFeature(DisplayBrightnessMonitor monitor, byte code, uint? savedValue,
@@ -1281,11 +1258,7 @@ internal sealed class DisplayBrightnessWindow : Window
         if (savedValue is null) return;
         var feature = code switch { 0x12 => monitor.Contrast, 0x62 => monitor.Volume, 0x14 => monitor.ColorPreset, _ => null };
         if (feature is null || (percent && !feature.IsContinuous) || (!percent && !feature.SupportedValues.Contains(savedValue.Value)))
-        {
-            unsupported++;
-            return;
-        }
-
+        { unsupported++; return; }
         var value = percent
             ? (uint)Math.Round(Math.Clamp(savedValue.Value, 0, 100) * feature.Maximum / 100d, MidpointRounding.AwayFromZero)
             : savedValue.Value;
@@ -1295,12 +1268,14 @@ internal sealed class DisplayBrightnessWindow : Window
 
     private void DeleteProfile()
     {
-        if (_profileSelector.SelectedItem is not string selectedName) return;
-        _profiles.RemoveAll(profile => profile.Name.Equals(selectedName, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(_selectedProfileName)) return;
+        var deleted = _selectedProfileName;
+        _profiles.RemoveAll(profile => profile.Name.Equals(deleted, StringComparison.OrdinalIgnoreCase));
         PersistProfiles();
-        _profileName.Text = "";
-        RefreshProfiles();
-        _status.Text = $"‘{selectedName}’ profili silindi.";
+        _profileName = "";
+        _selectedProfileName = "";
+        _status = $"‘{deleted}’ profili silindi.";
+        PushState();
     }
 
     private void PersistProfiles() => _settings?.Set("profiles", JsonSerializer.Serialize(_profiles));
@@ -1312,153 +1287,37 @@ internal sealed class DisplayBrightnessWindow : Window
         FlushPendingChanges();
         _session?.Dispose();
         _session = null;
-        _monitorList.Children.Clear();
-        _status.Text = "Ekranların DDC/CI yetenekleri okunuyor…";
+        _status = "Ekranların DDC/CI yetenekleri okunuyor…";
         var generation = ++_refreshGeneration;
+        PushState();
         try
         {
             var session = await Task.Run(DisplayBrightnessSession.Discover);
-            if (_isClosed || generation != _refreshGeneration)
-            {
-                session.Dispose();
-                return;
-            }
-
+            if (_isClosed || generation != _refreshGeneration) { session.Dispose(); return; }
             _session = session;
-            var monitors = _session.Monitors;
+            var monitors = session.Monitors;
             if (monitors.Count == 0)
+                _status = "Denetlenebilir harici ekran veya Windows WMI parlaklık desteği olan dahili panel bulunamadı. Harici ekran için DDC/CI'yi açıp yenileyin.";
+            else
             {
-                _status.Text = "Denetlenebilir harici ekran veya Windows WMI parlaklık desteği olan dahili panel bulunamadı. Harici ekran için monitör menüsünden DDC/CI'yi açıp yenileyin.";
-                return;
+                var externalCount = monitors.Count(monitor => !monitor.IsInternalPanel);
+                var internalCount = monitors.Count - externalCount;
+                _status = $"{monitors.Count} ekran bulundu: {externalCount} harici DDC/CI ekranı, {internalCount} dahili panel. Yalnızca kullanılabilir denetimler gösterilir.";
             }
-
-            var externalCount = monitors.Count(monitor => !monitor.IsInternalPanel);
-            var internalCount = monitors.Count - externalCount;
-            _status.Text = $"{monitors.Count} ekran bulundu: {externalCount} harici DDC/CI ekranı, {internalCount} dahili panel. Yalnızca kullanılabilir denetimler gösterilir.";
-            _updating = true;
-            foreach (var monitor in monitors) _monitorList.Children.Add(CreateMonitorRow(monitor));
-            _updating = false;
+            PushState();
         }
         catch (Exception exception)
         {
             if (_isClosed || generation != _refreshGeneration) return;
-            _status.Text = "Ekranlar okunamadı: " + exception.Message;
+            _status = "Ekranlar okunamadı: " + exception.Message;
+            PushState();
         }
-    }
-
-    private UIElement CreateMonitorRow(DisplayBrightnessMonitor monitor)
-    {
-        var card = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(34, 40, 51)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(61, 72, 89)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12),
-            Margin = new Thickness(0, 0, 0, 9)
-        };
-        var stack = new StackPanel();
-        stack.Children.Add(new TextBlock { Text = monitor.Name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 5) });
-        if (monitor.SupportsBrightness || monitor.VcpBrightness is not null)
-            AddSlider(stack, monitor.Id, "Parlaklık", monitor.Percent, 0x10, brightness: true);
-        if (monitor.Contrast is { IsContinuous: true } contrast)
-            AddSlider(stack, monitor.Id, "Kontrast", contrast.Percent, 0x12);
-        if (monitor.Volume is { IsContinuous: true } volume)
-            AddSlider(stack, monitor.Id, "Monitör sesi", volume.Percent, 0x62);
-        if (monitor.InputSource is { IsContinuous: false, SupportedValues.Count: > 0 } inputSource)
-            AddSelector(stack, monitor.Id, "Giriş kaynağı", inputSource);
-        if (monitor.ColorPreset is { IsContinuous: false, SupportedValues.Count: > 0 } colorPreset)
-            AddSelector(stack, monitor.Id, "Renk ön ayarı", colorPreset, warnAboutColor: true);
-        var features = new[] { monitor.SupportsBrightness ? (byte?)0x10 : monitor.VcpBrightness is not null ? (byte?)0x10 : null,
-            monitor.Contrast is not null ? (byte?)0x12 : null, monitor.ColorPreset is not null ? (byte?)0x14 : null,
-            monitor.InputSource is not null ? (byte?)0x60 : null, monitor.Volume is not null ? (byte?)0x62 : null }
-            .Where(code => code is not null).Select(code => code!.Value).Distinct().Order();
-        if (!monitor.IsInternalPanel)
-            stack.Children.Add(new TextBlock
-            {
-                Text = "DDC/CI VCP: " + string.Join(" · ", features.Select(code => $"0x{code:X2}")),
-                ToolTip = "Monitörün desteklediğini bildirdiği ve WinForge'un okuyabildiği denetim kodları.",
-                Foreground = new SolidColorBrush(Color.FromRgb(145, 157, 176)),
-                FontSize = 10,
-                Margin = new Thickness(0, 5, 0, 0)
-            });
-        card.Child = stack;
-        return card;
-    }
-
-    private void AddSlider(StackPanel parent, string monitorId, string label, int percent, byte code, bool brightness = false)
-    {
-        var header = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
-        var title = new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(215, 222, 233)), FontSize = 12 };
-        var value = new TextBlock { Text = $"{percent}%", MinWidth = 42, TextAlignment = TextAlignment.Right, Foreground = new SolidColorBrush(Color.FromRgb(185, 197, 215)) };
-        DockPanel.SetDock(value, Dock.Right);
-        header.Children.Add(value);
-        header.Children.Add(title);
-        parent.Children.Add(header);
-
-        var slider = new Slider { Minimum = 0, Maximum = 100, Value = percent, Margin = new Thickness(0, 0, 0, 5), Tag = brightness ? monitorId : null };
-        slider.ValueChanged += (_, args) =>
-        {
-            if (_updating) return;
-            var next = (int)Math.Round(args.NewValue);
-            value.Text = $"{next}%";
-            if (brightness)
-            {
-                ScheduleBrightness(monitorId, next);
-                if (_linkLevels.IsChecked == true)
-                    foreach (var sibling in _monitorList.Children.OfType<Border>().SelectMany(FindSliders))
-                        if (sibling.Tag is string siblingId && !Equals(siblingId, monitorId) && Math.Abs(sibling.Value - next) >= 1)
-                            sibling.Value = next;
-            }
-            else
-            {
-                var feature = GetFeature(monitorId, code);
-                if (feature is not null) ScheduleFeature(monitorId, code,
-                    (uint)Math.Round(next * feature.Maximum / 100d, MidpointRounding.AwayFromZero));
-            }
-        };
-        parent.Children.Add(slider);
-    }
-
-    private void AddSelector(StackPanel parent, string monitorId, string label, DisplayVcpFeature feature, bool warnAboutColor = false)
-    {
-        parent.Children.Add(new TextBlock { Text = label, Foreground = new SolidColorBrush(Color.FromRgb(215, 222, 233)), FontSize = 12, Margin = new Thickness(0, 5, 0, 3) });
-        var selector = new ComboBox { MinHeight = 30, Margin = new Thickness(0, 0, 0, 4), Tag = monitorId };
-        foreach (var value in feature.SupportedValues.Distinct().Order())
-            selector.Items.Add(new ComboBoxItem { Content = $"{label} · 0x{value:X2}", Tag = value });
-        selector.SelectedItem = selector.Items.OfType<ComboBoxItem>().FirstOrDefault(item => item.Tag is uint value && value == feature.Current);
-        selector.SelectionChanged += (_, _) =>
-        {
-            if (_updating || selector.SelectedItem is not ComboBoxItem item || item.Tag is not uint selected) return;
-            if (warnAboutColor && MessageBox.Show(this,
-                    "Monitör renk ön ayarını değiştirmek renkleri beklenmedik biçimde etkileyebilir. Devam edilsin mi?",
-                    "Renk ön ayarını değiştir", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            {
-                _updating = true;
-                var current = GetFeature(monitorId, feature.Code)?.Current ?? feature.Current;
-                selector.SelectedItem = selector.Items.OfType<ComboBoxItem>().FirstOrDefault(option => option.Tag is uint value && value == current);
-                _updating = false;
-                return;
-            }
-            ScheduleFeature(monitorId, feature.Code, selected);
-        };
-        parent.Children.Add(selector);
     }
 
     private DisplayVcpFeature? GetFeature(string monitorId, byte code) => _session?.Monitors
         .FirstOrDefault(monitor => monitor.Id == monitorId) is { } monitor
         ? code switch { 0x12 => monitor.Contrast, 0x14 => monitor.ColorPreset, 0x60 => monitor.InputSource, 0x62 => monitor.Volume, _ => null }
         : null;
-
-    private IEnumerable<Slider> FindSliders(DependencyObject parent)
-    {
-        for (var index = 0; index < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
-        {
-            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, index);
-            if (child is Slider slider) yield return slider;
-            foreach (var nested in FindSliders(child)) yield return nested;
-        }
-    }
 
     private bool ApplyBrightness(string id, int percent)
     {
@@ -1467,18 +1326,14 @@ internal sealed class DisplayBrightnessWindow : Window
         {
             if (!_session.SetBrightness(id, percent, out _))
             {
-                _status.Text = InternalPanelBrightnessService.IsInternalId(id)
+                _status = InternalPanelBrightnessService.IsInternalId(id)
                     ? "Dahili panel parlaklığı değiştirilemedi. Windows WMI sağlayıcısı ve panel desteğini kontrol edin."
                     : "Bu ekranda parlaklık değiştirilemedi. DDC/CI desteğini ve monitör bağlantısını kontrol edin.";
                 return false;
             }
             return true;
         }
-        catch (Exception exception)
-        {
-            _status.Text = "Parlaklık uygulanamadı: " + exception.Message;
-            return false;
-        }
+        catch (Exception exception) { _status = "Parlaklık uygulanamadı: " + exception.Message; return false; }
     }
 
     private void ScheduleBrightness(string id, int percent)
@@ -1503,8 +1358,7 @@ internal sealed class DisplayBrightnessWindow : Window
         var failed = 0;
         foreach (var (id, percent) in _pendingBrightness.ToArray())
         {
-            if (ApplyBrightness(id, percent)) succeeded++;
-            else failed++;
+            if (ApplyBrightness(id, percent)) succeeded++; else failed++;
         }
         _pendingBrightness.Clear();
         foreach (var ((id, code), value) in _pendingVcpFeatures.ToArray())
@@ -1512,19 +1366,82 @@ internal sealed class DisplayBrightnessWindow : Window
             try
             {
                 if (!_session.SetFeature(id, code, value, out _))
-                {
-                    _status.Text = $"DDC/CI 0x{code:X2} denetimi uygulanamadı. Monitör bağlantısını ve özellik desteğini kontrol edin.";
-                    failed++;
-                }
+                { _status = $"DDC/CI 0x{code:X2} denetimi uygulanamadı. Monitör bağlantısını ve özellik desteğini kontrol edin."; failed++; }
                 else succeeded++;
             }
-            catch (Exception exception)
-            {
-                _status.Text = $"DDC/CI 0x{code:X2} denetimi uygulanamadı: {exception.Message}";
-                failed++;
-            }
+            catch (Exception exception) { _status = $"DDC/CI 0x{code:X2} denetimi uygulanamadı: {exception.Message}"; failed++; }
         }
         _pendingVcpFeatures.Clear();
         return (succeeded, failed);
     }
+
+    private void PushState() => _window.SetState(new
+    {
+        status = _status,
+        linkLevels = _linkLevels,
+        profileName = _profileName,
+        selectedProfileName = _selectedProfileName,
+        profiles = _profiles.Select(profile => profile.Name).ToArray(),
+        confirmColorPreset = _confirmColor is null ? null : new
+        {
+            id = _confirmColor.Id,
+            value = _confirmColor.Value,
+            monitorName = _session?.Monitors.FirstOrDefault(monitor => monitor.Id == _confirmColor.Id)?.Name ?? "monitör",
+            label = _session?.Monitors.FirstOrDefault(monitor => monitor.Id == _confirmColor.Id)?.ColorPreset?.SupportedValues.FirstOrDefault(value => value == _confirmColor.Value).ToString("X2")
+        },
+        monitors = _session?.Monitors.Select(monitor => new
+        {
+            id = monitor.Id,
+            name = monitor.Name,
+            isInternalPanel = monitor.IsInternalPanel,
+            controls = BuildControls(monitor)
+        }).ToArray() ?? []
+    });
+
+    private object[] BuildControls(DisplayBrightnessMonitor monitor)
+    {
+        var controls = new List<object>();
+        if (monitor.SupportsBrightness || monitor.VcpBrightness is not null)
+            controls.Add(new { code = (int)0x10, label = "Parlaklık", type = "slider", value = _pendingBrightness.GetValueOrDefault(monitor.Id, monitor.Percent) });
+        AddSliderControl(controls, monitor, 0x12, "Kontrast", monitor.Contrast);
+        AddSliderControl(controls, monitor, 0x62, "Monitör sesi", monitor.Volume);
+        AddSelectorControl(controls, monitor.Id, 0x60, "Giriş kaynağı", monitor.InputSource);
+        AddSelectorControl(controls, monitor.Id, 0x14, "Renk ön ayarı", monitor.ColorPreset);
+        if (!monitor.IsInternalPanel)
+        {
+            var codes = new[] { monitor.SupportsBrightness || monitor.VcpBrightness is not null ? (byte?)0x10 : null,
+                monitor.Contrast is not null ? (byte?)0x12 : null, monitor.ColorPreset is not null ? (byte?)0x14 : null,
+                monitor.InputSource is not null ? (byte?)0x60 : null, monitor.Volume is not null ? (byte?)0x62 : null }
+                .Where(code => code.HasValue).Select(code => code!.Value).Distinct().Order();
+            controls.Add(new { code = -1, label = "DDC/CI VCP", type = "info", value = string.Join(" · ", codes.Select(code => $"0x{code:X2}")) });
+        }
+        return controls.ToArray();
+    }
+
+    private void AddSliderControl(List<object> controls, DisplayBrightnessMonitor monitor, byte code, string label, DisplayVcpFeature? feature)
+    {
+        if (feature is not { IsContinuous: true }) return;
+        var currentValue = _pendingVcpFeatures.GetValueOrDefault((monitor.Id, code), feature.Current);
+        var percent = feature.Maximum == 0 ? 0 : (int)Math.Round(currentValue * 100d / feature.Maximum, MidpointRounding.AwayFromZero);
+        controls.Add(new { code = (int)code, label, type = "slider", value = Math.Clamp(percent, 0, 100) });
+    }
+
+    private void AddSelectorControl(List<object> controls, string id, byte code, string label, DisplayVcpFeature? feature)
+    {
+        if (feature is not { IsContinuous: false, SupportedValues.Count: > 0 }) return;
+        var current = _pendingVcpFeatures.GetValueOrDefault((id, code), feature.Current);
+        controls.Add(new { code = (int)code, label, type = "select", value = current,
+            options = feature.SupportedValues.Distinct().Order().Select(value => new { value, label = $"{label} · 0x{value:X2}" }).ToArray() });
+    }
+
+    private sealed record PendingColorPreset(string Id, uint Value);
+
+    private static string TryGetString(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) ? value.GetString() ?? "" : "";
+    private static int TryGetInt(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) && value.TryGetInt32(out var number) ? number : 0;
+    private static uint? TryGetUInt(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) && value.TryGetUInt32(out var number) ? number : null;
+    private static bool TryGetBool(JsonElement payload, string property) =>
+        payload.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.True;
 }

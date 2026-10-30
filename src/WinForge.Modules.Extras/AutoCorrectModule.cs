@@ -670,17 +670,19 @@ public sealed class AutoCorrectModule : ITweakModule
     {
         if (!_personalizedFrequency || !isKnownWord) return;
 
-        var history = previous?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .TakeLast(2).ToList() ?? [];
-        for (var index = history.Count - 1; index >= 0; index--)
-        {
-            var historyWord = history[index];
-            if (_spellChecker?.IsKnownWord(historyWord, languageTag, allowLearning: true) == true ||
-                UserFrequencyTracker.Instance.IsLearned(historyWord)) continue;
-            history.RemoveAt(index);
-        }
+        var history = GetLearnableHistory(previous, historyWord =>
+            _spellChecker?.IsKnownWord(historyWord, languageTag, allowLearning: true) == true ||
+            UserFrequencyTracker.Instance.IsLearned(historyWord));
+        UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: true, history);
+    }
 
-        UserFrequencyTracker.Instance.RecordWord(word, isKnownWord: true, string.Join(' ', history));
+    internal static string GetLearnableHistory(string? previous, Func<string, bool> isKnownWord)
+    {
+        var words = previous?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .TakeLast(2).ToArray() ?? [];
+        var start = words.Length;
+        while (start > 0 && isKnownWord(words[start - 1])) start--;
+        return string.Join(' ', words[start..]);
     }
 
     private void UndoCorrection(LastCorrection correction)

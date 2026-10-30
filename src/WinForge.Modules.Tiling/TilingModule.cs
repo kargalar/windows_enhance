@@ -969,7 +969,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
 
         var dpi = Native.GetDpiForWindow(_draggedWindow);
         var scale = dpi == 0 ? 1.0 : dpi / 96.0;
-        _zonePreview ??= new ZonePreviewWindow();
+        _zonePreview ??= new ZonePreviewWindow((_context as IFeatureUiContext)?.FeatureUi);
         RECT? mergedBounds = _selectedZones.Count > 1 && TryGetSpanBounds(zones, _selectedZones, _gap, out var selectedBounds)
             ? selectedBounds
             : null;
