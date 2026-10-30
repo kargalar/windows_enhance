@@ -16,7 +16,8 @@ internal static class SharedMediaTools
 
 internal sealed class ScreenRecording : IAsyncDisposable
 {
-    private const int FramesPerSecond = 15;
+    private const int DefaultFramesPerSecond = 15;
+    private readonly int framesPerSecond;
     private readonly string directory;
     private readonly CaptureArea area;
     private readonly string encoder;
@@ -30,15 +31,16 @@ internal sealed class ScreenRecording : IAsyncDisposable
     private bool paused, disposed;
     public bool Paused { get { lock (gate) return paused; } }
     public string? Error { get; private set; }
-    public ScreenRecording(string parent, CaptureArea area, bool microphone, bool systemAudio, bool cursor)
+    public ScreenRecording(string parent, CaptureArea area, bool microphone, bool systemAudio, bool cursor, int framesPerSecond = DefaultFramesPerSecond)
     {
+        this.framesPerSecond = Math.Clamp(framesPerSecond, 5, 120);
         this.area = area with { Width = area.Width / 2 * 2, Height = area.Height / 2 * 2 };
         if (!this.area.IsValid) throw new ArgumentException("Kayıt alanı en az 2×2 piksel olmalı.");
         encoder = SharedMediaTools.Ffmpeg;
         directory = Path.Combine(parent, "recording-jobs", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         try
         {
-            process = Start(encoder, ["-y", "-v", "error", "-f", "rawvideo", "-pixel_format", "bgr0", "-video_size", $"{this.area.Width}x{this.area.Height}", "-framerate", FramesPerSecond.ToString(CultureInfo.InvariantCulture), "-i", "pipe:0", "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", Path.Combine(directory, "video.mp4")], true);
+            process = Start(encoder, ["-y", "-v", "error", "-f", "rawvideo", "-pixel_format", "bgr0", "-video_size", $"{this.area.Width}x{this.area.Height}", "-framerate", this.framesPerSecond.ToString(CultureInfo.InvariantCulture), "-i", "pipe:0", "-an", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", Path.Combine(directory, "video.mp4")], true);
             errors = process.StandardError.ReadToEndAsync();
             if (microphone) tracks.Add(new AudioTrack(directory, true, () => clock.IsRunning && !Paused, () => clock.Elapsed));
             if (systemAudio) tracks.Add(new AudioTrack(directory, false, () => clock.IsRunning && !Paused, () => clock.Elapsed));
@@ -64,11 +66,11 @@ internal sealed class ScreenRecording : IAsyncDisposable
             while (!token.IsCancellationRequested)
             {
                 if (Paused) { await Task.Delay(30, token); continue; }
-                if (written >= (long)(clock.Elapsed.TotalSeconds * FramesPerSecond) + 1) { await Task.Delay(8, token); continue; }
+                if (written >= (long)(clock.Elapsed.TotalSeconds * framesPerSecond) + 1) { await Task.Delay(8, token); continue; }
                 if (!CaptureServices.HasSpace(directory)) throw new IOException("Disk alanı azaldı; kayıt durduruldu.");
                 var (pixels, width, height) = DesktopCapture.Capture(area.X, area.Y, area.Width, area.Height);
                 if (cursor) DrawCursor(pixels, width, height);
-                var expected = (long)(clock.Elapsed.TotalSeconds * FramesPerSecond) + 1;
+                var expected = (long)(clock.Elapsed.TotalSeconds * framesPerSecond) + 1;
                 while (written < expected && !token.IsCancellationRequested)
                 { await process!.StandardInput.BaseStream.WriteAsync(pixels, token); written++; }
                 foreach (var track in tracks) if (track.Error is { } error) throw new IOException("Ses aygıtı kaydı kesildi.", error);
@@ -106,7 +108,7 @@ internal sealed class ScreenRecording : IAsyncDisposable
             else if (audioTracks.Length == 1) args.AddRange(["-map", "0:v", "-map", "1:a"]);
             args.AddRange(["-c:v", "copy", "-c:a", "aac", "-t", clock.Elapsed.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture), "-movflags", "+faststart"]);
         }
-        else args.AddRange(["-filter_complex", "[0:v]fps=12,split[a][b];[a]palettegen[p];[b][p]paletteuse", "-loop", "0"]);
+        else args.AddRange(["-filter_complex", $"[0:v]fps={Math.Min(30, framesPerSecond)},split[a][b];[a]palettegen[p];[b][p]paletteuse", "-loop", "0"]);
         args.Add(output); await ProcessRunner.RunAsync(encoder, args, token); return output;
     }
     private static Process Start(string file, IEnumerable<string> arguments, bool input)

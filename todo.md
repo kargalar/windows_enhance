@@ -1,6 +1,8 @@
-<!-- iki repo... taskında devam et -->AAAAAAAAAAAAAxxxxxxxxxxx
-
 bağlam analizi ve otomarik düzeltme taskı deva medilebilir otomati kdüzeltemy iiyeştirmek için
+
+whisper, share ve recall özlliklerini geliştir
+
+genel bir arayüz iyileştirmesi yap gerekirse farklı bir altyapı ile en baştan geliştir arayüzü şu an 2000 lerden kalma gibi duruyır. şu an neyle geliştirldi ne ile geliştirlebilie avantajlar ıdezavatajalrı nedir öğren.
 
 <!-- Check -->
 

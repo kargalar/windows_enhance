@@ -5,10 +5,15 @@ using System.Security.Cryptography;
 namespace WinForge.History;
 
 public sealed record HistoryItem(long Id, string Kind, DateTimeOffset Created, string App, string Title,
-    string Text, string Media, double Seconds, bool Estimated, string Tags, string OcrState);
+    string Text, string Media, double Seconds, bool Estimated, string Tags, string OcrState, string Icon, string Metadata);
 public sealed record HistoryFilter(string Kind, string Query = "", string App = "", string Tag = "",
     DateTimeOffset? From = null, DateTimeOffset? Until = null, int Limit = 200, int Offset = 0);
 public sealed record UsageTotal(string App, double Seconds, bool Estimated);
+public sealed record UsageDayTotal(string Date, string App, double Seconds, bool Estimated);
+public sealed record TagUsageTotal(string Tag, double Seconds, int ApplicationCount);
+public sealed record RecallUsageSummary(double ActiveSeconds, double IdleSeconds, long Captures, string MostUsedApp);
+public sealed record ContextUsageTotal(string App, string Type, string Context, double Seconds);
+public sealed record ContextUsageDayTotal(string Date, string App, string Type, string Context, double Seconds);
 
 /// <summary>Each operation owns its connection; media is content addressed and shared safely.</summary>
 public sealed class HistoryStore
@@ -39,6 +44,9 @@ public sealed class HistoryStore
             CREATE TABLE IF NOT EXISTS app_tags(app TEXT NOT NULL,tag TEXT NOT NULL,PRIMARY KEY(app,tag));
             CREATE TABLE IF NOT EXISTS tags(name TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS usage(id INTEGER PRIMARY KEY,app TEXT NOT NULL,started TEXT NOT NULL,ended TEXT NOT NULL,seconds REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS context_usage(id INTEGER PRIMARY KEY,app TEXT NOT NULL,type TEXT NOT NULL,context TEXT NOT NULL,started TEXT NOT NULL,ended TEXT NOT NULL,seconds REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS context_usage_time ON context_usage(started,ended);
+            CREATE INDEX IF NOT EXISTS context_usage_context ON context_usage(type,app,context);
             CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(app,title,text,content=items,content_rowid=id,tokenize='unicode61 remove_diacritics 2');
             CREATE TRIGGER IF NOT EXISTS item_insert AFTER INSERT ON items BEGIN
               INSERT INTO search(rowid,app,title,text) VALUES(new.id,new.app,new.title,new.text); END;
@@ -72,6 +80,7 @@ public sealed class HistoryStore
                 PRAGMA user_version=2;
                 """);
         if (Convert.ToInt32(version.ExecuteScalar(), CultureInfo.InvariantCulture) < 3) Execute(connection, "PRAGMA user_version=3;");
+        if (Convert.ToInt32(version.ExecuteScalar(), CultureInfo.InvariantCulture) < 4) Execute(connection, "PRAGMA user_version=4;");
     }
 
     public SqliteConnection Open()
@@ -126,7 +135,7 @@ public sealed class HistoryStore
         using var connection = Open(); using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT i.id,i.kind,i.created,i.app,i.title,i.text,i.media,i.seconds,i.estimated,
-            coalesce((SELECT group_concat(tag, ', ') FROM app_tags WHERE app=i.app),''),i.ocr_state
+            coalesce((SELECT group_concat(tag, ', ') FROM app_tags WHERE app=i.app),''),i.ocr_state,i.icon,i.metadata
             FROM items i WHERE kind=$kind
             AND ($query='' OR i.id IN (SELECT rowid FROM search WHERE search MATCH $match))
             AND ($app='' OR i.app=$app)
@@ -140,7 +149,7 @@ public sealed class HistoryStore
             ("$until", filter.Until is { } until ? Timestamp(until) : ""), ("$limit", Math.Clamp(filter.Limit, 1, 1000)), ("$offset", Math.Max(0, filter.Offset)));
         using var reader = command.ExecuteReader(); var result = new List<HistoryItem>();
         while (reader.Read()) result.Add(new(reader.GetInt64(0), reader.GetString(1), DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
-            reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDouble(7), reader.GetBoolean(8), reader.GetString(9), reader.GetString(10)));
+            reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDouble(7), reader.GetBoolean(8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12)));
         return result;
     }
 
@@ -191,7 +200,7 @@ public sealed class HistoryStore
               seconds*min(1,max(0,(julianday(CASE WHEN $until<>'' AND ended>$until THEN $until ELSE ended END)-
               julianday(CASE WHEN $from<>'' AND started<$from THEN $from ELSE started END)) /
               max(0.0000000001,julianday(ended)-julianday(started)))) END seconds
-            FROM usage WHERE ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            FROM usage WHERE app<>'System Idle' AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
             UNION ALL SELECT app,1 estimated,seconds FROM items WHERE kind='recall' AND estimated=1
             AND ($from='' OR created >= $from) AND ($until='' OR created < $until))
             GROUP BY app,estimated ORDER BY sum(seconds) DESC
@@ -200,6 +209,160 @@ public sealed class HistoryStore
         using var reader = command.ExecuteReader(); var result = new List<UsageTotal>();
         while (reader.Read()) result.Add(new(reader.GetString(0), reader.GetDouble(1), reader.GetBoolean(2))); return result;
     }
+    public RecallUsageSummary RecallSummary(DateTimeOffset? from = null, DateTimeOffset? until = null)
+    {
+        var appUsage = Usage(from, until);
+        var active = appUsage.Sum(row => row.Seconds);
+        var idle = SumUsage("System Idle", from, until);
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = "SELECT count(*) FROM items WHERE kind='recall' AND ($from='' OR created >= $from) AND ($until='' OR created < $until)";
+        Bind(command, ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } end ? Timestamp(end) : ""));
+        var captures = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        var mostUsed = appUsage.GroupBy(row => row.App).OrderByDescending(group => group.Sum(row => row.Seconds)).FirstOrDefault()?.Key ?? "—";
+        return new(active, idle, captures, mostUsed);
+    }
+    private double SumUsage(string app, DateTimeOffset? from, DateTimeOffset? until)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT coalesce(sum(CASE WHEN ended<=started THEN seconds ELSE seconds*min(1,max(0,
+            julianday(CASE WHEN $until<>'' AND ended>$until THEN $until ELSE ended END)-
+            julianday(CASE WHEN $from<>'' AND started<$from THEN $from ELSE started END))/
+            max(0.0000000001,julianday(ended)-julianday(started))) END),0)
+            FROM usage WHERE app=$app AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            """;
+        Bind(command, ("$app", app), ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } end ? Timestamp(end) : ""));
+        return Convert.ToDouble(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+    public IReadOnlyList<TagUsageTotal> TagUsage(DateTimeOffset? from = null, DateTimeOffset? until = null)
+    {
+        var appUsage = Usage(from, until).GroupBy(row => row.App, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Sum(row => row.Seconds), StringComparer.OrdinalIgnoreCase);
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = "SELECT tag,app FROM app_tags ORDER BY tag,app";
+        using var reader = command.ExecuteReader(); var totals = new Dictionary<string, (double Seconds, HashSet<string> Apps)>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+        {
+            var tag = reader.GetString(0); var app = reader.GetString(1);
+            if (!totals.TryGetValue(tag, out var value)) value = (0, new(StringComparer.OrdinalIgnoreCase));
+            if (appUsage.TryGetValue(app, out var seconds)) value.Seconds += seconds;
+            value.Apps.Add(app); totals[tag] = value;
+        }
+        return totals.Select(row => new TagUsageTotal(row.Key, row.Value.Seconds, row.Value.Apps.Count))
+            .OrderByDescending(row => row.Seconds).ToArray();
+    }
+    public void AddContextUsage(string app, string type, string context, DateTimeOffset start, DateTimeOffset end, double seconds)
+    {
+        if (seconds <= 0 || string.IsNullOrWhiteSpace(context)) return;
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE context_usage SET ended=$end,seconds=seconds+$seconds
+            WHERE id=(SELECT max(id) FROM context_usage) AND app=$app AND type=$type AND context=$context AND ended=$start;
+            INSERT INTO context_usage(app,type,context,started,ended,seconds)
+            SELECT $app,$type,$context,$start,$end,$seconds WHERE changes()=0;
+            """;
+        Bind(command, ("$app", app), ("$type", type), ("$context", context), ("$start", Timestamp(start)),
+            ("$end", Timestamp(end)), ("$seconds", seconds)); command.ExecuteNonQuery();
+    }
+    public IReadOnlyList<ContextUsageTotal> ContextUsage(DateTimeOffset? from = null, DateTimeOffset? until = null)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT app,type,context,started,ended,seconds FROM context_usage
+            WHERE ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            ORDER BY started DESC LIMIT 50000
+            """;
+        Bind(command, ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } endValue ? Timestamp(endValue) : ""));
+        using var reader = command.ExecuteReader(); var totals = new Dictionary<(string App, string Type, string Context), double>();
+        while (reader.Read())
+        {
+            var started = DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture);
+            var ended = DateTimeOffset.Parse(reader.GetString(4), CultureInfo.InvariantCulture);
+            var clippedStart = from is { } fromDate && started < fromDate ? fromDate : started;
+            var clippedEnd = until is { } untilDate && ended > untilDate ? untilDate : ended;
+            var span = (ended - started).TotalSeconds;
+            if (clippedEnd <= clippedStart || span <= 0) continue;
+            var seconds = reader.GetDouble(5) * (clippedEnd - clippedStart).TotalSeconds / span;
+            var key = (reader.GetString(0), reader.GetString(1), reader.GetString(2));
+            totals[key] = totals.GetValueOrDefault(key) + seconds;
+        }
+        return totals.Select(row => new ContextUsageTotal(row.Key.App, row.Key.Type, row.Key.Context, row.Value))
+            .OrderByDescending(row => row.Seconds).ToArray();
+    }
+    public IReadOnlyList<ContextUsageDayTotal> ContextUsageByDay(DateTimeOffset? from = null, DateTimeOffset? until = null)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT app,type,context,started,ended,seconds FROM context_usage
+            WHERE ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            ORDER BY started
+            """;
+        Bind(command, ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } endValue ? Timestamp(endValue) : ""));
+        using var reader = command.ExecuteReader(); var totals = new Dictionary<(string Date, string App, string Type, string Context), double>();
+        while (reader.Read())
+        {
+            var app = reader.GetString(0); var type = reader.GetString(1); var context = reader.GetString(2);
+            var intervalStart = DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture);
+            var intervalEnd = DateTimeOffset.Parse(reader.GetString(4), CultureInfo.InvariantCulture); var seconds = reader.GetDouble(5);
+            var fullSpan = (intervalEnd - intervalStart).TotalSeconds;
+            if (fullSpan <= 0) { Add(intervalStart.ToLocalTime().Date, seconds); continue; }
+            var cursor = from is { } fromDate && intervalStart < fromDate ? fromDate : intervalStart;
+            var clippedEnd = until is { } untilDate && intervalEnd > untilDate ? untilDate : intervalEnd;
+            while (cursor < clippedEnd)
+            {
+                var local = cursor.ToLocalTime(); var nextLocalDay = new DateTimeOffset(local.Date.AddDays(1), local.Offset).ToUniversalTime();
+                var segmentEnd = nextLocalDay < clippedEnd ? nextLocalDay : clippedEnd;
+                Add(local.Date, seconds * (segmentEnd - cursor).TotalSeconds / fullSpan); cursor = segmentEnd;
+            }
+            void Add(DateTime date, double value)
+            {
+                var key = (date.ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")), app, type, context);
+                totals[key] = totals.GetValueOrDefault(key) + value;
+            }
+        }
+        return totals.Select(row => new ContextUsageDayTotal(row.Key.Date, row.Key.App, row.Key.Type, row.Key.Context, row.Value))
+            .OrderByDescending(row => DateTime.ParseExact(row.Date, "dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")))
+            .ThenByDescending(row => row.Seconds).ToArray();
+    }
+    public IReadOnlyList<UsageDayTotal> UsageByDay(DateTimeOffset? from = null, DateTimeOffset? until = null) => UsageByDayCore(from, until, false);
+    public IReadOnlyList<UsageDayTotal> IdleUsageByDay(DateTimeOffset? from = null, DateTimeOffset? until = null) => UsageByDayCore(from, until, true);
+    private IReadOnlyList<UsageDayTotal> UsageByDayCore(DateTimeOffset? from, DateTimeOffset? until, bool idleOnly)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT app,started,ended,seconds,0 estimated FROM usage
+            WHERE (($idle=0 AND app<>'System Idle') OR ($idle=1 AND app='System Idle'))
+            AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            UNION ALL SELECT app,created,created,seconds,estimated FROM items WHERE $idle=0 AND kind='recall' AND estimated=1
+            AND ($from='' OR created >= $from) AND ($until='' OR created < $until)
+            ORDER BY started
+            """;
+        Bind(command, ("$idle", idleOnly ? 1 : 0), ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } endValue ? Timestamp(endValue) : ""));
+        using var reader = command.ExecuteReader(); var totals = new Dictionary<(string Date, string App, bool Estimated), double>();
+        while (reader.Read())
+        {
+            var app = reader.GetString(0); var intervalStart = DateTimeOffset.Parse(reader.GetString(1), CultureInfo.InvariantCulture);
+            var intervalEnd = DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture); var seconds = reader.GetDouble(3);
+            var estimated = reader.GetBoolean(4); var fullSpan = (intervalEnd - intervalStart).TotalSeconds;
+            if (fullSpan <= 0) { Add(intervalStart.ToLocalTime().Date, seconds); continue; }
+            var cursor = from is { } fromDate && intervalStart < fromDate ? fromDate : intervalStart;
+            var end = until is { } untilDate && intervalEnd > untilDate ? untilDate : intervalEnd;
+            while (cursor < end)
+            {
+                var local = cursor.ToLocalTime(); var nextLocalDay = new DateTimeOffset(local.Date.AddDays(1), local.Offset).ToUniversalTime();
+                var segmentEnd = nextLocalDay < end ? nextLocalDay : end;
+                Add(local.Date, seconds * (segmentEnd - cursor).TotalSeconds / fullSpan); cursor = segmentEnd;
+            }
+            void Add(DateTime date, double value)
+            {
+                var key = (date.ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")), app, estimated);
+                totals[key] = totals.GetValueOrDefault(key) + value;
+            }
+        }
+        return totals.Select(row => new UsageDayTotal(row.Key.Date, row.Key.App, row.Value, row.Key.Estimated))
+            .OrderByDescending(row => DateTime.ParseExact(row.Date, "dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")))
+            .ThenByDescending(row => row.Seconds).ToArray();
+    }
     public void Delete(string kind, long? id = null, DateTimeOffset? from = null, DateTimeOffset? until = null)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
@@ -207,7 +370,8 @@ public sealed class HistoryStore
         Bind(command, ("$kind", kind), ("$id", (object?)id ?? DBNull.Value), ("$from", from is { } f ? Timestamp(f) : ""), ("$until", until is { } u ? Timestamp(u) : "")); command.ExecuteNonQuery();
         if (kind == "recall" && id is null)
         {
-            command.CommandText = "DELETE FROM usage WHERE ($from='' OR started >= $from) AND ($until='' OR started < $until)"; command.ExecuteNonQuery();
+            command.CommandText = "DELETE FROM usage WHERE ($from='' OR ended > $from) AND ($until='' OR started < $until); DELETE FROM context_usage WHERE ($from='' OR ended > $from) AND ($until='' OR started < $until)";
+            command.ExecuteNonQuery();
         }
         CollectUnusedMedia();
     }

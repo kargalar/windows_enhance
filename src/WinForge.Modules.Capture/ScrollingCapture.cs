@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -8,7 +9,7 @@ namespace WinForge.Modules.Capture;
 public sealed record StitchResult(BitmapSource Image, double Confidence, bool Partial);
 public static class ScrollStitcher
 {
-    public static (int Overlap, double Confidence) FindOverlap(BitmapSource previous, BitmapSource next)
+    public static (int Overlap, double Confidence) FindOverlap(BitmapSource previous, BitmapSource next, int? expectedOverlap = null)
     {
         if (previous.PixelWidth != next.PixelWidth || previous.PixelHeight != next.PixelHeight) return (0, 0);
         var width = previous.PixelWidth; var height = previous.PixelHeight; var stride = width * 4;
@@ -16,17 +17,23 @@ public static class ScrollStitcher
         new FormatConvertedBitmap(previous, PixelFormats.Bgr32, null, 0).CopyPixels(a, stride, 0);
         new FormatConvertedBitmap(next, PixelFormats.Bgr32, null, 0).CopyPixels(b, stride, 0);
         var best = double.MaxValue; var overlap = 0;
-        for (var candidate = Math.Max(8, height / 8); candidate < height - 3; candidate++)
+        var firstCandidate = expectedOverlap is { } expected ? Math.Max(8, expected - 8) : Math.Max(8, height / 8);
+        var lastCandidate = expectedOverlap is { } anticipated ? Math.Min(height - 3, anticipated + 8) : height - 3;
+        for (var candidate = firstCandidate; candidate <= lastCandidate; candidate++)
         {
-            double error = 0; var samples = 0;
-            for (var y = 0; y < candidate; y += Math.Max(1, candidate / 12))
-                for (var x = Math.Max(0, width / 12); x < width * 11 / 12; x += Math.Max(1, width / 40))
+            double error = 0; var samples = 0; var pixelErrors = new List<double>();
+            for (var y = 0; y < candidate; y += Math.Max(1, candidate / 24))
+                for (var x = Math.Max(0, width / 12); x < width * 11 / 12; x += Math.Max(1, width / 60))
                 {
-                    for (var channel = 0; channel < 3; channel++) error += Math.Abs(a[(height - candidate + y) * stride + x * 4 + channel] - b[y * stride + x * 4 + channel]);
+                    var pixelError = 0d;
+                    for (var channel = 0; channel < 3; channel++) pixelError += Math.Abs(a[(height - candidate + y) * stride + x * 4 + channel] - b[y * stride + x * 4 + channel]);
+                    error += pixelError; pixelErrors.Add(pixelError / 3);
                     samples += 3;
                 }
-            error /= Math.Max(1, samples);
-            if (error < best) { best = error; overlap = candidate; }
+            var meanError = error / Math.Max(1, samples);
+            pixelErrors.Sort(); var medianError = pixelErrors[pixelErrors.Count / 2];
+            var score = (meanError + medianError) / 2;
+            if (score < best) { best = score; overlap = candidate; }
         }
         return (overlap, Math.Clamp(1 - best / 100, 0, 1));
     }
@@ -58,12 +65,33 @@ internal static class ScrollingCapture
             if (target != 0) WinForge.Core.Native.SetForegroundWindow(GetAncestor(target, 2));
             await Task.Delay(150, token);
             var previous = CaptureServices.Capture(area); var result = previous; var confidence = 1d;
-            var coordinates = (nint)((point.X & 0xffff) | (point.Y << 16));
+            var scrollPattern = FindScrollPattern(point);
             for (var page = 0; page < 100; page++)
             {
                 token.ThrowIfCancellationRequested();
-                if (target == 0 || !PostMessage(target, 0x020A, (nint)(-360 << 16), coordinates)) return new(result, 0, true);
-                await Task.Delay(350, token);
+                if (target == 0) return new(result, 0, true);
+                var scrolled = false;
+                var previousPercent = scrollPattern?.Current.VerticalScrollPercent;
+                if (scrollPattern is not null)
+                {
+                    try
+                    {
+                        var currentPercent = scrollPattern.Current.VerticalScrollPercent;
+                        var currentViewSize = scrollPattern.Current.VerticalViewSize;
+                        var targetPercent = Math.Min(currentPercent + currentViewSize * 0.65, 100);
+                        if (currentViewSize < 100 && targetPercent > currentPercent + 0.01)
+                            scrollPattern.SetScrollPercent(ScrollPattern.NoScroll, targetPercent);
+                    }
+                    catch (ElementNotAvailableException) { scrollPattern = null; }
+                    await Task.Delay(150, token);
+                    if (scrollPattern is not null && previousPercent is { } scrollPositionBefore) scrolled = Math.Abs(scrollPattern.Current.VerticalScrollPercent - scrollPositionBefore) > 0.01;
+                }
+                if (!scrolled)
+                {
+                    SetPhysicalCursorPos(point.X + page % 2, point.Y);
+                    SendWheel(-120);
+                }
+                await Task.Delay(200, token);
                 var next = CaptureServices.Capture(area);
                 if (Same(previous, next)) break;
                 var match = ScrollStitcher.FindOverlap(previous, next); confidence = Math.Min(confidence, match.Confidence);
@@ -82,9 +110,23 @@ internal static class ScrollingCapture
         var stride = a.PixelWidth * 4; var first = new byte[stride * a.PixelHeight]; var second = new byte[first.Length];
         a.CopyPixels(first, stride, 0); b.CopyPixels(second, stride, 0); return first.AsSpan().SequenceEqual(second);
     }
+    private static ScrollPattern? FindScrollPattern(WinForge.Core.POINT point)
+    {
+        try
+        {
+            var current = AutomationElement.FromPoint(new Point(point.X, point.Y));
+            for (var depth = 0; current is not null && depth < 12; depth++, current = TreeWalker.ControlViewWalker.GetParent(current))
+            {
+                if (current.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern) && pattern is ScrollPattern scroll) return scroll;
+            }
+        }
+        catch (Exception error) when (error is ElementNotAvailableException or InvalidOperationException or System.Runtime.InteropServices.COMException) { }
+        return null;
+    }
     [DllImport("user32.dll")] private static extern bool SetPhysicalCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern bool GetPhysicalCursorPos(out WinForge.Core.POINT point);
     [DllImport("user32.dll")] private static extern nint WindowFromPoint(WinForge.Core.POINT point);
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);
-    [DllImport("user32.dll", SetLastError = true)] private static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, nuint extraInfo);
+    private static void SendWheel(int delta) => mouse_event(0x0800, 0, 0, unchecked((uint)delta), 0);
 }

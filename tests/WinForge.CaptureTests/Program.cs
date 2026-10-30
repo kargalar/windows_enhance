@@ -92,6 +92,23 @@ internal static class Program
         var midnight = new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeSpan.Zero);
         store.AddUsage("cross-midnight", midnight.AddMinutes(-1), midnight.AddMinutes(1), 120);
         Check(Math.Abs(store.Usage(midnight, midnight.AddDays(1)).Single().Seconds - 60) < 0.01, "Usage intervals are clipped at date boundaries");
+        var localMidnight = new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 1, 2)));
+        store.AddUsage("daily-app", localMidnight.AddMinutes(-1), localMidnight.AddMinutes(1), 120);
+        var daily = store.UsageByDay(localMidnight.AddMinutes(-1), localMidnight.AddMinutes(1));
+        Check(daily.Count == 2 && daily.All(row => Math.Abs(row.Seconds - 60) < 0.01), "Daily app statistics split activity across local midnight");
+        store.SetTags("daily-app", ["Work"]);
+        Check(store.TagUsage(localMidnight.AddMinutes(-1), localMidnight.AddMinutes(1)).Single(row => row.Tag == "Work").Seconds == 120,
+            "Tag statistics aggregate measured application time");
+        store.AddUsage("System Idle", localMidnight, localMidnight.AddMinutes(1), 60);
+        Check(Math.Abs(store.RecallSummary(localMidnight, localMidnight.AddMinutes(1)).IdleSeconds - 60) < 0.01,
+            "Recall summary reports idle time separately from app use");
+        store.AddContextUsage("chrome.exe", "website", "https://example.com", localMidnight.AddMinutes(-1), localMidnight.AddMinutes(1), 120);
+        Check(store.ContextUsageByDay(localMidnight.AddMinutes(-1), localMidnight.AddMinutes(1)).Count == 2, "Daily website statistics split activity across local midnight");
+        var contextTracker = new ContextUsageTracker(store.AddContextUsage);
+        contextTracker.Observe("chrome.exe", "website", "https://example.com/docs", midnight, 0);
+        contextTracker.Observe("chrome.exe", "website", "https://example.com/next", midnight.AddSeconds(5), 5000);
+        Check(store.ContextUsage(midnight, midnight.AddSeconds(5)).Single().Seconds == 5, "Website time is tracked independently of screenshot interval");
+        Check(ActivityContextReader.NormalizeUrl("https://user:pass@example.com/path?q=private#section") == "https://example.com/path", "Visited URL omits credentials, query and fragment");
         var oldId = store.Add("recall", now, media: "old.png", ocrState: "pending"); store.Delete("recall", oldId);
         var newId = store.Add("recall", now, media: "new.png", ocrState: "pending"); store.CompleteOcr(oldId, "stale OCR");
         Check(newId > oldId && store.Search(new("recall")).Single().Text == "", "Deleting a capture cannot redirect in-flight OCR to a reused ID");
@@ -115,9 +132,20 @@ internal static class Program
         var rows = new List<double>(); var tracker = new UsageTracker((_, _, _, seconds) => rows.Add(seconds)); var now = DateTimeOffset.UtcNow;
         tracker.Observe("A", now, 0); tracker.Observe("B", now.AddSeconds(3), 3000); tracker.Observe(null, now.AddSeconds(7), 7000);
         tracker.Observe(null, now.AddHours(1), 3_600_000); Check(rows.SequenceEqual(new[] { 3d, 4d }), "Usage measures transitions rather than screenshot intervals; idle excluded");
+        var contexts = new List<double>(); var context = new ContextUsageTracker((_, _, _, _, _, seconds) => contexts.Add(seconds));
+        context.Observe("browser.exe", "website", "https://example.com", now, 0);
+        context.Observe("browser.exe", "website", "https://example.org", now.AddSeconds(4), 4000);
+        context.Observe(null, null, null, now.AddSeconds(6), 6000);
+        Check(contexts.SequenceEqual(new[] { 4d, 2d }), "Website transitions close their measured intervals");
     }
     private static void Images(string root)
     {
+        var endpoint = new Uri("https://upload.example/api/");
+        Check(ImageUploadService.ParseResult("https://cdn.example/image.png", null, endpoint).AbsoluteUri == "https://cdn.example/image.png", "Upload accepts a plain URL response");
+        Check(ImageUploadService.ParseResult("{\"data\":{\"url\":\"https://cdn.example/nested.png\"}}", null, endpoint).AbsoluteUri == "https://cdn.example/nested.png", "Upload accepts nested JSON URL responses");
+        Check(ImageUploadService.ParseResult("", new Uri("../image.png", UriKind.Relative), endpoint).AbsoluteUri == "https://upload.example/image.png", "Upload resolves relative Location headers");
+        try { ImageUploadService.ParseResult("file:///private/image.png", null, endpoint); throw new Exception("Non-HTTP upload response accepted"); }
+        catch (InvalidDataException) { checks++; }
         const int width = 80, height = 80; var pixels = new byte[width * height * 4]; new Random(42).NextBytes(pixels);
         var first = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixels, width * 4); first.Freeze();
         var shifted = new byte[pixels.Length]; Array.Copy(pixels, width * 4 * 30, shifted, 0, width * 4 * 50); new Random(8).NextBytes(shifted.AsSpan(width * 4 * 50));
@@ -126,6 +154,8 @@ internal static class Program
         Check(ScrollStitcher.Join(first, next, match.Overlap).PixelHeight == 110, "Scrolling stitch excludes overlapping pixels");
         var area = new Int32Rect(10, 10, 30, 30); var output = CaptureImageEffects.Apply(first, area, false); var rendered = new byte[pixels.Length]; output.CopyPixels(rendered, width * 4, 0);
         Check(rendered[0] == pixels[0] && rendered[10 * width * 4 + 10 * 4] != pixels[10 * width * 4 + 10 * 4], "Pixelation changes only selected area");
+        var grayscale = CaptureImageEffects.ApplyPreset(first, "grayscale"); var grayPixels = new byte[pixels.Length]; grayscale.CopyPixels(grayPixels, width * 4, 0);
+        Check(Enumerable.Range(0, grayPixels.Length / 4).All(index => grayPixels[index * 4] == grayPixels[index * 4 + 1] && grayPixels[index * 4 + 1] == grayPixels[index * 4 + 2]), "Reusable grayscale effect applies consistently");
         Check(new CaptureArea(-1920, -100, 1920, 1080).IsValid && !new CaptureArea(0, 0, 100000, 100000).IsValid, "Negative monitor coordinates and capture size bounds");
         var store = new HistoryStore(Path.Combine(root, "encoding"));
         var compressed = CaptureServices.Save(store, first, true); store.Add("recall", DateTimeOffset.UtcNow, media: compressed);
@@ -150,10 +180,11 @@ internal static class Program
         Check(!SpeechBuffer.ContainsSpeech(new float[16000]) && !SpeechBuffer.ContainsSpeech([0.5f]), "Silence and short recordings do not invoke Whisper");
         audio.Append([float.NaN, float.PositiveInfinity], 16000); Check(audio.Take().All(float.IsFinite), "Invalid audio samples sanitized");
         var keys = new DictationShortcutState();
-        Check(keys.Press(true, false) == DictationKeyAction.Start && keys.Press(true, true) == DictationKeyAction.None, "Hold shortcut suppresses repeated keydown");
-        Check(keys.Release() == DictationKeyAction.Stop && keys.Release() == DictationKeyAction.None, "Key release stops hold recording exactly once");
-        Check(keys.Press(false, false) == DictationKeyAction.Start && keys.Press(false, true) == DictationKeyAction.Stop, "Toggle shortcut starts and stops");
-        keys.Press(true, false); keys.Reset(); Check(!keys.Held && keys.Release() == DictationKeyAction.None, "Cancellation clears held shortcut state");
+        Check(keys.Press(false) == DictationKeyAction.Start && keys.Press(false) == DictationKeyAction.None, "Repeated keydown during one press is ignored");
+        Check(keys.Release(TimeSpan.FromMilliseconds(100)) == DictationKeyAction.None, "Quick tap leaves dictation running");
+        Check(keys.Press(true) == DictationKeyAction.Stop && keys.Release(TimeSpan.FromMilliseconds(100)) == DictationKeyAction.None, "Second quick tap stops dictation");
+        Check(keys.Press(false) == DictationKeyAction.Start && keys.Release(DictationShortcutState.HoldThreshold) == DictationKeyAction.Stop, "Holding the shortcut stops on release");
+        keys.Press(false); keys.Reset(); Check(!keys.Held && keys.Release() == DictationKeyAction.None, "Cancellation clears held shortcut state");
     }
     private static async Task<int> Import(string root, string kind)
     {
@@ -306,7 +337,14 @@ internal static class Program
         var image = new RenderTargetBitmap(800, 450, 96, 96, PixelFormats.Pbgra32); image.Render(visual); image.Freeze();
         var store = new HistoryStore(Path.Combine(root, "synthetic-history")); var media = CaptureServices.Save(store, image);
         store.Add("recall", DateTimeOffset.UtcNow, "Örnek.exe", "Örnek çalışma ekranı", "Türkçe OCR önizlemesi", media);
-        foreach (var (window, name) in new (Window, string)[] { (new HistoryWindow(store, "recall", "Ekran Geçmişi"), "history.png"), (new CaptureEditor(store, image), "editor.png") })
+        store.AddUsage("Örnek.exe", DateTimeOffset.UtcNow.AddMinutes(-25), DateTimeOffset.UtcNow, 1500);
+        store.AddContextUsage("chrome.exe", "website", "https://example.com/", DateTimeOffset.UtcNow.AddMinutes(-10), DateTimeOffset.UtcNow, 600);
+        foreach (var (window, name) in new (Window, string)[]
+        {
+            (new HistoryWindow(store, "recall", "Ekran Geçmişi"), "history.png"),
+            (new UsageStatisticsWindow(store, DateTimeOffset.UtcNow.Date, null), "usage-statistics.png"),
+            (new CaptureEditor(store, image), "editor.png")
+        })
         {
             window.Show();
             for (var i = 0; i < 20; i++) { window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); Thread.Sleep(20); }
@@ -345,7 +383,8 @@ internal static class Program
         var item = store.Search(new("recall", Limit: 200)).First(row => row.Media.Length > 0);
         var image = CaptureServices.Load(store.ResolveMedia(item.Media));
         Check(image.PixelWidth > 0 && image.PixelHeight > 0, "Imported WebP image decodes through the shared image engine");
-        var settings = new SettingsStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinForge", "settings.json"));
+        var settingsPath = Path.Combine(Path.GetTempPath(), "WinForge-capture-audit-" + Guid.NewGuid().ToString("N"), "settings.json");
+        var settings = new SettingsStore(settingsPath);
         Check(!settings.Enabled.Overlaps(new[] { "screen-history", "voice-dictation", "screen-capture" }), "Import did not enable recording modules");
     }
     private static int Scrolling()
@@ -371,7 +410,7 @@ internal static class Program
                 var result = await ScrollingCapture.RunAsync(area, default);
                 Directory.CreateDirectory("artifacts/capture-verification");
                 var output = new PngBitmapEncoder(); output.Frames.Add(BitmapFrame.Create(result.Image)); using (var file = File.Create("artifacts/capture-verification/scrolling.png")) output.Save(file);
-                Console.WriteLine($"Scrolling fixture: visible={area.Height}, stitched={result.Image.PixelHeight}, confidence={result.Confidence:0.000}, partial={result.Partial}, offset={viewer.VerticalOffset:0}");
+                Console.WriteLine($"Scrolling fixture: visible={area.Height}, stitched={result.Image.PixelHeight}, extent={viewer.ExtentHeight:0}, viewport={viewer.ViewportHeight:0}, confidence={result.Confidence:0.000}, partial={result.Partial}, offset={viewer.VerticalOffset:0}");
                 Check(result.Image.PixelHeight > area.Height * 2 && result.Confidence >= 0.85 && !result.Partial, "Real scrolling window captures and stitches beyond the visible screen");
             }
             catch (Exception error) { failed = true; Console.Error.WriteLine(error); }

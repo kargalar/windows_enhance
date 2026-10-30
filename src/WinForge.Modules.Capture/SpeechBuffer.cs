@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using WinForge.Dictation;
 
 namespace WinForge.Modules.Capture;
@@ -41,14 +42,30 @@ public sealed class SpeechBuffer
 public enum DictationKeyAction { None, Start, Stop }
 public sealed class DictationShortcutState
 {
+    public static readonly TimeSpan HoldThreshold = TimeSpan.FromMilliseconds(300);
     public bool Held { get; private set; }
-    public DictationKeyAction Press(bool holdMode, bool recording)
+    private bool startsRecording;
+    private long pressedAt;
+
+    public DictationKeyAction Press(bool recording)
     {
-        if (!holdMode) return recording ? DictationKeyAction.Stop : DictationKeyAction.Start;
         if (Held) return DictationKeyAction.None;
-        Held = true; return DictationKeyAction.Start;
+        Held = true;
+        startsRecording = !recording;
+        pressedAt = Stopwatch.GetTimestamp();
+        return recording ? DictationKeyAction.Stop : DictationKeyAction.Start;
     }
-    public DictationKeyAction Release()
-    { var action = Held ? DictationKeyAction.Stop : DictationKeyAction.None; Held = false; return action; }
-    public void Reset() => Held = false;
+
+    public DictationKeyAction Release() => Release(pressedAt == 0 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(pressedAt));
+
+    public DictationKeyAction Release(TimeSpan heldDuration)
+    {
+        var action = Held && startsRecording && heldDuration >= HoldThreshold
+            ? DictationKeyAction.Stop
+            : DictationKeyAction.None;
+        Reset();
+        return action;
+    }
+
+    public void Reset() { Held = false; startsRecording = false; pressedAt = 0; }
 }
