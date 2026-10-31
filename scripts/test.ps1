@@ -1,6 +1,7 @@
 param(
     [string]$Configuration = "Release",
     [switch]$NativeSmoke,
+    [switch]$FolderSizesLive,
     [switch]$ExtendedFileTools,
     [switch]$LiveShell,
     [switch]$LiveBrowser,
@@ -55,6 +56,20 @@ if ($ExtendedFileTools) {
 }
 & $executable @testArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$folderSizeProject = Join-Path $root 'tests\WinForge.FolderSizeTests\WinForge.FolderSizeTests.csproj'
+dotnet build $folderSizeProject -c $Configuration -p:Platform=x64 -nologo
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$folderSizeExecutable = Join-Path $root "tests\WinForge.FolderSizeTests\bin\x64\$Configuration\net10.0-windows10.0.19041.0\WinForge.FolderSizeTests.exe"
+$folderSizeNative = Join-Path $root "native\WinForge.Shell\bin\x64\$Configuration"
+& $folderSizeExecutable "--native=$folderSizeNative"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($FolderSizesLive) {
+    & $folderSizeExecutable "--native=$folderSizeNative" '--fixture' '--coexist'
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $extrasModule = Join-Path $root "src\WinForge.App\bin\x64\$Configuration\net10.0-windows10.0.19041.0\modules\WinForge.Modules.Extras.dll"
+    & $folderSizeExecutable "--native=$folderSizeNative" "--module=$extrasModule"
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 if ($NativeSmoke) {
     & $executable --shell-only
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

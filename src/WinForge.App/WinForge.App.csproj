@@ -62,6 +62,7 @@
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-native.ps1&quot; -Configuration &quot;$(Configuration)&quot;" />
     <ItemGroup>
       <NativeShellFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellHost.exe;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellTap.dll" />
+      <NativeShellFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.FolderSizeHost.exe;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.FolderSizeTap.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(NativeShellFiles)" DestinationFolder="$(OutDir)native" SkipUnchangedFiles="true" />
   </Target>

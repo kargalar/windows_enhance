@@ -15,7 +15,8 @@ public abstract class CaptureModuleBase : ITweakModule, IQuickActionProvider
     public string? Warning => null;
     public bool IsActive { get; protected set; }
     protected abstract string Kind { get; }
-    protected HistoryStore Store => new(HistoryStore.DefaultDirectory);
+    protected HistoryStore Store => new(PortableHistoryMigration.DirectoryFor(AppData.DirectoryPath,
+        Context.Settings.GetString(PortableHistoryMigration.StorageIdKey, "")));
     protected virtual IEnumerable<SettingDescriptor> ModuleSettings => [];
     public IReadOnlyList<SettingDescriptor> Settings => new[]
     {

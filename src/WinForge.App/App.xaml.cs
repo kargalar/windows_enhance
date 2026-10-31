@@ -31,22 +31,8 @@ public partial class App : Application
 
     private void MigrateCaptureDirectories()
     {
-        var keys = Store.Values.Values.Where(values => values.ContainsKey("storage-directory")).ToArray();
         var legacyDefault = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "History");
-        var destination = Path.Combine(AppData.DirectoryPath, "History");
-        var sources = keys.Select(values => values["storage-directory"]).Where(path => !string.IsNullOrWhiteSpace(path))
-            .Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase)
-            .Where(path => !string.Equals(path.TrimEnd(Path.DirectorySeparatorChar), legacyDefault.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(path.TrimEnd(Path.DirectorySeparatorChar), destination.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
-                && Directory.Exists(path)).ToArray();
-        foreach (var source in sources)
-        {
-            if (File.Exists(Path.Combine(source, "history.db")) && File.Exists(Path.Combine(destination, "history.db")))
-                throw new InvalidOperationException($"Birden fazla ge?mi? veritaban? bulundu. Veri kayb?n? ?nlemek i?in otomatik ta??ma durduruldu: {source} ve {destination}");
-            AppData.CopyMissing(source, destination);
-        }
-        foreach (var values in keys) values.Remove("storage-directory");
-        if (keys.Length > 0) Store.Save();
+        PortableHistoryMigration.Migrate(Store, AppData.DirectoryPath, legacyDefault);
     }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -83,7 +69,7 @@ public partial class App : Application
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
         {
-            MessageBox.Show("WinForge verileri ta??namad?. Program klas?r?n?n yaz?labilir oldu?unu kontrol edin.\n\n" + exception.Message,
+            MessageBox.Show("WinForge verileri taşınamadı. Ayrıntılar:\n\n" + exception.Message,
                 "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown();
             return;

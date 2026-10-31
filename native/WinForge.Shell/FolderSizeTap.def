@@ -1,0 +1,4 @@
+LIBRARY "WinForge.FolderSizeTap.dll"
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

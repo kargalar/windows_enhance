@@ -35,6 +35,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Klasik Sağ Tık Menüsü** | Windows 11'in kısa menüsü yerine Windows 10'un tam sağ tık menüsünü kullanır |
 | **Sağ Tık Menüsü** | Gezgin menüsüne özel öğeler ekler ve kayıtlı kabuk uzantılarını gizler; yerleşik komutlar ve diğer uygulamaların kendi menüleri kapsam dışı |
 | **Gezgin İnce Ayarları** | Uzantılar, gizli dosyalar, son/sık kullanılanlar, kompakt mod, tam yol, onay kutuları, ayrı süreç ve masaüstü simgeleri |
+| **Gezgin Klasör Boyutları** | Ayrıntılar görünümünde yerel klasörlerin boyutlarını arka planda hesaplar, önbelleğe alır ve dosyalar değiştikçe günceller |
 | **Toplu Yeniden Adlandırma** | Çoklu dosya seçimi, metin/regex önizlemesi, çakışma denetimi ve en son işlemi pencere/uygulama yeniden açıldıktan sonra da geri alma |
 | **Görsel Boyutlandırıcı** | Birden fazla görsel için 854/1280/1920 px veya özel uzun kenar; en-boy oranı, PNG/JPEG biçimi ve JPEG kalitesi korunur; aynı biçimde EXIF/IPTC metadata aktarımı seçilebilir; arka planda ilerleme/iptal; özgün dosyalar saklanır |
 | **Dosya Kilidi Bulucu** | Windows Restart Manager ile kilit kullanan uygulama ve hizmetleri listeler; kullanıcı uygulamaları ayrıca onayla sonlandırılabilir |
@@ -282,6 +283,26 @@ uygulamaya aktarılmaz. Seçim sırasında `Esc` ile iptal edebilir, küçük pe
 kapat düğmesiyle kapatabilirsiniz. Ayarlar panelindeki **Etkin pencereyi kırp**
 eylemi aynı akışı başlatır.
 
+## Gezgin Klasör Boyutları
+
+**Gezgin → Gezgin Klasör Boyutları** modülünü etkinleştirip Explorer'da
+**Ayrıntılar** görünümünü ve **Boyut** sütununu açın. WinForge sabit yerel
+sürücülerdeki klasörleri düşük öncelikli tek bir arka plan iş parçacığında tarar;
+en fazla 64 klasörün sonucu önbellekte tutulur ve disk değişiklikleri izlenir.
+Ağ ve çıkarılabilir sürücüler, klasör bağlantıları ve bağlantı olarak işaretli
+bulut klasörleri taranmaz. Okunamayan, çok büyük veya ayarlanan süreyi aşan
+klasörlerin sonucu boş kalır; eksik toplam gösterilmez. Sembolik bağlantılar
+izlenmez. Tarama süresi ve önbellek süresi modül ayarlarından değiştirilebilir.
+
+Explorer'a ilk bağlantıda ve Windows bileşeni güncellendiğinde WinForge, kurulu
+Windows sürümüne ait hata ayıklama sembollerini Microsoft sunucusundan indirir
+ve kimliğini doğrulayarak uygulamanın `data\FolderSizes\Symbols` klasöründe
+önbelleğe alır. Eşleşen semboller hazır değilse bağlantı için internet gerekir.
+Windows'un iç uygulaması sürümler arasında değişebildiğinden, uyumsuz bir
+bağlantı noktası tespit edilirse modül hata bildirerek devreye girmez. Gerçek
+Explorer ve yalıtılmış görünüm sınamaları için
+`.\scripts\test.ps1 -FolderSizesLive` kullanılabilir.
+
 ## Toplu Yeniden Adlandırma
 
 **Gezgin → Toplu Yeniden Adlandırma** aracında birden fazla dosya seçin, arama
@@ -508,8 +529,8 @@ Windows XAML tanılama arabirimiyle gerçek görev çubuğuna bağlanır; özgü
 ve bağlamaları saklar, kapatılınca veya uygulamanın yaşam sinyali kesilince geri yükler.
 Başlat görünürlüğü, renkler, simge/düğme boyutları, özel yükseklik ve yerel saat
 biçimleri gerçek Explorer üzerinde sınanır. Tema seçenekleri WinForge'un renk
-düzenleridir. Dikey/üst görev çubuğu, dock büyüme animasyonu ve Gezgin klasör
-boyutları henüz uygulanmamıştır. Ayrıntılı kapsam ve gerçek test kanıtları
+düzenleridir. Dikey/üst görev çubuğu ve dock büyüme animasyonu henüz
+uygulanmamıştır. Ayrıntılı kapsam ve gerçek test kanıtları
 [özellik doğrulama belgesinde](docs/FEATURE_VERIFICATION.md) bulunur.
 Otomatik döşeme yalnızca normal üst düzey pencerelere uygulanır: büyütülmüş
 (azami) pencereler, tam ekran uygulamalar, araç pencereleri, WinForge'ın kendi
@@ -567,6 +588,6 @@ modülünün kayıtları yeniden etkinleştirilmez. Kullanıcının ayrıca kurd
 programlara ve onların ayarlarına müdahale edilmez.
 
 
-### Ta??nabilir veri
+### Taşınabilir veri
 
-WinForge ayarlar?n?, ge?mi?ini, ekran g?r?nt?lerini, ses modellerini, indirdi?i ara?lar? ve di?er uygulama verilerini ?al??t?r?labilir dosyan?n yan?ndaki `data` klas?r?nde saklar. Ta??mak i?in program klas?r?n?n tamam?n? `data` ile birlikte kopyalay?n; klas?r yaz?labilir olmal?d?r. ?lk a??l??ta eski varsay?lan WinForge kullan?c? klas?rlerindeki veriler, mevcut dosyalar?n ?zerine yaz?lmadan kopyalan?r. Eski dosyalar silinmez. Birden fazla ayr? ge?mi? veritaban? varsa otomatik ta??ma veri kayb?n? ?nlemek i?in durur. Windows ba?lang?? kayd? ve Windows sistem ayarlar? bilgisayara ?zeldir; ba?ka bilgisayarda yeniden ayarlanmal?d?r. Kullan?c?n?n ayr?ca d??a aktard??? dosyalar se?ilen konumda kal?r.
+WinForge ayarlarını, geçmişini, ekran görüntülerini, ses modellerini ve diğer uygulama verilerini çalıştırılabilir dosyanın yanındaki `data` klasöründe saklar. Taşımak için program klasörünün tamamını `data` ile birlikte kopyalayın; klasör yazılabilir olmalıdır. Eski varsayılan veri klasörleri ve özel geçmiş klasörleri ilk açılışta kopyalanır; farklı geçmiş veritabanları ayrı tutulur. Eski dosyalar silinmez. Windows başlangıç kaydı ve sistem ayarları bilgisayara özeldir ve başka bilgisayarda yeniden ayarlanmalıdır. Dışa aktarılan dosyalar seçilen konumda kalır.
