@@ -367,10 +367,13 @@ public sealed class MediaFlyoutModule : ITweakModule
         if (!IsActive) return;
         _hotkey?.Dispose();
         _hotkey = null;
+        var primaryHotkeyEnabled = _context?.Settings.GetBool("hotkey-enabled", true) == true;
+        var volumeHotkeyEnabled = _context?.Settings.GetBool("volume-hotkey-enabled", true) == true;
         RegisterHotkey();
         _volumeHotkey?.Dispose();
         _volumeHotkey = null;
         RegisterVolumeHotkey();
+        NotifyHotkeyAvailability(primaryHotkeyEnabled, volumeHotkeyEnabled);
         RegisterExternalVolumeWatcher();
         _lockKeysHook?.Dispose();
         _lockKeysHook = null;
@@ -378,6 +381,28 @@ public sealed class MediaFlyoutModule : ITweakModule
         ConfigureFlyoutWindow();
         ConfigureTaskbarWidget();
         ConfigureTaskbarVisualizer();
+    }
+
+    private void NotifyHotkeyAvailability(bool primaryHotkeyEnabled, bool volumeHotkeyEnabled)
+    {
+        if (_context is null) return;
+
+        string? message = null;
+        if (primaryHotkeyEnabled && _hotkey is null)
+        {
+            message = _volumeHotkey is not null
+                ? "Win+Alt+M başka bir uygulama tarafından kullanılıyor. Medya Flyout'u açmak için Ctrl+Alt+V kısayolunu kullanabilirsiniz."
+                : volumeHotkeyEnabled
+                    ? "Win+Alt+M ve Ctrl+Alt+V başka uygulamalar tarafından kullanılıyor; Medya Flyout kısayolları etkinleştirilemedi."
+                    : "Win+Alt+M başka bir uygulama tarafından kullanılıyor; Ctrl+Alt+V yedek kısayolu ayarlardan etkinleştirebilirsiniz.";
+        }
+        else if (!primaryHotkeyEnabled && volumeHotkeyEnabled && _volumeHotkey is null)
+        {
+            message = "Ctrl+Alt+V başka bir uygulama tarafından kullanılıyor; Medya Flyout kısayolu etkinleştirilemedi.";
+        }
+
+        if (message is null) return;
+        _context.Notify(message);
     }
 
     private void RegisterHotkey()
@@ -410,7 +435,6 @@ public sealed class MediaFlyoutModule : ITweakModule
         {
             var message = $"{shortcut} başka bir uygulama tarafından kullanılıyor; Fluent Medya için bu kısayol etkinleştirilemedi.";
             _context.Log.Error(message, exception);
-            _context.Notify(message);
             return null;
         }
     }
@@ -1412,7 +1436,6 @@ internal sealed class MediaFlyoutWindow : Window
 
     private void PositionFlyout()
     {
-        Measure(new Size(Width, double.PositiveInfinity));
         var cursor = GetCursorPoint();
         var monitor = _monitor switch
         {
@@ -1426,13 +1449,21 @@ internal sealed class MediaFlyoutWindow : Window
             PlaceInArea(workArea.Left, workArea.Top, workArea.Right, workArea.Bottom);
             return;
         }
-        PlaceInArea(info.Work.Left, info.Work.Top, info.Work.Right, info.Work.Bottom);
+        var scaleX = 1.0;
+        var scaleY = 1.0;
+        if (GetDpiForMonitor(monitor, 0, out var dpiX, out var dpiY) == 0 && dpiX > 0 && dpiY > 0)
+        {
+            scaleX = dpiX / 96.0;
+            scaleY = dpiY / 96.0;
+        }
+        PlaceInArea(info.Work.Left / scaleX, info.Work.Top / scaleY,
+            info.Work.Right / scaleX, info.Work.Bottom / scaleY);
     }
 
     private void PlaceInArea(double left, double top, double right, double bottom)
     {
         const double margin = 16;
-        var height = ActualHeight > 0 ? ActualHeight : DesiredSize.Height;
+        var height = ActualHeight > 0 ? ActualHeight : Height;
         Left = _position.EndsWith("left", StringComparison.Ordinal) ? left + margin : right - Width - margin;
         Top = _position.StartsWith("top", StringComparison.Ordinal) ? top + margin : bottom - height - margin;
         Left = Math.Max(left + margin, Math.Min(Left, right - Width - margin));
@@ -2376,6 +2407,7 @@ internal sealed class MediaFlyoutWindow : Window
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(POINT point, uint flags);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+    [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
     [DllImport("user32.dll")] private static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorEnumProc callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
     [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);

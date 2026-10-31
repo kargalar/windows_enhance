@@ -7,8 +7,12 @@ public sealed class NetSpeedWindow
 {
     public const string AboveTaskbar = "Görev çubuğunun üstünde";
     public const string InsideTaskbar = "Görev çubuğunun içinde";
-    private const double OverlayWidth = 220;
-    private const double OverlayHeight = 38;
+    public const string SideBySide = "Yan yana";
+    public const string Stacked = "Alt alta";
+    private const double SideBySideWidth = 220;
+    private const double SideBySideHeight = 38;
+    private const double StackedWidth = 132;
+    private const double StackedHeight = 44;
 
     private readonly IFeatureUiWindow? _view;
     private readonly Timer _timer;
@@ -21,9 +25,14 @@ public sealed class NetSpeedWindow
     private bool _showUpload = true;
     private string _unit = "Otomatik";
     private string _position = InsideTaskbar;
+    private string _layout = SideBySide;
     private int _intervalMilliseconds = 1000;
     private int _running;
     private int _tickInProgress;
+
+    private double OverlayWidth => IsStacked ? StackedWidth : SideBySideWidth;
+    private double OverlayHeight => IsStacked ? StackedHeight : SideBySideHeight;
+    private bool IsStacked => string.Equals(_layout, Stacked, StringComparison.CurrentCultureIgnoreCase);
 
     public NetSpeedWindow(IFeatureUiService? featureUi)
     {
@@ -35,7 +44,7 @@ public sealed class NetSpeedWindow
     }
 
     public void ApplyOptions(double fontSize, bool showDownload, bool showUpload, int trayGap,
-        string unit, int intervalMs, string position)
+        string unit, int intervalMs, string position, string layout)
     {
         _fontSize = Math.Clamp(fontSize, 8, 24);
         _showDownload = showDownload;
@@ -43,6 +52,7 @@ public sealed class NetSpeedWindow
         _trayGap = Math.Clamp(trayGap, 0, 120);
         _unit = unit;
         _position = position;
+        _layout = layout;
 
         _intervalMilliseconds = Math.Clamp(intervalMs, 250, 3000);
         if (Volatile.Read(ref _running) != 0)
@@ -164,11 +174,12 @@ public sealed class NetSpeedWindow
 
     private void UpdateView(string download, string upload) => _view?.SetState(new
     {
-        download = "↓ " + download,
-        upload = "↑ " + upload,
+        download,
+        upload,
         fontSize = _fontSize,
         showDownload = _showDownload,
-        showUpload = _showUpload
+        showUpload = _showUpload,
+        layout = _layout
     });
 
     private void Sample() => (_lastReceived, _lastSent) = ReadTotals();

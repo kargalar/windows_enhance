@@ -32,9 +32,9 @@
     <Content Include="../../third_party/Nashi/*" Link="licenses/Nashi/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="WinForge.RegressionTests" />
     <InternalsVisibleTo Include="WinForge.FileToolsTests" />
-    <Content Include="Resources/search-model-config.json" Link="data/models/search-model-config.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Resources/models/**/*" Link="data/models/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Resources/tessdata/archives/*.gz" Link="data/tessdata/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Resources/search-model-config.json" Link="userdata/models/search-model-config.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Resources/models/**/*" Link="userdata/models/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Resources/tessdata/archives/*.gz" Link="userdata/tessdata/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="$(NuGetPackageRoot)tesseract/5.2.0/x64/*.dll" Link="x64/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../third_party/ClipboardLine/LICENSE" Link="licenses/ClipboardLine/LICENSE-ClipBoardLine.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../third_party/ClipboardLine/ocr-licenses/*" Link="licenses/ClipboardLine/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

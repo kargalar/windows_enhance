@@ -264,7 +264,7 @@ public sealed class TaskbarModule : ITweakModule, IAsyncTweakModule
     public async Task DeactivateAsync()
     {
         RestoreState();
-        await Task.Run(BroadcastSettingChange);
+        await BroadcastSettingChangeAsync();
     }
 
     private void RestoreState()
@@ -663,10 +663,8 @@ public sealed class TaskbarModule : ITweakModule, IAsyncTweakModule
         sub?.DeleteValue(name, throwOnMissingValue: false);
     }
 
-    private static void BroadcastSettingChange()
-    {
-        Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, "TraySettings", Native.SMTO_ABORTIFHUNG, 1000, out _);
-        Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, "ImmersiveColorSet", Native.SMTO_ABORTIFHUNG, 1000, out _);
-        Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, "intl", Native.SMTO_ABORTIFHUNG, 1000, out _);
-    }
+    private static void BroadcastSettingChange() => _ = BroadcastSettingChangeAsync();
+
+    private static Task BroadcastSettingChangeAsync() =>
+        SettingsChangeBroadcaster.BroadcastAsync("TraySettings", "ImmersiveColorSet", "intl");
 }

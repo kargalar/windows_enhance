@@ -7,6 +7,7 @@ type NetSpeedState = {
   fontSize: number;
   showDownload: boolean;
   showUpload: boolean;
+  layout: string;
 };
 
 type SpectrumState = {
@@ -764,6 +765,7 @@ const previewNetSpeed: NetSpeedState = {
   fontSize: 11,
   showDownload: true,
   showUpload: true,
+  layout: 'Yan yana',
 };
 
 const previewSpectrum: SpectrumState = {
@@ -780,11 +782,11 @@ const previewOsd: OsdState = {
 };
 
 const previewMedia: MediaFlyoutState = {
-  title: 'Geceye DoÄŸru',
-  artist: 'Ã–rnek SanatÃ§Ä±',
+  title: 'Geceye Doğru',
+  artist: 'Örnek Sanatçı',
   sourceName: 'Spotify',
   sourceType: 'Spotify',
-  sourceBadge: 'UygulamayÄ± aÃ§',
+  sourceBadge: 'Uygulamayı aç',
   sessions: [],
   selectedSessionId: '',
   showSessionSelector: false,
@@ -1447,9 +1449,8 @@ export function FeatureApp({ view }: { view: string }) {
   if (view === 'net-speed-overlay') {
     const network = state as unknown as NetSpeedState | null;
     return <div className={`feature-root feature-root-transparent ${import.meta.env.DEV ? 'feature-root-preview' : ''}`}>
-      {network && (network.showDownload || network.showUpload) && <div className="network-speed-pill" style={{ fontSize: network.fontSize }}>
+      {network && (network.showDownload || network.showUpload) && <div className={`network-speed-display ${network.layout === 'Alt alta' ? 'network-speed-stacked' : ''}`} style={{ fontSize: network.fontSize }}>
         {network.showDownload && <span className="network-speed-value download-value">{network.download}</span>}
-        {network.showDownload && network.showUpload && <span className="network-speed-divider" />}
         {network.showUpload && <span className="network-speed-value upload-value">{network.upload}</span>}
       </div>}
     </div>;
@@ -1472,10 +1473,14 @@ export function FeatureApp({ view }: { view: string }) {
       <div className="osd-card osd-toast"><span className="osd-status-dot" /><span>{osd.message}</span></div>
     </div>;
     if (osd.kind === 'brightness') return <div className="feature-root feature-root-osd">
-      <div className="osd-card osd-brightness">
-        <div className="osd-heading"><span>Ekran parlaklÄ±ÄŸÄ±</span><strong>{osd.percent}%</strong></div>
-        {osd.deviceName && <span className="osd-device">{osd.deviceName}</span>}
-        <div className="osd-progress"><span style={{ width: `${osd.percent}%` }} /></div>
+      <div className="osd-card osd-volume" onMouseEnter={() => send('brightness.hover', { value: true })} onMouseLeave={() => send('brightness.hover', { value: false })}>
+        <span className="osd-volume-button" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42m0-14.14-1.42 1.42M6.35 17.65l-1.42 1.42" />
+          </svg>
+        </span>
+        <input className="osd-volume-range" type="range" min="0" max="100" value={osd.percent} onChange={event => send('brightness.set', { percent: Number(event.target.value) })} onKeyDown={event => { if (event.key === 'Escape') send('brightness.dismiss'); }} aria-label="Ekran parlaklığı" />
+        <strong className="osd-volume-value">{osd.percent}%</strong>
       </div>
     </div>;
     if (osd.kind === 'volume') return <div className="feature-root feature-root-osd">
@@ -1495,37 +1500,38 @@ export function FeatureApp({ view }: { view: string }) {
   if (view === 'media-flyout') {
     const media = state as unknown as MediaFlyoutState | null;
     if (!media) return <div className="feature-root feature-root-transparent" />;
+    const repeatLabel = media.repeatMode === 'track' ? 'Bu parça' : media.repeatMode === 'list' ? 'Tüm parçalar' : 'Kapalı';
     return <div className="feature-root feature-root-media">
       <article className="media-flyout-card" onMouseEnter={() => send('media.hover', { value: true })} onMouseLeave={() => send('media.hover', { value: false })}>
-        {media.upNext && <div className="media-up-next"><span>SONRAKÄ°</span>{media.upNext}</div>}
+        {media.upNext && <div className="media-up-next"><span>SONRAKİ</span>{media.upNext}</div>}
         <header className="media-source-row">
           <button className={`media-source ${media.sourceType.toLowerCase()}`} onClick={() => send('media.open-source')}>
-            <span className="media-source-icon">{media.sourceType === 'Spotify' ? 'S' : media.sourceType === 'YouTube' ? 'â–¶' : 'â™«'}</span>
+            <span className="media-source-icon">{media.sourceType === 'Spotify' ? 'S' : media.sourceType === 'YouTube' ? '▶' : '♫'}</span>
             <span>{media.sourceName || 'Medya'}</span><small>{media.sourceBadge}</small>
           </button>
-          <button className={`media-pin ${media.pinned ? 'active' : ''}`} onClick={() => send('media.pin', { value: !media.pinned })} aria-label={media.pinned ? 'Panel sabitlemesini kaldÄ±r' : 'Paneli sabitle'} title={media.pinned ? 'Sabitlemeyi kaldÄ±r' : 'Sabitle'}>
+          <button className={`media-pin ${media.pinned ? 'active' : ''}`} onClick={() => send('media.pin', { value: !media.pinned })} aria-label={media.pinned ? 'Panel sabitlemesini kaldır' : 'Paneli sabitle'} title={media.pinned ? 'Sabitlemeyi kaldır' : 'Sabitle'}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-3 4 2 2-1 1-4-4-6 8 1-10-4-4 1-1 2 2 4-3 1-4Z" /></svg>
           </button>
         </header>
         <div className="media-track-row">
-          <div className="media-artwork">{media.artwork ? <img src={media.artwork} alt="AlbÃ¼m kapaÄŸÄ±" /> : <span>â™«</span>}</div>
-          <div className="media-track-copy"><strong title={media.title}>{media.title}</strong><span title={media.artist}>{media.artist || 'Bilinmeyen sanatÃ§Ä±'}</span></div>
+          <div className="media-artwork">{media.artwork ? <img src={media.artwork} alt="Albüm kapağı" /> : <span>♫</span>}</div>
+          <div className="media-track-copy"><strong title={media.title}>{media.title}</strong><span title={media.artist}>{media.artist || 'Bilinmeyen sanatçı'}</span></div>
         </div>
-        {media.showSessionSelector && <select className="media-session-select" value={media.selectedSessionId} onChange={event => send('media.select-session', { id: event.target.value })} aria-label="Medya oturumu seÃ§">
+        {media.showSessionSelector && <select className="media-session-select" value={media.selectedSessionId} onChange={event => send('media.select-session', { id: event.target.value })} aria-label="Medya oturumu seç">
           {media.sessions.map(session => <option key={session.id} value={session.id}>{session.label}</option>)}
         </select>}
         <div className="media-timeline">
-          <input type="range" min="0" max={Math.max(1, media.duration)} value={Math.min(seekPosition ?? media.position, media.duration || 1)} onChange={event => setSeekPosition(Number(event.target.value))} onPointerUp={() => { if (seekPosition !== null) send('media.seek', { position: seekPosition }); setSeekPosition(null); }} onKeyUp={event => { if (event.key.startsWith('Arrow') && seekPosition !== null) { send('media.seek', { position: seekPosition }); setSeekPosition(null); } }} aria-label="ParÃ§ada ilerle" />
+          <input type="range" min="0" max={Math.max(1, media.duration)} value={Math.min(seekPosition ?? media.position, media.duration || 1)} onChange={event => setSeekPosition(Number(event.target.value))} onPointerUp={() => { if (seekPosition !== null) send('media.seek', { position: seekPosition }); setSeekPosition(null); }} onKeyUp={event => { if (event.key.startsWith('Arrow') && seekPosition !== null) { send('media.seek', { position: seekPosition }); setSeekPosition(null); } }} aria-label="Parçada ilerle" />
           <div><span>{media.currentTime}</span><span>{media.totalTime}</span></div>
         </div>
         <footer className="media-controls">
-          <button className={`media-option ${media.shuffleEnabled ? 'active' : ''}`} disabled={!media.canShuffle} onClick={() => send('media.shuffle')} aria-label="KarÄ±ÅŸtÄ±r" title="KarÄ±ÅŸtÄ±r">â¤¨</button>
-          <button className="media-skip" disabled={!media.canPrevious} onClick={() => send('media.previous')} aria-label="Ã–nceki parÃ§a" title="Ã–nceki parÃ§a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zm3 7 10-7v14z" /></svg></button>
+          <button className={`media-option ${media.shuffleEnabled ? 'active' : ''}`} disabled={!media.canShuffle} onClick={() => send('media.shuffle')} aria-label="Karıştır" title="Karıştır"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m16 3 4 4-4 4M4 7h2.5a4 4 0 0 1 3.2 1.6l4.6 6.8a4 4 0 0 0 3.2 1.6H20M16 13l4 4-4 4M4 17h2.5a4 4 0 0 0 2.7-1" /></svg></button>
+          <button className="media-skip" disabled={!media.canPrevious} onClick={() => send('media.previous')} aria-label="Önceki parça" title="Önceki parça"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zm3 7 10-7v14z" /></svg></button>
           <button className="media-play" disabled={!media.canPlay} onClick={() => send('media.toggle')} aria-label={media.isPlaying ? 'Duraklat' : 'Oynat'} title={media.isPlaying ? 'Duraklat' : 'Oynat'}>
             {media.isPlaying ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z" /></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z" /></svg>}
           </button>
-          <button className="media-skip" disabled={!media.canNext} onClick={() => send('media.next')} aria-label="Sonraki parÃ§a" title="Sonraki parÃ§a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zm-1 7L5 5v14z" /></svg></button>
-          <button className={`media-option ${media.repeatMode !== 'off' ? 'active' : ''}`} disabled={!media.canRepeat} onClick={() => send('media.repeat')} aria-label={`Tekrar ${media.repeatMode}`} title={`Tekrar ${media.repeatMode}`}>{media.repeatMode === 'track' ? 'â†»Â¹' : 'â†»'}</button>
+          <button className="media-skip" disabled={!media.canNext} onClick={() => send('media.next')} aria-label="Sonraki parça" title="Sonraki parça"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zm-1 7L5 5v14z" /></svg></button>
+          <button className={`media-option ${media.repeatMode !== 'off' ? 'active' : ''}`} disabled={!media.canRepeat} onClick={() => send('media.repeat')} aria-label={`Tekrar: ${repeatLabel}`} title={`Tekrar: ${repeatLabel}`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14 3v2a3 3 0 0 1-3 3H3" />{media.repeatMode === 'track' && <path d="M11 10h2v5m-2 0h4" />}</svg></button>
         </footer>
       </article>
     </div>;

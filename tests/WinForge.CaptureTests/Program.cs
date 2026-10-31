@@ -166,6 +166,13 @@ internal static class Program
         var repeated = CaptureServices.Save(store, first, true); store.Add("recall", DateTimeOffset.UtcNow, media: repeated);
         Check(compressed == repeated && Directory.GetFiles(store.MediaDirectory).Length == 1, "Repeated screenshots share one compressed WebP blob");
         var loaded = CaptureServices.Load(store.ResolveMedia(compressed)); Check(loaded.PixelWidth == width && loaded.PixelHeight == height, "Shared image engine round-trips compressed capture dimensions");
+
+        var importedStorePath = Path.Combine(root, new string('x', 96), "data", "History", "Imported", new string('a', 64));
+        var importedStore = new HistoryStore(importedStorePath);
+        var importedMedia = CaptureServices.Save(importedStore, first, true);
+        Check(importedStore.ResolveMedia(importedMedia).Length > 260 &&
+            CaptureServices.Load(importedStore.ResolveMedia(importedMedia)).PixelWidth == width,
+            "WebP capture saves and reloads from a long imported-history path");
     }
     private static async Task Protocol()
     {
@@ -199,7 +206,7 @@ internal static class Program
             Console.WriteLine($"Source: {source.Database}; records={preview.Records}; bytes={preview.Bytes}; missing={preview.MissingFiles}");
             var result = await importer.ImportAsync(source, new Progress<ImportProgress>(p => { if (p.Completed % 5000 == 0 || p.Completed == p.Total) Console.WriteLine($"{p.Completed}/{p.Total}; imported={p.Imported}; missing={p.MissingFiles}"); }), default);
             Console.WriteLine($"Imported={result.Imported}; missing={result.MissingFiles}");
-            var settings = new SettingsStore(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinForge", "settings.json"));
+            var settings = new SettingsStore(Path.Combine(AppData.DirectoryPath, "settings.json"));
             var module = kind == "recall" ? "screen-history" : "voice-dictation";
             foreach (var (key, value) in LegacySettings.Read(source)) settings.For(module)[key] = Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
             settings.Save();

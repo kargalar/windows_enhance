@@ -304,7 +304,7 @@ ilgili klasörü baştan tarar; bu sırada eksik boyut göstermez.
 
 Explorer'a ilk bağlantıda ve Windows bileşeni güncellendiğinde WinForge, kurulu
 Windows sürümüne ait hata ayıklama sembollerini Microsoft sunucusundan indirir
-ve kimliğini doğrulayarak uygulamanın `data\FolderSizes\Symbols` klasöründe
+ve kimliğini doğrulayarak uygulamanın `userdata\FolderSizes\Symbols` klasöründe
 önbelleğe alır. Eşleşen semboller hazır değilse bağlantı için internet gerekir.
 Windows'un iç uygulaması sürümler arasında değişebildiğinden, uyumsuz bir
 bağlantı noktası tespit edilirse modül hata bildirerek devreye girmez. Gerçek
@@ -601,4 +601,4 @@ programlara ve onların ayarlarına müdahale edilmez.
 
 ### Taşınabilir veri
 
-WinForge ayarlarını, geçmişini, ekran görüntülerini, ses modellerini ve diğer uygulama verilerini çalıştırılabilir dosyanın yanındaki `data` klasöründe saklar. Taşımak için program klasörünün tamamını `data` ile birlikte kopyalayın; klasör yazılabilir olmalıdır. Eski varsayılan veri klasörleri ve özel geçmiş klasörleri ilk açılışta kopyalanır; farklı geçmiş veritabanları ayrı tutulur. Eski dosyalar silinmez. Windows başlangıç kaydı ve sistem ayarları bilgisayara özeldir ve başka bilgisayarda yeniden ayarlanmalıdır. Dışa aktarılan dosyalar seçilen konumda kalır.
+WinForge ayarlarını, geçmişini, ekran görüntülerini, ses modellerini ve diğer uygulama verilerini çalıştırılabilir dosyanın yanındaki `userdata` klasöründe saklar. Taşımak için program klasörünün tamamını `userdata` ile birlikte kopyalayın; klasör yazılabilir olmalıdır. Eski `data` klasörü, AppData altındaki eski veri klasörleri ve özel geçmiş klasörleri ilk açılışta kopyalanır; mevcut `userdata` dosyalarının üzerine yazılmaz; farklı geçmiş veritabanları ayrı tutulur. Eski dosyalar silinmez. Windows başlangıç kaydı ve sistem ayarları bilgisayara özeldir ve başka bilgisayarda yeniden ayarlanmalıdır. Dışa aktarılan dosyalar seçilen konumda kalır.

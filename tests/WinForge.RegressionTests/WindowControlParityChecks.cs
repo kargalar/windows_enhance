@@ -138,6 +138,7 @@ internal static class WindowControlParityChecks
             actions.Execute(first, WindowAction.Roll, new(original.X, original.Y), options);
             check(WaitUntil(() => Bounds(first) == original), "Native roll toggles back to the exact original rectangle");
             actions.Execute(first, WindowAction.Roll, new(original.X, original.Y), options, 1);
+            check(WaitUntil(() => Bounds(first).Height < original.Height), "Wheel roll reduces the window on an upward step");
             var rolled = Bounds(first);
             actions.Execute(first, WindowAction.Roll, new(original.X, original.Y), options, 1);
             check(Bounds(first) == rolled, "Wheel roll is directional and repeated upward steps do not unroll");

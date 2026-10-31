@@ -5,27 +5,25 @@ namespace WinForge.Core;
 /// <summary>Locations for portable application-owned data.</summary>
 public static class AppData
 {
-    public static string DirectoryPath => Path.Combine(AppContext.BaseDirectory, "data");
-    public static string TemporaryDirectory => Directory.CreateDirectory(Path.Combine(DirectoryPath, "temp")).FullName;
+    public static string DirectoryPath => Storage.PortableDataPaths.DirectoryPath;
+    public static string TemporaryDirectory => Storage.PortableDataPaths.TemporaryDirectory;
 
     public static void MigrateLegacyData()
     {
-        Directory.CreateDirectory(DirectoryPath);
-        var marker = Path.Combine(DirectoryPath, ".legacy-migration-complete");
+        MigrateLegacyData(DirectoryPath,
+        [
+            Path.Combine(AppContext.BaseDirectory, "data"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinForge"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge")
+        ]);
+    }
+
+    public static void MigrateLegacyData(string destination, IEnumerable<string> sources)
+    {
+        Directory.CreateDirectory(destination);
+        var marker = Path.Combine(destination, ".userdata-migration-complete");
         if (File.Exists(marker)) return;
-        foreach (var folder in new[] { Environment.SpecialFolder.ApplicationData, Environment.SpecialFolder.LocalApplicationData })
-        {
-            var source = Path.Combine(Environment.GetFolderPath(folder), "WinForge");
-            if (!Directory.Exists(source)) continue;
-            foreach (var file in Directory.EnumerateFiles(source))
-            {
-                var target = Path.Combine(DirectoryPath, Path.GetFileName(file));
-                if (!File.Exists(target)) File.Copy(file, target, false);
-            }
-            foreach (var directory in Directory.EnumerateDirectories(source))
-                if (!string.Equals(Path.GetFileName(directory), "WebView2", StringComparison.OrdinalIgnoreCase))
-                    CopyMissing(directory, Path.Combine(DirectoryPath, Path.GetFileName(directory)));
-        }
+        foreach (var source in sources) CopyMissing(source, destination);
         File.WriteAllText(marker, "1");
     }
 

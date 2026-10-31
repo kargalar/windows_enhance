@@ -67,6 +67,25 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--startup-only"))
+            {
+                StartupResponsivenessChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} startup responsiveness checks.");
+                return 0;
+            }
+            if (args.Contains("--net-speed-only"))
+            {
+                var host = CreateHost(Path.Combine(AppContext.BaseDirectory, "modules"), "net-speed");
+                host.Load();
+                var netSpeedModule = host.Modules.Single(module => module.Id == "net-speed");
+                var netSpeedLayout = netSpeedModule.Settings.Single(setting => setting.Key == "layout");
+                Check(netSpeedLayout.Kind == SettingKind.Choice &&
+                      netSpeedLayout.Options.Contains("Yan yana") && netSpeedLayout.Options.Contains("Alt alta"),
+                    "Network speed indicator offers horizontal and vertical layouts");
+                host.StopAll();
+                Console.WriteLine($"PASS: {_passed} network speed checks.");
+                return 0;
+            }
             if (args.Contains("--autocorrect-only"))
             {
                 var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
@@ -196,6 +215,12 @@ internal static class Program
                 ShellEngineChecks.Probe(uint.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture), nativeDirectory);
                 return 0;
             }
+            if (args.Contains("--start-appearance-live"))
+            {
+                ShellEngineChecks.VerifyStartAppearance(Check);
+                Console.WriteLine($"PASS: {_passed} live Start appearance checks.");
+                return 0;
+            }
             if (args.Contains("--feature-only"))
             {
                 FeatureVerificationChecks.Run(TestDirectory, Check, args.Contains("--native-smoke"));
@@ -210,6 +235,7 @@ internal static class Program
             }
             TestSettings();
             TestLifecycle();
+            StartupResponsivenessChecks.Run(Check);
             NativeInfrastructureChecks.Run(TestDirectory, Check, args.Contains("--native-smoke"));
             WindowControlParityChecks.Run(Check);
             FeatureVerificationChecks.Run(TestDirectory, Check, args.Contains("--native-smoke"));

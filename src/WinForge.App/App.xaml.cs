@@ -29,13 +29,16 @@ public partial class App : Application
 
     public bool IsExiting { get; private set; }
 
-    private void MigrateCaptureDirectories()
+    private static SettingsStore LoadSettings(string dataDirectory)
     {
+        AppData.MigrateLegacyData();
+        var store = new SettingsStore(Path.Combine(dataDirectory, "settings.json"));
         var legacyDefault = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "History");
-        PortableHistoryMigration.Migrate(Store, AppData.DirectoryPath, legacyDefault);
+        PortableHistoryMigration.Migrate(store, dataDirectory, legacyDefault);
+        return store;
     }
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         _mutex = new Mutex(true, SingleInstanceMutexName, out _ownsMutex);
         if (!_ownsMutex)
@@ -60,12 +63,15 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        var initialCommand = IsModuleCommand(e.Args);
+        var showMain = !e.Args.Any(arg => arg.Equals("--startup", StringComparison.OrdinalIgnoreCase)) && !initialCommand;
+        var startupWindow = showMain ? new StartupWindow() : null;
+        startupWindow?.Show();
         var dataDirectory = AppData.DirectoryPath;
         try
         {
-            AppData.MigrateLegacyData();
-            Store = new SettingsStore(Path.Combine(dataDirectory, "settings.json"));
-            MigrateCaptureDirectories();
+            Store = await Task.Run(() => LoadSettings(dataDirectory));
+            if (IsExiting) return;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
         {
@@ -74,6 +80,7 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        finally { startupWindow?.Complete(); }
 
         Logger = new FileLogger(Path.Combine(dataDirectory, "winforge.log"));
         Logger.Info($"WinForge başlatılıyor · {Environment.OSVersion.VersionString}");
@@ -87,9 +94,9 @@ public partial class App : Application
             OsdWindow.ShowVolume, FeatureUi);
         Host.Load();
 
-        var initialCommand = IsModuleCommand(e.Args);
         MainView = new MainWindow();
-        if (!e.Args.Any(arg => arg.Equals("--startup", StringComparison.OrdinalIgnoreCase)) && !initialCommand)
+        MainWindow = MainView;
+        if (showMain)
             MainView.Show();
 
         _tray = new TrayIcon(ShowMain, ExitApp);
@@ -216,6 +223,7 @@ public partial class App : Application
         IsExiting = true;
         MainView?.Hide();
         if (Host is not null) await Host.StopAllAsync();
+        await SettingsChangeBroadcaster.BroadcastAsync();
         Shutdown();
     }
 

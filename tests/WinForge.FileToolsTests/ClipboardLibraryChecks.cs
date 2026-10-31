@@ -167,7 +167,7 @@ internal static class ClipboardLibraryChecks
             check(reloaded.Items.Single(item => item.Id == red.Id).Content == red.Content, "Original restoration preserves the immutable original.");
             Throws<InvalidOperationException>(() => reloaded.DeletePermanently([red.Id]), check, "Permanent deletion requires trash first.");
 
-            var models = Path.Combine(AppContext.BaseDirectory, "models");
+            var models = Path.Combine(AppContext.BaseDirectory, "data", "models");
             check(File.Exists(Path.Combine(models, "mobileclip-s2-image.onnx")), "The actual offline model is included in the test output.");
             using var semantic = new SemanticImageSearch(root, models);
             var images = new[] { (red.Id, reloaded.MediaPath(red)), (blue.Id, reloaded.MediaPath(blue)) };

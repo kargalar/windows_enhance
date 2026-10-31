@@ -39,14 +39,7 @@ internal static class Reg
 
     public static void DeleteTree(string key) => Registry.CurrentUser.DeleteSubKeyTree(key, throwOnMissingSubKey: false);
 
-    public static void Broadcast(params string[] areas)
-    {
-        foreach (var area in areas)
-        {
-            Native.SendMessageTimeout(Native.HWND_BROADCAST, Native.WM_SETTINGCHANGE, IntPtr.Zero, area,
-                Native.SMTO_ABORTIFHUNG, 1000, out _);
-        }
-    }
+    public static void Broadcast(params string[] areas) => SettingsChangeBroadcaster.Broadcast(areas);
 }
 
 internal sealed class RegSnapshot

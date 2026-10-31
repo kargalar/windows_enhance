@@ -15,6 +15,12 @@ public static class OsdWindow
     private static System.Threading.Timer? _toastTimer;
     private static System.Threading.Timer? _brightnessTimer;
     private static System.Threading.Timer? _volumeTimer;
+    private const double IndicatorWidth = 180;
+    private const double IndicatorHeight = 38;
+    private static Action<int>? _brightnessChanged;
+    private static int _brightnessHovered;
+    private static int _brightnessPercent;
+    private static string _brightnessDeviceName = "";
     private static Action? _volumeChanged;
     private static int _volumeDismissSeconds = 3;
     private static int _volumeHovered;
@@ -34,6 +40,7 @@ public static class OsdWindow
         _toastView = null;
         _brightnessView = null;
         _volumeView = null;
+        _brightnessChanged = null;
         _volumeChanged = null;
         _featureUi = null;
     }
@@ -49,16 +56,53 @@ public static class OsdWindow
         RestartTimer(ref _toastTimer, Math.Clamp(1400 + message.Length * 28, 1800, 6000), () => _toastView?.Hide());
     });
 
-    public static void ShowBrightness(int percent, string deviceName) => OnUiThread(() =>
+    public static void ShowBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null) => OnUiThread(() =>
     {
-        percent = Math.Clamp(percent, 0, 100);
+        _brightnessChanged = onBrightnessChanged;
+        _brightnessPercent = Math.Clamp(percent, 0, 100);
+        _brightnessDeviceName = deviceName;
+        Volatile.Write(ref _brightnessHovered, 0);
         var window = EnsureWindow(ref _brightnessView, BrightnessKey, "system-osd", "Ekran parlaklığı",
-            new FeatureUiWindowOptions(320, 80, Topmost: true, ActivateOnShow: false,
-                Transparent: true, ClickThrough: true));
+            new FeatureUiWindowOptions(IndicatorWidth, IndicatorHeight, Topmost: true, ActivateOnShow: false,
+                Transparent: true, ClickThrough: false));
         if (window is null) return;
+        window.MessageReceived -= OnBrightnessMessage;
+        window.MessageReceived += OnBrightnessMessage;
         PositionOnDisplay(window, deviceName, 56);
-        window.SetState(new { kind = "brightness", percent, deviceName });
-        RestartTimer(ref _brightnessTimer, 1500, () => _brightnessView?.Hide());
+        UpdateBrightnessState(window);
+        RestartBrightnessTimer();
+    });
+
+    private static void OnBrightnessMessage(string command, System.Text.Json.JsonElement payload)
+    {
+        switch (command)
+        {
+            case "brightness.set":
+                _brightnessPercent = Math.Clamp(payload.GetProperty("percent").GetInt32(), 0, 100);
+                _brightnessChanged?.Invoke(_brightnessPercent);
+                if (_brightnessView is not null) UpdateBrightnessState(_brightnessView);
+                break;
+            case "brightness.hover":
+                Volatile.Write(ref _brightnessHovered, payload.GetProperty("value").GetBoolean() ? 1 : 0);
+                break;
+            case "brightness.dismiss":
+                _brightnessView?.Hide();
+                return;
+            default:
+                return;
+        }
+        RestartBrightnessTimer();
+    }
+
+    private static void UpdateBrightnessState(IFeatureUiWindow window) => window.SetState(new
+    {
+        kind = "brightness", percent = _brightnessPercent, deviceName = _brightnessDeviceName
+    });
+
+    private static void RestartBrightnessTimer() => RestartTimer(ref _brightnessTimer, 1500, () =>
+    {
+        if (Volatile.Read(ref _brightnessHovered) != 0) RestartBrightnessTimer();
+        else _brightnessView?.Hide();
     });
 
     public static void ShowVolume(int percent, bool isMuted, Action? onVolumeChanged = null,
@@ -70,12 +114,12 @@ public static class OsdWindow
         _volumeMuted = isMuted;
         Volatile.Write(ref _volumeHovered, 0);
         var window = EnsureWindow(ref _volumeView, VolumeKey, "system-osd", "Ses düzeyi",
-            new FeatureUiWindowOptions(360, 76, Topmost: true, ActivateOnShow: false,
+            new FeatureUiWindowOptions(IndicatorWidth, IndicatorHeight, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: false));
         if (window is null) return;
         window.MessageReceived -= OnVolumeMessage;
         window.MessageReceived += OnVolumeMessage;
-        PositionAtBottom(window, 360, 76, 56);
+        PositionAtBottom(window, IndicatorWidth, IndicatorHeight, 56);
         UpdateVolumeState(window);
         RestartVolumeTimer();
     });
@@ -147,8 +191,8 @@ public static class OsdWindow
     {
         var area = DesktopDisplays.Enumerate()
             .FirstOrDefault(display => display.DeviceName.Equals(deviceName, StringComparison.OrdinalIgnoreCase))?.WorkArea;
-        var width = 320d;
-        var height = 80d;
+        var width = IndicatorWidth;
+        var height = IndicatorHeight;
         var workArea = area is { } displayArea
             ? new Rect(displayArea.Left, displayArea.Top, displayArea.Right - displayArea.Left, displayArea.Bottom - displayArea.Top)
             : SystemParameters.WorkArea;

@@ -41,6 +41,14 @@ public sealed class NetSpeedModule : ITweakModule
         },
         new SettingDescriptor
         {
+            Key = "layout",
+            Label = "Hız gösterimi",
+            Kind = SettingKind.Choice,
+            Options = new[] { NetSpeedWindow.SideBySide, NetSpeedWindow.Stacked },
+            Default = NetSpeedWindow.SideBySide
+        },
+        new SettingDescriptor
+        {
             Key = "position",
             Label = "Gösterim konumu",
             Kind = SettingKind.Choice,
@@ -109,6 +117,7 @@ public sealed class NetSpeedModule : ITweakModule
             settings.GetInt("right-offset", 10),
             settings.GetString("unit", "Otomatik"),
             settings.GetInt("interval", 1000),
-            settings.GetString("position", NetSpeedWindow.InsideTaskbar));
+            settings.GetString("position", NetSpeedWindow.InsideTaskbar),
+            settings.GetString("layout", NetSpeedWindow.SideBySide));
     }
 }

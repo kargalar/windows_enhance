@@ -216,6 +216,62 @@ internal static class ShellEngineChecks
         finally { module.Deactivate(); }
     }
 
+    internal static void VerifyStartAppearance(Action<bool, string> check)
+    {
+        var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+        var module = (ITweakModule)Activator.CreateInstance(assembly.GetType("WinForge.Modules.Extras.StartAppearanceModule")!)!;
+        var context = new ShellContext();
+        module.Initialize(context);
+        try
+        {
+            module.Activate();
+            var lease = (ShellDiagnosticsBroker.Lease)module.GetType().GetField("_lease", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(module)!;
+            var session = lease.Session;
+            var tree = session.ReadVisualTree();
+            if (!tree.Any(node => node.Type == "StartMenu.StartBlendedFlexFrame"))
+                throw new InvalidOperationException("Live verification requires the redesigned Start menu.");
+            var originalMenu = tree.First(node => node.Name == "MainMenu");
+            var originalRoot = tree.First(node => node.Name == "FrameRoot");
+            var originalSearch = tree.First(node => node.Type == "StartMenu.SearchBoxToggleButton");
+            var originalUser = tree.First(node => node.Type == "StartDocked.UserTileView");
+            var originalPower = tree.First(node => node.Type == "StartDocked.PowerOptionsView");
+            context.Settings.Set("width", 700);
+            context.Settings.Set("height", 700);
+            context.Settings.Set("opacity", 75);
+            context.Settings.Set("hide-search", true);
+            context.Settings.Set("hide-user", true);
+            context.Settings.Set("hide-power", true);
+            module.Apply();
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "MainMenu" && Math.Abs(node.Width - 676) < 0.1 && Math.Abs(node.Opacity - 0.75) < 0.01), "Start menu width and opacity");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "FrameRoot" && Math.Abs(node.Height - 700) < 0.1), "Start menu height");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "StartMenu.SearchBoxToggleButton" && node.Visibility == "Collapsed"), "Start menu search visibility");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "StartDocked.UserTileView" && node.Visibility == "Collapsed"), "Start user visibility");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "StartDocked.PowerOptionsView" && node.Visibility == "Collapsed"), "Start power visibility");
+            check(session.Status.Errors == 0, "Start customization changes actual menu dimensions, opacity and section visibility");
+            context.Settings.Set("width", 0);
+            context.Settings.Set("height", 0);
+            context.Settings.Set("opacity", 100);
+            context.Settings.Set("hide-search", false);
+            context.Settings.Set("hide-user", false);
+            context.Settings.Set("hide-power", false);
+            module.Apply();
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "MainMenu" && Math.Abs(node.Width - originalMenu.Width) < 0.1 && Math.Abs(node.Opacity - originalMenu.Opacity) < 0.01), "Start menu width and opacity restoration");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "FrameRoot" && Math.Abs(node.Height - originalRoot.Height) < 0.1), "Start menu height restoration");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "StartMenu.SearchBoxToggleButton" && node.Visibility == originalSearch.Visibility), "Start menu search restoration");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "StartDocked.UserTileView" && node.Visibility == originalUser.Visibility), "Start user restoration");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "StartDocked.PowerOptionsView" && node.Visibility == originalPower.Visibility), "Start power restoration");
+            check(session.Status.Errors == 0 && session.Status.Restored > 0, "Start customization restores the original actual menu properties");
+            context.Settings.Set("custom-rules", "[{\"selector\":\"#MainMenu\",\"properties\":{\"Opacity\":\"0.8\"}}]");
+            module.Apply();
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "MainMenu" && Math.Abs(node.Opacity - 0.8) < 0.01), "Custom Start rule");
+            context.Settings.Set("custom-rules", "");
+            module.Apply();
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "MainMenu" && Math.Abs(node.Opacity - originalMenu.Opacity) < 0.01), "Custom Start rule restoration");
+            check(session.Status.Errors == 0, "Custom Start XAML rules apply and restore");
+        }
+        finally { module.Deactivate(); }
+    }
+
     private sealed class ShellContext : IModuleContext
     {
         public IModuleSettings Settings { get; } = new ModuleSettings(new Dictionary<string, string>(), () => { });

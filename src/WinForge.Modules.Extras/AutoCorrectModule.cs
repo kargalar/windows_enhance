@@ -15,7 +15,7 @@ namespace WinForge.Modules.Extras;
 /// Features intelligent Turkish & English corrections, de-asciification,
 /// keyboard proximity heuristics, text expansions, and Android-style undo on Backspace.
 /// </summary>
-public sealed class AutoCorrectModule : ITweakModule
+public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
 {
     private const string AutomaticLanguage = "Klavye düzenine göre";
     private const string TurkishAndEnglish = "Türkçe + English";
@@ -198,7 +198,25 @@ public sealed class AutoCorrectModule : ITweakModule
         if (IsActive) return;
         ReadSettings();
         var keyboardLanguageTag = GetKeyboardLanguageTag(Native.GetForegroundWindow());
-        var selectedLanguages = ResolveLanguageTags(_language, keyboardLanguageTag);
+        PrepareLanguageModels(ResolveLanguageTags(_language, keyboardLanguageTag));
+        ActivateInputHooks();
+    }
+
+    public async Task ActivateAsync()
+    {
+        if (IsActive) return;
+        ReadSettings();
+        var keyboardLanguageTag = GetKeyboardLanguageTag(Native.GetForegroundWindow());
+        var languages = ResolveLanguageTags(_language, keyboardLanguageTag);
+        await Task.Run(() => PrepareLanguageModels(languages));
+        ActivateInputHooks();
+    }
+
+    public Task DeactivateAsync() { Deactivate(); return Task.CompletedTask; }
+    public Task ApplyAsync() { Apply(); return Task.CompletedTask; }
+
+    private static void PrepareLanguageModels(IReadOnlyList<string> selectedLanguages)
+    {
         if (selectedLanguages.Any(languageTag => languageTag.StartsWith("tr", StringComparison.OrdinalIgnoreCase)))
         {
             _ = TurkishMorphologyService.IsAvailable;
@@ -206,6 +224,10 @@ public sealed class AutoCorrectModule : ITweakModule
         }
         if (selectedLanguages.Any(languageTag => languageTag.StartsWith("en", StringComparison.OrdinalIgnoreCase)))
             _ = SpellNgramModel.GetEnglishVocabularyCount();
+    }
+
+    private void ActivateInputHooks()
+    {
         _spellChecker = SpellEngine.Instance;
         _suggestionWindow = new AutoCorrectSuggestionWindow(AcceptSuggestion, (_context as IFeatureUiContext)?.FeatureUi);
         _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);

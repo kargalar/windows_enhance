@@ -228,13 +228,13 @@ internal sealed class DisplayBrightnessSession : IDisposable
 {
     private const uint MonitorDefaultToNearest = 2;
     private readonly List<PhysicalMonitor> _monitors;
-    private readonly IReadOnlyList<InternalPanelBrightness> _internalPanels;
+    private readonly List<InternalPanelBrightness> _internalPanels;
     private bool _disposed;
 
     private DisplayBrightnessSession(List<PhysicalMonitor> monitors, IReadOnlyList<InternalPanelBrightness> internalPanels)
     {
         _monitors = monitors;
-        _internalPanels = internalPanels;
+        _internalPanels = internalPanels.ToList();
     }
 
     public IReadOnlyList<DisplayBrightnessMonitor> Monitors => _monitors
@@ -316,14 +316,17 @@ internal sealed class DisplayBrightnessSession : IDisposable
         ThrowIfDisposed();
         if (InternalPanelBrightnessService.IsInternalId(id))
         {
-            var panel = _internalPanels.FirstOrDefault(candidate =>
+            var index = _internalPanels.FindIndex(candidate =>
                 string.Equals(candidate.Id, id, StringComparison.OrdinalIgnoreCase));
-            if (panel is null)
+            if (index < 0)
             {
                 appliedPercent = 0;
                 return false;
             }
-            return InternalPanelBrightnessService.SetBrightness(panel, percent, out appliedPercent);
+            var panel = _internalPanels[index];
+            if (!InternalPanelBrightnessService.SetBrightness(panel, percent, out appliedPercent)) return false;
+            _internalPanels[index] = panel with { Current = InternalPanelBrightnessService.MapPercentToLevel(percent, panel.Levels) };
+            return true;
         }
         var monitor = FindPhysicalMonitor(id);
         if (monitor is null)
@@ -951,7 +954,7 @@ public sealed class DisplayBrightnessModule : ITweakModule
             else if (result.Failed > 0)
                 _context.Notify($"Ekran parlaklığı: {result.Applied}/{result.Supported} ekrana uygulandı; {result.Failed} hata.");
             if (result.Brightness is { } brightness && _context is IDisplayBrightnessOverlayContext overlay)
-                overlay.ShowDisplayBrightness(brightness, "all-displays");
+                overlay.ShowDisplayBrightness(brightness, "all-displays", percent => _ = SetOverlayBrightnessAsync(percent));
         }
         catch (Exception exception)
         {
@@ -962,6 +965,34 @@ public sealed class DisplayBrightnessModule : ITweakModule
         {
             if (!IsActive)
                 Interlocked.Exchange(ref _hotkeyBrightnessSession, null)?.Dispose();
+            _brightnessAdjustmentGate.Release();
+        }
+    }
+
+    private int _overlayBrightnessRequest;
+
+    private async Task SetOverlayBrightnessAsync(int percent)
+    {
+        var request = Interlocked.Increment(ref _overlayBrightnessRequest);
+        await _brightnessAdjustmentGate.WaitAsync();
+        try
+        {
+            if (!IsActive || request != Volatile.Read(ref _overlayBrightnessRequest)) return;
+            await Task.Run(() =>
+            {
+                var session = _hotkeyBrightnessSession;
+                if (session is null) return;
+                foreach (var monitor in session.Monitors.Where(m => m.SupportsBrightness || m.VcpBrightness is not null))
+                    session.SetBrightness(monitor.Id, percent, out _);
+            });
+        }
+        catch (Exception exception)
+        {
+            _context?.Log.Error("Gösterge üzerinden parlaklık değiştirilemedi.", exception);
+        }
+        finally
+        {
+            if (!IsActive) Interlocked.Exchange(ref _hotkeyBrightnessSession, null)?.Dispose();
             _brightnessAdjustmentGate.Release();
         }
     }

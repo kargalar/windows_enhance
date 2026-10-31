@@ -8,7 +8,7 @@ public sealed class ModuleHost
     private readonly FileLogger _log;
     private readonly IHotkeyService _hotkeys;
     private readonly Action<string> _notify;
-    private readonly Action<int, string>? _showDisplayBrightness;
+    private readonly Action<int, string, Action<int>?>? _showDisplayBrightness;
     private readonly Action<int, bool, Action?, int>? _showAudioVolume;
     private readonly string _modulesDirectory;
     private readonly List<ITweakModule> _modules = new();
@@ -20,7 +20,7 @@ public sealed class ModuleHost
     private bool _stopping;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
-        Action<int, string>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null,
+        Action<int, string, Action<int>?>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null,
         IFeatureUiService? featureUi = null)
     {
         _store = store;
@@ -118,9 +118,11 @@ public sealed class ModuleHost
                 if (!_store.Enabled.Contains(module.Id) || module.IsActive) continue;
                 try
                 {
+                    _log.Info($"Modül başlatılıyor: {module.Id}");
                     if (module is IAsyncTweakModule asyncModule) await asyncModule.ActivateAsync();
                     else module.Activate();
                     _errors.Remove(module.Id);
+                    _log.Info($"Modül etkinleştirildi: {module.Id}");
                 }
                 catch (Exception ex)
                 {
@@ -308,7 +310,7 @@ public sealed class ModuleHost
         IDisplayBrightnessOverlayContext, IAudioVolumeOverlayContext, IFeatureUiContext
     {
         private readonly Action<string> _notify;
-        private readonly Action<int, string>? _showDisplayBrightness;
+        private readonly Action<int, string, Action<int>?>? _showDisplayBrightness;
         private readonly Action<int, bool, Action?, int>? _showAudioVolume;
         private readonly IFeatureUiService? _featureUi;
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
@@ -316,7 +318,7 @@ public sealed class ModuleHost
         private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
-            IQuickActionService quickActions, Action<int, string>? showDisplayBrightness,
+            IQuickActionService quickActions, Action<int, string, Action<int>?>? showDisplayBrightness,
             Action<int, bool, Action?, int>? showAudioVolume, IFeatureUiService? featureUi,
             Func<IntPtr, POINT, bool> placeWindow,
             Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
@@ -341,9 +343,9 @@ public sealed class ModuleHost
         public IFeatureUiService? FeatureUi => _featureUi;
 
         public void Notify(string message) => _notify(message);
-        public void ShowDisplayBrightness(int percent, string deviceName)
+        public void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null)
         {
-            if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName);
+            if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName, onBrightnessChanged);
             else _notify($"Parlaklık {percent}%");
         }
         public void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null, int dismissAfterSeconds = 3)
