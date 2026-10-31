@@ -5,7 +5,7 @@
 namespace winforge::folders {
 inline constexpr GUID ClassId{0xd029933c, 0xd28a, 0x40f0, {0x83, 0xa6, 0x2a, 0x55, 0x7a, 0x12, 0x62, 0xe9}};
 inline constexpr DWORD ProtocolMagic = 0x57464653;
-inline constexpr DWORD ProtocolVersion = 2;
+inline constexpr DWORD ProtocolVersion = 3;
 inline constexpr DWORD SessionBytes = 4096;
 inline constexpr ULONGLONG HeartbeatTimeout = 6000;
 struct alignas(8) SessionData {
@@ -25,12 +25,22 @@ struct alignas(8) SessionData {
     volatile LONG incomplete;
     volatile LONG pending;
     volatile LONG callbacks;
+    volatile LONG priorityScans;
+    volatile LONG subtreeCacheHits;
+    volatile LONG incrementalUpdates;
+    volatile LONG fullScans;
+    volatile LONG watchEvents;
+    volatile LONG watcherOverflows;
+    volatile LONG activeWatchers;
+    volatile LONG64 scanMicroseconds;
     wchar_t message[256];
 };
 static_assert(sizeof(SessionData) <= SessionBytes);
 static_assert(offsetof(SessionData, scanSeconds) == 100);
 static_assert(offsetof(SessionData, requests) == 108);
-static_assert(offsetof(SessionData, message) == 132);
+static_assert(offsetof(SessionData, priorityScans) == 132);
+static_assert(offsetof(SessionData, scanMicroseconds) == 160);
+static_assert(offsetof(SessionData, message) == 168);
 
 class Session {
     HANDLE file_{INVALID_HANDLE_VALUE};

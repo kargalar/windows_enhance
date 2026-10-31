@@ -8,7 +8,9 @@ using Microsoft.Win32.SafeHandles;
 namespace WinForge.Core;
 
 public sealed record ExplorerFolderSizeStatus(bool Attached, bool Closed, int Error, string Message,
-    int Requests, int CacheHits, int Completed, int Incomplete, int Pending, int Callbacks);
+    int Requests, int CacheHits, int Completed, int Incomplete, int Pending, int Callbacks,
+    int PriorityScans, int SubtreeCacheHits, int IncrementalUpdates, int FullScans,
+    int WatchEvents, int WatcherOverflows, int ActiveWatchers, long ScanMicroseconds);
 
 /// <summary>Owns an independent, heartbeat-protected Explorer property callback and native scan worker.</summary>
 public sealed class ExplorerFolderSizeSession : IDisposable
@@ -22,10 +24,10 @@ public sealed class ExplorerFolderSizeSession : IDisposable
     private const int ScanSecondsOffset = 100;
     private const int CacheSecondsOffset = 104;
     private const int StatisticsOffset = 108;
-    private const int MessageOffset = 132;
+    private const int MessageOffset = 168;
     private const int MessageBytes = 512;
     private const uint Magic = 0x57464653;
-    private const uint ProtocolVersion = 2;
+    private const uint ProtocolVersion = 3;
     private static readonly SemaphoreSlim PreparationGate = new(1, 1);
     private readonly object _gate = new();
     private readonly string _path;
@@ -92,7 +94,11 @@ public sealed class ExplorerFolderSizeSession : IDisposable
                 return new(_view.ReadInt32(AttachedOffset) != 0, _view.ReadInt32(ClosedOffset) != 0,
                     _view.ReadInt32(ErrorOffset), text, _view.ReadInt32(StatisticsOffset), _view.ReadInt32(StatisticsOffset + 4),
                     _view.ReadInt32(StatisticsOffset + 8), _view.ReadInt32(StatisticsOffset + 12),
-                    _view.ReadInt32(StatisticsOffset + 16), _view.ReadInt32(StatisticsOffset + 20));
+                    _view.ReadInt32(StatisticsOffset + 16), _view.ReadInt32(StatisticsOffset + 20),
+                    _view.ReadInt32(StatisticsOffset + 24), _view.ReadInt32(StatisticsOffset + 28),
+                    _view.ReadInt32(StatisticsOffset + 32), _view.ReadInt32(StatisticsOffset + 36),
+                    _view.ReadInt32(StatisticsOffset + 40), _view.ReadInt32(StatisticsOffset + 44),
+                    _view.ReadInt32(StatisticsOffset + 48), _view.ReadInt64(StatisticsOffset + 52));
             }
         }
     }

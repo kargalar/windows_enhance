@@ -53,6 +53,20 @@ internal static class Program
     {
         var host = Path.Combine(native, "WinForge.FolderSizeHost.exe");
         Check(Scan(host, item) == 3072, "Nested files are counted once");
+        var snapshot = ScanSnapshot(host, item);
+        Check(snapshot.Complete && snapshot.Bytes == 3072, "A completed folder scan exposes a complete directory snapshot");
+        Check(snapshot.Directories.Single(directory => directory.Depth == 0) is { Bytes: 3072, DirectFileBytes: 1024 },
+            "The snapshot root records total bytes separately from direct-file bytes");
+        Check(snapshot.Directories.Single(directory => directory.Depth == 1) is { Bytes: 2048, DirectFileBytes: 2048 },
+            "A nested directory snapshot records its exact recursive and direct-file totals");
+        var directoryLimited = ScanSnapshot(host, item, maximumDirectories: 1);
+        Check(!directoryLimited.Complete && directoryLimited.Bytes == 3072 && directoryLimited.Directories.Length == 0,
+            "Exceeding the directory snapshot cap preserves the exact root total and disables snapshot reuse");
+        var pathLimited = ScanSnapshot(host, item, maximumPathCharacters: 1);
+        Check(!pathLimited.Complete && pathLimited.Bytes == 3072 && pathLimited.Directories.Length == 0,
+            "Exceeding the snapshot path cap preserves the exact root total and disables snapshot reuse");
+        VerifyNotificationParser(host);
+        VerifyScanPriority(host);
         Check(Scan(host, Path.Combine(root, "Empty fixture folder")) == 0, "Empty folders return zero");
         using (var missing = Process.Start(new ProcessStartInfo(host) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, ArgumentList = { "scan", Path.Combine(root, "missing") } })!)
@@ -95,6 +109,59 @@ internal static class Program
         return json.RootElement.GetProperty("bytes").GetUInt64();
     }
 
+    private static (bool Complete, ulong Bytes, (int Depth, ulong Bytes, ulong DirectFileBytes)[] Directories) ScanSnapshot(
+        string host, string path, int maximumDirectories = 8192, int maximumPathCharacters = 1_048_576)
+    {
+        var start = new ProcessStartInfo(host) { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true };
+        start.ArgumentList.Add("scan-snapshot");
+        start.ArgumentList.Add(path);
+        start.ArgumentList.Add(maximumDirectories.ToString(CultureInfo.InvariantCulture));
+        start.ArgumentList.Add(maximumPathCharacters.ToString(CultureInfo.InvariantCulture));
+        using var process = Process.Start(start)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        if (!process.WaitForExit(30000) || process.ExitCode != 0) throw new InvalidOperationException($"Snapshot scan failed: {error} {output}");
+        using var json = JsonDocument.Parse(output);
+        var result = json.RootElement;
+        return (result.GetProperty("snapshotComplete").GetBoolean(), result.GetProperty("bytes").GetUInt64(),
+            result.GetProperty("directories").EnumerateArray().Select(directory =>
+                (directory.GetProperty("depth").GetInt32(), directory.GetProperty("bytes").GetUInt64(),
+                    directory.GetProperty("directFileBytes").GetUInt64())).ToArray());
+    }
+
+    private static void VerifyNotificationParser(string host)
+    {
+        using var json = RunHostCommand(host, "verify-notification-parser");
+        Check(json.RootElement.GetProperty("validPath").GetString() == "C:\\root\\nested\\file.bin" &&
+            json.RootElement.GetProperty("recordCount").GetInt32() == 2,
+            "A directory notification decodes to its normalized full path");
+        Check(!json.RootElement.GetProperty("malformedAccepted").GetBoolean(),
+            "Malformed directory notifications are rejected");
+        Check(json.RootElement.GetProperty("malformedOverflow").GetBoolean(),
+            "Malformed directory notifications trigger the overflow fallback path");
+    }
+
+    private static void VerifyScanPriority(string host)
+    {
+        using var json = RunHostCommand(host, "verify-scan-priority");
+        Check(json.RootElement.GetProperty("priorityBeforeOlder").GetBoolean(),
+            "A priority Size-sort request outranks an older ordinary scan");
+        Check(json.RootElement.GetProperty("recentBeforeOld").GetBoolean(),
+            "Recent ordinary scans outrank older ordinary scans");
+    }
+
+    private static JsonDocument RunHostCommand(string host, string command)
+    {
+        using var process = Process.Start(new ProcessStartInfo(host) { UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true, ArgumentList = { command } })!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        if (!process.WaitForExit(30000) || process.ExitCode != 0)
+            throw new InvalidOperationException($"Host check '{command}' failed: {error} {output}");
+        return JsonDocument.Parse(output);
+    }
+
     private static void VerifyFixture(string native, string root, string item, bool coexist, bool earlySort)
     {
         // Windhawk's folder-size mod excludes Plex*.exe. Isolate this owned test process from an
@@ -130,13 +197,31 @@ internal static class Program
             WaitUntil(() => session.Status.Completed >= 2 && session.Status.CacheHits >= 2,
                 "owned Explorer view receives folder sizes", () => session.Status.ToString());
             Console.WriteLine($"Fixture status: {session.Status}");
+            WaitUntil(() => session.Status.FullScans == session.Status.Completed + session.Status.Incomplete,
+                "full-scan counter matches completed scan outcomes", () => session.Status.ToString());
+            Check(session.Status.FullScans >= 2, "The session reports full-scan work through its diagnostics");
+            Check(session.Status.ScanMicroseconds > 0, "The session records elapsed filesystem scan time");
+            if (earlySort) Check(session.Status.PriorityScans > 0, "A Size sort starts a priority folder scan");
             WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "3"), "displayed folder size");
             WaitUntil(() => !string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Empty fixture folder")), "displayed empty folder size");
             Check(!string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Empty fixture folder")), "The empty folder's size is visible in the Size column");
             Check(SizeIs(handle, "WinForge fixture folder", "3"), "The Size column displays the calculated 3 KB total");
             WaitUntil(() => SizeIs(handle, "A large", "8") && SizeIs(handle, "M medium", "4") &&
                 !string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Z small")), "all sortable folder sizes");
-            if (!earlySort) SendMessage(handle, 0x8002, IntPtr.Zero, IntPtr.Zero);
+            WaitUntil(() => session.Status.Pending == 0, "all queued folder scans complete", () => session.Status.ToString());
+            var completedScansBeforeDescendant = session.Status.Completed;
+            var subtreeHitsBeforeDescendant = session.Status.SubtreeCacheHits;
+            SendMessage(handle, 0x8003, IntPtr.Zero, IntPtr.Zero);
+            WaitUntil(() => session.Status.SubtreeCacheHits > subtreeHitsBeforeDescendant,
+                "nested folder reuses its parent's snapshot", () => session.Status.ToString());
+            Check(session.Status.Completed == completedScansBeforeDescendant,
+                "A cached descendant does not trigger another successful recursive scan");
+            WaitUntil(() => SizeIs(handle, "nested", "2"), "displayed cached descendant size");
+            SendMessage(handle, 0x8004, IntPtr.Zero, IntPtr.Zero);
+            WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "3"), "return to parent Explorer view");
+            WaitUntil(() => session.Status.ActiveWatchers == 1, "shared watcher for sibling folders", () => session.Status.ToString());
+            Check(session.Status.ActiveWatchers == 1, "Sibling folder sizes share one recursive directory watcher");
+            SendMessage(handle, 0x8002, IntPtr.Zero, IntPtr.Zero);
             WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "Empty fixture folder", "Z small", "WinForge fixture folder", "M medium", "A large", "sparse" }),
                 "ascending folder size order", () => string.Join(", ", FolderOrder(handle)));
             Check(true, "Folder size sorting places folders in ascending order");
@@ -146,8 +231,9 @@ internal static class Program
             Check(true, "Folder size sorting places folders in descending order");
             var before = session.Status;
             File.AppendAllBytes(Path.Combine(item, "nested", "second.bin"), new byte[4096]);
-            WaitUntil(() => session.Status.Completed > before.Completed && session.Status.CacheHits > before.CacheHits,
-                "owned Explorer view updates after a file changes", () => session.Status.ToString());
+            WaitUntil(() => session.Status.IncrementalUpdates > before.IncrementalUpdates &&
+                SizeIs(handle, "WinForge fixture folder", "7"), "owned Explorer view incrementally updates after a file changes", () => session.Status.ToString());
+            Check(session.Status.Completed == before.Completed, "A nested file change does not rescan its entire parent folder");
             WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "7"), "updated visible folder size");
             Check(true, "Directory watcher updates the displayed size to 7 KB");
             WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "sparse", "A large", "WinForge fixture folder", "M medium", "Z small", "Empty fixture folder" }),
@@ -157,6 +243,20 @@ internal static class Program
             WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "A large", "Empty fixture folder", "M medium", "sparse", "WinForge fixture folder", "Z small" }),
                 "name ordering after size sorting", () => string.Join(", ", FolderOrder(handle)));
             Check(true, "Name sorting remains unchanged");
+            var beforeRename = session.Status;
+            Directory.Move(Path.Combine(item, "nested"), Path.Combine(item, "nested-moved"));
+            WaitUntil(() => session.Status.IncrementalUpdates > beforeRename.IncrementalUpdates,
+                "directory rename is reconciled incrementally", () => session.Status.ToString());
+            Check(session.Status.Completed == beforeRename.Completed, "Renaming a nested directory avoids a parent full scan");
+            SendMessage(handle, 0x8003, IntPtr.Zero, IntPtr.Zero);
+            WaitUntil(() => SizeIs(handle, "nested-moved", "6"), "renamed descendant receives its cached size");
+            var beforeDelete = session.Status;
+            Directory.Delete(Path.Combine(item, "nested-moved"), true);
+            WaitUntil(() => session.Status.IncrementalUpdates > beforeDelete.IncrementalUpdates,
+                "directory deletion is reconciled incrementally", () => session.Status.ToString());
+            SendMessage(handle, 0x8004, IntPtr.Zero, IntPtr.Zero);
+            WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "1"), "parent total after nested directory deletion");
+            Check(session.Status.Completed == beforeDelete.Completed, "Deleting a nested directory avoids a parent full scan");
             session.StopAsync().GetAwaiter().GetResult();
             session = null;
             SendMessage(handle, 0x8001, IntPtr.Zero, IntPtr.Zero);
@@ -164,7 +264,7 @@ internal static class Program
             Check(!fixture.HasExited, "Disabling restores the original blank Size column and leaves the view running");
             session = ExplorerFolderSizeSession.ConnectAsync(processId, native).GetAwaiter().GetResult();
             SendMessage(handle, 0x8001, IntPtr.Zero, IntPtr.Zero);
-            WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "7"), "size after reconnect");
+            WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "1"), "size after reconnect");
             var heartbeat = (Timer)typeof(ExplorerFolderSizeSession).GetField("_heartbeat", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session)!;
             heartbeat.DisposeAsync().AsTask().GetAwaiter().GetResult();
             var view = (System.IO.MemoryMappedFiles.MemoryMappedViewAccessor)typeof(ExplorerFolderSizeSession)
@@ -293,7 +393,7 @@ internal static class Program
             Check(true, "Actual Explorer reverses folder size order");
             var before = session.Status;
             File.AppendAllBytes(Path.Combine(item, "nested", "second.bin"), new byte[4096]);
-            WaitUntil(() => session.Status.Completed > before.Completed && SizeIs(handle, "WinForge fixture folder", "7"),
+            WaitUntil(() => session.Status.IncrementalUpdates > before.IncrementalUpdates && SizeIs(handle, "WinForge fixture folder", "7"),
                 "updated Explorer folder size", () => session.Status.ToString());
             Check(true, "Actual Explorer updates the folder size to 7 KB after a file changes");
             string[] afterAscending = ["Empty fixture folder", "Z small", "M medium", "WinForge fixture folder", "A large", "sparse"];

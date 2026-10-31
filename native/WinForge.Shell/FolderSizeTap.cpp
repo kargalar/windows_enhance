@@ -65,8 +65,8 @@ HRESULT WINAPI CompareFolders(IUnknown* folder, LPARAM parameters, ITEMIDLIST_RE
         auto secondPath = FolderPath(shellFolder.get(), secondChild);
         if (!firstPath || !secondPath) return original(folder, parameters, first, second);
         state->engine->RememberSizeSort(*firstPath);
-        auto firstSize = state->engine->Query(*firstPath);
-        auto secondSize = state->engine->Query(*secondPath);
+        auto firstSize = state->engine->Query(*firstPath, true);
+        auto secondSize = state->engine->Query(*secondPath, true);
         if (firstSize.has_value() != secondSize.has_value() || (firstSize && secondSize && *firstSize != *secondSize)) {
             auto order = !firstSize ? 1 : !secondSize ? -1 : *firstSize < *secondSize ? -1 : 1;
             return MAKE_HRESULT(SEVERITY_SUCCESS, 0, static_cast<USHORT>(static_cast<short>(order)));

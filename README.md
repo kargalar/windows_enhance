@@ -295,6 +295,12 @@ Ağ ve çıkarılabilir sürücüler, klasör bağlantıları ve bağlantı olar
 bulut klasörleri taranmaz. Okunamayan, çok büyük veya ayarlanan süreyi aşan
 klasörlerin sonucu boş kalır; eksik toplam gösterilmez. Sembolik bağlantılar
 izlenmez. Tarama süresi ve önbellek süresi modül ayarlarından değiştirilebilir.
+Boyuta göre sıralama istendiğinde ilgili taramalar öncelik kazanır. Tamamlanan
+bir üst klasör taraması alt klasör boyutlarını da önbelleğe alır; klasör içeriği
+değiştiğinde yalnız etkilenen alt ağaç yeniden taranıp toplamlar güncellenir.
+Anlık görüntüler ve izleyiciler bellek sınırlarına tabidir. Anlık görüntü eksikse,
+değişiklik bildirimi taşarsa veya yeni alt ağaç güvenle birleştirilemezse WinForge
+ilgili klasörü baştan tarar; bu sırada eksik boyut göstermez.
 
 Explorer'a ilk bağlantıda ve Windows bileşeni güncellendiğinde WinForge, kurulu
 Windows sürümüne ait hata ayıklama sembollerini Microsoft sunucusundan indirir

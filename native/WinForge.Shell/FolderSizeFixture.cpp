@@ -16,6 +16,8 @@ using namespace Windows::UI::Xaml;
 using namespace Windows::UI::Xaml::Hosting;
 
 static com_ptr<IExplorerBrowser> browser;
+static std::wstring rootPath;
+static std::wstring itemPath;
 static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_APP + 1 && browser) {
         com_ptr<IShellView> view;
@@ -30,6 +32,15 @@ static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPA
         }
         return E_FAIL;
     }
+    if ((message == WM_APP + 3 || message == WM_APP + 4) && browser) {
+        auto const& path = message == WM_APP + 3 ? itemPath : rootPath;
+        PIDLIST_ABSOLUTE target{};
+        auto parsed = SHParseDisplayName(path.c_str(), nullptr, &target, 0, nullptr);
+        if (FAILED(parsed)) return parsed;
+        auto browsed = browser->BrowseToIDList(target, SBSP_ABSOLUTE);
+        CoTaskMemFree(target);
+        return browsed;
+    }
     if (message == WM_CLOSE) { DestroyWindow(window); return 0; }
     if (message == WM_DESTROY) { PostQuitMessage(0); return 0; }
     return DefWindowProcW(window, message, wParam, lParam);
@@ -38,6 +49,8 @@ static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPA
 int wmain(int argc, wchar_t** argv) {
     if (argc != 2) return 2;
     try {
+        rootPath = argv[1];
+        itemPath = rootPath + L"\\WinForge fixture folder";
         init_apartment(apartment_type::single_threaded);
         auto manager = WindowsXamlManager::InitializeForCurrentThread();
         WNDCLASSW definition{};
