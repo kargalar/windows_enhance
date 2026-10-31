@@ -66,7 +66,7 @@ public sealed class MediaFlyoutModule : ITweakModule
             new SettingDescriptor
             {
                 Key = "up-next-enabled",
-                Label = "Müzik / parça değiştiğinde otomatik göster (Up Next)",
+                Label = "Müzik / parça değiştiğinde otomatik göster",
                 Kind = SettingKind.Toggle,
                 Default = true,
                 Description = "Çalan müzik veya parça değiştiğinde flyout kapalı olsa bile kısa süreliğine otomatik görünür ve yeni parça bilgisini gösterir."
@@ -218,16 +218,16 @@ public sealed class MediaFlyoutModule : ITweakModule
                 Label = "Donanım ses ve medya tuşlarında bildirimleri göster",
                 Kind = SettingKind.Toggle,
                 Default = true,
-                Description = "Ses tuşlarında alt-orta ses OSD’sini ve medya panelini, medya tuşlarında medya panelini gösterir; Windows davranışını engellemez.",
+                Description = "Ses tuşlarını WinForge işler ve yalnızca ses OSD’sini gösterir; medya tuşlarında medya panelini açar.",
                 Section = "Davranış"
             },
             new SettingDescriptor
             {
                 Key = "external-volume-flyout-enabled",
-                Label = "Harici aygıt ses değişiminde OSD ve medya panelini göster",
+                Label = "Harici aygıt ses değişiminde ses OSD’sini göster",
                 Kind = SettingKind.Toggle,
                 Default = true,
-                Description = "Windows varsayılan ses çıkışındaki ses veya sessize alma değişimini bildirirse ekranın alt ortasında ayarlanabilir OSD’yi ve medya panelini gösterir. Destek, ses sürücüsünün değişikliği Windows Core Audio’ya iletmesine bağlıdır.",
+                Description = "Windows varsayılan ses çıkışındaki ses veya sessize alma değişimini bildirirse ekranın alt ortasında ayarlanabilir ses OSD’sini gösterir. Destek, ses sürücüsünün değişikliği Windows Core Audio’ya iletmesine bağlıdır.",
                 Section = "Davranış"
             },
             new SettingDescriptor
@@ -296,8 +296,8 @@ public sealed class MediaFlyoutModule : ITweakModule
     public string Id => "media-flyout";
     public string Name => "Fluent Medya Flyout’u";
     public string Category => "Sistem";
-    public string Description => "FluentFlyout benzeri medya denetimi, ses değişimlerinde alt-orta ayarlanabilir ses OSD’si ve medya paneli, medya tuşlarında açılan flyout, medya uygulaması filtreleri, oturum seçimi, parça konumu, shuffle/repeat, kilit tuşu OSD’si, Up Next bildirimi, konum seçimi ve çoklu ekran desteği.";
-    public string? Warning => "Medya bilgisi Windows medya oturumu API’sine bağlıdır; bazı oynatıcılar albüm kapağı, konum veya karıştır/tekrar denetimlerini sağlamaz. Up Next parça değişimini flyout açıkken izler. Ses görselleştiricisi yalnızca etkinleştirildiğinde paylaşılan çıkış sesini işler ve kayıt oluşturmaz.";
+    public string Description => "FluentFlyout benzeri medya denetimi, ses değişimlerinde alt-orta ayarlanabilir ses OSD’si, medya tuşlarında açılan flyout, medya uygulaması filtreleri, oturum seçimi, parça konumu, shuffle/repeat, kilit tuşu OSD’si, konum seçimi ve çoklu ekran desteği.";
+    public string? Warning => "Medya bilgisi Windows medya oturumu API’sine bağlıdır; bazı oynatıcılar albüm kapağı, konum veya karıştır/tekrar denetimlerini sağlamaz. Ses görselleştiricisi yalnızca etkinleştirildiğinde paylaşılan çıkış sesini işler ve kayıt oluşturmaz.";
     public bool IsActive { get; private set; }
 
     public IReadOnlyList<SettingDescriptor> Settings => _settings;
@@ -458,7 +458,6 @@ public sealed class MediaFlyoutModule : ITweakModule
                 {
                     if (!IsActive) return;
                     ShowVolumeOsd(change.VolumePercent, change.IsMuted);
-                    OpenFlyoutFromHardwareKey();
                 });
             });
         }
@@ -480,29 +479,29 @@ public sealed class MediaFlyoutModule : ITweakModule
         catch { return null; }
     }
 
-    private void ShowVolumeOsd()
+    private void HandleVolumeHardwareKey(int key)
     {
-        _ = ShowVolumeOsdAfterHardwareKeyAsync();
-    }
-
-    private async Task ShowVolumeOsdAfterHardwareKeyAsync()
-    {
-        await Task.Delay(100);
-        var volume = TryReadCurrentVolume();
-        if (volume < 0) return;
-        var isMuted = TryReadCurrentMuted() == true;
-        Application.Current?.Dispatcher.BeginInvoke(() =>
+        if (!IsActive) return;
+        try
         {
-            if (!IsActive) return;
-            ShowVolumeOsd(volume, isMuted);
-            OpenFlyoutFromHardwareKey();
-        });
+            const int volumeStepPercent = 2;
+            if (key == LockKeysFlyoutHook.VolumeMuteKey)
+                VolumeService.SetMutedFromFlyout(!VolumeService.IsMuted());
+            else
+                VolumeService.StepFromFlyout(key == LockKeysFlyoutHook.VolumeUpKey
+                    ? volumeStepPercent : -volumeStepPercent);
+            ShowVolumeOsd(VolumeService.Current(), VolumeService.IsMuted());
+        }
+        catch (Exception exception)
+        {
+            _context?.Log.Error("Ses tuşu işlenemedi.", exception);
+        }
     }
 
     private void ShowVolumeOsd(int percent, bool isMuted)
     {
         if (_context is IAudioVolumeOverlayContext overlay)
-            overlay.ShowAudioVolume(percent, isMuted, OpenFlyoutFromHardwareKey,
+            overlay.ShowAudioVolume(percent, isMuted, null,
                 Math.Clamp(_context.Settings.GetInt("flyout-auto-dismiss-seconds", 3), 1, 30));
         else
             _context?.Notify(isMuted ? $"Ses kapalı · {percent}%" : $"Ses {percent}%");
@@ -520,7 +519,7 @@ public sealed class MediaFlyoutModule : ITweakModule
         if (capsLockEnabled || numLockEnabled || scrollLockEnabled || hardwareKeysEnabled)
             _lockKeysHook = new LockKeysFlyoutHook(capsLockEnabled, numLockEnabled, scrollLockEnabled,
                 hardwareKeysEnabled ? OpenFlyoutFromHardwareKey : null,
-                hardwareKeysEnabled ? ShowVolumeOsd : null);
+                hardwareKeysEnabled ? HandleVolumeHardwareKey : null);
     }
 
     private void ConfigureTaskbarWidget()
@@ -582,6 +581,7 @@ public sealed class MediaFlyoutModule : ITweakModule
         if (_window is null)
         {
             _window = new MediaFlyoutWindow((_context as IFeatureUiContext)?.FeatureUi);
+            _window.PresentationRequested += () => ShowVolumeOsd(VolumeService.Current(), VolumeService.IsMuted());
             _window.Closed += (_, _) => _window = null;
         }
         var settings = _context?.Settings;
@@ -626,22 +626,26 @@ public sealed class MediaFlyoutModule : ITweakModule
 
 internal sealed class LockKeysFlyoutHook : IDisposable
 {
+    internal const int VolumeMuteKey = 0xAD;
+    internal const int VolumeDownKey = 0xAE;
+    internal const int VolumeUpKey = 0xAF;
     private readonly Native.LowLevelKeyboardProc _callback;
     private readonly Action? _showMediaFlyout;
-    private readonly Action? _showVolumeOsd;
+    private readonly Action<int>? _handleVolumeKey;
+    private bool _muteKeyDown;
     private readonly bool _showCapsLock;
     private readonly bool _showNumLock;
     private readonly bool _showScrollLock;
     private readonly IntPtr _hook;
 
     public LockKeysFlyoutHook(bool showCapsLock, bool showNumLock, bool showScrollLock, Action? showMediaFlyout,
-        Action? showVolumeOsd)
+        Action<int>? handleVolumeKey)
     {
         _showCapsLock = showCapsLock;
         _showNumLock = showNumLock;
         _showScrollLock = showScrollLock;
         _showMediaFlyout = showMediaFlyout;
-        _showVolumeOsd = showVolumeOsd;
+        _handleVolumeKey = handleVolumeKey;
         _callback = HandleKeyboardEvent;
         _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
         if (_hook == IntPtr.Zero)
@@ -662,6 +666,16 @@ internal sealed class LockKeysFlyoutHook : IDisposable
             if (isKeyUp || isKeyDown)
             {
                 var key = (int)Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(data).vkCode;
+                if (IsVolumeHardwareKey(key) && _handleVolumeKey is not null &&
+                    Application.Current?.Dispatcher is { HasShutdownStarted: false } dispatcher)
+                {
+                    // Consume both edges so Windows cannot open its own volume OSD.
+                    // Repeated volume presses still adjust the level; mute toggles once per press.
+                    if (isKeyDown && (key != VolumeMuteKey || !_muteKeyDown))
+                        dispatcher.BeginInvoke(() => _handleVolumeKey(key));
+                    if (key == VolumeMuteKey) _muteKeyDown = isKeyDown;
+                    return (IntPtr)1;
+                }
                 if (isKeyUp)
                 {
                     var label = GetEnabledLockKeyLabel(key, _showCapsLock, _showNumLock, _showScrollLock);
@@ -671,9 +685,7 @@ internal sealed class LockKeysFlyoutHook : IDisposable
                         Application.Current?.Dispatcher.BeginInvoke(() => LockKeysStatusWindow.Show(label, enabled));
                     }
                 }
-                if (isKeyUp && IsVolumeHardwareKey(key) && _showVolumeOsd is not null)
-                    Application.Current?.Dispatcher.BeginInvoke(_showVolumeOsd);
-                else if (isKeyUp && IsMediaFlyoutKey(key) && !IsVolumeHardwareKey(key) && _showMediaFlyout is not null)
+                if (isKeyUp && IsMediaFlyoutKey(key) && !IsVolumeHardwareKey(key) && _showMediaFlyout is not null)
                     Application.Current?.Dispatcher.BeginInvoke(_showMediaFlyout);
             }
         }
@@ -682,7 +694,7 @@ internal sealed class LockKeysFlyoutHook : IDisposable
 
     internal static bool IsMediaFlyoutKey(int key) => key is >= 0xAD and <= 0xB3;
 
-    private static bool IsVolumeHardwareKey(int key) => key is >= 0xAD and <= 0xAF;
+    private static bool IsVolumeHardwareKey(int key) => key is >= VolumeMuteKey and <= VolumeUpKey;
 
     internal static string? GetEnabledLockKeyLabel(int key, bool showCapsLock, bool showNumLock, bool showScrollLock) => key switch
     {
@@ -729,6 +741,14 @@ internal static class LockKeysStatusWindow
 
 internal sealed class MediaFlyoutWindow : Window
 {
+    private const double MinimumContentHeight = 160;
+    private const double MaximumContentHeight = 400;
+    private const double InitialContentHeight = 204;
+    public event Action? PresentationRequested;
+    private bool _presenting;
+    private bool _preparingPresentation;
+    private TaskCompletionSource? _mediaRefreshCompletion;
+    private bool _uiHovered;
     private enum MediaAppType
     {
         Generic,
@@ -747,9 +767,7 @@ internal sealed class MediaFlyoutWindow : Window
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _backgroundMediaTimer;
     private readonly DispatcherTimer _postHardwareKeyTimer;
-    private readonly DispatcherTimer _upNextTimer;
     private readonly DispatcherTimer _dismissTimer;
-    private readonly TextBlock _upNextText;
     private readonly IFeatureUiSurface _uiSurface;
     private string? _artworkDataUri;
 
@@ -819,7 +837,7 @@ internal sealed class MediaFlyoutWindow : Window
         _uiSurface.MessageReceived += OnUiMessage;
         Title = "Medya ve Ses";
         Width = 360;
-        Height = 300;
+        Height = InitialContentHeight;
         SizeToContent = SizeToContent.Manual;
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -832,19 +850,6 @@ internal sealed class MediaFlyoutWindow : Window
         WindowStartupLocation = WindowStartupLocation.Manual;
 
         var content = new StackPanel { Margin = new Thickness(15) };
-        _upNextText = new TextBlock
-        {
-            Name = "UpNextNotification",
-            Foreground = Brush("#F5F5F5"),
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            Padding = new Thickness(10, 8, 10, 8),
-            Margin = new Thickness(0, 0, 0, 10),
-            Background = Brush("#292929"),
-            Visibility = Visibility.Collapsed
-        };
-        content.Children.Add(_upNextText);
-
         _sourceAppButton = new Button
         {
             Name = "MediaSourceAppButton",
@@ -1151,13 +1156,6 @@ internal sealed class MediaFlyoutWindow : Window
             if (!_isClosed && IsVisible)
                 await RefreshAsync();
         };
-        _upNextTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-        _upNextTimer.Tick += (_, _) =>
-        {
-            _upNextTimer.Stop();
-            _upNextText.Visibility = Visibility.Collapsed;
-            PushUiState();
-        };
         _dismissTimer = new DispatcherTimer();
         _dismissTimer.Tick += (_, _) =>
         {
@@ -1165,6 +1163,9 @@ internal sealed class MediaFlyoutWindow : Window
             _dismissTimer.Stop();
             Dismiss();
         };
+        AudioVolumeOverlayLifecycle.Shown += OnVolumeShown;
+        AudioVolumeOverlayLifecycle.Hidden += HideWithVolume;
+        AudioVolumeOverlayLifecycle.KeepOpenRequested += KeepVolumeOpen;
         MouseEnter += (_, _) => _dismissTimer.Stop();
         MouseLeave += (_, _) => ResetDismissTimer(_lastTriggerWasAuto);
         PreviewMouseMove += (_, _) => ResetDismissTimer(_lastTriggerWasAuto);
@@ -1172,11 +1173,14 @@ internal sealed class MediaFlyoutWindow : Window
         PreviewKeyDown += (_, _) => ResetDismissTimer(isAutoTrigger: false);
         Closed += (_, _) =>
         {
+            AudioVolumeOverlayLifecycle.Shown -= OnVolumeShown;
+            AudioVolumeOverlayLifecycle.Hidden -= HideWithVolume;
+            AudioVolumeOverlayLifecycle.KeepOpenRequested -= KeepVolumeOpen;
+            AudioVolumeOverlayLifecycle.RequestDismiss();
             _isClosed = true;
             _refreshTimer.Stop();
             _backgroundMediaTimer.Stop();
             _postHardwareKeyTimer.Stop();
-            _upNextTimer.Stop();
             _dismissTimer.Stop();
             DetachMediaEventHandlers();
             _uiSurface.Dispose();
@@ -1204,41 +1208,89 @@ internal sealed class MediaFlyoutWindow : Window
 
     public void ShowOrRefresh(bool activateWindow = false, bool isAutoTrigger = false)
     {
-        _lastTriggerWasAuto = isAutoTrigger;
-        var wasVisible = IsVisible;
-        if (!wasVisible || !_hasCustomPosition)
-            PositionFlyout();
-        _ = RefreshAsync();
-        if (isAutoTrigger)
+        if (_isClosed || _presenting) return;
+        if (_sessionManager is null)
         {
-            _postHardwareKeyTimer.Stop();
-            _postHardwareKeyTimer.Start();
+            if (!_preparingPresentation)
+                _ = PreparePresentationAsync(activateWindow, isAutoTrigger, AudioVolumeOverlayLifecycle.IsVisible);
+            return;
         }
-        if (!wasVisible)
+        RefreshSessionChoices();
+        if (_selectedSession is null) return;
+        _presenting = true;
+        try
         {
-            Opacity = _animation == "fade" ? 0 : 1;
-            Show();
-            if (_animation == "fade")
-                BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+            if (!AudioVolumeOverlayLifecycle.IsVisible) PresentationRequested?.Invoke();
+            var animate = _animation == "fade" && !AudioVolumeOverlayLifecycle.IsVisible;
+            _lastTriggerWasAuto = isAutoTrigger;
+            var wasVisible = IsVisible;
+            if (!wasVisible || !_hasCustomPosition)
+                PositionFlyout();
+            _ = RefreshAsync();
+            if (isAutoTrigger)
+            {
+                _postHardwareKeyTimer.Stop();
+                _postHardwareKeyTimer.Start();
+            }
+            if (!wasVisible)
+            {
+                Opacity = animate ? 0 : 1;
+                Show();
+                if (animate)
+                    BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180))
+                    {
+                        EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                    });
+            }
+            else if (_isFadingOut)
+            {
+                _isFadingOut = false;
+                BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 1, TimeSpan.FromMilliseconds(180))
                 {
                     EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
                 });
+            }
+            if (activateWindow) Activate();
+            _refreshTimer.Start();
+            ResetDismissTimer(isAutoTrigger);
         }
-        else if (_isFadingOut)
+        finally { _presenting = false; }
+    }
+
+    private async Task PreparePresentationAsync(bool activateWindow, bool isAutoTrigger, bool requiresVolume)
+    {
+        _preparingPresentation = true;
+        try
         {
-            _isFadingOut = false;
-            BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 1, TimeSpan.FromMilliseconds(180))
-            {
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            });
+            await RefreshAsync();
+            if (!_isClosed && _sessionManager is not null && (!requiresVolume || AudioVolumeOverlayLifecycle.IsVisible))
+                ShowOrRefresh(activateWindow, isAutoTrigger);
         }
-        if (activateWindow) Activate();
-        _refreshTimer.Start();
-        ResetDismissTimer(isAutoTrigger);
+        finally { _preparingPresentation = false; }
+    }
+
+    private void OnVolumeShown() => ShowOrRefresh(isAutoTrigger: true);
+
+    private bool KeepVolumeOpen() => IsVisible && (_isWindowPinned || _uiHovered || IsMouseOver);
+
+    private void HideWithVolume()
+    {
+        _isFadingOut = false;
+        _uiHovered = false;
+        _refreshTimer.Stop();
+        _dismissTimer.Stop();
+        BeginAnimation(OpacityProperty, null);
+        Opacity = 1;
+        Hide();
     }
 
     private void Dismiss()
     {
+        if (AudioVolumeOverlayLifecycle.IsVisible)
+        {
+            AudioVolumeOverlayLifecycle.RequestDismiss();
+            return;
+        }
         if (!IsVisible || _isFadingOut) return;
 
         _refreshTimer.Stop();
@@ -1304,8 +1356,17 @@ internal sealed class MediaFlyoutWindow : Window
 
     private async void OnUiMessage(string command, JsonElement payload)
     {
+        if (command != "media.resize") AudioVolumeOverlayLifecycle.NotifyInteraction();
         switch (command)
         {
+            case "media.resize":
+                if (payload.TryGetProperty("height", out var contentHeight) &&
+                    contentHeight.TryGetDouble(out var height) && double.IsFinite(height))
+                {
+                    Height = Math.Clamp(Math.Ceiling(height), MinimumContentHeight, MaximumContentHeight);
+                    if (IsVisible && !_hasCustomPosition) PositionFlyout();
+                }
+                break;
             case "media.previous": SkipPrevious(null, new RoutedEventArgs()); break;
             case "media.next": SkipNext(null, new RoutedEventArgs()); break;
             case "media.toggle": TogglePlayback(null, new RoutedEventArgs()); break;
@@ -1330,6 +1391,7 @@ internal sealed class MediaFlyoutWindow : Window
                 break;
             case "media.dismiss": Dismiss(); break;
             case "media.hover":
+                _uiHovered = payload.TryGetProperty("value", out var hoverValue) && hoverValue.ValueKind == JsonValueKind.True;
                 if (payload.TryGetProperty("value", out var hovering) && hovering.ValueKind == JsonValueKind.True)
                     _dismissTimer.Stop();
                 else if (!_isWindowPinned)
@@ -1375,7 +1437,6 @@ internal sealed class MediaFlyoutWindow : Window
             sourceName = _sourceAppName.Text,
             sourceType = _currentMediaType.ToString(),
             sourceBadge = _sourceAppBadge.Text,
-            upNext = _upNextText.Visibility == Visibility.Visible ? _upNextText.Text : null,
             sessions,
             selectedSessionId = selected?.SourceAppUserModelId ?? "",
             showSessionSelector = _sessionSelector.Visibility == Visibility.Visible,
@@ -1463,7 +1524,7 @@ internal sealed class MediaFlyoutWindow : Window
     private void PlaceInArea(double left, double top, double right, double bottom)
     {
         const double margin = 16;
-        var height = ActualHeight > 0 ? ActualHeight : Height;
+        var height = Height;
         Left = _position.EndsWith("left", StringComparison.Ordinal) ? left + margin : right - Width - margin;
         Top = _position.StartsWith("top", StringComparison.Ordinal) ? top + margin : bottom - height - margin;
         Left = Math.Max(left + margin, Math.Min(Left, right - Width - margin));
@@ -1473,6 +1534,11 @@ internal sealed class MediaFlyoutWindow : Window
     private void ResetDismissTimer(bool isAutoTrigger = false)
     {
         _dismissTimer.Stop();
+        if (AudioVolumeOverlayLifecycle.IsVisible)
+        {
+            AudioVolumeOverlayLifecycle.NotifyInteraction();
+            return;
+        }
         if (_isWindowPinned || !IsVisible) return;
         var seconds = isAutoTrigger && !IsMouseOver ? _autoDismissSeconds : _dismissSeconds;
         if (seconds > 0)
@@ -1545,9 +1611,11 @@ internal sealed class MediaFlyoutWindow : Window
         if (_refreshingMedia)
         {
             _mediaRefreshPending = true;
+            if (_mediaRefreshCompletion is not null) await _mediaRefreshCompletion.Task;
             return;
         }
         _refreshingMedia = true;
+        _mediaRefreshCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
             if (_sessionManager is null)
@@ -1557,11 +1625,12 @@ internal sealed class MediaFlyoutWindow : Window
                 _sessionManager.CurrentSessionChanged += SessionManagerCurrentSessionChanged;
             }
             RefreshSessionChoices();
-            var session = _selectedSession ?? _sessionManager.GetCurrentSession();
+            var session = _selectedSession;
             _selectedSession = session;
             ObserveSelectedSession(session);
             if (session is null)
             {
+                if (AudioVolumeOverlayLifecycle.IsVisible) HideWithVolume();
                 _trackInfo.Text = "Medya oturumu bekleniyor";
                 _artistInfo.Text = "";
                 _lastMediaKey = null;
@@ -1582,11 +1651,6 @@ internal sealed class MediaFlyoutWindow : Window
             var newlyStartedTrack = _hasInitialMediaSnapshot && _lastMediaKey is null && hasTrackTitle && isPlaying;
             if (_showUpNext && isPlaying && (trackChanged || newlyStartedTrack))
             {
-                _upNextText.Text = $"SIRADAKİ PARÇA\n{title}" +
-                    (string.IsNullOrWhiteSpace(properties.Artist) ? "" : $" · {properties.Artist}");
-                _upNextText.Visibility = Visibility.Visible;
-                _upNextTimer.Stop();
-                _upNextTimer.Start();
                 if (!IsVisible && (!_suppressOnFullscreen || !IsForegroundFullscreen()))
                     ShowOrRefresh(activateWindow: false, isAutoTrigger: true);
                 else if (IsVisible)
@@ -1618,6 +1682,7 @@ internal sealed class MediaFlyoutWindow : Window
         finally
         {
             _refreshingMedia = false;
+            _mediaRefreshCompletion.TrySetResult();
             PushUiState();
             if (_mediaRefreshPending && !_isClosed)
             {

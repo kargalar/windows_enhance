@@ -39,8 +39,6 @@ public sealed class TaskbarModule : ITweakModule, IAsyncTweakModule
     private bool _middleClickMute;
     private bool _scrollVolume;
     private int _volumeStep = 2;
-    private readonly Stopwatch _volumeClock = Stopwatch.StartNew();
-    private long _lastVolumeTick;
     private const int ClickMovementTolerance = 8;
     private bool _middleButtonCaptured;
     private bool _middleReleaseReady;
@@ -351,8 +349,8 @@ public sealed class TaskbarModule : ITweakModule, IAsyncTweakModule
             }
             if (hit.Kind == ShellTaskbar.HitKind.EmptyArea && _middleClickMute)
             {
-                VolumeService.SetMuted(!VolumeService.IsMuted());
-                _context?.Notify(VolumeService.IsMuted() ? "Ses kapatıldı" : "Ses açıldı");
+                VolumeService.SetMutedFromFlyout(!VolumeService.IsMuted());
+                ShowVolumeOsd(VolumeService.Current());
                 return;
             }
             if (!_middleClickClose || hit.Kind != ShellTaskbar.HitKind.ApplicationButton) return;
@@ -418,14 +416,20 @@ public sealed class TaskbarModule : ITweakModule, IAsyncTweakModule
             if (!IsActive || generation != Volatile.Read(ref _activationGeneration) || steps == 0) return;
             try
             {
-                var percent = VolumeService.Step(steps);
-                var now = _volumeClock.ElapsedMilliseconds;
-                if (now - _lastVolumeTick < 80) return;
-                _lastVolumeTick = now;
-                _context?.Notify($"Ses: {percent}%");
+                var percent = VolumeService.StepFromFlyout(steps);
+                ShowVolumeOsd(percent);
             }
             catch (Exception exception) { _context?.Log.Error("Ses düzeyi değiştirilemedi.", exception); }
         });
+    }
+
+    private void ShowVolumeOsd(int percent)
+    {
+        var isMuted = VolumeService.IsMuted();
+        if (_context is IAudioVolumeOverlayContext overlay)
+            overlay.ShowAudioVolume(percent, isMuted);
+        else
+            _context?.Notify(isMuted ? $"Ses kapalı · {percent}%" : $"Ses: {percent}%");
     }
 
     private void ApplyClock()

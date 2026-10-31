@@ -67,6 +67,18 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--volume-overlay-only"))
+            {
+                VolumeOverlayChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} volume overlay checks.");
+                return 0;
+            }
+            if (args.Contains("--volume-keys-only"))
+            {
+                VolumeKeyChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} volume key checks.");
+                return 0;
+            }
             if (args.Contains("--startup-only"))
             {
                 StartupResponsivenessChecks.Run(Check);
@@ -810,6 +822,7 @@ internal static class Program
             Check(true, "Core Audio endpoint notification smoke test skipped because no default output device is available");
         }
         var mediaWindowType = mediaFlyout.GetType().Assembly.GetType("WinForge.Modules.Extras.MediaFlyoutWindow")!;
+        VolumeKeyChecks.Run(Check);
         var keyHookType = mediaFlyout.GetType().Assembly.GetType("WinForge.Modules.Extras.LockKeysFlyoutHook")!;
         var isMediaFlyoutKey = keyHookType.GetMethod("IsMediaFlyoutKey", BindingFlags.Static | BindingFlags.NonPublic)!;
         var getEnabledLockKeyLabel = keyHookType.GetMethod("GetEnabledLockKeyLabel", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -854,9 +867,8 @@ internal static class Program
         Check(Descendants<Button>(mediaWindow).Count() >= 3, "Media Flyout renders media transport controls");
         Check(!Descendants<TextBlock>(mediaWindow).Any(block => block.Text.Contains("Caps Lock", StringComparison.Ordinal)),
             "Media Flyout keeps lock-key status outside the media panel");
-        Check(Descendants<TextBlock>(mediaWindow).Any(block => block.Name == "UpNextNotification" &&
-              block.Visibility == Visibility.Collapsed),
-            "Media Flyout provides a hidden-by-default Up Next notification surface");
+        Check(!Descendants<TextBlock>(mediaWindow).Any(block => block.Name == "UpNextNotification"),
+            "Media Flyout omits the redundant next-track notification");
         Check(Descendants<TextBlock>(mediaWindow).Any(block => block.Name == "MediaSessionInfo" && !string.IsNullOrWhiteSpace(block.Text)),
             "Media Flyout renders current-session metadata or a graceful unavailable state");
         Check(!Descendants<Button>(mediaWindow).Any(button => button.Name == "PinFlyoutButton" ||

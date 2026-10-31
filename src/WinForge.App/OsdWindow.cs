@@ -27,10 +27,20 @@ public static class OsdWindow
     private static int _volumePercent;
     private static bool _volumeMuted;
 
-    public static void Configure(IFeatureUiService featureUi) => _featureUi = featureUi;
+    public static void Configure(IFeatureUiService featureUi)
+    {
+        _featureUi = featureUi;
+        AudioVolumeOverlayLifecycle.Interaction -= RestartVolumeTimer;
+        AudioVolumeOverlayLifecycle.Interaction += RestartVolumeTimer;
+        AudioVolumeOverlayLifecycle.DismissRequested -= HideVolume;
+        AudioVolumeOverlayLifecycle.DismissRequested += HideVolume;
+    }
 
     public static void Dispose()
     {
+        HideVolume();
+        AudioVolumeOverlayLifecycle.Interaction -= RestartVolumeTimer;
+        AudioVolumeOverlayLifecycle.DismissRequested -= HideVolume;
         _toastTimer?.Dispose();
         _brightnessTimer?.Dispose();
         _volumeTimer?.Dispose();
@@ -121,6 +131,7 @@ public static class OsdWindow
         window.MessageReceived += OnVolumeMessage;
         PositionAtBottom(window, IndicatorWidth, IndicatorHeight, 56);
         UpdateVolumeState(window);
+        AudioVolumeOverlayLifecycle.NotifyShown();
         RestartVolumeTimer();
     });
 
@@ -155,7 +166,7 @@ public static class OsdWindow
                     Volatile.Write(ref _volumeHovered, payload.GetProperty("value").GetBoolean() ? 1 : 0);
                     break;
                 case "volume.dismiss":
-                    _volumeView?.Hide();
+                    HideVolume();
                     return;
             }
 
@@ -210,9 +221,17 @@ public static class OsdWindow
         Volatile.Read(ref _volumeHovered) != 0 ? 500 : _volumeDismissSeconds * 1000,
         () =>
         {
-            if (Volatile.Read(ref _volumeHovered) != 0) RestartVolumeTimer();
-            else _volumeView?.Hide();
+            if (Volatile.Read(ref _volumeHovered) != 0 || AudioVolumeOverlayLifecycle.ShouldKeepOpen)
+                RestartVolumeTimer();
+            else HideVolume();
         });
+
+    private static void HideVolume()
+    {
+        _volumeTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        _volumeView?.Hide();
+        AudioVolumeOverlayLifecycle.NotifyHidden();
+    }
 
     private static void OnUiThread(Action action)
     {

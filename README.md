@@ -47,7 +47,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Ortam Değişkenleri** | Kullanıcı değişkenlerini düzenler; geliştirme/test gibi profilleri etkinleştirir, `%...%` türünü ve önceki değerleri korur |
 | **Hosts File Editor** | Windows hosts dosyasında IP-ad eşlemeleri ekler, düzenler, filtreler ve etkinleştirir/devre dışı bırakır; kaydetmeden önce yedek oluşturur ve UAC ister |
 | **Power Display · Ekran Denetimi** | Dahili panel parlaklığını Windows WMI, harici ekranlarda desteklenen parlaklık/kontrast/ses/giriş/renk denetimlerini DDC/CI üzerinden yönetir; profilleri ve gündüz/gece zamanlamasını destekler, imleçteki harici ekran için isteğe bağlı parlaklık kısayolları sunar |
-| **Fluent Medya Flyout’u** | `Win+Alt+M` ve `Ctrl+Alt+V`; ana ses/sessiz denetimi, donanım ses tuşlarında alt-orta ses OSD’si ve medya tuşlarında flyout; Windows Core Audio üzerinden algılanabilen harici kulaklık/aygıt ses değişimlerinde OSD; isteğe bağlı görev çubuğu üstü mini oynatıcı (sağ tıkta medya/ses/oynatıcı eylemleri ve isteğe bağlı ana ses tekerlek kontrolü), WASAPI çıkış sesinden gerçek zamanlı spektrum görselleştiricisi, filtrelenebilir medya uygulamaları ve oturum seçimi/sabitleme, albüm kapağı, oynat/önceki/sonraki, parça arama ve shuffle/repeat, kilit tuşu OSD’si, Up Next, köşe ve monitör seçimi, siyah koyu görünüm, belirme animasyonu, etkinlik sonrası otomatik kapanma ve tam ekran uygulama bastırması |
+| **Fluent Medya Flyout’u** | `Win+Alt+M` ve `Ctrl+Alt+V`; ana ses/sessiz denetimi, donanım ses tuşlarında alt-orta ses OSD’si ve medya tuşlarında flyout; Windows Core Audio üzerinden algılanabilen harici kulaklık/aygıt ses değişimlerinde OSD; isteğe bağlı görev çubuğu üstü mini oynatıcı (sağ tıkta medya/ses/oynatıcı eylemleri ve isteğe bağlı ana ses tekerlek kontrolü), WASAPI çıkış sesinden gerçek zamanlı spektrum görselleştiricisi, filtrelenebilir medya uygulamaları ve oturum seçimi/sabitleme, albüm kapağı, oynat/önceki/sonraki, parça arama ve shuffle/repeat, kilit tuşu OSD’si, köşe ve monitör seçimi, siyah koyu görünüm, belirme animasyonu, etkinlik sonrası otomatik kapanma ve tam ekran uygulama bastırması |
 | **Çalışma Alanları** | Açık masaüstü uygulamalarını ve pencere konumlarını adlandırılmış bir düzen olarak kaydeder; seçilen düzeni uygulamaları yeniden açarak geri yükler; isteğe bağlı olarak komut satırı argümanlarını ve dosya yollarını da kaydedip yeniden kullanır |
 | **Başlangıçta Aç** | Windows oturum açtığında WinForge'u arka planda (tepside) başlatır |
 
@@ -120,8 +120,9 @@ OSD’sini ve medya panelini, medya (oynat/duraklat, önceki/sonraki) tuşları 
 flyout’unu gösterir.
 Bu tuşların Windows’a giden normal işlevi engellenmez. Davranış,
 **Donanım ses ve medya tuşlarında bildirimleri göster** ayarından kapatılabilir.
-Up Next parça bildirimi varsayılan olarak açıktır ve flyout
-açıkken yeni parçaya geçildiğinde dört saniye görünür.
+Ses ve medya panelleri birlikte açılır ve ortak süre sonunda birlikte kapanır.
+Panellerden biriyle etkileşim sürerken ikisi de açık kalır. Medya oturumu yoksa
+yalnızca ses paneli gösterilir; duraklatılmış ve arka plandaki medya da desteklenir.
 İsteğe bağlı **Küçük medya oynatıcısını görev çubuğunun üstünde göster** ayarı,
 etkin medya oturumu varken birincil görev çubuğunun hemen üzerinde başlık ve
 önceki/oynat-duraklat/sonraki denetimlerini gösterir. Başlığa tıklamak tam
@@ -148,7 +149,7 @@ albüm kapağı ve desteklenen karıştır/tekrar denetimleri görünür.
 listesindeki uygulamalarla sınırlayabilir veya engel listesindekileri gizleyebilirsiniz.
 Listeye `Spotify; msedge` gibi işlem adı ya da paket kimliği parçalarını noktalı
 virgülle yazın; `.exe` uzantısı ve büyük/küçük harf farkı önem taşımaz. Filtre
-medya oturumu seçicisi, geçerli parça denetimleri ve Up Next bildirimi için
+medya oturumu seçicisi, geçerli parça denetimleri için
 ortak uygulanır. Boş engel listesi tüm uygulamaları gösterir; boş izin listesi
 hiçbir medya oturumunu göstermez.
 

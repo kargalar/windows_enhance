@@ -33,7 +33,6 @@ type MediaFlyoutState = {
   sourceName: string;
   sourceType: string;
   sourceBadge: string;
-  upNext?: string;
   sessions: { id: string; label: string }[];
   selectedSessionId: string;
   showSessionSelector: boolean;
@@ -878,6 +877,22 @@ function ScreenColorPickerView() {
 export function FeatureApp({ view }: { view: string }) {
   const [state, setState] = useState<Record<string, unknown> | null>(null);
   const [seekPosition, setSeekPosition] = useState<number | null>(null);
+  const mediaCardRef = useRef<HTMLElement>(null);
+  const mediaReady = view === 'media-flyout' && state !== null;
+
+  useEffect(() => {
+    const card = mediaCardRef.current;
+    if (!mediaReady || !card) return;
+    let previousHeight = 0;
+    const observer = new ResizeObserver(() => {
+      const height = Math.ceil(card.getBoundingClientRect().height);
+      if (height === previousHeight) return;
+      previousHeight = height;
+      window.chrome?.webview?.postMessage({ command: 'media.resize', payload: { height } });
+    });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [mediaReady]);
   const [widgetMenuOpen, setWidgetMenuOpen] = useState(false);
   const [historyDraft, setHistoryDraft] = useState<{ search: string; app: string; tag: string; from: string; until: string } | null>(null);
   const [historyTagsDraft, setHistoryTagsDraft] = useState<string | null>(null);
@@ -1502,8 +1517,7 @@ export function FeatureApp({ view }: { view: string }) {
     if (!media) return <div className="feature-root feature-root-transparent" />;
     const repeatLabel = media.repeatMode === 'track' ? 'Bu parça' : media.repeatMode === 'list' ? 'Tüm parçalar' : 'Kapalı';
     return <div className="feature-root feature-root-media">
-      <article className="media-flyout-card" onMouseEnter={() => send('media.hover', { value: true })} onMouseLeave={() => send('media.hover', { value: false })}>
-        {media.upNext && <div className="media-up-next"><span>SONRAKİ</span>{media.upNext}</div>}
+      <article ref={mediaCardRef} className="media-flyout-card" onMouseEnter={() => send('media.hover', { value: true })} onMouseLeave={() => send('media.hover', { value: false })}>
         <header className="media-source-row">
           <button className={`media-source ${media.sourceType.toLowerCase()}`} onClick={() => send('media.open-source')}>
             <span className="media-source-icon">{media.sourceType === 'Spotify' ? 'S' : media.sourceType === 'YouTube' ? '▶' : '♫'}</span>
