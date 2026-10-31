@@ -28,7 +28,13 @@ internal static class Program
             File.WriteAllBytes(Path.Combine(nested, "second.bin"), new byte[2048]);
             Directory.CreateDirectory(Path.Combine(root, "Empty fixture folder"));
             VerifyScanner(native, root, item);
-            if (args.Contains("--fixture")) VerifyFixture(native, root, item, args.Contains("--coexist"));
+            foreach (var (name, size) in new[] { ("A large", 8192), ("M medium", 4096), ("Z small", 512) })
+            {
+                var folder = Path.Combine(root, name);
+                Directory.CreateDirectory(folder);
+                File.WriteAllBytes(Path.Combine(folder, "value.bin"), new byte[size]);
+            }
+            if (args.Contains("--fixture")) VerifyFixture(native, root, item, args.Contains("--coexist"), args.Contains("--early-sort"));
             var module = args.FirstOrDefault(argument => argument.StartsWith("--module=", StringComparison.Ordinal))?[9..];
             if (args.Contains("--live") || module is not null) VerifyExplorer(native, root, item, module);
             Console.WriteLine($"PASS: {_checks} folder-size checks.");
@@ -89,7 +95,7 @@ internal static class Program
         return json.RootElement.GetProperty("bytes").GetUInt64();
     }
 
-    private static void VerifyFixture(string native, string root, string item, bool coexist)
+    private static void VerifyFixture(string native, string root, string item, bool coexist, bool earlySort)
     {
         // Windhawk's folder-size mod excludes Plex*.exe. Isolate this owned test process from an
         // already-running copy of that mod without changing the user's Windhawk configuration.
@@ -120,18 +126,37 @@ internal static class Program
                 Check(diagnostics.IsConnected, "Folder sizes coexist with the existing XAML diagnostics session");
             }
             SHChangeNotify(0x00001000, 0x00002005, root, IntPtr.Zero);
+            if (earlySort) SendMessage(handle, 0x8002, IntPtr.Zero, IntPtr.Zero);
             WaitUntil(() => session.Status.Completed >= 2 && session.Status.CacheHits >= 2,
                 "owned Explorer view receives folder sizes", () => session.Status.ToString());
             Console.WriteLine($"Fixture status: {session.Status}");
             WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "3"), "displayed folder size");
+            WaitUntil(() => !string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Empty fixture folder")), "displayed empty folder size");
             Check(!string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Empty fixture folder")), "The empty folder's size is visible in the Size column");
             Check(SizeIs(handle, "WinForge fixture folder", "3"), "The Size column displays the calculated 3 KB total");
+            WaitUntil(() => SizeIs(handle, "A large", "8") && SizeIs(handle, "M medium", "4") &&
+                !string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Z small")), "all sortable folder sizes");
+            if (!earlySort) SendMessage(handle, 0x8002, IntPtr.Zero, IntPtr.Zero);
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "Empty fixture folder", "Z small", "WinForge fixture folder", "M medium", "A large", "sparse" }),
+                "ascending folder size order", () => string.Join(", ", FolderOrder(handle)));
+            Check(true, "Folder size sorting places folders in ascending order");
+            SendMessage(handle, 0x8002, new IntPtr(1), IntPtr.Zero);
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "sparse", "A large", "M medium", "WinForge fixture folder", "Z small", "Empty fixture folder" }),
+                "descending folder size order", () => string.Join(", ", FolderOrder(handle)));
+            Check(true, "Folder size sorting places folders in descending order");
             var before = session.Status;
             File.AppendAllBytes(Path.Combine(item, "nested", "second.bin"), new byte[4096]);
             WaitUntil(() => session.Status.Completed > before.Completed && session.Status.CacheHits > before.CacheHits,
                 "owned Explorer view updates after a file changes", () => session.Status.ToString());
             WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "7"), "updated visible folder size");
             Check(true, "Directory watcher updates the displayed size to 7 KB");
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "sparse", "A large", "WinForge fixture folder", "M medium", "Z small", "Empty fixture folder" }),
+                "updated descending folder size order", () => string.Join(", ", FolderOrder(handle)));
+            Check(true, "Folder size sorting updates after a nested file changes");
+            SendMessage(handle, 0x8002, new IntPtr(2), IntPtr.Zero);
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "A large", "Empty fixture folder", "M medium", "sparse", "WinForge fixture folder", "Z small" }),
+                "name ordering after size sorting", () => string.Join(", ", FolderOrder(handle)));
+            Check(true, "Name sorting remains unchanged");
             session.StopAsync().GetAwaiter().GetResult();
             session = null;
             SendMessage(handle, 0x8001, IntPtr.Zero, IntPtr.Zero);
@@ -172,6 +197,27 @@ internal static class Program
                 ? ((ValuePattern)pattern).Current.Value : "";
         }
         catch (ElementNotAvailableException) { return ""; }
+    }
+
+    private static string[] FolderOrder(IntPtr handle)
+    {
+        try
+        {
+            var root = AutomationElement.FromHandle(handle);
+            var names = new HashSet<string>(["Empty fixture folder", "Z small", "WinForge fixture folder", "M medium", "A large", "sparse"], StringComparer.Ordinal);
+            var row = root.FindFirst(TreeScope.Descendants, new AndCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem),
+                new PropertyCondition(AutomationElement.NameProperty, "WinForge fixture folder")));
+            for (var depth = 0; row is not null && depth < 8; depth++)
+            {
+                row = TreeWalker.ControlViewWalker.GetParent(row);
+                var rows = row?.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
+                var result = rows?.Cast<AutomationElement>().Select(element => element.Current.Name).Where(names.Contains).ToArray() ?? [];
+                if (result.Length > 1) return result;
+            }
+            return [];
+        }
+        catch (ElementNotAvailableException) { return []; }
     }
 
     private static bool SizeIs(IntPtr handle, string name, string kilobytes)
@@ -227,11 +273,34 @@ internal static class Program
                 "Explorer folder-size column", () => session.Status.ToString());
             Check(true, "Actual Explorer displays the calculated 3 KB folder size");
             Console.WriteLine($"Explorer status: {session.Status}");
+            WaitUntil(() => SizeIs(handle, "A large", "8") && SizeIs(handle, "M medium", "4") &&
+                !string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Z small")), "actual Explorer sortable folders");
+            window.Document.SortColumns = "prop:System.Size";
+            string[] ascending = ["Empty fixture folder", "Z small", "WinForge fixture folder", "M medium", "A large", "sparse"];
+            string[] descending = [.. ascending.Reverse()];
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(ascending) || FolderOrder(handle).SequenceEqual(descending),
+                "actual Explorer size order", () => string.Join(", ", FolderOrder(handle)));
+            var initiallyAscending = FolderOrder(handle).SequenceEqual(ascending);
+            Check(true, "Actual Explorer sorts folders by size");
+            var header = AutomationElement.FromHandle(handle).FindFirst(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Header));
+            var sizeHeader = header?.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Size"));
+            if (sizeHeader is null || !sizeHeader.TryGetCurrentPattern(InvokePattern.Pattern, out var sortPattern))
+                throw new InvalidOperationException("The Explorer Size column cannot be invoked for descending sort.");
+            ((InvokePattern)sortPattern).Invoke();
+            var reversed = initiallyAscending ? descending : ascending;
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(reversed), "actual Explorer reversed size order", () => string.Join(", ", FolderOrder(handle)));
+            Check(true, "Actual Explorer reverses folder size order");
             var before = session.Status;
             File.AppendAllBytes(Path.Combine(item, "nested", "second.bin"), new byte[4096]);
             WaitUntil(() => session.Status.Completed > before.Completed && SizeIs(handle, "WinForge fixture folder", "7"),
                 "updated Explorer folder size", () => session.Status.ToString());
             Check(true, "Actual Explorer updates the folder size to 7 KB after a file changes");
+            string[] afterAscending = ["Empty fixture folder", "Z small", "M medium", "WinForge fixture folder", "A large", "sparse"];
+            var afterChange = initiallyAscending ? afterAscending.Reverse().ToArray() : afterAscending;
+            WaitUntil(() => FolderOrder(handle).SequenceEqual(afterChange),
+                "actual Explorer reordered after a change", () => string.Join(", ", FolderOrder(handle)));
+            Check(true, "Actual Explorer reorders folders after their size changes");
             if (module is not null)
             {
                 ((IAsyncTweakModule)module).ApplyAsync().GetAwaiter().GetResult();

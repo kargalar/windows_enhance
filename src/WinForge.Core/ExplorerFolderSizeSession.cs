@@ -19,13 +19,13 @@ public sealed class ExplorerFolderSizeSession : IDisposable
     private const int AttachedOffset = 20;
     private const int ClosedOffset = 24;
     private const int ErrorOffset = 28;
-    private const int ScanSecondsOffset = 92;
-    private const int CacheSecondsOffset = 96;
-    private const int StatisticsOffset = 100;
-    private const int MessageOffset = 124;
+    private const int ScanSecondsOffset = 100;
+    private const int CacheSecondsOffset = 104;
+    private const int StatisticsOffset = 108;
+    private const int MessageOffset = 132;
     private const int MessageBytes = 512;
     private const uint Magic = 0x57464653;
-    private const uint ProtocolVersion = 1;
+    private const uint ProtocolVersion = 2;
     private static readonly SemaphoreSlim PreparationGate = new(1, 1);
     private readonly object _gate = new();
     private readonly string _path;

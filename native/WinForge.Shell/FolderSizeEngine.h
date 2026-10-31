@@ -64,9 +64,14 @@ class FolderSizeEngine {
         std::unique_ptr<FolderScan> scan;
         std::unique_ptr<DirectoryWatch> watch;
     };
-    static constexpr std::size_t MaximumCachedFolders = 64;
+    struct SortedParent { ULONGLONG used{}; ULONGLONG due{}; ULONGLONG deadline{}; bool pending{}; };
+    static constexpr std::size_t MaximumCachedFolders = 256;
+    static constexpr std::size_t MaximumSortedParents = 64;
     static constexpr std::size_t MaximumActiveScans = 4;
+    static constexpr ULONGLONG SortRefreshDelayMilliseconds = 400;
+    static constexpr ULONGLONG SortRefreshMaximumDelayMilliseconds = 2000;
     std::map<std::wstring, std::shared_ptr<Entry>, PathLess> entries_;
+    std::map<std::wstring, SortedParent, PathLess> sortedParents_;
     std::vector<std::shared_ptr<Entry>> retired_;
     std::mutex mutex_;
     std::condition_variable wake_;
@@ -86,10 +91,34 @@ class FolderSizeEngine {
     static void Notify(std::wstring const& path) {
         SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path.c_str(), nullptr);
     }
+    static std::wstring ParentPath(std::wstring const& path) {
+        auto last = path.find_last_of(L"\\/");
+        if (last == std::wstring::npos) return {};
+        if ((last == 2 && path[1] == L':') ||
+            (last == 6 && path.starts_with(L"\\\\?\\") && path[5] == L':')) ++last;
+        return path.substr(0, last);
+    }
 public:
     explicit FolderSizeEngine(Session& session) : session_(session),
         scanSeconds_(std::clamp(session.Get()->scanSeconds, 5UL, 120UL)),
         cacheSeconds_(std::clamp(session.Get()->cacheSeconds, 5UL, 300UL)) {}
+
+    void RememberSizeSort(std::wstring const& path) {
+        auto parent = ParentPath(path);
+        if (parent.empty()) return;
+        std::lock_guard lock(mutex_);
+        if (!session_.Alive()) return;
+        auto found = sortedParents_.find(parent);
+        if (found == sortedParents_.end()) {
+            if (sortedParents_.size() >= MaximumSortedParents) {
+                auto oldest = std::min_element(sortedParents_.begin(), sortedParents_.end(),
+                    [](auto const& a, auto const& b) { return a.second.used < b.second.used; });
+                sortedParents_.erase(oldest);
+            }
+            found = sortedParents_.try_emplace(std::move(parent)).first;
+        }
+        found->second.used = GetTickCount64();
+    }
 
     std::optional<ULONGLONG> Query(std::wstring const& path) {
         // Only bounded cache bookkeeping is synchronized; enumeration never holds this lock.
@@ -173,13 +202,20 @@ public:
                 }
                 Complete(*entry, status == ScanStatus::Complete, bytes);
             }
+            std::vector<std::wstring> refreshParents;
             {
                 std::unique_lock lock(mutex_);
                 LONG pending{};
                 for (auto const& [path, entry] : entries_) { (void)path; if (entry->wanted) ++pending; }
                 InterlockedExchange(&session_.Get()->pending, pending);
+                auto now = GetTickCount64();
+                for (auto& [path, parent] : sortedParents_) {
+                    if (parent.pending && now >= parent.due) { parent.pending = false; refreshParents.push_back(path); }
+                }
                 wake_.wait_for(lock, std::chrono::milliseconds(active ? 1 : 100));
             }
+            for (auto const& parent : refreshParents)
+                SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, parent.c_str(), nullptr);
         }
         SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_END);
     }
@@ -197,6 +233,7 @@ public:
             for (auto const& [path, entry] : entries_) { (void)path; entry->retired = true; }
             entries.swap(entries_);
             retired.swap(retired_);
+            sortedParents_.clear();
         }
         // Any final directory-watch or scanner handles are released on the monitor or I/O worker.
     }
@@ -211,6 +248,15 @@ private:
             entry.expires = GetTickCount64() + static_cast<ULONGLONG>(cacheSeconds_) * 1000;
             entry.retryAfter = complete ? 0 : entry.expires;
             InterlockedIncrement(complete ? &session_.Get()->completed : &session_.Get()->incomplete);
+            if (complete) {
+                auto parent = sortedParents_.find(ParentPath(entry.path));
+                if (parent != sortedParents_.end()) {
+                    auto now = GetTickCount64();
+                    auto& refresh = parent->second;
+                    if (!refresh.pending) { refresh.pending = true; refresh.deadline = now + SortRefreshMaximumDelayMilliseconds; }
+                    refresh.due = std::min(now + SortRefreshDelayMilliseconds, refresh.deadline);
+                }
+            }
         }
         if (complete) Notify(entry.path);
     }

@@ -3,6 +3,7 @@
 #include <xamlom.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <propkey.h>
 #include <winrt/base.h>
 #include <atomic>
 #include <memory>
@@ -12,7 +13,9 @@
 
 namespace winforge::folders {
 using SizeGetter = HRESULT(WINAPI*)(IUnknown*, ITEMID_CHILD const*, void const*, PROPVARIANT*);
+using FolderCompare = HRESULT(WINAPI*)(IUnknown*, LPARAM, ITEMIDLIST_RELATIVE const*, ITEMIDLIST_RELATIVE const*);
 inline std::atomic<SizeGetter> Original;
+inline std::atomic<FolderCompare> OriginalCompare;
 struct State {
     Session session;
     std::unique_ptr<FolderSizeEngine> engine;
@@ -20,9 +23,57 @@ struct State {
     StorageSymbols symbols{};
     bool otherSizeHook{};
     CallbackTablePatch sizeTablePatch;
+    CallbackTablePatch sortTablePatch;
 };
 inline std::atomic<std::shared_ptr<State>> Current;
 inline std::mutex ConnectionGate;
+
+std::optional<std::wstring> FolderPath(IShellFolder* folder, ITEMID_CHILD const* child) {
+    STRRET display{};
+    if (FAILED(folder->GetDisplayNameOf(child, SHGDN_FORPARSING, &display))) return std::nullopt;
+    wchar_t* path{};
+    if (FAILED(StrRetToStrW(&display, child, &path))) return std::nullopt;
+    auto release = std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)>(path, CoTaskMemFree);
+    if (!path || wcslen(path) > 32760) return std::nullopt;
+    return std::wstring(path);
+}
+
+bool IsFilesystemFolder(IShellFolder* folder, ITEMID_CHILD const* child) {
+    SFGAOF attributes = SFGAO_FOLDER | SFGAO_FILESYSTEM;
+    return SUCCEEDED(folder->GetAttributesOf(1, &child, &attributes)) &&
+        (attributes & (SFGAO_FOLDER | SFGAO_FILESYSTEM)) == (SFGAO_FOLDER | SFGAO_FILESYSTEM);
+}
+
+HRESULT WINAPI CompareFolders(IUnknown* folder, LPARAM parameters, ITEMIDLIST_RELATIVE const* first,
+    ITEMIDLIST_RELATIVE const* second) noexcept {
+    auto original = OriginalCompare.load();
+    auto state = Current.load();
+    if (!state || !state->session.Alive() || !first || !second ||
+        (parameters & (SHCIDS_ALLFIELDS | SHCIDS_CANONICALONLY))) return original(folder, parameters, first, second);
+    try {
+        winrt::com_ptr<IShellFolder2> shellFolder;
+        if (FAILED(folder->QueryInterface(IID_PPV_ARGS(shellFolder.put())))) return original(folder, parameters, first, second);
+        PROPERTYKEY key{};
+        auto column = static_cast<UINT>(parameters & SHCIDS_COLUMNMASK);
+        if (FAILED(shellFolder->MapColumnToSCID(column, &key)) || !IsEqualPropertyKey(key, PKEY_Size))
+            return original(folder, parameters, first, second);
+        auto firstChild = reinterpret_cast<ITEMID_CHILD const*>(first);
+        auto secondChild = reinterpret_cast<ITEMID_CHILD const*>(second);
+        if (!IsFilesystemFolder(shellFolder.get(), firstChild) || !IsFilesystemFolder(shellFolder.get(), secondChild))
+            return original(folder, parameters, first, second);
+        auto firstPath = FolderPath(shellFolder.get(), firstChild);
+        auto secondPath = FolderPath(shellFolder.get(), secondChild);
+        if (!firstPath || !secondPath) return original(folder, parameters, first, second);
+        state->engine->RememberSizeSort(*firstPath);
+        auto firstSize = state->engine->Query(*firstPath);
+        auto secondSize = state->engine->Query(*secondPath);
+        if (firstSize.has_value() != secondSize.has_value() || (firstSize && secondSize && *firstSize != *secondSize)) {
+            auto order = !firstSize ? 1 : !secondSize ? -1 : *firstSize < *secondSize ? -1 : 1;
+            return MAKE_HRESULT(SEVERITY_SUCCESS, 0, static_cast<USHORT>(static_cast<short>(order)));
+        }
+    } catch (...) { }
+    return original(folder, parameters, first, second);
+}
 
 HRESULT WINAPI GetSize(IUnknown* folder, ITEMID_CHILD const* child, void const* data, PROPVARIANT* value) noexcept {
     auto state = Current.load();
@@ -36,17 +87,11 @@ HRESULT WINAPI GetSize(IUnknown* folder, ITEMID_CHILD const* child, void const* 
         winrt::com_ptr<IShellFolder> shellFolder;
         if (FAILED(folder->QueryInterface(IID_PPV_ARGS(shellFolder.put())))) return result;
         if (value->vt == VT_UI8) {
-            SFGAOF attributes = SFGAO_FOLDER | SFGAO_FILESYSTEM;
-            if (FAILED(shellFolder->GetAttributesOf(1, &child, &attributes)) ||
-                (attributes & (SFGAO_FOLDER | SFGAO_FILESYSTEM)) != (SFGAO_FOLDER | SFGAO_FILESYSTEM)) return result;
+            if (!IsFilesystemFolder(shellFolder.get(), child)) return result;
         }
-        STRRET display{};
-        if (FAILED(shellFolder->GetDisplayNameOf(child, SHGDN_FORPARSING, &display))) return result;
-        wchar_t* path{};
-        if (FAILED(StrRetToStrW(&display, child, &path))) return result;
-        auto release = std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)>(path, CoTaskMemFree);
-        if (!path || wcslen(path) > 32760) return result;
-        auto bytes = state->engine->Query(path);
+        auto path = FolderPath(shellFolder.get(), child);
+        if (!path) return result;
+        auto bytes = state->engine->Query(*path);
         if (bytes) { value->vt = VT_UI8; value->uhVal.QuadPart = *bytes; }
     } catch (...) { /* A size enhancement cannot propagate exceptions into Explorer. */ }
     return result;
@@ -84,11 +129,13 @@ struct Tap : winrt::implements<Tap, IObjectWithSite> {
                 if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
                     reinterpret_cast<LPCWSTR>(&GetSize), &pinned)) throw std::runtime_error("Folder-size callback lifetime could not be protected.");
                 Original.store(reinterpret_cast<SizeGetter>(reinterpret_cast<BYTE*>(state->storage) + header->symbols.size.rva));
+                OriginalCompare.store(reinterpret_cast<FolderCompare>(reinterpret_cast<BYTE*>(state->storage) + header->symbols.compare.rva));
                 auto entry = reinterpret_cast<BYTE*>(state->storage) + header->symbols.size.rva;
                 state->otherSizeHook = entry[0] == 0xe9 || entry[0] == 0xeb || entry[0] == 0xff ||
                     entry[0] == 0xcc || (entry[0] == 0x48 && entry[1] == 0xb8);
                 state->engine = std::make_unique<FolderSizeEngine>(state->session);
-                state->sizeTablePatch.Install(state->storage, header->symbols, reinterpret_cast<void*>(&GetSize));
+                state->sizeTablePatch.Install(state->storage, header->symbols, header->symbols.size.rva, reinterpret_cast<void*>(&GetSize));
+                state->sortTablePatch.Install(state->storage, header->symbols, header->symbols.compare.rva, reinterpret_cast<void*>(&CompareFolders));
                 Current.store(state);
                 std::thread([state] {
                     auto initialized = SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
@@ -104,7 +151,8 @@ struct Tap : winrt::implements<Tap, IObjectWithSite> {
                     {
                         std::lock_guard guard(ConnectionGate);
                         Current.store(nullptr);
-                        bool restored = state->sizeTablePatch.Restore();
+                        bool restored = state->sortTablePatch.Restore();
+                        restored = state->sizeTablePatch.Restore() && restored;
                         if (!restored) InterlockedExchange(&state->session.Get()->error, E_FAIL);
                         InterlockedExchange(&state->session.Get()->closed, 1);
                     }
@@ -120,6 +168,7 @@ struct Tap : winrt::implements<Tap, IObjectWithSite> {
                 InterlockedExchange(&header->error, E_FAIL);
                 InterlockedExchange(&header->active, 0);
                 Current.store(nullptr);
+                state->sortTablePatch.Restore();
                 state->sizeTablePatch.Restore();
                 return E_FAIL;
             }

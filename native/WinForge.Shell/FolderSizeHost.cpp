@@ -35,7 +35,7 @@ int wmain(int argc, wchar_t** argv) {
             if (!session.Open(argv[3]) || session.Get()->attached) throw std::runtime_error("Folder-size session is invalid or already connected.");
             session.Get()->symbols = symbols;
         }
-        std::printf("{\"sizeRva\":%lu,\"collectionRva\":%lu}\n", symbols.size.rva, symbols.collection.rva);
+        std::printf("{\"sizeRva\":%lu,\"collectionRva\":%lu,\"compareRva\":%lu}\n", symbols.size.rva, symbols.collection.rva, symbols.compare.rva);
         return 0;
     } catch (std::exception const& error) { std::fprintf(stderr, "%s\n", error.what()); return 1; }
 }

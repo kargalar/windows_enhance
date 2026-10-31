@@ -32,7 +32,7 @@ public sealed class ExplorerFolderSizesModule : ITweakModule, IAsyncTweakModule
         new() { Key = "scan-seconds", Label = "Klasör başına tarama süresi (saniye)", Kind = SettingKind.Number, Default = 30, Min = 5, Max = 120,
             Description = "Süre sınırını aşan veya okunamayan klasörlerin boyutu boş kalır. Büyük klasörler için artırabilirsiniz." },
         new() { Key = "cache-seconds", Label = "Önbellek geçerlilik süresi (saniye)", Kind = SettingKind.Number, Default = 60, Min = 5, Max = 300,
-            Description = "Disk değişiklikleri ayrıca izlenir. En fazla 64 klasör önbellekte tutulur; ağ sürücüleri ve klasör bağlantıları taranmaz." }
+            Description = "Disk değişiklikleri ayrıca izlenir. En fazla 256 klasör önbellekte tutulur; ağ sürücüleri ve klasör bağlantıları taranmaz." }
     ];
 
     public void Initialize(IModuleContext context) => _context = context;

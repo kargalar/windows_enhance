@@ -35,7 +35,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Klasik Sağ Tık Menüsü** | Windows 11'in kısa menüsü yerine Windows 10'un tam sağ tık menüsünü kullanır |
 | **Sağ Tık Menüsü** | Gezgin menüsüne özel öğeler ekler ve kayıtlı kabuk uzantılarını gizler; yerleşik komutlar ve diğer uygulamaların kendi menüleri kapsam dışı |
 | **Gezgin İnce Ayarları** | Uzantılar, gizli dosyalar, son/sık kullanılanlar, kompakt mod, tam yol, onay kutuları, ayrı süreç ve masaüstü simgeleri |
-| **Gezgin Klasör Boyutları** | Ayrıntılar görünümünde yerel klasörlerin boyutlarını arka planda hesaplar, önbelleğe alır ve dosyalar değiştikçe günceller |
+| **Gezgin Klasör Boyutları** | Ayrıntılar görünümünde yerel klasörlerin boyutlarını arka planda hesaplar, boyuta göre sıralar ve dosyalar değiştikçe günceller |
 | **Toplu Yeniden Adlandırma** | Çoklu dosya seçimi, metin/regex önizlemesi, çakışma denetimi ve en son işlemi pencere/uygulama yeniden açıldıktan sonra da geri alma |
 | **Görsel Boyutlandırıcı** | Birden fazla görsel için 854/1280/1920 px veya özel uzun kenar; en-boy oranı, PNG/JPEG biçimi ve JPEG kalitesi korunur; aynı biçimde EXIF/IPTC metadata aktarımı seçilebilir; arka planda ilerleme/iptal; özgün dosyalar saklanır |
 | **Dosya Kilidi Bulucu** | Windows Restart Manager ile kilit kullanan uygulama ve hizmetleri listeler; kullanıcı uygulamaları ayrıca onayla sonlandırılabilir |
@@ -288,7 +288,9 @@ eylemi aynı akışı başlatır.
 **Gezgin → Gezgin Klasör Boyutları** modülünü etkinleştirip Explorer'da
 **Ayrıntılar** görünümünü ve **Boyut** sütununu açın. WinForge sabit yerel
 sürücülerdeki klasörleri düşük öncelikli tek bir arka plan iş parçacığında tarar;
-en fazla 64 klasörün sonucu önbellekte tutulur ve disk değişiklikleri izlenir.
+en fazla 256 klasörün sonucu önbellekte tutulur ve disk değişiklikleri izlenir.
+Boyuta göre artan veya azalan sıralamada klasörler kendi aralarında hesaplanan
+boyutlarına göre sıralanır; sonuçlar değiştiğinde sıralama güncellenir.
 Ağ ve çıkarılabilir sürücüler, klasör bağlantıları ve bağlantı olarak işaretli
 bulut klasörleri taranmaz. Okunamayan, çok büyük veya ayarlanan süreyi aşan
 klasörlerin sonucu boş kalır; eksik toplam gösterilmez. Sembolik bağlantılar
@@ -331,10 +333,13 @@ taşınır; iptal taşımadan önce gelirse geçici dosya temizlenir.
 
 ## Dosya Kilidi Bulucu
 
-**Gezgin → Dosya Kilidi Bulucu** penceresinde dosyayı seçin. Araç Windows Restart
-Manager'a dosya yolunu kaydeder ve bu API'nin ilişkilendirdiği uygulama/hizmetleri
-süreç adı ve PID ile gösterir. Etkin modülde bir dosyaya sağ tıklayarak da
-**Dosya kilitlerini bul (WinForge)** eylemini açabilirsiniz. **Yeniden tara** ile sorguyu tekrarlayın. Tarama
+**Gezgin → Dosya Kilidi Bulucu** modülünü etkinleştirin. Bir dosya veya klasöre
+sağ tıklayıp **Dosya kilitlerini bul (WinForge)** seçeneğini seçtiğinizde tarama
+doğrudan açılır. Windows 11'de bu seçenek **Daha fazla seçenek göster** altındadır.
+Araç Windows Restart Manager'a dosya yollarını kaydeder ve bu API'nin ilişkilendirdiği
+uygulama/hizmetleri süreç adı ve PID ile gösterir. Klasörlerde erişilebilir alt
+klasörler dahil en fazla 5.000 dosya taranır; bağlantı noktaları izlenmez.
+**Yeniden tara** ile sorguyu tekrarlayın. Tarama
 salt okunurdur. Seçilebilir normal kullanıcı uygulamaları için **Uygulamayı
 sonlandır** ayrı bir onay ister, süreç başlangıç kimliğini yeniden doğrular ve
 yalnızca o süreci kapatır. WinForge, Windows Gezgini, hizmetler, kritik süreçler

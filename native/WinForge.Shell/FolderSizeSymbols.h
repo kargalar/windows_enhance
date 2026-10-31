@@ -20,6 +20,7 @@ struct StorageSymbols {
     SymbolRange collection;
     SymbolRange prepare;
     SymbolRange operation;
+    SymbolRange compare;
 };
 
 inline std::wstring PdbIdentity(HMODULE module, std::wstring& name, GUID& guid, DWORD& age) {
@@ -97,6 +98,7 @@ inline BOOL CALLBACK CollectStorageSymbol(PSYMBOL_INFO symbol, ULONG, void* cont
     else if (name == "CDefCollection::Item_GetValue") range = &result->second->collection;
     else if (name == "CRecursiveFolderOperation::Prepare") range = &result->second->prepare;
     else if (name == "CRecursiveFolderOperation::Do") range = &result->second->operation;
+    else if (name == "CFSFolder::CompareIDs") range = &result->second->compare;
     if (range) *range = {static_cast<DWORD>(symbol->Address - result->first), symbol->Size};
     return TRUE;
 }
@@ -135,7 +137,7 @@ inline StorageSymbols ResolveStorageSymbols(std::filesystem::path const& cache) 
             throw std::runtime_error("Windows symbol identity does not match the installed binary.");
         std::pair<DWORD64, StorageSymbols*> context{loaded, &result};
         if (!SymEnumSymbols(process, loaded, "*", CollectStorageSymbol, &context) || !result.size.rva || !result.collection.rva ||
-            !result.prepare.rva || !result.operation.rva)
+            !result.prepare.rva || !result.operation.rva || !result.compare.rva)
             throw std::runtime_error("This Windows build does not expose the required folder-size callbacks.");
         SymCleanup(process);
         return result;

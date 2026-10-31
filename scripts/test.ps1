@@ -66,6 +66,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($FolderSizesLive) {
     & $folderSizeExecutable "--native=$folderSizeNative" '--fixture' '--coexist'
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $folderSizeExecutable "--native=$folderSizeNative" '--fixture' '--early-sort'
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $extrasModule = Join-Path $root "src\WinForge.App\bin\x64\$Configuration\net10.0-windows10.0.19041.0\modules\WinForge.Modules.Extras.dll"
     & $folderSizeExecutable "--native=$folderSizeNative" "--module=$extrasModule"
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

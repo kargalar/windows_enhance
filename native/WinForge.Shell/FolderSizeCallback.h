@@ -8,7 +8,8 @@ inline void ValidateStorageIdentity(HMODULE module, StorageSymbols const& symbol
     auto bytes = nt->OptionalHeader.SizeOfImage;
     if (nt->FileHeader.TimeDateStamp != symbols.timestamp || bytes != symbols.imageBytes || bytes < 16 ||
         !symbols.size.rva || symbols.size.rva >= bytes - 16 || !symbols.collection.rva || symbols.collection.rva >= bytes ||
-        !symbols.prepare.rva || symbols.prepare.rva >= bytes || !symbols.operation.rva || symbols.operation.rva >= bytes)
+        !symbols.prepare.rva || symbols.prepare.rva >= bytes || !symbols.operation.rva || symbols.operation.rva >= bytes ||
+        !symbols.compare.rva || symbols.compare.rva >= bytes)
         throw std::runtime_error("Windows Storage changed after symbol preparation.");
     GUID guid{};
     DWORD age{};
@@ -38,11 +39,11 @@ public:
     CallbackTablePatch() = default;
     CallbackTablePatch(CallbackTablePatch const&) = delete;
     ~CallbackTablePatch() { Restore(); }
-    void Install(HMODULE module, StorageSymbols const& symbols, void* replacement) {
+    void Install(HMODULE module, StorageSymbols const& symbols, DWORD targetRva, void* replacement) {
         auto base = reinterpret_cast<BYTE*>(module);
         auto nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + reinterpret_cast<IMAGE_DOS_HEADER*>(base)->e_lfanew);
         ValidateStorageIdentity(module, symbols);
-        original_ = base + symbols.size.rva;
+        original_ = base + targetRva;
         replacement_ = replacement;
         std::vector<void**> found;
         auto section = IMAGE_FIRST_SECTION(nt);

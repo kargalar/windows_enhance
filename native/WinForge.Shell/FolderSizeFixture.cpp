@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <shobjidl.h>
 #include <shlobj.h>
+#include <propkey.h>
 #undef GetCurrentTime
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <winrt/base.h>
@@ -19,6 +20,14 @@ static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPA
     if (message == WM_APP + 1 && browser) {
         com_ptr<IShellView> view;
         if (SUCCEEDED(browser->GetCurrentView(IID_PPV_ARGS(view.put())))) return view->Refresh();
+        return E_FAIL;
+    }
+    if (message == WM_APP + 2 && browser) {
+        com_ptr<IFolderView2> view;
+        if (SUCCEEDED(browser->GetCurrentView(IID_PPV_ARGS(view.put())))) {
+            SORTCOLUMN column{wParam == 2 ? PKEY_ItemNameDisplay : PKEY_Size, wParam == 1 ? SORT_DESCENDING : SORT_ASCENDING};
+            return view->SetSortColumns(&column, 1);
+        }
         return E_FAIL;
     }
     if (message == WM_CLOSE) { DestroyWindow(window); return 0; }

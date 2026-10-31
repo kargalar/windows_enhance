@@ -37,7 +37,7 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
     public string Id => "file-locksmith";
     public string Name => "Dosya Kilidi Bulucu";
     public string Category => "Gezgin";
-    public string Description => "Seçilen dosyayı kullanan uygulama ve hizmetleri Windows Restart Manager ile bulur.";
+    public string Description => "Dosya veya klasöre sağ tıklayıp Dosya kilitlerini bul (WinForge) seçeneğiyle kullanan uygulamaları bulun. Windows 11'de seçenek Daha fazla seçenek göster menüsündedir.";
     public string? Warning => "Windows'un Restart Manager API'sinin bildirdiği süreçler gösterilir. Sonlandırma kaydedilmemiş işi kaybettirebilir; yalnızca yeniden doğrulanmış kullanıcı uygulamaları için kullanılabilir.";
     public bool IsActive => _isActive;
     public bool IsPersistent => true;
@@ -46,13 +46,18 @@ public sealed class FileLocksmithModule : ITweakModule, IAppCommandModule
     public void Initialize(IModuleContext context) => _context = context;
     public void Activate()
     {
-        if (!_explorerVerb.Install() || !_folderVerb.Install())
+        try
+        {
+            if (!_explorerVerb.Install() || !_folderVerb.Install())
+                throw new InvalidOperationException("Gezgin menüsü kaydedilemedi. WinForge.exe üzerinden çalıştırın ve mevcut menü kaydını kontrol edin.");
+            _isActive = true;
+        }
+        catch
         {
             _explorerVerb.Uninstall();
             _folderVerb.Uninstall();
-            _context?.Notify("Gezgin menüsü kaydedilemedi. WinForge.exe üzerinden çalıştırın ve mevcut menü kaydını kontrol edin.");
+            throw;
         }
-        _isActive = true;
     }
 
     public void Deactivate()
@@ -123,9 +128,9 @@ internal sealed class FileLocksmithWindow : Window
                 UpdateTerminateState();
                 break;
             case "file-locksmith.terminate":
-                _confirmTerminate = false;
                 if (payload.TryGetProperty("confirm", out var confirmed) && confirmed.ValueKind == JsonValueKind.True) TerminateSelected(true);
-                else PushUiState();
+                else if (confirmed.ValueKind == JsonValueKind.False) { _confirmTerminate = false; PushUiState(); }
+                else TerminateSelected();
                 break;
             case "file-locksmith.close": Close(); break;
         }
@@ -209,6 +214,7 @@ internal sealed class FileLocksmithWindow : Window
             return;
         }
 
+        _confirmTerminate = false;
         try
         {
             RestartManagerQuery.Terminate(selected);
