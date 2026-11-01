@@ -4,6 +4,8 @@
 
 Sistem simgeleri bölümünde ses, ağ, pil, mikrofon, konum/GPS, Studio Effects, Recall ve dil göstergesi gizlenebilir. Bildirim zili Windows'a bırakılabilir, sürekli gizlenebilir veya yeni bildirim olmadığında gizlenebilir. Son seçenek bilinen boş zil simgelerini izler; tanınmayan bir bildirim durumunu gizlemez. Ortak mikrofon/konum göstergesi yalnızca iki gösterge de gizlendiğinde kaldırılır. Saat ve uygulamaların bildirim simgeleri bu kontrollerden bağımsızdır.
 
+Tasarım bölümündeki **Özel görev çubuğu arka planı** açıldığında renk seçiciden veya `#RRGGBB` koduyla arka plan rengi, %0–100 aralığında opaklık seçilebilir. %0 tamamen saydam, %100 tamamen opaktır; simge ve yazıların opaklığı değişmez. Özel arka plan, temanın renginin yerine geçer; Dock yerleşimi korunur. Anahtar kapatıldığında seçili temanın arka planı geri gelir, Varsayılan temada Windows arka planı kullanılır. Ayarlar kaydedilir ve tasarım bileşeni etkinken uygulanır.
+
 Masaüstünü göster düğmesi gizlenebilir veya 1–100 mantıksal piksel genişliğinde ayarlanabilir. `0`, Windows genişliğini korur; gizleme açıkken genişlik uygulanmaz.
 
 Dock efekti uygulama düğmesinin üzerine gelindiğinde simgeyi büyütür; imleç ayrılınca eski ölçeğine döner. Büyütme %105–160, süre 50–500 ms aralığındadır. Windows animasyonları kapalıysa büyütme/küçültme anında gerçekleşir. Efekt kapatıldığında özgün dönüşüm ve dönüşüm merkezi, varsa XAML bağlamalarıyla birlikte geri yüklenir. Kabuk motorunun sahiplik kalp atışı kesildiğinde de geri alma uygulanır.
@@ -19,6 +21,7 @@ Test uygulaması aşağıdaki seçenekleri sunar:
 - `--shell-only`: ayrı XAML penceresinde gerçek uygulama/geri alma, öğe tanıtıcısı seçimi, dönüşümün kalp atışı kaybında geri alınması ve bağlamaların korunması.
 - `--tray-live`: yalnızca teste ait simgeler üzerinde tepsiye taşıma ve özgün durumun geri yüklenmesi.
 - `--taskbar-panel-only`: gerçek WebView2 üzerinde birleşik panel, bölüm başlıkları, Başlat anahtarı, yerelleştirilmiş zil seçimi ve ayarların yerel köprü üzerinden kaydedilmesi. `artifacts/taskbar-panel.png` önizlemesini üretir.
+- `--taskbar-background-live`: gerçek görev çubuğunda özel rengin %100, %50 ve %0 opaklıkla uygulanması ve özel arka plan kapatılınca tema renginin geri gelmesi.
 
 Canlı testler makinedeki yatay alt görev çubuğunu kullanır. Farklı Windows derlemeleri, üst/dikey yerleşimler ve bu makinede bulunmayan donanım göstergeleri için canlı doğrulama ayrıca gereklidir. Sistemin animasyon tercihi kapalı olduğunda canlı dock testi anlık büyütme/küçültme yolunu doğrular.
 

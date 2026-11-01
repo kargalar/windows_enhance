@@ -103,18 +103,6 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} panel placement and automatic settings checks.");
                 return 0;
             }
-            if (args.Contains("--island-ui-only"))
-            {
-                DynamicIslandChecks.RunUi(Check);
-                Console.WriteLine($"PASS: {_passed} Dynamic Island WebView2 checks.");
-                return 0;
-            }
-            if (args.Contains("--island-only"))
-            {
-                DynamicIslandChecks.Run(Check);
-                Console.WriteLine($"PASS: {_passed} Dynamic Island checks.");
-                return 0;
-            }
             if (args.Contains("--volume-overlay-only"))
             {
                 VolumeOverlayChecks.Run(Check);
@@ -263,10 +251,28 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} taskbar panel checks.");
                 return 0;
             }
+            if (args.Contains("--taskbar-background-live"))
+            {
+                TaskbarCustomizationChecks.RunBackgroundLive(Check);
+                Console.WriteLine($"PASS: {_passed} live taskbar background checks.");
+                return 0;
+            }
             if (args.Contains("--taskbar-customization-live"))
             {
                 TaskbarCustomizationChecks.RunLive(Check);
                 Console.WriteLine($"PASS: {_passed} taskbar customization live checks.");
+                return 0;
+            }
+            if (args.Contains("--taskbar-height-live"))
+            {
+                TaskbarCustomizationChecks.RunHeightLive(Check);
+                Console.WriteLine($"PASS: {_passed} taskbar height geometry checks.");
+                return 0;
+            }
+            if (args.Contains("--taskbar-width-live"))
+            {
+                TaskbarCustomizationChecks.RunWidthLive(Check);
+                Console.WriteLine($"PASS: {_passed} taskbar width geometry checks.");
                 return 0;
             }
             if (args.Contains("--tray-live"))

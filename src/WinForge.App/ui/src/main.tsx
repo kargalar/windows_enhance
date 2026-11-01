@@ -58,11 +58,6 @@ type AppState = {
 
 const previewState: AppState = {
   modules: [
-    { id: 'dynamic-island', name: 'Dynamic Island', category: 'Sistem', description: 'Medya, odak ve sistem olayları. Masaüstünün üzerinde yaşayan küçük bir ada.', isActive: false, settings: [
-      { key: 'preview', label: 'Adayı göster', kind: 'action', min: 0, max: 0, options: [], optionLabels: {} },
-      { key: 'hover', label: 'Üzerine gelince genişlet', kind: 'toggle', value: true, min: 0, max: 1, options: [], optionLabels: {} },
-      { key: 'theme', label: 'Kapsül teması', kind: 'choice', value: 'obsidian', min: 0, max: 0, options: ['obsidian', 'graphite', 'evergreen'], optionLabels: { obsidian: 'Obsidyen', graphite: 'Grafit', evergreen: 'Orman' } },
-    ] },
     { id: 'taskbar-tools', name: 'Görev çubuğu araçları', category: 'Görev çubuğu', description: 'Windows görev çubuğuna küçük, kullanışlı ayarlar ekler.', isActive: true, settings: [
       { key: 'seconds', label: 'Saatte saniyeleri göster', description: 'Görev çubuğu saatine saniye ekler.', kind: 'toggle', value: true, min: 0, max: 1, options: [], optionLabels: {} },
       { key: 'opacity', label: 'Saydamlık düzeyi', description: 'Görev çubuğunun arka plan opaklığını ayarlar.', kind: 'number', value: 72, min: 0, max: 100, options: [], optionLabels: {} },
@@ -78,7 +73,7 @@ const previewState: AppState = {
       { key: 'brightness-hotkey', label: 'Parlaklık kısayolu', kind: 'text', value: 'Ctrl+Alt+F12', min: 0, max: 0, options: [], optionLabels: {} },
     ] },
   ],
-  categories: ['Görev çubuğu', 'Sistem'], activeCount: 2, totalCount: 4, version: '1.0.0',
+  categories: ['Görev çubuğu', 'Sistem'], activeCount: 2, totalCount: 3, version: '1.0.0',
   appearance: { tone: 'Siyah', accent: 'Mavi', glow: false, tones: ['Siyah', 'Grafit'], accents: [{ name: 'Mavi', hex: '#75A7FF' }, { name: 'Yeşil', hex: '#4CD97B' }, { name: 'Kırmızı', hex: '#FF6B6B' }] },
 };
 

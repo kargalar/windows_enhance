@@ -20,7 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WinForge.Modules.DynamicIsland\WinForge.Modules.DynamicIsland.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
     <ProjectReference Include="..\WinForge.Core\WinForge.Core.csproj" />
     <ProjectReference Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
@@ -74,7 +73,7 @@
       <ModuleProjects Include="@(ProjectReference)" Condition="'%(ProjectReference.ReferenceOutputAssembly)' == 'false'" />
       <ModuleProjects Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
       <ModuleProjects Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
-      <RetiredFiles Include="$(OutDir)dictation\WinForge.Dictation.Worker.*;$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)modules\WinForge.Modules.Launcher.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
+      <RetiredFiles Include="$(OutDir)dictation\WinForge.Dictation.Worker.*;$(OutDir)modules\WinForge.Modules.DynamicIsland.*;$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)modules\WinForge.Modules.Launcher.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
     </ItemGroup>
     <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
       <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />

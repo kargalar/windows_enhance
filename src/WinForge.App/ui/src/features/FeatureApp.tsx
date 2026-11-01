@@ -3,7 +3,6 @@ import './features.css';
 import { OsdControls } from './OsdControls';
 import { CaptureEditorView, type CaptureEditorState } from './CaptureEditor';
 import { DefaultAppsPanel, DefaultPathsPanel } from './DefaultSettingsPanels';
-import { DynamicIsland, previewIsland, type IslandState } from './DynamicIsland';
 
 const islandToolViews = new Set(['nashi', 'nashi-settings', 'nashi-setup', 'nashi-metadata-editor', 'nashi-pdf-organizer', 'clipboard-shelf', 'clipboard-settings', 'clipboard-prompt', 'clipboard-preview', 'nashi-tool-editor', 'nashi-progress', 'nashi-qr-results', 'clipboard-recording-trim']);
 
@@ -756,7 +755,7 @@ export function FeatureApp({ view }: { view: string }) {
     if (!bridge) {
       if (view === 'default-paths' || view === 'default-apps') return;
       if (import.meta.env.DEV) {
-        const preview = view === 'dynamic-island' ? previewIsland : view === 'net-speed-overlay'
+        const preview = view === 'net-speed-overlay'
           ? previewNetSpeed
           : view === 'taskbar-audio-visualizer'
             ? previewSpectrum
@@ -792,7 +791,6 @@ export function FeatureApp({ view }: { view: string }) {
   const send = (command: string, payload: Record<string, unknown> = {}) =>
     window.chrome?.webview?.postMessage({ command, payload });
 
-  if (view === 'dynamic-island') return <DynamicIsland state={state as unknown as IslandState | null} />;
   if (view === 'automation-active') {
     const automation = state as unknown as { active: { id: string; name: string; shortcut: string }[] } | null;
     return <div className="feature-root automation-active-overlay" role="status" aria-live="polite">

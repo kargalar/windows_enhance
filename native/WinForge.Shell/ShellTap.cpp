@@ -57,6 +57,9 @@ struct Node {
     std::vector<SavedProperty> saved;
     std::unique_ptr<TaskbarGeometry> geometry;
     std::unique_ptr<TaskbarDockAnimation> dock;
+    ColumnDefinition iconColumn{nullptr};
+    XamlValue originalIconColumnWidth{nullptr};
+    double iconColumnWidth{};
 };
 struct SnapshotNode {
     InstanceHandle parent{};
@@ -168,9 +171,19 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
         InterlockedIncrement(&session_.Get()->restored);
     }
 
+    static void RestoreIconColumn(Node& node) {
+        if (!node.iconColumn) return;
+        if (node.originalIconColumnWidth == DependencyProperty::UnsetValue()) node.iconColumn.ClearValue(ColumnDefinition::WidthProperty());
+        else node.iconColumn.SetValue(ColumnDefinition::WidthProperty(), node.originalIconColumnWidth);
+        node.iconColumn = nullptr;
+        node.originalIconColumnWidth = nullptr;
+        node.iconColumnWidth = 0;
+    }
+
     void Restore(Node& node) noexcept {
         try {
             node.dock.reset();
+            RestoreIconColumn(node);
             auto element = node.element.get();
             if (!element) { node.saved.clear(); return; }
             for (auto iterator = node.saved.rbegin(); iterator != node.saved.rend(); ++iterator) {
@@ -291,6 +304,16 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
             value = box_value(text == L"Collapsed" ? Visibility::Collapsed : Visibility::Visible);
         } else if (name == L"Margin") {
             property = FrameworkElement::MarginProperty(); value = box_value(ThicknessValue(text));
+        } else if (name == L"HorizontalAlignment" || name == L"HorizontalContentAlignment") {
+            HorizontalAlignment alignment;
+            if (text == L"Left") alignment = HorizontalAlignment::Left;
+            else if (text == L"Center") alignment = HorizontalAlignment::Center;
+            else if (text == L"Right") alignment = HorizontalAlignment::Right;
+            else if (text == L"Stretch") alignment = HorizontalAlignment::Stretch;
+            else throw hresult_invalid_argument();
+            if (name == L"HorizontalAlignment") property = FrameworkElement::HorizontalAlignmentProperty();
+            else if (element.try_as<Control>()) property = Control::HorizontalContentAlignmentProperty();
+            value = box_value(alignment);
         } else if (name == L"VerticalAlignment" || name == L"VerticalContentAlignment") {
             VerticalAlignment alignment;
             if (text == L"Top") alignment = VerticalAlignment::Top;
@@ -365,6 +388,25 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
                 }
                 desired.erase(animation);
             } else node.dock.reset();
+            if (auto width = desired.find(L"IconColumnWidth"); width != desired.end()) {
+                auto pixels = std::stod(width->second);
+                if (!std::isfinite(pixels) || pixels < 24 || pixels > 156) throw hresult_invalid_argument();
+                auto grid = element.as<Grid>();
+                if (!node.iconColumn && grid.ColumnDefinitions().Size() > 0) {
+                    int index = 0;
+                    for (auto const& child : grid.Children()) {
+                        if (auto item = child.try_as<FrameworkElement>(); item && item.Name() == L"Icon") {
+                            index = Grid::GetColumn(item);
+                            break;
+                        }
+                    }
+                    node.iconColumn = grid.ColumnDefinitions().GetAt(static_cast<uint32_t>(index));
+                    node.originalIconColumnWidth = node.iconColumn.ReadLocalValue(ColumnDefinition::WidthProperty());
+                }
+                node.iconColumnWidth = pixels;
+                if (node.iconColumn) node.iconColumn.Width(GridLength{pixels, GridUnitType::Pixel});
+                desired.erase(width);
+            } else RestoreIconColumn(node);
             if (node.type == L"Taskbar.TaskbarFrame" && desired.contains(L"Height")) {
                 auto host = GetAncestor(HostWindow(node), GA_ROOT);
                 wchar_t name[64]{};
@@ -578,13 +620,14 @@ public:
         entry.dockScale = node.dock ? node.dock->Scale() : 1.0;
         entry.opacity = element.Opacity();
         entry.visibility = element.Visibility() == Visibility::Visible ? L"Visible" : L"Collapsed";
-        if (node.type.starts_with(L"Taskbar.") || node.type.starts_with(L"SystemTray.")) {
+        {
             try {
                 auto host = HostWindow(node);
                 RECT bounds{};
                 if (host && GetWindowRect(host, &bounds)) {
-                    if (auto peer = Automation::Peers::FrameworkElementAutomationPeer::CreatePeerForElement(element)) {
-                        auto relative = peer.GetBoundingRectangle();
+                    {
+                        auto relative = element.TransformToVisual(nullptr).TransformBounds(
+                            Rect{0, 0, static_cast<float>(entry.width), static_cast<float>(entry.height)});
                         auto scale = static_cast<float>(GetDpiForWindow(host)) / 96.0f;
                         entry.screenBounds = Rect{bounds.left + relative.X * scale, bounds.top + relative.Y * scale,
                             relative.Width * scale, relative.Height * scale};
@@ -641,6 +684,20 @@ public:
                 (void)handle;
                 if (node.geometry && !node.geometry->Refresh())
                     RecordError(HRESULT_FROM_WIN32(GetLastError()), node.geometry->DescribeDiagnostic());
+                // Explorer refreshes the fixed icon column and panel width
+                // when button states change. Preserve the active compact size.
+                if (node.iconColumn) {
+                    auto width = GridLength{node.iconColumnWidth, GridUnitType::Pixel};
+                    auto current = node.iconColumn.Width();
+                    if (current.Value != width.Value || current.GridUnitType != width.GridUnitType)
+                        node.iconColumn.Width(width);
+                    if (auto element = node.element.get()) {
+                        for (auto const& saved : node.saved) {
+                            if (saved.name == L"Width" && element.Width() != std::stod(saved.desired))
+                                element.Width(std::stod(saved.desired));
+                        }
+                    }
+                }
                 UpdateSnapshot(node);
             }
             WriteSnapshot();

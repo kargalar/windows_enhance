@@ -17,7 +17,7 @@
       <Output TaskParameter="TargetOutputs" ItemName="TestModules" />
     </MSBuild>
     <ItemGroup>
-      <RetiredTestFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)modules\WinForge.Modules.Launcher.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
+      <RetiredTestFiles Include="$(OutDir)modules\WinForge.Modules.DynamicIsland.*;$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)modules\WinForge.Modules.Launcher.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
       <NativeShellTestFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellHost.exe;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellTap.dll;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellFixture.exe" />
       <NativeShellTestFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ContextMenuTap.dll" />
       <ReactTestFiles Include="$(MSBuildProjectDirectory)\..\..\src\WinForge.App\wwwroot\**\*" />

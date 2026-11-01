@@ -46,3 +46,5 @@ ekran geçmişi için de path seçemme izin ver görseller için.
 sesle yazma modülünde mikrofon seçimlerinde mikofonların ismi düzgün gösterilmiyor. düzelt.
 
 medya kısayollarında sesi arttır seçilince ne kadar arttırılacağı ayrıca ayarlansın ayı şekilde azaltırken de
+
+taskbar arkaplan rengi ve opaklığı ayarlanabilsin

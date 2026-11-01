@@ -41,13 +41,19 @@ internal static class ShellEngineChecks
             WaitUntil(() => ReadWidth(window) == 160, "XAML property restoration");
             check(session.Status.Restored > 0, "Disabling shell styles restores the original local property value");
             session.Apply(true, [
-                new ShellStyleRule("#WinForgeVerificationTarget", new Dictionary<string, string> { ["VerticalAlignment"] = "Center" }),
-                new ShellStyleRule("#WinForgeAlignmentTarget", new Dictionary<string, string> { ["VerticalContentAlignment"] = "Center" })]);
+                new ShellStyleRule("#WinForgeVerificationTarget", new Dictionary<string, string> { ["VerticalAlignment"] = "Center", ["HorizontalAlignment"] = "Center" }),
+                new ShellStyleRule("#WinForgeAlignmentTarget", new Dictionary<string, string> { ["VerticalContentAlignment"] = "Center", ["HorizontalContentAlignment"] = "Center" })]);
             WaitUntil(() => SendMessageTimeout(window, 0x0404, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Vertical alignment application");
             check(session.Status.Errors == 0, "Native bridge centers both framework elements and control content");
             session.Apply(false, []);
             WaitUntil(() => SendMessageTimeout(window, 0x0405, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Vertical alignment restoration");
-            check(true, "Disabling height alignment restores the original stretch and bottom alignments");
+            check(true, "Disabling alignment restores the original horizontal and vertical alignments");
+            session.Apply(true, [new ShellStyleRule("#WinForgeColumnTarget", new Dictionary<string, string> { ["IconColumnWidth"] = "28" })]);
+            WaitUntil(() => SendMessageTimeout(window, 0x0407, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result.ToInt32() == 28, "Icon column width application");
+            check(session.Status.Errors == 0, "Native bridge shrinks the fixed icon column inside a button template");
+            session.Apply(false, []);
+            WaitUntil(() => SendMessageTimeout(window, 0x0407, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result.ToInt32() == 44, "Icon column width restoration");
+            check(true, "Disabling custom button width restores the exact original icon column width");
             var targetHandle = session.ReadVisualTree().Single(node => node.Name == "WinForgeVerificationTarget").Handle;
             session.Apply(true, [new ShellStyleRule("@" + targetHandle.ToString(CultureInfo.InvariantCulture), new Dictionary<string, string> { ["Width"] = "280", ["DockAnimation"] = "125,160" })]);
             WaitUntil(() => ReadWidth(window) == 280, "Repeated XAML style application");

@@ -25,6 +25,42 @@ internal static class TaskbarCustomizationChecks
         check(new[] { "hide-start", "hide-volume", "hide-network", "hide-battery", "hide-microphone", "hide-location", "hide-studio-effects", "hide-recall", "hide-language", "hide-bell", "hide-show-desktop", "show-desktop-width", "dock-animation" }
             .All(key => module.Settings.Any(setting => setting.Key == key)), "The unified panel exposes every requested visibility and dock control");
         TestRules(check);
+        TestBackground(check);
+    }
+
+    private static void TestBackground(Action<bool, string> check)
+    {
+        var settings = new Context().Settings;
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        IReadOnlyList<ShellStyleRule> Build() => (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, null])!;
+        string? Fill() => Build().SingleOrDefault(rule => rule.Selector == "Rectangle#BackgroundFill")?.Properties["Fill"];
+
+        settings.Set("background-color", "#abcdef");
+        settings.Set("background-opacity", 50);
+        check(Fill() is null, "Stored custom background values leave the Windows background untouched until enabled");
+        settings.Set("custom-background", true);
+        check(Fill() == "#80ABCDEF" && Build().All(rule => !rule.Properties.ContainsKey("Opacity")),
+            "Custom color and 50 percent opacity affect only the background brush, preserving icon opacity");
+        settings.Set("background-opacity", -10);
+        check(Fill() == "#00ABCDEF", "Background opacity clamps below zero to full transparency");
+        settings.Set("background-opacity", 200);
+        check(Fill() == "#FFABCDEF", "Background opacity clamps above 100 to fully opaque");
+        settings.Set("theme", "Dock");
+        check(Fill() == "#FFABCDEF" && Build().Any(rule => rule.Selector == "Taskbar.TaskbarFrame" && rule.Properties.ContainsKey("Margin")),
+            "Custom background overrides theme color while preserving Dock layout");
+        settings.Set("custom-background", false);
+        check(Fill() == "#E6222936", "Disabling custom background restores the selected theme color and alpha");
+        settings.Set("theme", "Varsayılan");
+        check(Fill() is null, "Disabling custom background with the default theme releases the background override");
+        settings.Set("custom-background", true);
+        foreach (var invalid in new[] { "", "#123", "#FF123456", "#GG0000", "# 12345" })
+        {
+            settings.Set("background-color", invalid);
+            var rejected = false;
+            try { Build(); }
+            catch (TargetInvocationException exception) when (exception.InnerException is ArgumentException) { rejected = true; }
+            check(rejected, $"Invalid stored background color '{invalid}' is rejected before reaching the native bridge");
+        }
     }
 
     private static void TestMigration(string directory, Action<bool, string> check)
@@ -110,10 +146,129 @@ internal static class TaskbarCustomizationChecks
             .All(selector => styles.Any(rule => rule.Selector == selector && rule.Properties.GetValueOrDefault("MinHeight") == "0" &&
                 rule.Properties.GetValueOrDefault("Height") == "32" && rule.Properties.GetValueOrDefault("VerticalContentAlignment") == "Center")),
             "Compact taskbars resize and center tray glyphs and clock content instead of retaining native 48-DIP areas");
+        check(styles.Any(rule => rule.Selector == "Taskbar.TaskListButton Image#Icon" && rule.Properties.GetValueOrDefault("Margin") == "0" &&
+                rule.Properties.GetValueOrDefault("VerticalAlignment") == "Center"),
+            "Custom taskbar height removes the icon template's asymmetric vertical margin");
         settings.Set("taskbar-height", 0);
         styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
         check(styles.All(rule => !rule.Properties.ContainsKey("VerticalContentAlignment") && !rule.Properties.ContainsKey("VerticalAlignment")),
             "Default taskbar height releases the alignment overrides for native restoration");
+        settings.Set("button-width", 28);
+        styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
+        check(styles.Any(rule => rule.Selector == "Taskbar.TaskListButton Grid#IconPanel" && rule.Properties.GetValueOrDefault("Width") == "28" &&
+                rule.Properties.GetValueOrDefault("MinWidth") == "0") &&
+            styles.Any(rule => rule.Selector == "Taskbar.TaskListButton Image#Icon" && rule.Properties.GetValueOrDefault("HorizontalAlignment") == "Center"),
+            "Narrow buttons resize their inner icon panel and center the icon instead of clipping a native-width panel");
+        settings.Set("button-width", 0);
+        styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
+        check(styles.All(rule => !rule.Properties.ContainsKey("HorizontalContentAlignment") && !rule.Properties.ContainsKey("HorizontalAlignment")),
+            "Default button width releases horizontal alignment overrides");
+    }
+
+    internal static void RunBackgroundLive(Action<bool, string> check)
+    {
+        var module = (ITweakModule)Activator.CreateInstance(ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarModule")!)!;
+        var context = new Context();
+        context.Settings.Set("behavior-enabled", false);
+        context.Settings.Set("tray-enabled", false);
+        context.Settings.Set("custom-background", true);
+        context.Settings.Set("background-color", "#336699");
+        module.Initialize(context);
+        try
+        {
+            module.Activate();
+            var design = module.GetType().GetField("_design", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(module)!;
+            var session = (ShellDiagnosticsSession)design.GetType().GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(design)!;
+            foreach (var (opacity, fill) in new[] { (100, "#FF336699"), (50, "#80336699"), (0, "#00336699") })
+            {
+                context.Settings.Set("background-opacity", opacity);
+                module.Apply();
+                try { WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "BackgroundFill" && node.Fill == fill), "Live background brush " + fill); }
+                catch
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new { session.Status, Backgrounds = session.ReadVisualTree().Where(node => node.Name.Contains("Background")) }));
+                    throw;
+                }
+                check(session.Status.Errors == 0, $"The live taskbar applies custom color at {opacity} percent background opacity");
+            }
+            context.Settings.Set("custom-background", false);
+            context.Settings.Set("theme", "Gece");
+            module.Apply();
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "BackgroundFill" && node.Fill == "#F0171B24"), "Theme restoration after custom background");
+            check(session.Status.Errors == 0, "Disabling the live custom background restores the selected theme");
+        }
+        finally { module.Deactivate(); }
+    }
+
+    internal static void RunWidthLive(Action<bool, string> check)
+    {
+        var taskbar = Native.FindWindow("Shell_TrayWnd", null);
+        Native.GetWindowThreadProcessId(taskbar, out var processId);
+        using var session = ShellDiagnosticsSession.ConnectAsync(processId, Path.Combine(AppContext.BaseDirectory, "native")).GetAwaiter().GetResult();
+        WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "Taskbar.TaskbarFrame"), "Taskbar width enumeration");
+        var settings = new Context().Settings;
+        settings.Set("app-icon-size", 20);
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        foreach (var height in new[] { 0, 32 })
+        foreach (var width in new[] { 28, 32, 44, 60, 100, 28 })
+        {
+            settings.Set("taskbar-height", height);
+            settings.Set("button-width", width);
+            session.Apply(true, (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, null])!);
+            try { WaitUntil(() =>
+            {
+                var tree = session.ReadVisualTree();
+                var frame = tree.FirstOrDefault(node => node.Type == "Taskbar.TaskbarFrame");
+                if (frame is null) return false;
+                var buttons = tree.Where(node => node.Type == "Taskbar.TaskListButton" && node.Visibility == "Visible" &&
+                    node.ScreenWidth > 0 && node.ScreenLeft >= frame.ScreenLeft && node.ScreenLeft < frame.ScreenLeft + frame.ScreenWidth).ToArray();
+                return buttons.Length > 0 && buttons.All(button =>
+                {
+                    var panels = tree.Where(node => node.Parent == button.Handle && node.Name == "IconPanel").Select(node => node.Handle).ToHashSet();
+                    var icon = tree.FirstOrDefault(node => panels.Contains(node.Parent) && node.Name == "Icon" && node.Type.EndsWith(".Image") && node.Visibility == "Visible");
+                    var background = tree.FirstOrDefault(node => panels.Contains(node.Parent) && node.Name == "BackgroundElement" && node.Visibility == "Visible");
+                    return Math.Abs(button.Width - width) < 0.1 && icon is not null && Math.Abs(icon.Width - 20) < 0.1 &&
+                        Math.Abs(icon.ScreenLeft + icon.ScreenWidth / 2 - button.ScreenLeft - button.ScreenWidth / 2) <= 1 &&
+                        background is not null && background.ScreenWidth <= button.ScreenWidth &&
+                        Math.Abs(background.ScreenLeft + background.ScreenWidth / 2 - button.ScreenLeft - button.ScreenWidth / 2) <= 1;
+                });
+            }, $"Centered application icon geometry at width {width}, height {height}"); }
+            catch
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { session.Status, Tree = session.ReadVisualTree() }));
+                throw;
+            }
+            check(session.Status.Errors == 0, $"Button width {width} keeps icons centered at taskbar height {height}");
+        }
+    }
+
+    internal static void RunHeightLive(Action<bool, string> check)
+    {
+        var taskbar = Native.FindWindow("Shell_TrayWnd", null);
+        Native.GetWindowThreadProcessId(taskbar, out var processId);
+        using var session = ShellDiagnosticsSession.ConnectAsync(processId, Path.Combine(AppContext.BaseDirectory, "native")).GetAwaiter().GetResult();
+        WaitUntil(() => session.ReadVisualTree().Any(node => node.Type == "Taskbar.TaskbarFrame"), "Taskbar height enumeration");
+        var settings = new Context().Settings;
+        settings.Set("app-icon-size", 20);
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        foreach (var height in new[] { 24, 32, 35, 48, 64, 32 })
+        {
+            settings.Set("taskbar-height", height);
+            var styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, null])!;
+            session.Apply(true, styles);
+            WaitUntil(() =>
+            {
+                var tree = session.ReadVisualTree();
+                var frame = tree.FirstOrDefault(node => node.Type == "Taskbar.TaskbarFrame");
+                if (frame is null) return false;
+                var icons = tree.Where(node => node.Name == "Icon" && node.Type.EndsWith(".Image") && node.Visibility == "Visible" &&
+                    node.ScreenWidth > 0 && node.ScreenLeft >= frame.ScreenLeft && node.HostHeight == frame.HostHeight).ToArray();
+                return Math.Abs(frame.Height - height) < 0.1 && icons.Length > 0 && icons.All(icon => Math.Abs(icon.Height - 20) < 0.1 &&
+                    Math.Abs(icon.ScreenTop + icon.ScreenHeight / 2 - frame.ScreenTop - frame.ScreenHeight / 2) <= 1);
+            }, "Centered application icon geometry at height " + height);
+            check(session.Status.Errors == 0,
+                $"Application icons remain centered within one physical pixel at taskbar height {height}");
+        }
     }
 
     internal static void RunLive(Action<bool, string> check)

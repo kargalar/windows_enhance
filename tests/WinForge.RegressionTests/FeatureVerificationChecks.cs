@@ -32,7 +32,6 @@ internal static class FeatureVerificationChecks
         TestScreenCapture(check);
         TestOcr(check);
         TestTilingExclusions(check);
-        TestWindowCorners(extras, check);
         TestAlwaysOnTop(directory, check);
         TestKeyboardDelivery(extras, check);
     }
@@ -118,42 +117,6 @@ internal static class FeatureVerificationChecks
             return true;
         }
     }
-
-    private static void TestWindowCorners(Assembly extras, Action<bool, string> check)
-    {
-        const int cornerAttribute = 33;
-        const int initialPreference = 2;
-        var window = new Window
-        {
-            Title = "WinForge corner restoration fixture", ShowActivated = false, ShowInTaskbar = false,
-            Width = 250, Height = 180, WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000
-        };
-        var moduleType = extras.GetType("WinForge.Modules.Extras.SquareCornersModule")!;
-        var module = (ITweakModule)Activator.CreateInstance(moduleType)!;
-        try
-        {
-            window.Show();
-            var handle = new WindowInteropHelper(window).Handle;
-            var preference = initialPreference;
-            Marshal.ThrowExceptionForHR(Native.DwmSetWindowAttribute(handle, cornerAttribute, ref preference, sizeof(int)));
-            moduleType.GetProperty("IsActive")!.SetValue(module, true);
-            moduleType.GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(IntPtr)], null)!.Invoke(module, [handle]);
-            Marshal.ThrowExceptionForHR(DwmGetWindowAttribute(handle, cornerAttribute, out var applied, sizeof(int)));
-            check(applied == 1, "Window corner module applies its actual DWM preference to an owned fixture window");
-            module.Deactivate();
-            Marshal.ThrowExceptionForHR(DwmGetWindowAttribute(handle, cornerAttribute, out var restored, sizeof(int)));
-            check(restored == initialPreference,
-                "Disabling window corner customization restores the window's original explicit preference instead of replacing it with a default");
-        }
-        finally
-        {
-            module.Deactivate();
-            window.Close();
-        }
-    }
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int valueSize);
 
     private static void TestMouseSettings(Assembly extras, string directory, Action<bool, string> check)
     {

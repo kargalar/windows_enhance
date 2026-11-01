@@ -24,6 +24,16 @@ internal static class TaskbarStyleCatalog
             "Dock" => "#E6222936",
             _ => null
         };
+        if (settings.GetBool("custom-background"))
+        {
+            var color = settings.GetString("background-color", "#171B24").Trim();
+            if (color.Length != 7 || color[0] != '#' ||
+                !uint.TryParse(color.AsSpan(1), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out _))
+                throw new ArgumentException("Görev çubuğu arka plan rengi #RRGGBB biçiminde olmalıdır.");
+            var opacity = Math.Clamp(settings.GetInt("background-opacity", 100), 0, 100);
+            var alpha = (opacity * 255 + 50) / 100;
+            fill = $"#{alpha:X2}{color[1..].ToUpperInvariant()}";
+        }
         if (fill is not null)
         {
             Add("Rectangle#BackgroundFill", ("Fill", fill));
@@ -43,6 +53,10 @@ internal static class TaskbarStyleCatalog
             var value = Math.Clamp(height, 24, 96).ToString(CultureInfo.InvariantCulture);
             Add("Taskbar.TaskbarFrame", ("Height", value), ("MinHeight", value), ("MaxHeight", value));
             Add("Taskbar.TaskListButton", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("Padding", "0"), ("VerticalContentAlignment", "Center"));
+            Add("Taskbar.ExperienceToggleButton", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("Padding", "0"), ("VerticalContentAlignment", "Center"));
+            Add("Taskbar.TaskListButtonPanel", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value));
+            Add("Taskbar.TaskListButton Grid#IconPanel", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("Margin", "0"));
+            Add("Taskbar.TaskListButton Image#Icon", ("Margin", "0"), ("VerticalAlignment", "Center"));
             Add("SystemTray.SystemTrayFrame", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value));
             // Tray content can retain its native 48-DIP minimum even after the
             // frame shrinks, leaving glyphs centered below the visible bar.
@@ -58,7 +72,11 @@ internal static class TaskbarStyleCatalog
         if (buttonWidth != 0)
         {
             var value = Math.Clamp(buttonWidth, 28, 160).ToString(CultureInfo.InvariantCulture);
-            Add("Taskbar.TaskListButton", ("MinWidth", value), ("Width", value));
+            Add("Taskbar.TaskListButton", ("MinWidth", "0"), ("Width", value), ("MaxWidth", value), ("Padding", "0"), ("HorizontalContentAlignment", "Stretch"));
+            var backgroundWidth = (Math.Clamp(buttonWidth, 28, 160) - 4).ToString(CultureInfo.InvariantCulture);
+            Add("Taskbar.TaskListButton Grid#IconPanel", ("MinWidth", "0"), ("Width", value), ("MaxWidth", value), ("Margin", "0"), ("IconColumnWidth", backgroundWidth));
+            Add("Taskbar.TaskListButton Image#Icon", ("Margin", "0"), ("HorizontalAlignment", "Center"));
+            Add("Taskbar.TaskListButton Border", ("MinWidth", "0"), ("Width", backgroundWidth), ("MaxWidth", backgroundWidth));
         }
         if (settings.GetBool("tray-two-rows"))
         {

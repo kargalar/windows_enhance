@@ -3,6 +3,7 @@
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <winrt/base.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
@@ -20,14 +21,18 @@ using namespace Windows::UI::Xaml::Hosting;
 static Border fixture{nullptr};
 static Slider bindingSource{nullptr};
 static Button alignmentTarget{nullptr};
+static ColumnDefinition widthTarget{nullptr};
 static HWND parentWindow{};
 static LRESULT CALLBACK FixtureProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_USER + 1) return static_cast<LRESULT>(fixture.Width());
     if (message == WM_USER + 2) { bindingSource.Value(static_cast<double>(wParam)); return 1; }
+    if (message == WM_USER + 7) return static_cast<LRESULT>(widthTarget.Width().Value);
     if (message == WM_USER + 4) return fixture.VerticalAlignment() == VerticalAlignment::Center &&
-        alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Center;
+        alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Center &&
+        fixture.HorizontalAlignment() == HorizontalAlignment::Center && alignmentTarget.HorizontalContentAlignment() == HorizontalAlignment::Center;
     if (message == WM_USER + 5) return fixture.VerticalAlignment() == VerticalAlignment::Stretch &&
-        alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Bottom;
+        alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Bottom &&
+        fixture.HorizontalAlignment() == HorizontalAlignment::Stretch && alignmentTarget.HorizontalContentAlignment() == HorizontalAlignment::Right;
     if (message == WM_USER + 3) {
         auto transform = fixture.RenderTransform().try_as<Media::TranslateTransform>();
         auto origin = fixture.RenderTransformOrigin();
@@ -76,7 +81,14 @@ int wmain() {
         alignmentTarget = Button();
         alignmentTarget.Name(L"WinForgeAlignmentTarget");
         alignmentTarget.VerticalContentAlignment(VerticalAlignment::Bottom);
-        alignmentTarget.Content(label);
+        alignmentTarget.HorizontalContentAlignment(HorizontalAlignment::Right);
+        Grid iconPanel;
+        iconPanel.Name(L"WinForgeColumnTarget");
+        widthTarget = ColumnDefinition();
+        widthTarget.Width(GridLength{44, GridUnitType::Pixel});
+        iconPanel.ColumnDefinitions().Append(widthTarget);
+        iconPanel.Children().Append(label);
+        alignmentTarget.Content(iconPanel);
         fixture.Child(alignmentTarget);
         source.Content(fixture);
         ShowWindow(parentWindow, SW_SHOWNOACTIVATE);

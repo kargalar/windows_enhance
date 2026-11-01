@@ -51,6 +51,8 @@ internal static class CombinedModuleChecks
         var logger = new FileLogger(Path.Combine(directory, "combined-modules.log"));
         var host = new ModuleHost(reloaded, logger, new NoHotkeys(), Path.Combine(AppContext.BaseDirectory, "modules"), _ => { });
         host.Load();
+        check(host.Modules.All(module => module.Id != "square-corners" && module.Id != "dynamic-island"),
+            "Removed window corners and Dynamic Island modules are absent from discovery");
         check(host.Modules.Count(module => module.Id == "start-menu") == 1 && host.Modules.Count(module => module.Id == "mouse") == 1,
             "Discovery exposes one Start Menu module and one Mouse module");
         check(!host.Modules.Any(module => new[] { "start-appearance", "start-tweaks", "search-tweaks", "mouse-tweaks", "mouse-spotlight", "mouse-jump", "peek-preview" }.Contains(module.Id)),

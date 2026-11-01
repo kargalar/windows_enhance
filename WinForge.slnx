@@ -3,7 +3,6 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/src/">
-    <Project Path="src/WinForge.Modules.DynamicIsland/WinForge.Modules.DynamicIsland.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/WinForge.History/WinForge.History.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/WinForge.Modules.Capture/WinForge.Modules.Capture.csproj"><Platform Project="x64" /></Project>
     <Project Path="src/WinForge.Modules.FileTools/WinForge.Modules.FileTools.csproj">

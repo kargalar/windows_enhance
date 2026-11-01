@@ -47,7 +47,18 @@ internal static class TaskbarPanelChecks
             check(Script("document.querySelector('input[aria-label=\"Masaüstünü göster genişliği (0: Windows)\"]')?.max") == "\"100\"" &&
                   Script("document.querySelector('input[aria-label=\"Büyütme (%)\"]')?.max") == "\"160\"",
                 "The rendered desktop-width and dock-scale inputs expose their validated limits");
-            Script("[...document.querySelectorAll('.settings-section')].find(x => x.querySelector('h3')?.textContent === 'Sistem simgeleri').scrollIntoView()");
+            check(Script("document.querySelector('input[type=color][aria-label=\"Görev çubuğu arka plan rengi seçici\"]') !== null && document.querySelector('input[aria-label=\"Görev çubuğu arka plan opaklığı (%)\"]')?.max === '100'") == "true",
+                "The taskbar panel renders a color picker and a zero-to-100 background opacity slider");
+            Script("document.querySelector('[role=switch][aria-label=\"Özel görev çubuğu arka planı\"]').click()");
+            WaitUntil(() => host.SettingsOf(module).GetBool("custom-background"), "Custom background switch persistence");
+            Script("(() => { const input = document.querySelector('input[type=color][aria-label=\"Görev çubuğu arka plan rengi seçici\"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '#336699'); input.dispatchEvent(new Event('input', {bubbles:true})); })()");
+            WaitUntil(() => host.SettingsOf(module).GetString("background-color") == "#336699", "Background color persistence");
+            Script("(() => { const input = document.querySelector('input[aria-label=\"Görev çubuğu arka plan opaklığı (%)\"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '50'); input.dispatchEvent(new Event('input', {bubbles:true})); })()");
+            WaitUntil(() => host.SettingsOf(module).GetInt("background-opacity") == 50, "Background opacity persistence");
+            var savedBackground = new SettingsStore(store.FilePath).For("taskbar");
+            check(savedBackground["custom-background"] == "true" && savedBackground["background-color"] == "#336699" && savedBackground["background-opacity"] == "50",
+                "Background toggle, color and opacity persist through the rendered controls and native settings bridge");
+            Script("[...document.querySelectorAll('.settings-section')].find(x => x.querySelector('h3')?.textContent === 'Tasarım').scrollIntoView()");
             var screenshotPath = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "taskbar-panel.png");
             Directory.CreateDirectory(Path.GetDirectoryName(screenshotPath)!);
             using var screenshot = File.Create(screenshotPath);

@@ -72,10 +72,6 @@ if ($ExtendedFileTools) {
 }
 & $executable @testArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-foreach ($islandCheck in @('--island-only', '--island-ui-only')) {
-    & $executable $islandCheck
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-}
 $folderSizeProject = Join-Path $root 'tests\WinForge.FolderSizeTests\WinForge.FolderSizeTests.csproj'
 dotnet build $folderSizeProject -c $Configuration -p:Platform=x64 -nologo
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

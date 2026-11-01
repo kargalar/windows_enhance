@@ -34,19 +34,9 @@ Doğrulama: `dotnet run --project tests/WinForge.AutomationTests -c Release -p:P
 
 Aynı modüldeki **Boyut → Uygulama simgesi boyutu (0: Windows)** ayarı, sabitlenmiş uygulamaların ve Tüm uygulamalar bölümünün simgelerini **16–48 mantıksal piksel** arasında değiştirir. **0** özgün boyutları geri yükler. Klasörlerin küçük önizleme simgeleri korunur; ayar yalnızca sabitlenmiş uygulamaları gösterme seçeneğiyle birlikte de çalışır.
 
-## Dynamic Island ve yeni arayüz
-
-**Sistem → Dynamic Island**, [Windhawk Dynamic Island](https://github.com/devcode90/Dynamic-Island-for-Windows) tasarımından esinlenen bağımsız WinForge modülüdür; Windhawk kurulumu gerektirmez. Modülü açın, kapsülün üzerine gelin veya tıklayın. Tekerlekle Medya, Takvim, Odak, Pano, Dosya, İndir ve Sistem panellerini değiştirin. Sabitle düğmesi paneli açık tutar; `Ctrl+Alt+D` gizler/gösterir. Modül ayarlarındaki **Adayı göster** eylemi de gizli kapsülü geri açar.
-
-Medya bilgileri ve albüm kapağı Windows medya API’sinden, ses Core Audio’dan, pil/şarj bilgisi Windows’tan gelir. Uyumlu oynatıcılarda önceki/sonraki, oynat/duraklat ve parça konumu denetimleri çalışır. Ses, şarj, kilit tuşları ve aygıt olayları kısa bildirimler oluşturur. Odak sayacı gizliyken çalışmayı sürdürür. Konum, ekran, ölçek, tema ve animasyon ayarları canlı uygulanır; tam ekran uygulamalarda otomatik gizleme bulunur.
-
-Pano takibi varsayılan olarak kapalıdır. Açıldığında son metnin en fazla 500 karakteri yalnızca bellekte tutulur; kapatılınca silinir. Dosya tepsisi dosyaları taşımaz/kopyalamaz; oturum için en fazla sekiz başvuru saklar. Dosya adına tıklamak dosyayı Gezgin’de gösterir. İndirilenler takibi klasöre eklenen/yeniden adlandırılan dosyaları gösterir, tarayıcı indirme yüzdesini ölçmez; geçici indirme uzantıları dışlanır.
-
-Bu uyarlama referansın tüm özelliklerini kapsamaz: hava durumu, şarkı sözleri/tanıma, kamera/mikrofon göstergeleri, Windows bildirim geçmişi ve oyun istatistikleri bu sürümde yoktur. Bluetooth pil düzeyi yerine genel aygıt bağlantı olayları gösterilir.
+## Arayüz
 
 Ana panel, ayarlar, araç yüzeyleri, dosya araçları, diyaloglar ve OSD’ler ortak yuvarlak Island tasarımına geçirildi. İşletim sisteminin hareket azaltma tercihi animasyonları kapatır. Değişiklik WinForge arayüzlerini kapsar; diğer Windows uygulamalarının arayüzünü değiştirmez.
-
-Doğrulama: `dotnet build tests/WinForge.RegressionTests -c Release -p:Platform=x64` ardından test çıktısındaki `WinForge.RegressionTests.exe --island-only` yaşam döngüsü/konum/sayaç/dosya izlemeyi; `--island-ui-only` gerçek WebView2 üzerinde React–yerel köprü ve genişleme animasyonunu doğrular.
 
 Windows 11 için kendi motorlarını kullanan modüler kişiselleştirme kutusu. Her özellik ayrı bir modüldür,
 uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düzenlenir.
@@ -70,7 +60,6 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Ekran Cetveli** | `Ctrl+Alt+M` ile alan seçip piksel, santimetre veya inç ölçüsünü panoya kopyalar |
 | **Fare** | Hızlandırma, kaydırma satırı ve çift tık hızı; çift Ctrl ile fareyi bulma, tıklama vurguları ve `Win+Alt+.` imleç artısı tek modülde. Önceki ayarlar ve etkin durumlar otomatik aktarılır. |
 | **Arayüz İnce Ayarları** | Pencere animasyonları, menü gecikmesi, görev çubuğu animasyonları ve Aero Shake |
-| **Pencere Köşeleri** | Windows 11'in yuvarlak köşelerini kapatır veya küçük yuvarlak köşelere çevirir |
 | **Klasik Sağ Tık Menüsü** | Windows 11'in kısa menüsü yerine Windows 10'un tam sağ tık menüsünü kullanır |
 | **Sağ Tık Menüsü** | Gezgin menüsüne özel öğeler ekler ve kayıtlı kabuk uzantılarını gizler; yerleşik komutlar ve diğer uygulamaların kendi menüleri kapsam dışı |
 | **Gezgin İnce Ayarları** | Uzantılar, gizli dosyalar, son/sık kullanılanlar, kompakt mod, tam yol, onay kutuları, ayrı süreç ve masaüstü simgeleri |
