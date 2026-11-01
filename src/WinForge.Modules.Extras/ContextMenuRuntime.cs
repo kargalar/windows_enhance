@@ -17,13 +17,29 @@ internal sealed class ContextMenuRuntime(ILogger log)
     private IntPtr _library;
     private InstallHook? _install;
     private bool _active;
-    internal void Apply(IReadOnlyList<ContextMenuEntry> entries, IReadOnlyList<ContextMenuRule> rules)
+    internal void Apply(IReadOnlyList<ContextMenuEntry> entries, IReadOnlyList<ContextMenuRule> rules, IReadOnlyDictionary<string, string> groupIcons, IModuleSettings settings)
     {
         EnsureLibrary();
-        var prepared = rules.Select(rule => (Rule: rule, Entry: entries.FirstOrDefault(e => e.Id == rule.Id),
-            Icon: ContextMenuCatalog.ExportIcon(rule.Icon))).Where(row => row.Entry is not null).ToArray();
+        var prepared = rules.Select(rule => (Rule: rule, Entry: entries.FirstOrDefault(e => e.Id == rule.Id)))
+            .Where(row => row.Entry is not null).GroupBy(row => row.Entry!.Match).Select(group =>
+            {
+                var rows = group.ToArray();
+                var primary = rows.FirstOrDefault(row => row.Rule.Contexts is not null);
+                if (primary.Entry is null) primary = rows.FirstOrDefault(row => ContextMenuCatalog.Scope(row.Entry!) == "");
+                if (primary.Entry is null) primary = rows[0];
+                var fileVisible = rows.FirstOrDefault(row => ContextMenuCatalog.Scope(row.Entry!) == "file").Rule?.Visible ?? primary.Rule.Visible;
+                var contexts = ContextMenuCatalog.Contexts.ToDictionary(scope => scope, scope =>
+                    (primary.Rule.Contexts is not null ? ContextMenuCatalog.VisibleIn(primary.Rule, scope) : (bool?)null) ??
+                    rows.FirstOrDefault(row => ContextMenuCatalog.Scope(row.Entry!) == scope).Rule?.Visible ??
+                    (scope is "shortcut" or "application" ? fileVisible : primary.Rule.Visible));
+                return (Rule: primary.Rule, Entry: primary.Entry!, Contexts: contexts, Icon: ContextMenuCatalog.ExportIcon(primary.Rule.Icon));
+            }).ToArray();
+        var exportedGroups = groupIcons.ToDictionary(pair => pair.Key, pair => ContextMenuCatalog.ExportIcon(pair.Value));
         using var runtime = Registry.CurrentUser.CreateSubKey(ContextMenuCatalog.RuntimeKey);
         runtime.SetValue("active", 0);
+        runtime.SetValue("clean-separators", settings.GetBool("clean-separators", true) ? 1 : 0);
+        runtime.SetValue("show-separators", settings.GetBool("show-separators", true) ? 1 : 0);
+        runtime.SetValue("unquoted-copy-path", settings.GetBool("unquoted-copy-path", true) ? 1 : 0);
         runtime.DeleteSubKeyTree("Rules", false);
         using var root = runtime.CreateSubKey("Rules");
         for (var i = 0; i < prepared.Length; i++)
@@ -32,6 +48,9 @@ internal sealed class ContextMenuRuntime(ILogger log)
             var row = prepared[i];
             key.SetValue("match", row.Entry!.Match); key.SetValue("name", row.Rule.Name);
             key.SetValue("visible", row.Rule.Visible ? 1 : 0); key.SetValue("group", row.Rule.Group); key.SetValue("icon", row.Icon);
+            key.SetValue("separator-before", row.Rule.SeparatorBefore ? 1 : 0); key.SetValue("separator-after", row.Rule.SeparatorAfter ? 1 : 0);
+            key.SetValue("group-icon", exportedGroups.GetValueOrDefault(row.Rule.Group, ""));
+            foreach (var scope in row.Contexts) key.SetValue("visible-" + scope.Key, scope.Value ? 1 : 0);
         }
         var icons = Path.Combine(AppData.DirectoryPath, "ContextMenu", "CapturedIcons"); Directory.CreateDirectory(icons);
         runtime.SetValue("icon-directory", icons); runtime.SetValue("heartbeat", Environment.TickCount64, RegistryValueKind.QWord); runtime.SetValue("active", 1);

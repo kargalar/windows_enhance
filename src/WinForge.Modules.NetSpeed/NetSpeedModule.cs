@@ -91,8 +91,8 @@ public sealed class NetSpeedModule : ITweakModule
     public void Activate()
     {
         _window = new NetSpeedWindow((_context as IFeatureUiContext)?.FeatureUi);
-        _window.Start();
         Apply();
+        _window.Start();
 
         IsActive = true;
         _context?.Log.Info("İnternet hızı göstergesi açıldı.");

@@ -49,6 +49,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
             Options = WorkflowOptions, OptionLabels = WorkflowLabels },
         new() { Key = "region-confirm", Label = "Bölge seçimini taşıyıp boyutlandır, Enter ile yakala", Default = false,
             Description = "Açıkken bölgeyi sürükleyerek yeniden konumlandırın, sağ alt köşeden boyutlandırın ve Enter ile onaylayın." },
+        new() { Key = "annotate-before-capture", Label = "Bölge yakalamada çekim öncesi çizim ve işaretleme", Default = true,
+            Description = "Alan seçiminden önce veya sonra kalem, ok, şekil ve vurgulama kullanın; Yakala veya Enter ile işaretlerle birlikte alın. Kapalıyken hızlı bölge seçimi kullanılır." },
         new() { Key = "delay", Label = "Yakalama gecikmesi (saniye)", Kind = SettingKind.Number, Min = 0, Max = 30, Default = 0 },
         new() { Key = "microphone", Label = "Video kaydında mikrofon", Default = false },
         new() { Key = "system-audio", Label = "Video kaydında sistem sesi", Default = false },
@@ -126,8 +128,15 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 "annotate-freehand" => DrawingTool.Freehand,
                 _ => (DrawingTool?)null
             };
+            CaptureAnnotations? annotations = null;
+            CaptureArea? SelectRegion()
+            {
+                if (!Context.Settings.GetBool("annotate-before-capture", true)) return CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"));
+                var selection = CaptureServices.SelectAnnotatedArea(); annotations = selection.Annotations; return selection.Area;
+            }
             CaptureArea? area = annotationTool is not null ? DesktopArea() : mode switch
             {
+                "region" => SelectRegion(),
                 "last" => lastArea,
                 "monitor" => CaptureServices.Monitor(),
                 "window" => CaptureServices.SelectWindow(),
@@ -150,6 +159,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 ShowRecordingControls(mode == "gif", store); return;
             }
             var image = mode == "scroll" ? null : CaptureServices.Capture(selected);
+            if (image is not null && annotations is not null) image = annotations.Apply(image, selected);
             var title = "Ekran görüntüsü";
             if (mode == "scroll")
             {

@@ -22,6 +22,7 @@ internal static class Program
             }
             Check(ActionShortcut.Parse("ctrl+alt+MouseLeft") == new ActionShortcut(3, 0, "mouseleft"), "Mouse shortcut normalization");
             Check(ActionShortcut.Parse("Ctrl+Space") == new ActionShortcut(2, 32, ""), "Keyboard shortcut parsing");
+            _checks += HotkeyConflictChecks.Run();
             DesktopChordChecks();
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
             Check(ActionShortcut.Parse("MouseX2") == new ActionShortcut(0, 0, "mousex2"), "Bare XButton2 accepted");
@@ -174,6 +175,18 @@ internal static class Program
     {
         var context = new Context(); var module = new ContextMenuModule(); module.Initialize(context);
         var panel = (IModulePanel)module;
+        Check(ContextMenuCatalog.Contexts.Contains("shortcut") && ContextMenuCatalog.Contexts.Contains("application") && ContextMenuCatalog.Contexts.Contains("virtual"), "Shortcut, application and virtual shell contexts are available");
+        var inherited = new ContextMenuRule("x", Contexts: new() { ["file"] = false });
+        Check(!ContextMenuCatalog.VisibleIn(inherited, "shortcut") && !ContextMenuCatalog.VisibleIn(inherited, "application"), "New file subtypes inherit old file preferences");
+        Check(ContextMenuCatalog.VisibleIn(inherited with { Contexts = new() { ["file"] = false, ["shortcut"] = true } }, "shortcut"), "Shortcut visibility can override the old file preference");
+        panel.HandlePanelCommand("save-options", JsonSerializer.SerializeToElement(new { cleanSeparators = false, showSeparators = false, unquotedCopyPath = false }, Json));
+        var optionReload = new ContextMenuModule(); optionReload.Initialize(context);
+        var options = JsonSerializer.SerializeToElement(optionReload.GetPanelState(), Json);
+        Check(!options.GetProperty("cleanSeparators").GetBoolean() && !options.GetProperty("showSeparators").GetBoolean() && !options.GetProperty("unquotedCopyPath").GetBoolean(), "Separator and copy-path preferences persist after reload");
+        panel.HandlePanelCommand("save-item", JsonSerializer.SerializeToElement(new { ids = new[] { "builtin:copy-path" }, rule = new ContextMenuRule("builtin:copy-path", SeparatorBefore: true, SeparatorAfter: true, Contexts: new() { ["shortcut"] = true, ["file"] = false }) }, Json));
+        var lineReload = new ContextMenuModule(); lineReload.Initialize(context);
+        var copyPath = JsonSerializer.SerializeToElement(lineReload.GetPanelState(), Json).GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:copy-path");
+        Check(copyPath.GetProperty("separatorBefore").GetBoolean() && copyPath.GetProperty("separatorAfter").GetBoolean() && copyPath.GetProperty("contexts").GetProperty("shortcut").GetBoolean(), "Custom separator placement and shortcut overrides survive reload");
         var entries = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries");
         Check(entries.EnumerateArray().Count(e => e.GetProperty("id").GetString()!.StartsWith("prepared:") && !e.GetProperty("visible").GetBoolean()) == 2, "Prepared actions are available and disabled by default");
         foreach (var id in new[] { "prepared:desktop-shortcut", "prepared:toggle-hidden" })
@@ -263,6 +276,20 @@ internal static class Program
         panel.HandlePanelCommand("reset", JsonSerializer.SerializeToElement(new { id = "builtin:properties" }, Json));
         properties = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:properties");
         Check(properties.GetProperty("visible").GetBoolean() && properties.GetProperty("group").GetString() == "", "Entry can return to original menu");
+        panel.HandlePanelCommand("save-item", JsonSerializer.SerializeToElement(new { ids = new[] { "builtin:properties" }, rule = new ContextMenuRule("builtin:properties", Contexts: new() { ["desktop"] = false, ["folder"] = true }) }, Json));
+        var scopedReload = new ContextMenuModule(); scopedReload.Initialize(context);
+        properties = JsonSerializer.SerializeToElement(scopedReload.GetPanelState(), Json).GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:properties");
+        Check(!properties.GetProperty("contexts").GetProperty("desktop").GetBoolean() && properties.GetProperty("contexts").GetProperty("folder").GetBoolean(), "Independent menu scopes persist across reload");
+        panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Tools", ids = new[] { "builtin:properties", "builtin:new-folder" } }, Json));
+        panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Utilities", previousName = "Tools", ids = new[] { "builtin:properties" } }, Json));
+        state = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json);
+        Check(!state.GetProperty("groups").EnumerateArray().Any(g => g.GetString() == "Tools"), "Renaming a group removes its old name");
+        Check(state.GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:new-folder").GetProperty("group").GetString() == "", "Deselected group members return to root");
+        panel.HandlePanelCommand("delete-group", JsonSerializer.SerializeToElement(new { name = "Utilities" }, Json));
+        Check(!JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("groups").EnumerateArray().Any(g => g.GetString() == "Utilities"), "Deleting a group removes membership and its persisted name");
+        panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Empty", ids = Array.Empty<string>() }, Json));
+        var emptyReload = new ContextMenuModule(); emptyReload.Initialize(context);
+        Check(JsonSerializer.SerializeToElement(emptyReload.GetPanelState(), Json).GetProperty("groups").EnumerateArray().Any(g => g.GetString() == "Empty"), "Empty groups persist before members are selected");
         Check(!module.IsActive, "Menu tests leave real Explorer configuration untouched");
     }
     private static void ContextMenuOwnershipChecks()
@@ -334,11 +361,30 @@ internal static class Program
                 Check(Input(0x44, false) == new IntPtr(1), "Original Ctrl+D is consumed");
                 Check(Input(0x44, true) == new IntPtr(1), "Original D release is consumed");
                 Input(0xA2, true); Pump();
-                Check(events.SequenceEqual(new (uint, bool)[] { (0xA2, true), (0xA4, false), (0x57, false), (0x57, true), (0xA4, true), (0xA2, false) }), "Native SendInput releases source Ctrl, sends Alt+W and restores source modifier: " + string.Join(",", events));
+                Check(events.SequenceEqual(new (uint, bool)[] { (0xA2, true), (0xA4, false), (0x57, false), (0x57, true), (0xE8, false), (0xE8, true), (0xA4, true), (0xA2, false) }), "Native SendInput releases source Ctrl, sends Alt+W, masks the Alt menu and restores source modifier: " + string.Join(",", events));
                 events.Clear();
                 using (var hotkeys = new HotkeyService())
                 using (hotkeys.Suspend()) { Input(0xA2, false); Input(0x44, false); Input(0x44, true); Input(0xA2, true); Pump(); }
                 Check(events.Count == 0, "Shortcut capture suspends conversion");
+
+                Save(module, new("example", "Desktop conversion", true, "Win+D", "translate", "Ctrl+Shift+OemOpenBrackets"));
+                foreach (var win in new uint[] { 0x5B, 0x5C })
+                {
+                    events.Clear();
+                    Input(win, false);
+                    Check(Input(0x44, false) == new IntPtr(1), "Win+D source is consumed for either Windows key");
+                    Check(Input(0x44, false) == new IntPtr(1), "Held source is consumed without retranslating");
+                    Input(win, true);
+                    Check(Input(0x44, false) == new IntPtr(1), "Source repeats remain consumed after Win is released");
+                    Check(Input(0x44, true) == new IntPtr(1), "Source release remains consumed after Win is released");
+                    Pump();
+                    Check(events.SequenceEqual(new (uint, bool)[] {
+                        (0xE8, false), (0xE8, true), (win, true),
+                        (0xA2, false), (0xA0, false), (0xDB, false), (0xDB, true),
+                        (0xA0, true), (0xA2, true), (win, false), (0xE8, false), (0xE8, true)
+                    }), "Win+D sends exactly Ctrl+Shift+OemOpenBrackets once, with Start menu masking: " + string.Join(",", events));
+                }
+                Save(module, new("example", "Example", true, "Ctrl+D", "translate", "Alt+W"));
             }
             finally { Marshal.FreeHGlobal(pointer); }
         }

@@ -28,6 +28,14 @@ internal static class Program
                 return 0;
             }
             if (args.Length == 1 && args[0] == "--capture-shortcuts") { CaptureShortcutChecks.Run(Check); return 0; }
+            if (args.Length == 1 && args[0] == "--pre-capture")
+            {
+                var annotationRoot = Path.Combine(Path.GetTempPath(), "WinForge-AnnotationTests", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(annotationRoot);
+                try { CaptureAnnotationChecks.Run(annotationRoot, Check); }
+                finally { Directory.Delete(annotationRoot, true); }
+                Console.WriteLine($"PASS: {checks} pre-capture annotation checks."); return 0;
+            }
             if (args.Length == 1 && args[0] == "--text-fixture") return TextOutputChecks.RunFixture();
             if (args.Length == 1 && args[0] == "--text-output") { TextOutputChecks.RunAsync(Check).GetAwaiter().GetResult(); return 0; }
             if (args.Length == 3 && args[0] == "--import") return Import(args[1], args[2]).GetAwaiter().GetResult();

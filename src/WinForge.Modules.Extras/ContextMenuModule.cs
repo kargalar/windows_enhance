@@ -60,6 +60,7 @@ public sealed partial class ContextMenuModule : ITweakModule, IAppCommandModule
     public void Deactivate()
     {
         _runtime?.Deactivate();
+        ApplyPreparedActions([]);
         foreach (var (_, root) in CustomRoots)
             RemoveCustomItems(root);
 
@@ -84,7 +85,7 @@ public sealed partial class ContextMenuModule : ITweakModule, IAppCommandModule
             SetBlocked(extension.Clsid, settings.GetBool(extension.Key, extension.Blocked));
 
         ApplyPreparedActions(_rules);
-        _runtime?.Apply(_entries, _rules);
+        _runtime?.Apply(_entries, _rules, ReadGroupIcons(), _context!.Settings);
 
         Reg.Broadcast("ShellState");
     }

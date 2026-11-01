@@ -14,14 +14,22 @@ using WinForge.Core;
 namespace WinForge.Modules.Extras;
 
 internal sealed record ContextMenuEntry(string Id, string Name, string Source, string Match, string Icon, string? Clsid = null);
-internal sealed record ContextMenuRule(string Id, string Name = "", bool Visible = true, string Group = "", string Icon = "");
+internal sealed record ContextMenuRule(string Id, string Name = "", bool Visible = true, string Group = "", string Icon = "", Dictionary<string, bool>? Contexts = null, bool SeparatorBefore = false, bool SeparatorAfter = false);
 
 internal static class ContextMenuCatalog
 {
+    internal static readonly string[] Contexts = ["file", "folder", "background", "desktop", "drive", "shortcut", "application", "virtual"];
+    internal static bool VisibleIn(ContextMenuRule rule, string scope) => rule.Contexts?.GetValueOrDefault(scope,
+        scope is "shortcut" or "application" ? rule.Contexts.GetValueOrDefault("file", rule.Visible) : rule.Visible) ?? rule.Visible;
+    internal static string Scope(ContextMenuEntry entry) => entry.Id.StartsWith("verb:") ? entry.Id.Split(':')[1] switch
+    {
+        "*" => "file", "Directory" or "Folder" => "folder", @"Directory\Background" => "background",
+        "DesktopBackground" => "desktop", "Drive" => "drive", "lnkfile" or "InternetShortcut" => "shortcut", "exefile" => "application", _ => ""
+    } : "";
     internal const string RuntimeKey = @"Software\WinForge\ContextMenu\Runtime";
     internal const string CatalogKey = @"Software\WinForge\ContextMenu\Catalog";
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private static readonly string[] Roots = [@"*", @"Directory", @"Directory\Background", @"Drive", @"Folder", @"AllFilesystemObjects", @"DesktopBackground"];
+    private static readonly string[] Roots = [@"*", @"Directory", @"Directory\Background", @"Drive", @"Folder", @"AllFilesystemObjects", @"DesktopBackground", "lnkfile", "InternetShortcut", "exefile"];
     internal static string Normalize(string text) => text.Split('\t')[0].Replace("&", "").Replace("…", "").Replace("...", "").Trim().ToLowerInvariant();
     internal static string DisplayName(string value)
     {
@@ -48,7 +56,8 @@ internal static class ContextMenuCatalog
             ("properties", "Özellikler", "imageres.dll,-5366"), ("new-folder", "Yeni klasör", "shell32.dll,3"),
             ("new", "Yeni", "shell32.dll,3"), ("copy", "Kopyala", "shell32.dll,134"),
             ("cut", "Kes", "shell32.dll,133"), ("paste", "Yapıştır", "shell32.dll,135"),
-            ("delete", "Sil", "shell32.dll,131"), ("rename", "Yeniden adlandır", ""), ("refresh", "Yenile", "")
+            ("delete", "Sil", "shell32.dll,131"), ("rename", "Yeniden adlandır", ""), ("refresh", "Yenile", ""),
+            ("copy-path", "Yol olarak kopyala", "")
         }) entries["builtin:" + id] = new("builtin:" + id, name, "Windows komutu", "builtin:" + id, icon);
         entries["prepared:desktop-shortcut"] = new("prepared:desktop-shortcut", "Masaüstü kısayolu oluştur", "Hazır eylem", Normalize("Masaüstü kısayolu oluştur"), "shell32.dll,167");
         entries["prepared:toggle-hidden"] = new("prepared:toggle-hidden", "Dosyayı / kısayolu gizle veya göster", "Hazır eylem", Normalize("Dosyayı / kısayolu gizle veya göster"), "shell32.dll,3");
@@ -102,7 +111,9 @@ internal static class ContextMenuCatalog
             var key = !string.IsNullOrEmpty(canonical) ? canonical : "menu:" + match;
             entries[key] = new(key, name, "Gerçek menü öğesi", canonical ?? match, row?.GetValue("icon") as string ?? "");
         }
-        return entries.Values.OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(e => e.Source).ToList();
+        var builtins = entries.Values.Where(e => e.Id.StartsWith("builtin:")).ToArray();
+        return entries.Values.Select(entry => entry with { Match = builtins.FirstOrDefault(b => Normalize(b.Name) == entry.Match)?.Match ?? entry.Match })
+            .OrderBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(e => e.Source).ToList();
     }
     private static void ReadVerbs(string root, Dictionary<string, ContextMenuEntry> entries)
     {
@@ -142,6 +153,7 @@ internal static class ContextMenuCatalog
         var ids = new HashSet<string>();
         foreach (var rule in rules)
         {
+            if (rule.Contexts is not null && rule.Contexts.Keys.Any(key => !Contexts.Contains(key))) throw new FormatException("Geçersiz menü konumu.");
             if (!ids.Add(rule.Id) || rule.Id.Length > 1024 || rule.Name.Length > 120 || rule.Group.Length > 80 || rule.Icon.Length > 2048 ||
                 rule.Name.Contains('\n') || rule.Group.IndexOfAny(['\r', '\n', '\t', ';']) >= 0)
                 throw new FormatException("Geçersiz menü adı, grup veya simge.");

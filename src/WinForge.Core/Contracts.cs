@@ -36,6 +36,8 @@ public interface IModuleSettings
 public interface IHotkeyService
 {
     IDisposable Register(uint modifiers, uint virtualKey, Action callback);
+    IDisposable Register(uint modifiers, uint virtualKey, Action callback, string owner) =>
+        Register(modifiers, virtualKey, callback);
 }
 
 public interface ILogger
@@ -63,7 +65,8 @@ public sealed record FeatureUiWindowOptions(
     bool ClickThrough = false,
     bool Resizable = false,
     double? Left = null,
-    double? Top = null);
+    double? Top = null,
+    bool ShowOnOpen = true);
 
 /// <summary>Controls a React-rendered feature window hosted by the desktop application.</summary>
 public interface IFeatureUiWindow : IDisposable

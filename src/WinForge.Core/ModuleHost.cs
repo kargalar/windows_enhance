@@ -68,7 +68,7 @@ public sealed class ModuleHost
                     var module = (ITweakModule)Activator.CreateInstance(type)!;
                     var settings = new ModuleSettings(_store.For(module.Id), _store.Save);
                     _settings[module.Id] = settings;
-                    module.Initialize(new ModuleContext(settings, _log, _hotkeys, _notify, _quickActions, _showDisplayBrightness, _showAudioVolume, _featureUi,
+                    module.Initialize(new ModuleContext(settings, _log, new ModuleHotkeyService(_hotkeys, module.Name), _notify, _quickActions, _showDisplayBrightness, _showAudioVolume, _featureUi,
                         TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag));
                     _modules.Add(module);
                     _log.Info($"Modül yüklendi: {module.Id} ({module.Name})");

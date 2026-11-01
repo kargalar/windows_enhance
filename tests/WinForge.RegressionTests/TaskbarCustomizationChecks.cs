@@ -26,6 +26,90 @@ internal static class TaskbarCustomizationChecks
             .All(key => module.Settings.Any(setting => setting.Key == key)), "The unified panel exposes every requested visibility and dock control");
         TestRules(check);
         TestBackground(check);
+        TestClock(module, check);
+        TestTraySpacing(check);
+    }
+
+    private static void TestTraySpacing(Action<bool, string> check)
+    {
+        var settings = new Context().Settings;
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        IReadOnlyList<ShellStyleRule> Build() => (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, null])!;
+        check(Build().Count == 0, "Default tray spacing preserves native layout");
+        settings.Set("tray-icon-gap", 5);
+        var appRule = Build().Single();
+        check(appRule.Selector == "SystemTray.NotificationAreaIcons SystemTray.NotifyIconView" && appRule.Properties["Margin"] == "2.5,0,2.5,0",
+            "Application spacing is shared between both sides and excludes overflow icons");
+        settings.Set("system-icon-gap", 0);
+        check(Build().Where(rule => rule.Selector.EndsWith(" SystemTray.IconView")).Count(rule => rule.Properties["Margin"] == "0,0,0,0") == 3 &&
+              Build().All(rule => !rule.Selector.Contains("NotificationCenterButton")),
+            "Zero system spacing removes outer gaps without changing clock or desktop controls");
+        settings.Set("tray-group-gap", 200);
+        settings.Set("clock-gap", 200);
+        check(Build().Single(rule => rule.Selector == "SystemTray.NotificationAreaIcons").Properties["Margin"] == "12,0,12,0" &&
+              Build().Single(rule => rule.Selector == "SystemTray.OmniButton#NotificationCenterButton").Properties["Margin"] == "32,0,0,0",
+            "Group and clock spacing have independent bounded values");
+        foreach (var key in new[] { "tray-icon-gap", "system-icon-gap", "tray-group-gap", "clock-gap" }) settings.Set(key, -1);
+        check(Build().Count == 0, "Resetting spacing removes all overrides for native restoration");
+    }
+
+    private static void TestClock(ITweakModule module, Action<bool, string> check)
+    {
+        var settings = new Context().Settings;
+        var now = new DateTime(2026, 11, 1, 14, 5, 9);
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        IReadOnlyList<ShellStyleRule> Build() => (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, now, null])!;
+        ShellStyleRule? Rule(string name) => Build().SingleOrDefault(rule => rule.Selector == $"TextBlock#{name}InnerTextBlock");
+
+        check(Rule("Time") is null && Rule("Date") is null, "Default clock leaves the Windows date and time unchanged");
+        foreach (var (key, name, minimum) in new[] { ("time-format", "Time", 10), ("date-format", "Date", 15) })
+        {
+            var descriptor = module.Settings.Single(setting => setting.Key == key);
+            check(descriptor.Kind == SettingKind.Text && descriptor.Options.Length >= minimum && descriptor.Options.Contains("") &&
+                  descriptor.Options.All(descriptor.OptionLabels.ContainsKey), $"{key} offers labeled presets while preserving manual editing and Windows default");
+            foreach (var format in descriptor.Options.Where(format => format.Length > 0))
+            {
+                settings.Set(key, format);
+                check(Rule(name)?.Properties["Text"] == now.ToString(format, CultureInfo.CurrentCulture), $"Clock preset {format} formats correctly");
+            }
+            settings.Set(key, "");
+        }
+
+        var widthSetting = module.Settings.Single(setting => setting.Key == "clock-width");
+        check(widthSetting.Default is 0 && widthSetting.Min == 0, "Clock width defaults to automatic content sizing");
+        settings.Set("time-format", "HH:mm");
+        check(Build().All(rule => rule.Selector != "SystemTray.DateTimeIconContent"),
+            "Custom clock formatting does not reserve an empty fixed-width tile");
+        settings.Set("clock-width", 180);
+        check(Build().Single(rule => rule.Selector == "SystemTray.DateTimeIconContent").Properties["Width"] == "180",
+            "Explicit clock widths remain supported");
+        settings.Set("clock-width", 0);
+        check(Build().All(rule => rule.Selector != "SystemTray.DateTimeIconContent"),
+            "Resetting clock width removes the override for native sizing");
+
+        settings.Set("time-format", "HH:mm 'özel'");
+        settings.Set("date-format", "yyyy 'yılı' MMMM");
+        check(Rule("Time")?.Properties["Text"] == "14:05 özel" && Rule("Date")?.Properties["Text"] == now.ToString("yyyy 'yılı' MMMM"),
+            "Custom clock formats remain supported");
+        settings.Set("clock-display", "Yalnızca tarih");
+        check(Rule("Time")?.Properties["Visibility"] == "Collapsed" && Rule("Date")?.Properties.ContainsKey("Text") == true,
+            "Date-only mode collapses the time while preserving the chosen date format");
+        settings.Set("clock-display", "Yalnızca saat");
+        check(Rule("Date")?.Properties["Visibility"] == "Collapsed" && Rule("Time")?.Properties["Text"] == "14:05 özel",
+            "Time-only mode collapses the date while preserving the chosen time format");
+        settings.Set("clock-display", "Tarih ve saat");
+        check(Build().All(rule => !rule.Properties.ContainsKey("Visibility")) && Rule("Date")?.Properties.ContainsKey("Text") == true,
+            "Returning to both removes collapse rules and restores the saved formats");
+        settings.Set("time-format", "");
+        settings.Set("date-format", "");
+        settings.Set("clock-display", "Yalnızca saat");
+        check(Rule("Time") is null && Rule("Date")?.Properties["Visibility"] == "Collapsed",
+            "Time-only mode also works with the native Windows time format");
+        settings.Set("clock-display", "Yalnızca tarih");
+        check(Rule("Date") is null && Rule("Time")?.Properties["Visibility"] == "Collapsed",
+            "Date-only mode also works with the native Windows date format");
+        check(Build().All(rule => rule.Selector != "SystemTray.DateTimeIconContent"),
+            "Single-line clock display also keeps automatic content sizing");
     }
 
     private static void TestBackground(Action<bool, string> check)
@@ -117,6 +201,13 @@ internal static class TaskbarCustomizationChecks
         settings.Set("hide-bell", "when-empty");
         settings.Set("show-desktop-width", 999);
         var rules = Rules(settings, tree);
+        check(rules.Any(rule => rule.Selector == "@1" && rule.Properties["Visibility"] == "Collapsed"),
+            "Hiding every quick-settings icon also removes its empty clickable container");
+        settings.Set("hide-volume", false);
+        check(Rules(settings, tree).All(rule => rule.Selector != "@1"), "Restoring one system icon also restores access to quick settings");
+        settings.Set("hide-volume", true);
+        var unknownTree = tree.Append(Node(60, 1, "SystemTray.IconView")).ToArray();
+        check(Rules(settings, unknownTree).All(rule => rule.Selector != "@1"), "Unknown quick-settings icons keep their container visible");
         check(new[] { "@2", "@4", "@6", "@11", "@40" }.All(selector => rules.Any(rule => rule.Selector == selector && rule.Properties["Visibility"] == "Collapsed")) &&
               rules.All(rule => rule.Selector is not "@13" and not "@50"), "System icons hide without hiding the clock or an application's similarly shaped tray icon");
         check(rules.Single(rule => rule.Selector == "@21").Properties["Width"] == "100", "Desktop width is bounded independently of untrusted stored settings");

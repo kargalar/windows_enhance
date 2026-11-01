@@ -1,4 +1,5 @@
 using System.Net.NetworkInformation;
+using System.Windows.Threading;
 using WinForge.Core;
 
 namespace WinForge.Modules.NetSpeed;
@@ -16,6 +17,7 @@ public sealed class NetSpeedWindow
 
     private readonly IFeatureUiWindow? _view;
     private readonly Timer _timer;
+    private readonly DispatcherTimer _placementTimer;
     private long _lastReceived;
     private long _lastSent;
     private DateTime _lastSample = DateTime.UtcNow;
@@ -38,8 +40,16 @@ public sealed class NetSpeedWindow
     {
         _view = featureUi?.Open("net-speed-indicator", "net-speed-overlay", "Ağ hızı",
             new FeatureUiWindowOptions(OverlayWidth, OverlayHeight, Topmost: true, ActivateOnShow: false,
-                Transparent: true, ClickThrough: true));
+                Transparent: true, ClickThrough: true, ShowOnOpen: false));
         _timer = new Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
+        // Taskbar animations and Start-menu activation must not wait for the
+        // network sampling interval (which can be as long as three seconds).
+        // Run placement on the UI thread, independently of network statistics.
+        _placementTimer = new DispatcherTimer(DispatcherPriority.Normal)
+        {
+            Interval = TimeSpan.FromMilliseconds(50)
+        };
+        _placementTimer.Tick += OnPlacementTick;
         UpdateView(Format(0), Format(0));
     }
 
@@ -65,20 +75,19 @@ public sealed class NetSpeedWindow
     private void Reposition()
     {
         if (_view is null) return;
-        if (!_showDownload && !_showUpload)
+        if (Volatile.Read(ref _running) == 0 || (!_showDownload && !_showUpload))
         {
             _view.Hide();
             return;
         }
 
         var taskbar = Native.FindWindow("Shell_TrayWnd", null);
-        if (taskbar == IntPtr.Zero)
+        if (taskbar == IntPtr.Zero || !Native.IsWindowVisible(taskbar) || !Native.GetWindowRect(taskbar, out var rect))
         {
             _view.Hide();
             return;
         }
 
-        Native.GetWindowRect(taskbar, out var rect);
         var scale = Native.GetDpiForWindow(taskbar) / 96.0;
         if (scale <= 0) scale = 1.0;
 
@@ -131,18 +140,23 @@ public sealed class NetSpeedWindow
         _view.Show();
     }
 
+    private void OnPlacementTick(object? sender, EventArgs args) => Reposition();
+
     public void Start()
     {
         Sample();
         _lastSample = DateTime.UtcNow;
         Volatile.Write(ref _running, 1);
         _timer.Change(_intervalMilliseconds, _intervalMilliseconds);
+        _placementTimer.Start();
         Reposition();
     }
 
     public void Stop()
     {
         Volatile.Write(ref _running, 0);
+        _placementTimer.Stop();
+        _placementTimer.Tick -= OnPlacementTick;
         _timer.Change(Timeout.Infinite, Timeout.Infinite);
         _view?.Close();
         _timer.Dispose();
@@ -173,7 +187,6 @@ public sealed class NetSpeedWindow
         _lastSent = sent;
         _lastSample = now;
         UpdateView(Format(down), Format(up));
-        Reposition();
     }
 
     private void UpdateView(string download, string upload) => _view?.SetState(new

@@ -135,6 +135,11 @@ public static class CaptureServices
     {
         var selection = new RegionPicker(quickCapture); selection.ShowDialog(); return selection.Result;
     }
+    internal static (CaptureArea? Area, CaptureAnnotations Annotations) SelectAnnotatedArea()
+    {
+        var selection = new RegionPicker(quickCapture: false, allowDrawing: true);
+        selection.ShowDialog(); return (selection.Result, selection.Annotations!);
+    }
     public static IReadOnlyList<CaptureArea> SelectMultipleAreas()
     {
         var selection = new RegionPicker(quickCapture: false, multiple: true); selection.ShowDialog(); return selection.Results;
@@ -180,21 +185,24 @@ internal sealed class RegionPicker : Window
     private readonly bool quickCapture;
     private readonly bool multiple;
     private CaptureArea? selection;
+    internal CaptureAnnotations? Annotations { get; }
     public CaptureArea? Result { get; private set; }
     public IReadOnlyList<CaptureArea> Results { get; private set; } = [];
-    public RegionPicker(bool quickCapture, bool multiple = false)
+    public RegionPicker(bool quickCapture, bool multiple = false, bool allowDrawing = false)
     {
         this.quickCapture = quickCapture; this.multiple = multiple;
+        Annotations = allowDrawing ? new() : null;
         Width = Height = 0; WindowStyle = WindowStyle.None; ShowInTaskbar = false; Opacity = 0;
         Loaded += (_, _) =>
         {
             foreach (var monitor in DesktopDisplays.Enumerate())
             {
-                var surface = new RegionSurface(monitor, quickCapture, Select, UpdateSelection, FinishSelected, Finish, UpdateHover, () => selection, () => regions); surfaces.Add(surface); surface.Show();
+                var surface = new RegionSurface(monitor, quickCapture, Select, UpdateSelection, FinishSelected, Finish, UpdateHover, () => selection, () => regions, Annotations, RefreshAnnotations); surfaces.Add(surface); surface.Show();
             }
         };
         Closed += (_, _) => { foreach (var surface in surfaces) surface.Close(); };
     }
+    private void RefreshAnnotations() { foreach (var surface in surfaces) surface.RefreshAnnotations(); }
     private void UpdateHover(CaptureArea? area)
     {
         foreach (var surface in surfaces) surface.SetHover(area);
@@ -235,20 +243,35 @@ internal sealed class RegionPicker : Window
         private readonly Action finishSelected;
         private readonly Func<CaptureArea?> getSelection;
         private readonly Func<IReadOnlyList<CaptureArea>> getSelections;
+        private readonly CaptureAnnotations? annotations;
+        private readonly Action refreshAnnotations;
+        private readonly Image annotationImage = new() { IsHitTestVisible = false, Stretch = Stretch.Fill };
+        private FrameworkElement? toolbar;
+        private readonly Dictionary<DrawingTool, Button> toolButtons = [];
+        private ComboBox? colorPicker, lineWidthPicker;
+        private bool updatingOptions;
         private POINT? origin;
         private CaptureArea? initialArea;
         private bool moving, resizing, resizeLeft, resizeTop;
-        public RegionSurface(DesktopDisplay display, bool quickCapture, Action<CaptureArea> select, Action<CaptureArea, CaptureArea> updateSelection, Action finishSelected, Action<CaptureArea?> finish, Action<CaptureArea?> updateHover, Func<CaptureArea?> getSelection, Func<IReadOnlyList<CaptureArea>> getSelections)
+        public RegionSurface(DesktopDisplay display, bool quickCapture, Action<CaptureArea> select, Action<CaptureArea, CaptureArea> updateSelection, Action finishSelected, Action<CaptureArea?> finish, Action<CaptureArea?> updateHover, Func<CaptureArea?> getSelection, Func<IReadOnlyList<CaptureArea>> getSelections, CaptureAnnotations? annotations, Action refreshAnnotations)
         {
             this.display = display;
             this.quickCapture = quickCapture; this.select = select; this.finishSelected = finishSelected;
             this.updateSelection = updateSelection;
             this.getSelection = getSelection;
             this.getSelections = getSelections;
+            this.annotations = annotations; this.refreshAnnotations = refreshAnnotations;
             WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = new SolidColorBrush(Color.FromArgb(55, 0, 0, 0)); Focusable = true;
             Topmost = true; ShowInTaskbar = false; ResizeMode = ResizeMode.NoResize; Cursor = System.Windows.Input.Cursors.Cross;
-            Content = canvas; canvas.Children.Add(windowBorder); canvas.Children.Add(border); border.Visibility = Visibility.Collapsed;
-            if (!quickCapture)
+            Content = canvas; canvas.Children.Add(annotationImage); canvas.Children.Add(windowBorder); canvas.Children.Add(border); border.Visibility = Visibility.Collapsed;
+            if (annotations is not null)
+            {
+                toolbar = CreateAnnotationToolbar(finish);
+                System.Windows.Controls.Canvas.SetLeft(toolbar, 16); System.Windows.Controls.Canvas.SetTop(toolbar, 16);
+                System.Windows.Controls.Panel.SetZIndex(toolbar, 100); canvas.Children.Add(toolbar);
+                Loaded += (_, _) => RefreshAnnotations();
+            }
+            else if (!quickCapture)
             {
                 var instructions = new TextBlock { Text = "Alan çiz · içinden sürükleyerek taşı · kenarından boyutlandır · Enter yakala · Esc iptal", Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromArgb(220, 20, 24, 32)), Padding = new Thickness(12), IsHitTestVisible = false };
                 System.Windows.Controls.Canvas.SetLeft(instructions, 16); System.Windows.Controls.Canvas.SetTop(instructions, 16); canvas.Children.Add(instructions);
@@ -257,12 +280,21 @@ internal sealed class RegionPicker : Window
                 display.Bounds.Left, display.Bounds.Top, display.Bounds.Right - display.Bounds.Left, display.Bounds.Bottom - display.Bounds.Top, 0x0040);
             KeyDown += (_, e) =>
             {
-                if (e.Key == System.Windows.Input.Key.Escape) finish(null);
-                else if (e.Key == System.Windows.Input.Key.Enter) finishSelected();
+                if (e.Key == System.Windows.Input.Key.Escape) { finish(null); e.Handled = true; }
+                else if (e.Key == System.Windows.Input.Key.Enter) { if (annotations?.IsDrawing != true) CaptureSelection(); e.Handled = true; }
+                else if (e.Key == System.Windows.Input.Key.Z && System.Windows.Input.Keyboard.Modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control) && annotations is not null)
+                { annotations.Undo(); refreshAnnotations(); e.Handled = true; }
             };
-            MouseDoubleClick += (_, e) => { if (e.ChangedButton == System.Windows.Input.MouseButton.Left) finishSelected(); };
-            MouseLeftButtonDown += (_, _) =>
+            MouseDoubleClick += (_, e) => { if (!IsToolbarInput(e.OriginalSource) && (annotations is null || annotations.Tool == DrawingTool.Select) && e.ChangedButton == System.Windows.Input.MouseButton.Left) finishSelected(); };
+            MouseLeftButtonDown += (_, e) =>
             {
+                if (IsToolbarInput(e.OriginalSource)) return;
+                Focus();
+                if (annotations is not null && annotations.Tool != DrawingTool.Select)
+                {
+                    Native.GetCursorPos(out var mark); annotations.Begin(new Point(mark.X, mark.Y));
+                    CaptureMouse(); refreshAnnotations(); e.Handled = true; return;
+                }
                 Native.GetCursorPos(out var point); var selected = getSelections().Where(area => Contains(area, point)).Select(area => (CaptureArea?)area).LastOrDefault() ?? getSelection();
                 if (!quickCapture && selected is { IsValid: true } area && Contains(area, point))
                 {
@@ -278,6 +310,8 @@ internal sealed class RegionPicker : Window
             MouseMove += (_, _) =>
             {
                 Native.GetCursorPos(out var end);
+                if (annotations?.IsDrawing == true) { annotations.Move(new Point(end.X, end.Y)); refreshAnnotations(); return; }
+                if (annotations is not null && annotations.Tool != DrawingTool.Select) { Cursor = System.Windows.Input.Cursors.Pen; windowBorder.Visibility = Visibility.Collapsed; return; }
                 if (origin is not { } start)
                 {
                     var selected = getSelections().Where(area => Contains(area, end)).Select(area => (CaptureArea?)area).LastOrDefault() ?? getSelection();
@@ -310,6 +344,11 @@ internal sealed class RegionPicker : Window
             };
             MouseLeftButtonUp += (_, _) =>
             {
+                if (annotations?.IsDrawing == true)
+                {
+                    Native.GetCursorPos(out var mark); annotations.Move(new Point(mark.X, mark.Y)); annotations.Complete();
+                    ReleaseMouseCapture(); refreshAnnotations(); return;
+                }
                 if (origin is not { } start) return; ReleaseMouseCapture(); Native.GetCursorPos(out var end);
                 origin = null;
                 if (initialArea is { } edited)
@@ -326,6 +365,70 @@ internal sealed class RegionPicker : Window
                 }
                 else select(new(Math.Min(start.X, end.X), Math.Min(start.Y, end.Y), Math.Abs(start.X - end.X), Math.Abs(start.Y - end.Y)));
             };
+            LostMouseCapture += (_, _) => { if (annotations?.IsDrawing == true) { annotations.Cancel(); refreshAnnotations(); } };
+        }
+        private bool IsToolbarInput(object source)
+        {
+            for (var element = source as DependencyObject; element is not null; element = VisualTreeHelper.GetParent(element))
+                if (ReferenceEquals(element, toolbar)) return true;
+            return false;
+        }
+        private FrameworkElement CreateAnnotationToolbar(Action<CaptureArea?> finish)
+        {
+            var panel = new WrapPanel { MaxWidth = 850 };
+            var tools = new[] { (DrawingTool.Select, "Alan seç"), (DrawingTool.Freehand, "Kalem"), (DrawingTool.Arrow, "Ok"), (DrawingTool.Rectangle, "Dikdörtgen"), (DrawingTool.Ellipse, "Elips"), (DrawingTool.Highlight, "Vurgula") };
+            foreach (var (tool, label) in tools)
+            {
+                var button = CaptureUi.Button(label, () => { annotations!.Tool = tool; refreshAnnotations(); });
+                button.ToolTip = label; toolButtons[tool] = button; panel.Children.Add(button);
+            }
+            var colors = new ComboBox { Width = 90, Margin = new Thickness(4), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = "Çizim rengi" };
+            foreach (var (color, name) in new[] { (Colors.Crimson, "Kırmızı"), (Colors.Gold, "Sarı"), (Colors.DodgerBlue, "Mavi"), (Colors.LimeGreen, "Yeşil"), (Colors.White, "Beyaz"), (Colors.Black, "Siyah") })
+                colors.Items.Add(new ComboBoxItem { Content = name, Tag = color });
+            colors.SelectedIndex = 0;
+            colors.SelectionChanged += (_, _) => { if (!updatingOptions) { annotations!.Color = (Color)((ComboBoxItem)colors.SelectedItem).Tag; refreshAnnotations(); } };
+            colorPicker = colors; panel.Children.Add(colors);
+            var width = new ComboBox { Width = 60, Margin = new Thickness(4), ItemsSource = new[] { 2, 4, 8, 12 }, SelectedItem = 4, ToolTip = "Çizgi kalınlığı (px)" };
+            width.SelectionChanged += (_, _) => { if (!updatingOptions) { annotations!.Width = (int)width.SelectedItem; refreshAnnotations(); } };
+            lineWidthPicker = width; panel.Children.Add(width);
+            panel.Children.Add(CaptureUi.Button("Geri al", () => { annotations!.Undo(); refreshAnnotations(); }));
+            panel.Children.Add(CaptureUi.Button("Temizle", () => { annotations!.Clear(); refreshAnnotations(); }));
+            var capture = CaptureUi.Button("Yakala ↵", CaptureSelection);
+            capture.Background = new SolidColorBrush(Color.FromRgb(35, 93, 149)); panel.Children.Add(capture);
+            panel.Children.Add(CaptureUi.Button("İptal", () => finish(null)));
+            foreach (var button in panel.Children.OfType<Button>()) button.Foreground = Brushes.White;
+            var stack = new StackPanel(); stack.Children.Add(panel);
+            stack.Children.Add(new TextBlock { Text = "Alan seç · kalem veya şekille işaretle · Yakala / Enter · Ctrl+Z geri al · Esc iptal", Foreground = Brushes.White, Margin = new Thickness(8, 2, 8, 6) });
+            return new Border { Background = new SolidColorBrush(Color.FromArgb(245, 20, 24, 32)), CornerRadius = new CornerRadius(8), Child = stack };
+        }
+        private void CaptureSelection()
+        {
+            if (annotations is not null && getSelection() is not { IsValid: true })
+                select(new(display.Bounds.Left, display.Bounds.Top, display.Bounds.Right - display.Bounds.Left, display.Bounds.Bottom - display.Bounds.Top));
+            finishSelected();
+        }
+        public void RefreshAnnotations()
+        {
+            if (annotations is null) return;
+            var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+            var size = transform.Transform(new Vector(display.Bounds.Right - display.Bounds.Left, display.Bounds.Bottom - display.Bounds.Top));
+            if (toolbar is not null) toolbar.MaxWidth = Math.Max(1, size.X - 32);
+            Cursor = annotations.Tool == DrawingTool.Select ? System.Windows.Input.Cursors.Cross : System.Windows.Input.Cursors.Pen;
+            foreach (var (tool, button) in toolButtons)
+            {
+                button.Background = tool == annotations.Tool ? new SolidColorBrush(Color.FromRgb(52, 73, 100)) : Brushes.Transparent;
+                button.Foreground = Brushes.White;
+                System.Windows.Automation.AutomationProperties.SetItemStatus(button, tool == annotations.Tool ? "Seçili" : "");
+            }
+            updatingOptions = true;
+            try
+            {
+                if (colorPicker is not null) colorPicker.SelectedItem = colorPicker.Items.Cast<ComboBoxItem>().First(item => Equals(item.Tag, annotations.Color));
+                if (lineWidthPicker is not null) lineWidthPicker.SelectedItem = (int)annotations.Width;
+            }
+            finally { updatingOptions = false; }
+            annotationImage.Width = size.X; annotationImage.Height = size.Y;
+            annotationImage.Source = annotations.Preview(new(display.Bounds.Left, display.Bounds.Top, display.Bounds.Right - display.Bounds.Left, display.Bounds.Bottom - display.Bounds.Top));
         }
         private static bool Contains(CaptureArea area, POINT point) => point.X >= area.X && point.Y >= area.Y && point.X < area.X + area.Width && point.Y < area.Y + area.Height;
         public void SetSelections(IEnumerable<CaptureArea> areas)

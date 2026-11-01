@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -258,6 +258,11 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
                 _pressedKeys.Remove(key);
                 return new IntPtr(1);
             }
+
+            // Keep consuming the source until its release, even when a modifier
+            // was released first. Otherwise auto-repeat leaks the original key.
+            if (isDown && !isFirstKeyDown && _suppressedKeyUps.Contains(key))
+                return new IntPtr(1);
 
             if (HotkeyService.IsCapturing)
             {
@@ -609,14 +614,28 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
             .Where(key => (sourceFlags & ModifierFlag(key)) == 0)
             .ToArray();
 
+        if (releaseSource.Any(IsMenuModifier)) AddMenuMask(events);
         foreach (var key in releaseSource) events.Add(KeyInput(key, true));
         foreach (var key in pressTarget) events.Add(KeyInput(key, false));
         events.Add(KeyInput(mapping.ToKey, false));
         events.Add(KeyInput(mapping.ToKey, true));
+        if (pressTarget.Any(IsMenuModifier)) AddMenuMask(events);
         foreach (var key in pressTarget.Reverse()) events.Add(KeyInput(key, true));
         foreach (var key in releaseSource.Reverse()) events.Add(KeyInput(key, false));
+        // Restoring a physically held Win/Alt must not make its eventual release
+        // look like a standalone press that opens Start or the application menu.
+        if (releaseSource.Any(IsMenuModifier)) AddMenuMask(events);
 
         return SendInput((uint)events.Count, events.ToArray(), Marshal.SizeOf<INPUT>()) == events.Count;
+    }
+
+    private static bool IsMenuModifier(int key) => key is VkLWin or VkRWin or VkLMenu or VkRMenu or 0x12;
+
+    private static void AddMenuMask(List<INPUT> events)
+    {
+        // VK_E8 is unassigned; injected mask events bypass the mapping engine.
+        events.Add(KeyInput(0xE8, false));
+        events.Add(KeyInput(0xE8, true));
     }
 
     private static bool SendText(string text, IReadOnlyList<int> pressedModifiers)

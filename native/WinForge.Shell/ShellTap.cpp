@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <ocidl.h>
+#include <commctrl.h>
 #include <xamlom.h>
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #undef GetCurrentTime
@@ -27,6 +28,8 @@
 #include <vector>
 #include "BridgeProtocol.h"
 #include "TaskbarGeometry.h"
+#include "ExplorerCommandBar.h"
+#include "ExplorerCommandBarLayout.h"
 
 using namespace winrt;
 using namespace Windows::Data::Json;
@@ -49,6 +52,7 @@ struct SavedProperty {
     std::wstring desired;
 };
 struct Node {
+    std::unique_ptr<ExplorerCommandBarState> explorer;
     InstanceHandle handle{};
     InstanceHandle parent{};
     std::wstring type;
@@ -81,6 +85,7 @@ struct SnapshotNode {
 
 class Tap;
 struct UiContext {
+    std::map<HWND, std::unique_ptr<ExplorerCommandBarLayout>> explorerLayouts;
     Tap* owner{};
     HWND window{};
     LONG revision{-1};
@@ -121,6 +126,7 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
         if (message == WM_TIMER && context) { context->owner->Poll(*context); return 0; }
         if (message == WM_APP + 2 && context) {
             KillTimer(window, TimerId);
+            context->explorerLayouts.clear();
             for (auto& [handle, node] : context->nodes) { (void)handle; context->owner->Restore(node); }
             context->nodes.clear();
             context->configuration = nullptr;
@@ -182,6 +188,13 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
 
     void Restore(Node& node) noexcept {
         try {
+            if (node.explorer) {
+                com_ptr<::IInspectable> instance;
+                // Closed tabs may already have released their diagnostics handle.
+                if (SUCCEEDED(diagnostics_->GetIInspectableFromHandle(node.handle, instance.put())))
+                    node.explorer->Restore(service_.get(), node.handle);
+                else node.explorer->saved.clear();
+            }
             node.dock.reset();
             RestoreIconColumn(node);
             auto element = node.element.get();
@@ -355,6 +368,19 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
 
     void Apply(UiContext& context, Node& node) noexcept {
         try {
+            if (node.explorer) {
+                std::map<std::wstring, std::wstring> desired;
+                if (context.configuration && context.configuration.GetNamedBoolean(L"active", false)) {
+                    for (auto const& item : context.configuration.GetNamedArray(L"rules", JsonArray{})) {
+                        auto rule = item.GetObject();
+                        if (!MatchIdentity(std::wstring(rule.GetNamedString(L"selector")), node.type, node.name, L"")) continue;
+                        for (auto const& pair : rule.GetNamedObject(L"properties")) desired[std::wstring(pair.Key())] = std::wstring(pair.Value().GetString());
+                    }
+                }
+                node.explorer->Apply(service_.get(), node.handle, desired);
+                UpdateSnapshot(node);
+                return;
+            }
             auto element = node.element.get();
             if (!element) return;
             if (!context.configuration || !context.configuration.GetNamedBoolean(L"active", false)) { Restore(node); return; }
@@ -559,6 +585,15 @@ public:
                 }
                 auto framework = inspectable.try_as<FrameworkElement>();
                 if (!framework) {
+                    if (ExplorerCommandBarState::Supports(element.Type ? element.Type : L"")) {
+                        auto& context = Context();
+                        Node node;
+                        node.handle = element.Handle; node.parent = relation.Parent;
+                        node.type = element.Type; node.name = element.Name ? element.Name : L"";
+                        node.explorer = std::make_unique<ExplorerCommandBarState>();
+                        auto [it, inserted] = context.nodes.try_emplace(node.handle, std::move(node));
+                        if (inserted) Apply(context, it->second);
+                    }
                     std::lock_guard lock(mutex_);
                     auto& entry = snapshot_[element.Handle];
                     entry.parent = relation.Parent;
@@ -604,6 +639,20 @@ public:
     }
 
     void UpdateSnapshot(Node const& node) {
+        if (node.explorer) {
+            SnapshotNode entry;
+            entry.parent = node.parent; entry.type = node.type; entry.name = node.name;
+            ExplorerPropertyChain chain(service_.get(), node.handle);
+            for (unsigned int i = 0; i < chain.count; ++i) {
+                auto const& p = chain.values[i];
+                if (p.Overridden || !p.PropertyName || !p.Value) continue;
+                if (std::wstring(p.PropertyName) == L"Visibility") entry.visibility = p.Value;
+                if (std::wstring(p.PropertyName) == L"ActualHeight") entry.height = wcstod(p.Value, nullptr);
+            }
+            std::lock_guard lock(mutex_);
+            snapshot_[node.handle] = std::move(entry);
+            return;
+        }
         auto element = node.element.get();
         if (!element) return;
         SnapshotNode entry;
@@ -668,6 +717,7 @@ public:
             LONG revision{};
             if (!session_.Read(json, revision)) {
                 if (session_.Alive()) return;
+                context.explorerLayouts.clear();
                 for (auto& [handle, node] : context.nodes) { (void)handle; Restore(node); }
                 context.configuration = nullptr;
                 context.revision = -1;
@@ -679,6 +729,24 @@ public:
                 context.revision = revision;
                 for (auto& [handle, node] : context.nodes) { (void)handle; Apply(context, node); }
                 InterlockedExchange(&session_.Get()->appliedRevision, revision);
+            }
+            bool hideExplorer = false;
+            for (auto const& [handle, node] : context.nodes) {
+                (void)handle;
+                if (node.explorer && node.type.find(L"CommandBarControl") != std::wstring::npos && !node.explorer->saved.empty()) hideExplorer = true;
+            }
+            if (!hideExplorer) context.explorerLayouts.clear();
+            else {
+                for (auto it = context.explorerLayouts.begin(); it != context.explorerLayouts.end();) {
+                    if (!IsWindow(it->first)) it = context.explorerLayouts.erase(it); else ++it;
+                }
+                EnumThreadWindows(GetCurrentThreadId(), [](HWND window, LPARAM param) -> BOOL {
+                    auto& layouts = reinterpret_cast<UiContext*>(param)->explorerLayouts;
+                    if (ExplorerCommandBarLayout::Class(window) == L"CabinetWClass" && !layouts.contains(window))
+                        layouts.emplace(window, std::make_unique<ExplorerCommandBarLayout>(window));
+                    return TRUE;
+                }, reinterpret_cast<LPARAM>(&context));
+                for (auto& [window, layout] : context.explorerLayouts) { (void)window; layout->Update(); }
             }
             for (auto const& [handle, node] : context.nodes) {
                 (void)handle;

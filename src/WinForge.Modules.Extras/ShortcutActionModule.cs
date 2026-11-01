@@ -103,7 +103,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
             {
                 var shortcut = ActionShortcut.Parse(r.Shortcut);
                 Action callback = () => Trigger(r);
-                _bindings.Add(shortcut.Mouse.Length > 0 ? ActionMouseBindings.Register(shortcut, callback) : Context.Hotkeys.Register(shortcut.Modifiers, (uint)shortcut.Key, callback));
+                _bindings.Add(shortcut.Mouse.Length > 0 ? ActionMouseBindings.Register(shortcut, callback) : Context.Hotkeys.Register(shortcut.Modifiers, (uint)shortcut.Key, callback, r.Name));
             }
         }
         catch { Clear(); throw; }

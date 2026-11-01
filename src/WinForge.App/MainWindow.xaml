@@ -12,6 +12,12 @@
         <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0" GlassFrameThickness="0" />
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
+        <SolidColorBrush x:Key="BgBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="CardBrush" Color="#F8F9FB" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#DCE2EC" />
+        <SolidColorBrush x:Key="TextBrush" Color="#0B1020" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#62677D" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#E8EEF7" />
         <Style x:Key="WindowControlButton" TargetType="Button">
             <Setter Property="Width" Value="46" />
             <Setter Property="Height" Value="38" />
@@ -68,6 +74,6 @@
                 </StackPanel>
             </Grid>
         </Border>
-        <wv2:WebView2 Grid.Row="1" x:Name="UiWebView" DefaultBackgroundColor="#090A0C" />
+        <wv2:WebView2 Grid.Row="1" x:Name="UiWebView" DefaultBackgroundColor="#FFFFFF" />
     </Grid>
 </Window>

@@ -989,7 +989,7 @@ export function FeatureApp({ view }: { view: string }) {
 
   if (view === 'capture-tools') {
     const tools = [
-      ['region', 'Bölge yakala', 'Belirli bir alanı seç'], ['window', 'Pencere yakala', 'Tek bir pencereyi seç'],
+      ['region', 'Bölge yakala', 'Alan seç, işaretle ve yakala'], ['window', 'Pencere yakala', 'Tek bir pencereyi seç'],
       ['monitor', 'Monitör yakala', 'Ekran seç'], ['desktop', 'Tüm ekranlar', 'Bağlı ekranları birlikte al'],
       ['last', 'Son bölge', 'En son seçilen alanı kullan'], ['scroll', 'Kayan ekran', 'Uzun sayfayı kaydırarak al'],
       ['video', 'Video kaydı', 'Ekranı video olarak kaydet'], ['gif', 'GIF kaydı', 'Ekranı animasyonlu GIF kaydet'],

@@ -83,9 +83,22 @@ function send(command: string, payload: Record<string, unknown> = {}) {
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const paths: Record<string, React.ReactNode> = {
+    home: <><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z" /></>,
+    star: <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" />,
+    monitor: <><rect x="3" y="4" width="18" height="13" rx="1.5" /><path d="M12 17v4m-4 0h8" /></>,
+    window: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 8h18" /></>,
+    folder: <path d="M3 7V5a2 2 0 0 1 2-2h4l3 4h7a2 2 0 0 1 2 2v10H3V7Z" />,
+    bolt: <path d="m13 2-10 12h8l-1 8 11-13h-8Z" />,
+    back: <path d="m10 5-7 7 7 7M3 12h18" />,
+    taskbar: <><rect x="2" y="6" width="20" height="13" rx="1" /><path d="M3 16h18m-16 0h.1m3 0h.1" /></>,
+    windows: <><rect x="3" y="9" width="13" height="13" rx="1" /><path d="M9 9V3h13v13h-6" /></>,
+    text: <><path d="M3 7V3h4m10 0h4v4m0 10v4h-4M7 21H3v-4M8 8h8m-4 0v9" /></>,
+    pipette: <><path d="m14 5 5 5M3 21l4-1L20 7a3 3 0 0 0-4-4L3 16v5Z" /><path d="m12 7 5 5" /></>,
+    files: <><path d="M11 14H4V2h8l4 4v3M11 2v5h5" /><rect x="10" y="11" width="12" height="11" rx="1" /><path d="M13 15h6m-6 3h6" /></>,
+    volume: <><path d="m11 3-6 5H2v8h3l6 5V3Zm5 4a7 7 0 0 1 0 10m3-13a11 11 0 0 1 0 16" /></>,
     search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
     sliders: <><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></>,
-    settings: <><circle cx="12" cy="12" r="3" /><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.7 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.7-1.4-2.4L7.3 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.7-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.7 1l1.7-.7 1.4 2.4-1.4 1.1a8 8 0 0 1-.1 2Z" /></>,
+    settings: <><path d="m9.5 3-.6 2.1-2 .9-2.1-.6-2.3 4 1.5 1.5v2.2L2.5 15l2.3 4 2.1-.6 2 .9.6 2.1h5l.6-2.1 2-.9 2.1.6 2.3-4-1.5-1.6v-2.2l1.5-1.5-2.3-4-2.1.6-2-.9-.6-2.1Z" /><circle cx="12" cy="12" r="3" /></>,
     power: <><path d="M12 2v10" /><path d="M5.6 5.6a9 9 0 1 0 12.8 0" /></>,
     layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,
     close: <><path d="m18 6-12 12M6 6l12 12" /></>,
@@ -94,6 +107,24 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     grid: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] ?? paths.layers}</svg>;
+}
+
+function moduleGroup(module: Module) {
+  if (['Taskbar', 'Görev çubuğu', 'Başlat', 'Görünüm'].includes(module.category)) return 'Görünüm';
+  if (['Fare', 'Arama', 'Pencereler'].includes(module.category)) return 'Verimlilik';
+  return module.category;
+}
+
+function moduleIcon(module: Module) {
+  const text = `${module.id} ${module.name}`.toLocaleLowerCase('tr');
+  if (/taskbar|görev çubuğu/.test(text)) return 'taskbar';
+  if (/window|pencere|tiling/.test(text)) return 'windows';
+  if (/text|metin|ocr/.test(text)) return 'text';
+  if (/color|renk/.test(text)) return 'pipette';
+  if (/rename|adlandır/.test(text)) return 'files';
+  if (/media|medya|ses/.test(text)) return 'volume';
+  if (module.category === 'Gezgin') return 'folder';
+  return moduleGroup(module) === 'Sistem' ? 'settings' : 'grid';
 }
 
 function App() {
@@ -110,6 +141,8 @@ function App() {
   });
   const [selectedId, setSelectedId] = useState('');
   const [showAppearance, setShowAppearance] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [navigation, setNavigation] = useState('Genel bakış');
   const [error, setError] = useState('');
   const clearFilters = () => { setQuery(''); setCategory('Tümü'); setStatus('all'); setFavoritesOnly(false); };
   useEffect(() => {
@@ -144,7 +177,7 @@ function App() {
         event.preventDefault();
         focusSearch();
       }
-      if (event.key === 'Escape') setShowAppearance(false);
+      if (event.key === 'Escape') { setShowAppearance(false); setDetailsOpen(false); }
     }
     return () => {
       bridge?.removeEventListener('message', receive);
@@ -154,7 +187,9 @@ function App() {
   }, [receive]);
 
   const filtered = useMemo(() => (state?.modules ?? []).filter(module => {
-    if (category !== 'Tümü' && module.category !== category) return false;
+    if (category === 'Pencereler') {
+      if (module.category !== 'Pencereler' && moduleIcon(module) !== 'windows') return false;
+    } else if (category !== 'Tümü' && moduleGroup(module) !== category && module.category !== category) return false;
     if (status === 'active' && !module.isActive) return false;
     if (status === 'inactive' && module.isActive) return false;
     if (status === 'error' && !module.error) return false;
@@ -163,7 +198,8 @@ function App() {
     return !needle || `${module.name} ${module.description} ${module.category} ${module.settings.map(setting => `${setting.label} ${setting.description ?? ''} ${setting.section ?? ''}`).join(' ')}`.toLocaleLowerCase('tr').includes(needle);
   }), [status, favoritesOnly, favorites, category, query, state]);
   const selected = filtered.find(module => module.id === selectedId) ?? filtered[0];
-  const categories = ['Tümü', ...(state?.categories ?? [])];
+  const categories = ['Tümü', 'Görünüm', 'Verimlilik', 'Sistem'];
+  const navigate = (item: string) => { clearFilters(); setNavigation(item); setDetailsOpen(false); if (item === 'Favoriler') setFavoritesOnly(true); else if (!['Genel bakış', 'Tüm modüller'].includes(item)) setCategory(item); };
 
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
@@ -171,45 +207,35 @@ function App() {
 
   if (!state) return <div className="loading"><span className="loader" />WinForge hazırlanıyor</div>;
 
-  const accentHex = state.appearance.accents.find(accent => accent.name === state.appearance.accent)?.hex ?? '#75A7FF';
-  return <div className={`app-shell tone-${state.appearance.tone.toLowerCase()} ${state.appearance.glow ? 'glow' : ''}`} style={{ '--accent': accentHex } as React.CSSProperties}>
-    <a className="skip-link" href="#module-details">Seçili modülün ayarlarına geç</a>
-    <main className="main-area">
-      <section className="workspace" aria-label="Modül yönetimi">
-        <div className="module-column">
-          <header className="module-toolbar">
-            <div className="module-toolbar-heading">
-              <h1>Modüller <span className="count-badge" role="status">{filtered.length}</span></h1>
-              <div className="module-actions">
-                <button className="icon-button" title="Görünüm ayarları" aria-label="Görünüm ayarları" onClick={() => setShowAppearance(true)}><Icon name="settings" size={16} /></button>
-                <button className="icon-button" title="WinForge'dan çık" aria-label="WinForge'dan çık" onClick={() => send('app.exit')}><Icon name="power" size={16} /></button>
-              </div>
-            </div>
-            <label className="search-box"><Icon name="search" size={16} /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => setQuery(event.target.value)} placeholder="Modül veya ayar ara…" /><kbd>Ctrl F</kbd></label>
-            <nav className="module-categories" aria-label="Modül kategorileri">
-              {categories.map(item => <button key={item} className={`category-chip ${category === item ? 'selected' : ''}`} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}
-            </nav>
-            <div className="module-filters">
-              <label className="status-filter"><select aria-label="Araç durumuna göre filtrele" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Tüm durumlar</option><option value="active">Etkin</option><option value="inactive">Kapalı</option><option value="error">Hatalı</option></select></label>
-              <button className={`filter-chip ${favoritesOnly ? 'on' : ''}`} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(value => !value)}>★ Favoriler</button>
-              {(query || category !== 'Tümü' || status !== 'all' || favoritesOnly) && <button className="filter-chip clear-filters" onClick={clearFilters}>Temizle</button>}
-            </div>
-          </header>
-          <div className="module-list">
-            {filtered.map(module => <div className="module-entry" key={module.id}>
-              <button aria-pressed={selected?.id === module.id} aria-controls="module-details" aria-label={`${module.name}: ${module.error ? 'hata' : module.isActive ? 'etkin' : 'kapalı'}. Çift tıklayarak ${module.isActive ? 'kapat' : 'etkinleştir'}.`} className={`module-card ${selected?.id === module.id ? 'active' : ''} ${module.isActive ? 'is-enabled' : 'is-disabled'} ${module.error ? 'has-error' : ''}`} onClick={() => setSelectedId(module.id)} onDoubleClick={() => send('module.toggle', { id: module.id, enabled: !module.isActive })} title={`${module.name} — ${module.description}\nÇift tıklayarak ${module.isActive ? 'kapat' : 'etkinleştir'}.`}>
-                <span className={`module-icon ${module.isActive ? 'enabled' : ''}`}><Icon name={module.category === 'Fare' ? 'grid' : module.category === 'Sistem' ? 'settings' : 'layers'} size={19} /></span>
-                <span className="module-copy"><strong>{module.name}</strong><span className="module-category">{module.category}</span></span>
-              </button>
-              <button className={`favorite-button ${favorites.includes(module.id) ? 'is-favorite' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}>★</button>
-            </div>)}
-            {filtered.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="search" size={22} /></div><strong>{favoritesOnly ? 'Bu filtrelerde favori araç yok' : 'Sonuç bulunamadı'}</strong><p>{favoritesOnly ? 'Araçların yanındaki yıldızla favorilerini belirle veya filtreleri temizle.' : 'Arama veya kategori filtresini değiştirmeyi dene.'}</p><button className="secondary-button" onClick={clearFilters}>Filtreleri temizle</button></div>}
-          </div>
-        </div>
-        <div className="details-column" id="module-details" tabIndex={-1} aria-label="Seçili modülün ayarları">
-          {selected ? <ModuleDetails key={selected.id} module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /> : <div className="details-empty">Görüntülenecek modül yok.</div>}
-        </div>
-      </section>
+  return <div className="app-shell light-dashboard">
+    <a className="skip-link" href="#dashboard-content">İçeriğe geç</a>
+    <aside className="dashboard-sidebar" aria-label="Ana menü">
+      <div className="dashboard-brand"><span className="windows-mark" aria-hidden="true"><i /><i /><i /><i /></span><div><strong>WinForge</strong><span>Daha iyi bir Windows.</span></div></div>
+      <nav className="dashboard-navigation" aria-label="Modül gezintisi">
+        {['Genel bakış', 'Favoriler', 'Tüm modüller', 'Görünüm', 'Pencereler', 'Gezgin', 'Verimlilik', 'Sistem'].map((item, index) => <React.Fragment key={item}>
+          {index === 3 && <hr />}
+          <button className={`dashboard-nav-item ${navigation === item ? 'selected' : ''}`} aria-current={navigation === item ? 'page' : undefined} onClick={() => navigate(item)}><Icon name={['home', 'star', 'grid', 'monitor', 'window', 'folder', 'bolt', 'settings'][index]} size={25} /><span>{item}</span></button>
+        </React.Fragment>)}
+      </nav>
+      <div className="dashboard-sidebar-bottom"><button className="dashboard-nav-item" onClick={() => setShowAppearance(true)}><Icon name="settings" size={25} /><span>Uygulama ayarları</span></button></div>
+    </aside>
+    <main className="dashboard-main" id="dashboard-content" tabIndex={-1}>
+      <label className="dashboard-search"><Icon name="search" size={23} /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => { setQuery(event.target.value); setDetailsOpen(false); }} placeholder="Araç veya ayar ara..." /><kbd>Ctrl + F</kbd></label>
+      {detailsOpen && selected ? <section className="dashboard-settings" aria-label="Seçili modülün ayarları">
+        <button className="dashboard-back" onClick={() => setDetailsOpen(false)}><Icon name="back" />Modüllere dön</button>
+        <div id="module-details"><ModuleDetails key={selected.id} module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /></div>
+      </section> : <>
+        <header className="dashboard-heading"><div><h1>{navigation === 'Genel bakış' || navigation === 'Tüm modüller' ? 'Araçların, tek bir yerde' : navigation}</h1><p>Windows deneyimini kendine göre düzenle.</p></div><span className="dashboard-active-count"><i />{state.activeCount} modül etkin</span></header>
+        <nav className="dashboard-tabs" aria-label="Modül kategorileri">{categories.map(item => <button key={item} className={category === item ? 'selected' : ''} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}</nav>
+        <section className="dashboard-grid" aria-label="Modüller">
+          {filtered.map(module => <article className={`tool-card ${module.error ? 'has-error' : ''}`} key={module.id}>
+            <div className="tool-card-intro"><span className="tool-icon"><Icon name={moduleIcon(module)} size={40} /></span><div><h2>{module.name}</h2><p>{module.description}</p></div></div>
+            <div className="tool-card-status"><span className={module.error ? 'error' : module.isActive ? 'enabled' : ''}>{module.error ? 'Hata' : module.isActive ? 'Etkin' : 'Kapalı'}</span><Toggle checked={module.isActive} label={`${module.name} modülünü etkinleştir`} onChange={enabled => send('module.toggle', { id: module.id, enabled })} /></div>
+            <div className="tool-card-footer"><button className="tool-settings-button" aria-label={`${module.name}: Ayarları aç`} onClick={() => { setSelectedId(module.id); setDetailsOpen(true); }}><Icon name="settings" size={22} />Ayarları aç</button><button className={`tool-favorite ${favorites.includes(module.id) ? 'selected' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}><Icon name="star" size={24} /></button></div>
+          </article>)}
+          {filtered.length === 0 && <div className="dashboard-empty"><Icon name="search" size={32} /><h2>{favoritesOnly ? 'Henüz favori araç yok' : 'Sonuç bulunamadı'}</h2><p>{favoritesOnly ? 'Kartlardaki yıldızla favori araçlarını buraya ekle.' : 'Başka bir arama veya kategori dene.'}</p><button className="tool-settings-button" onClick={clearFilters}>Filtreleri temizle</button></div>}
+        </section>
+      </>}
     </main>
 
     {showAppearance && <AppearanceDialog dataDirectory={state.dataDirectory} onOpenData={() => send('system.openData')} appearance={state.appearance} onClose={() => setShowAppearance(false)} onChange={value => send('appearance.update', value)} onOpenLogs={() => send('system.openLogs')} />}
@@ -275,6 +301,7 @@ function SettingControl({ setting, onUpdate, onExecute }: { setting: Setting; on
   if (isHotkey) return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div>
     <ShortcutField value={text} label={setting.label} onChange={setText} allowMouse={setting.label === 'Bölge yakalama kısayolu'} allowWheel={/brightness.*hotkey/.test(setting.key)}
       onCommit={value => { if (value !== String(setting.value ?? '')) setText(value, true); }} /></div>;
+  if (setting.kind === 'text' && setting.options.length > 0) return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><select className="white-control" value={setting.options.includes(text) ? text : '__custom'} onChange={event => { if (event.target.value !== '__custom') setText(event.target.value, true); }} aria-label={`${setting.label} hazır seçenekler`}><option value="__custom">Özel (elle düzenle)</option>{setting.options.map(option => <option value={option} key={option}>{setting.optionLabels[option] ?? option}</option>)}</select><input className="white-control" value={text} onChange={event => setText(event.target.value)} onBlur={saveText} onKeyDown={event => { if (event.key === 'Enter') { saveText(); event.currentTarget.blur(); } }} aria-label={setting.label} placeholder="Windows varsayılanı" /></div>;
   return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><div className="input-action-row"><input className="white-control" value={text} onChange={event => setText(event.target.value)} onBlur={saveText} onKeyDown={event => { if (event.key === 'Enter') { saveText(); (event.currentTarget as HTMLInputElement).blur(); } }} aria-label={setting.label} /></div></div>;
 }
 

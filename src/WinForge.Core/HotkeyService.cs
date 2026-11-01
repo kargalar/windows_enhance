@@ -1,4 +1,7 @@
 using System.Windows.Interop;
+using System.Windows.Input;
+using System.Runtime.InteropServices;
+using System.ComponentModel;
 
 namespace WinForge.Core;
 
@@ -12,7 +15,12 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
     private readonly HwndSource _source;
     private readonly Dictionary<int, Action> _actions = new();
     private readonly Dictionary<int, (uint Modifiers, uint Key)> _shortcuts = new();
+    private readonly Dictionary<int, string> _owners = new();
     private readonly HashSet<int> _registered = new();
+    private readonly HashSet<int> _fallback = new();
+    private readonly HashSet<uint> _heldFallbackKeys = new();
+    private Native.LowLevelKeyboardProc? _keyboardCallback;
+    private IntPtr _keyboardHook;
     private int _suspensions;
     private bool _disposed;
     private int _nextId = 0x0F00;
@@ -52,17 +60,21 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         return IntPtr.Zero;
     }
 
-    public IDisposable Register(uint modifiers, uint virtualKey, Action callback)
+    public IDisposable Register(uint modifiers, uint virtualKey, Action callback) =>
+        Register(modifiers, virtualKey, callback, "WinForge");
+
+    public IDisposable Register(uint modifiers, uint virtualKey, Action callback, string owner)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_shortcuts.Values.Contains((modifiers, virtualKey)))
-            throw new InvalidOperationException("Kısayol başka bir modülde kullanılıyor.");
+        modifiers &= ~HotkeyModifiers.NoRepeat;
+        foreach (var (existingId, shortcut) in _shortcuts)
+            if (shortcut == (modifiers, virtualKey))
+                throw new InvalidOperationException($"{FormatShortcut(modifiers, virtualKey)} kısayolu WinForge içinde kullanılıyor: {_owners[existingId]}.");
         var id = ++_nextId;
-        if (_suspensions == 0 && !Native.RegisterHotKey(_source.Handle, id, modifiers | HotkeyModifiers.NoRepeat, virtualKey))
-            throw new InvalidOperationException("Kısayol başka bir uygulama tarafından kullanılıyor.");
+        if (_suspensions == 0) RegisterNativeOrFallback(id, modifiers, virtualKey);
 
         _shortcuts[id] = (modifiers, virtualKey);
-        if (_suspensions == 0) _registered.Add(id);
+        _owners[id] = owner;
         _actions[id] = callback;
         return new Registration(this, id);
     }
@@ -76,6 +88,8 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         {
             foreach (var id in _registered) Native.UnregisterHotKey(_source.Handle, id);
             _registered.Clear();
+            _fallback.Clear();
+            _heldFallbackKeys.Clear();
         }
         return new Suspension(this);
     }
@@ -88,9 +102,8 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         var failures = new List<string>();
         foreach (var (id, shortcut) in _shortcuts)
         {
-            if (Native.RegisterHotKey(_source.Handle, id, shortcut.Modifiers | HotkeyModifiers.NoRepeat, shortcut.Key))
-                _registered.Add(id);
-            else failures.Add($"{shortcut.Modifiers:X}+{shortcut.Key:X}");
+            try { RegisterNativeOrFallback(id, shortcut.Modifiers, shortcut.Key); }
+            catch (InvalidOperationException error) { failures.Add($"{_owners[id]}: {error.Message}"); }
         }
         if (failures.Count > 0) throw new InvalidOperationException("Kısayollar geri açılamadı: " + string.Join(", ", failures));
     }
@@ -99,7 +112,90 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
     {
         _actions.Remove(id);
         _shortcuts.Remove(id);
+        _owners.Remove(id);
+        _fallback.Remove(id);
         if (_registered.Remove(id)) Native.UnregisterHotKey(_source.Handle, id);
+    }
+
+    private static InvalidOperationException RegistrationError(uint modifiers, uint key, int error)
+    {
+        var shortcut = FormatShortcut(modifiers, key);
+        return new InvalidOperationException($"{shortcut} kısayolu kaydedilemedi: {new Win32Exception(error).Message} (Windows hata kodu: {error}).");
+    }
+
+    private void RegisterNativeOrFallback(int id, uint modifiers, uint key)
+    {
+        if (Native.RegisterHotKey(_source.Handle, id, modifiers | HotkeyModifiers.NoRepeat, key))
+        {
+            _registered.Add(id);
+            return;
+        }
+        var error = Marshal.GetLastWin32Error();
+        if (error != 1409) throw RegistrationError(modifiers, key, error);
+        if (_keyboardHook == IntPtr.Zero)
+        {
+            _keyboardCallback = HandleFallback;
+            _keyboardHook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _keyboardCallback, Native.GetModuleHandle(null), 0);
+            if (_keyboardHook == IntPtr.Zero)
+                throw new InvalidOperationException("Kısayol için klavye yakalama başlatılamadı.", new Win32Exception(Marshal.GetLastWin32Error()));
+        }
+        _fallback.Add(id);
+    }
+
+    private IntPtr HandleFallback(int code, IntPtr message, IntPtr data)
+    {
+        if (code >= 0)
+        {
+            var input = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(data);
+            // Ignore generated input, including keys sent by our own shortcut actions.
+            if ((input.flags & 0x10) == 0)
+            {
+                uint modifiers = 0;
+                if (Down(0x11)) modifiers |= HotkeyModifiers.Control;
+                if (Down(0x12)) modifiers |= HotkeyModifiers.Alt;
+                if (Down(0x10)) modifiers |= HotkeyModifiers.Shift;
+                if (Down(0x5B) || Down(0x5C)) modifiers |= HotkeyModifiers.Win;
+                if (ProcessFallback(message.ToInt32(), input.vkCode, modifiers)) return new IntPtr(1);
+            }
+        }
+        return Native.CallNextHookEx(_keyboardHook, code, message, data);
+    }
+
+    private static bool Down(int key) => (Native.GetAsyncKeyState(key) & 0x8000) != 0;
+
+    internal bool ProcessFallback(int message, uint key, uint modifiers)
+    {
+        if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP)
+            return _heldFallbackKeys.Remove(key);
+        if (message is not (Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)) return false;
+        if (_heldFallbackKeys.Contains(key)) return true;
+        if (_disposed || _suspensions != 0 || IsCapturing) return false;
+        foreach (var id in _fallback)
+        {
+            if (_shortcuts[id] != (modifiers, key)) continue;
+            _heldFallbackKeys.Add(key);
+            // Keep the native hook fast and do not let an action dispose it mid-callback.
+            _source.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_disposed || _suspensions != 0 || IsCapturing || !_fallback.Contains(id)) return;
+                if (_actions.TryGetValue(id, out var callback))
+                    try { callback(); } catch { /* Match WM_HOTKEY callback isolation. */ }
+            }));
+            return true;
+        }
+        return false;
+    }
+
+    private static string FormatShortcut(uint modifiers, uint key)
+    {
+        var parts = new List<string>();
+        if ((modifiers & HotkeyModifiers.Control) != 0) parts.Add("Ctrl");
+        if ((modifiers & HotkeyModifiers.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & HotkeyModifiers.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & HotkeyModifiers.Win) != 0) parts.Add("Win");
+        var name = KeyInterop.KeyFromVirtualKey((int)key).ToString();
+        parts.Add(name == "None" ? $"0x{key:X2}" : name);
+        return string.Join("+", parts);
     }
 
     public void Dispose()
@@ -109,6 +205,10 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         Interlocked.Add(ref _captureScopes, -_suspensions);
         _suspensions = 0;
         foreach (var id in _actions.Keys.ToList()) Unregister(id);
+        if (_keyboardHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_keyboardHook);
+        _keyboardHook = IntPtr.Zero;
+        _keyboardCallback = null;
+        _heldFallbackKeys.Clear();
         _source.RemoveHook(WndProc);
         _source.Dispose();
     }

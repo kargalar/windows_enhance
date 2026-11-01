@@ -40,14 +40,14 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
 
         if (_windows.TryGetValue(key, out var existing) && existing.IsOpen)
         {
-            existing.Show();
+            if (options.ShowOnOpen) existing.Show();
             return existing;
         }
 
         var window = new ReactFeatureWindow(key, view, title, options, _uiDirectory, HostName, _jsonOptions, _webViewEnvironment);
         window.Closed += OnWindowClosed;
         _windows[key] = window;
-        window.Show();
+        if (options.ShowOnOpen) window.Show();
         return window;
     }
 
@@ -127,7 +127,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
         private readonly Task<CoreWebView2Environment> _webViewEnvironment;
         private readonly WebView2 _webView;
         private readonly bool _resizable;
-        private readonly bool _centerAtCursor;
+        private bool _centerAtCursor;
         private object? _state;
         private bool _disposed;
 
@@ -190,9 +190,12 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
 
         private async void OnLoaded(object sender, RoutedEventArgs args)
         {
+            // Hide/Show raises Loaded again; keep the existing controller and page.
+            Loaded -= OnLoaded;
             try
             {
                 await _webView.EnsureCoreWebView2Async(await _webViewEnvironment);
+                if (_disposed) return;
                 var core = _webView.CoreWebView2;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.AreDevToolsEnabled = false;
@@ -294,6 +297,9 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             if (_disposed) return;
             Dispatcher.Invoke(() =>
             {
+                // Explicit placement also applies to subsequent Hide/Show cycles.
+                _centerAtCursor = false;
+                WindowStartupLocation = WindowStartupLocation.Manual;
                 Left = left;
                 Top = top;
                 Width = width;

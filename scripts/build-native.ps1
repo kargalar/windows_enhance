@@ -17,7 +17,7 @@ foreach ($target in @(@{ Source = 'ContextMenuTap.cpp'; Name = 'WinForge.Context
     $inputs = @(Get-Item -LiteralPath $sourceFile, (Join-Path $source 'BridgeProtocol.h'))
     if ($target.Source -in @('ShellTap.cpp', 'TaskbarGeometryFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'TaskbarGeometry.h') }
     if ($target.Source -in @('ContextMenuTap.cpp', 'ContextMenuFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'ContextMenuEngine.h') }
-    if ($target.Source -eq 'ShellTap.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'TaskbarDockAnimation.h') }
+    if ($target.Source -eq 'ShellTap.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'TaskbarDockAnimation.h'), (Join-Path $source 'ExplorerCommandBar.h'), (Join-Path $source 'ExplorerCommandBarLayout.h') }
     if ($target.Source -in @('FolderSizeHost.cpp', 'FolderSizeTap.cpp')) { $inputs += Get-ChildItem -LiteralPath $source -Filter 'FolderSize*.h' }
     if ($target.Mode -eq '/LD') { $inputs += Get-Item -LiteralPath (Join-Path $source ([IO.Path]::ChangeExtension($target.Source, '.def'))) }
     if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp', 'ExplorerNavigationFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'ShellFixture.manifest') }
@@ -25,9 +25,10 @@ foreach ($target in @(@{ Source = 'ContextMenuTap.cpp'; Name = 'WinForge.Context
     $exports = if ($target.Mode -eq '/LD') { ' /DEF:"' + (Join-Path $source ([IO.Path]::ChangeExtension($target.Source, '.def'))) + '"' } else { '' }
     if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp', 'ExplorerNavigationFixture.cpp')) { $exports += ' /MANIFEST:EMBED /MANIFESTINPUT:"' + (Join-Path $source 'ShellFixture.manifest') + '"' }
     $targetLibraries = $libraries
+    if ($target.Source -eq 'ShellTap.cpp') { $targetLibraries += ' comctl32.lib' }
     if ($target.Source -in @('ExplorerNavigationTap.cpp', 'ExplorerNavigationFixture.cpp')) { $targetLibraries += ' comctl32.lib gdi32.lib advapi32.lib' }
     if ($target.Source -in @('FolderDialogTap.cpp', 'FolderDialogFixture.cpp')) { $targetLibraries += ' comctl32.lib shell32.lib advapi32.lib' }
-    if ($target.Source -in @('ContextMenuTap.cpp', 'ContextMenuFixture.cpp')) { $targetLibraries += ' gdi32.lib advapi32.lib shell32.lib' }
+    if ($target.Source -in @('ContextMenuTap.cpp', 'ContextMenuFixture.cpp')) { $targetLibraries += ' gdi32.lib advapi32.lib shell32.lib comctl32.lib msimg32.lib' }
     if ($target.Source -eq 'FolderSizeHost.cpp') { $targetLibraries += ' dbghelp.lib winhttp.lib' }
     if ($target.Source -eq 'FolderSizeTap.cpp') { $targetLibraries += ' shell32.lib shlwapi.lib propsys.lib' }
     if ($target.Source -eq 'FolderSizeFixture.cpp') { $targetLibraries += ' shell32.lib' }

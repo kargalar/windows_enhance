@@ -234,30 +234,131 @@ test('translator target and automation exe scope save automatically', async () =
   } finally { await translation.close(); }
 });
 
-test('context menu entries show icons, autosave groups and names, and preserve icon controls', async () => {
+test('context menu combines registrations and saves independent location switches', async () => {
   const sent = [];
-  const entry = { id: 'builtin:properties', originalName: 'Özellikler', name: 'Özellikler', visible: true, group: '', icon: '', source: 'Windows komutu', iconPreview: 'data:image/png;base64,AA==', hasOriginalIcon: true };
+  const base = { originalName: 'Open Git Bash here', name: 'Open Git Bash here', visible: true, group: '', icon: '', identity: 'open git bash here', hasOriginalIcon: true, iconPreview: 'data:image/png;base64,AA==' };
+  const entries = [{ ...base, id: 'verb:Directory:git', scope: 'folder', source: 'Directory ? komut' }, { ...base, id: 'verb:Directory\\Background:git', scope: 'background', source: 'Directory\\Background ? komut' }, { ...base, id: 'menu:git', source: 'Ger?ek men? ??esi' }];
+  const view = await mount(h(ContextMenuPanel, { state: { kind: 'context-menu', groups: [], entries }, command: (action, data) => sent.push({action, data}) }));
+  try {
+    assert.equal(view.container.querySelectorAll('.context-entry').length, 1);
+    assert.equal(view.container.querySelectorAll('.context-entry [role="switch"]').length, 8);
+    assert.equal(view.container.querySelector('input[aria-label$="grubu"]'), null);
+    const switches = view.container.querySelectorAll('.context-entry [role="switch"]');
+    await click(switches[1]);
+    const saved = sent.at(-1);
+    assert.equal(saved.action, 'save-item');
+    assert.equal(saved.data.ids.length, 3);
+    assert.equal(saved.data.rule.contexts.folder, false);
+    assert.equal(saved.data.rule.contexts.desktop, true);
+    await click(switches[3]);
+    assert.equal(sent.at(-1).data.rule.contexts.folder, false);
+    assert.equal(sent.at(-1).data.rule.contexts.desktop, false);
+    await type(view.container.querySelector('input[aria-label$="görünen adı"]'), 'Git Bash');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
+    assert.equal(sent.at(-1).data.rule.name, 'Git Bash');
+    await click([...view.container.querySelectorAll('button')].find(button => button.textContent === 'Simgeyi değiştir'));
+    assert.equal(sent.at(-1).action, 'pick-icon');
+    assert.equal(sent.at(-1).data.ids.length, 3);
+  } finally { await view.close(); }
+});
+
+test('context visibility supports row and filtered batch changes while preserving pending edits', async () => {
+  const sent = [];
+  const base = { visible: true, group: 'Araçlar', icon: '', source: 'Windows komutu', hasOriginalIcon: false };
   function Harness() {
-    const [state, setState] = useState({ kind: 'context-menu', groups: [], entries: [entry] });
+    const [state, setState] = useState({ kind: 'context-menu', groups: ['Araçlar'], entries: [
+      { ...base, id: 'builtin:properties', originalName: 'Özellikler', name: 'Özellikler' },
+      { ...base, id: 'builtin:copy', originalName: 'Kopyala', name: 'Kopyala' },
+    ] });
     return h(ContextMenuPanel, { state, command(action, data) {
       sent.push({ action, data });
-      if (action === 'save') setState(current => ({ ...current, groups: data.rule.group ? [data.rule.group] : [], entries: [{ ...entry, ...data.rule }] }));
+      const updates = action === 'save-items' ? data.items : action === 'save-item' ? [data] : [];
+      setState(current => ({ ...current, entries: current.entries.map(entry => {
+        const update = updates.find(item => item.ids.includes(entry.id));
+        return update ? { ...entry, ...update.rule } : entry;
+      }) }));
     } });
   }
   const view = await mount(h(Harness));
+  const button = text => [...view.container.querySelectorAll('button')].find(button => button.textContent === text);
+  const allSwitches = value => [...view.container.querySelectorAll('.context-entry [role="switch"]')].every(toggle => toggle.getAttribute('aria-checked') === String(value));
   try {
-    assert.equal(view.container.querySelector('.context-entry-icon img').src, entry.iconPreview);
-    await type(view.container.querySelector('input[aria-label="Özellikler grubu"]'), 'Diğer');
-    await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
-    assert.equal(sent.findLast(item => item.action === 'save').data.rule.group, 'Diğer');
-    await type(view.container.querySelector('input[aria-label="Özellikler görünen adı"]'), 'Dosya özellikleri');
-    await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
-    assert.equal(sent.findLast(item => item.action === 'save').data.rule.name, 'Dosya özellikleri');
-    await click(view.container.querySelector('input[type="checkbox"]'));
-    assert.equal(sent.findLast(item => item.action === 'save').data.rule.visible, false);
-    await click([...view.container.querySelectorAll('button')].find(button => button.textContent === 'Simgeyi değiştir'));
-    assert.equal(sent.at(-1).action, 'pick-icon');
-    assert.ok(![...view.container.querySelectorAll('button')].some(button => button.textContent === 'Kaydet'));
+    await type(view.container.querySelector('input[aria-label$="görünen adı"]'), 'Yeni özellikler');
+    await click(button('Tümünü kapat'));
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].action, 'save-items');
+    assert.equal(sent[0].data.items.length, 2);
+    assert.equal(sent[0].data.items[0].rule.name, 'Yeni özellikler');
+    assert.ok(allSwitches(false));
+    await click(button('Tümünü aç'));
+    assert.ok(allSwitches(true));
+    await type(view.container.querySelector('[aria-label="Menü öğesi ara"]'), 'Yeni özellikler');
+    await click(button('Tümünü kapat'));
+    assert.deepEqual(sent.at(-1).data.items.map(item => item.ids), [['builtin:properties']]);
+    await click(button('Tüm konumları aç'));
+    assert.equal(sent.at(-1).action, 'save-item');
+    assert.ok(allSwitches(true));
+    await click(button('Tüm konumları kapat'));
+    assert.ok(allSwitches(false));
+    await type(view.container.querySelector('[aria-label="Menü öğesi ara"]'), 'Kopyala');
+    assert.ok(allSwitches(true));
+    const count = sent.length;
+    await act(async () => new Promise(resolve => setTimeout(resolve, 600)));
+    assert.equal(sent.length, count, 'pending autosave must not undo the batch');
+    await type(view.container.querySelector('[aria-label="Menü öğesi ara"]'), 'Bulunamadı');
+    assert.equal(button('Tümünü aç').disabled, true);
+    assert.equal(button('Tümünü kapat').disabled, true);
+  } finally { await view.close(); }
+});
+
+test('context menu separates shortcuts and preserves separator placement and global options', async () => {
+  const sent = [];
+  const entry = { id: 'builtin:copy', originalName: 'Kopyala', name: 'Kopyala', visible: true, group: '', icon: '', source: 'Windows komutu', hasOriginalIcon: false, contexts: { file: false, folder: true } };
+  const separator = { ...entry, id: 'separator:ABC', identity: 'separator:ABC', originalName: 'Ayırıcı: Kopyala / Sil', name: 'Ayırıcı: Kopyala / Sil', isSeparator: true, contexts: undefined };
+  const view = await mount(h(ContextMenuPanel, { state: { kind: 'context-menu', groups: [], entries: [entry, separator] }, command: (action, data) => sent.push({ action, data }) }));
+  try {
+    const copy = view.container.querySelector('[data-entry-id="builtin:copy"]');
+    const shortcut = copy.querySelector('[aria-label="Kopyala: Kısayolda"]');
+    assert.equal(shortcut.getAttribute('aria-checked'), 'false', 'old file settings are inherited by shortcut scope');
+    await click(shortcut);
+    assert.equal(sent.at(-1).data.rule.contexts.shortcut, true);
+    assert.equal(sent.at(-1).data.rule.contexts.file, false);
+    await click(copy.querySelector('[aria-label="Kopyala: Önüne ayırıcı ekle"]'));
+    assert.equal(sent.at(-1).data.rule.separatorBefore, true);
+    await click(copy.querySelector('[aria-label="Kopyala: Arkasına ayırıcı ekle"]'));
+    assert.equal(sent.at(-1).data.rule.separatorBefore, true);
+    assert.equal(sent.at(-1).data.rule.separatorAfter, true);
+    assert.equal(sent.at(-1).data.rule.contexts.shortcut, true);
+    const line = view.container.querySelector('[data-entry-id="separator:ABC"]');
+    assert.equal(line.querySelector('input'), null, 'separators do not expose a command name or icon editor');
+    await click(line.querySelector('[aria-label$="Kısayolda"]'));
+    assert.equal(sent.at(-1).data.ids[0], 'separator:ABC');
+    await click(view.container.querySelector('[aria-label="Yol olarak kopyala: Tırnak işaretlerini kaldır"]'));
+    assert.equal(sent.at(-1).action, 'save-options');
+    assert.equal(sent.at(-1).data.unquotedCopyPath, false);
+    assert.equal(sent.at(-1).data.cleanSeparators, true);
+    await click(view.container.querySelector('[aria-label="Boşta kalan ayırıcı çizgileri otomatik temizle"]'));
+    assert.equal(sent.at(-1).data.cleanSeparators, false);
+    assert.equal(sent.at(-1).data.unquotedCopyPath, false);
+    const filter = view.container.querySelector('[aria-label="Menü öğesi türü"]');
+    await act(async () => { filter.value = 'separators'; filter.dispatchEvent(new window.Event('change', { bubbles: true })); });
+    assert.equal(view.container.querySelectorAll('.context-entry').length, 1);
+    assert.ok(view.container.querySelector('[data-entry-id="separator:ABC"]'));
+  } finally { await view.close(); }
+});
+
+test('context groups are created separately with a member selection', async () => {
+  const sent = [];
+  const entry = { id: 'builtin:properties', originalName: 'Özellikler', name: 'Özellikler', visible: true, group: '', icon: '', source: 'Windows komutu', hasOriginalIcon: true };
+  const view = await mount(h(ContextMenuPanel, { state: { kind: 'context-menu', groups: [], entries: [entry] }, command: (action, data) => sent.push({action, data}) }));
+  try {
+    await click([...view.container.querySelectorAll('button')].find(button => button.textContent === 'Grup oluştur'));
+    await type(view.container.querySelector('[aria-label="Grup adı"]'), 'Diğer');
+    await click(view.container.querySelector('.context-group-choices input'));
+    await act(async () => view.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })));
+    assert.equal(sent.at(-1).action, 'save-group');
+    assert.equal(sent.at(-1).data.name, 'Diğer');
+    assert.deepEqual(sent.at(-1).data.ids, ['builtin:properties']);
   } finally { await view.close(); }
 });
 
@@ -340,4 +441,27 @@ test('volume icon toggles mute and exposes the current state', async () => {
     await click(button);
     assert.deepEqual(messages, ['volume.toggle-mute']);
   } finally { await ui.close(); }
+});
+
+
+test('group icons can be edited, picked, cleared and previewed independently of item icons', async () => {
+  const sent = [];
+  const state = { kind: 'context-menu', groups: ['Tools'], entries: [],
+    groupIcons: { Tools: { icon: 'shell32.dll,3', iconPreview: 'data:image/png;base64,AA==' } } };
+  const view = await mount(h(ContextMenuPanel, { state, command: (action, data) => sent.push({ action, data }) }));
+  try {
+    assert.equal(view.container.querySelectorAll('.context-group-title img, .context-preview img').length, 2);
+    const buttons = view.container.querySelectorAll('.context-group-row button');
+    await click(buttons[1]);
+    assert.deepEqual(sent.pop(), { action: 'pick-group-icon', data: { name: 'Tools' } });
+    await click(buttons[2]);
+    assert.deepEqual(sent.pop(), { action: 'clear-group-icon', data: { name: 'Tools' } });
+    await click(buttons[0]);
+    const inputs = view.container.querySelectorAll('.context-group-editor input');
+    assert.equal(inputs[1].value, 'shell32.dll,3');
+    await type(inputs[0], 'Utilities'); await type(inputs[1], 'shell32.dll,4');
+    await act(async () => view.container.querySelector('form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true })));
+    assert.deepEqual(sent.pop(), { action: 'save-group', data: { name: 'Utilities', previousName: 'Tools', icon: 'shell32.dll,4', ids: [] } });
+    assert.equal(state.groupIcons.Tools.icon, 'shell32.dll,3');
+  } finally { await view.close(); }
 });

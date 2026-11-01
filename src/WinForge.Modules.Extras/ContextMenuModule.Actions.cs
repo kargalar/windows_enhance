@@ -9,13 +9,18 @@ public sealed partial class ContextMenuModule
     private void ApplyPreparedActions(IReadOnlyList<ContextMenuRule> rules)
     {
         var executable = Environment.ProcessPath ?? throw new InvalidOperationException("WinForge yolu bulunamadı.");
-        foreach (var root in new[] { @"Software\Classes\*\shell", @"Software\Classes\Directory\shell" })
+        foreach (var (root, scope) in new[] {
+            (@"Software\Classes\*\shell", "file"), (@"Software\Classes\Directory\shell", "folder"),
+            (@"Software\Classes\lnkfile\shell", "shortcut"), (@"Software\Classes\InternetShortcut\shell", "shortcut"),
+            (@"Software\Classes\exefile\shell", "application") })
         foreach (var action in new[] { "desktop-shortcut", "toggle-hidden" })
         {
             var path = root + @"\WinForge.Prepared." + action;
             Registry.CurrentUser.DeleteSubKeyTree(path, false);
             var rule = rules.FirstOrDefault(r => r.Id == "prepared:" + action);
-            if (rule?.Visible != true) continue;
+            if (rule is null || !(scope == "file"
+                ? new[] { "file", "shortcut", "application" }.Any(context => ContextMenuCatalog.VisibleIn(rule, context))
+                : ContextMenuCatalog.VisibleIn(rule, scope))) continue;
             var entry = _entries.First(e => e.Id == rule.Id);
             using var key = Registry.CurrentUser.CreateSubKey(path);
             key.SetValue("", entry.Name);
@@ -31,7 +36,8 @@ public sealed partial class ContextMenuModule
         if (command is not ("--context-desktop-shortcut" or "--context-toggle-hidden")) return false;
         if (!IsActive) throw new InvalidOperationException("Sağ tık menüsü modülü kapalı.");
         var action = command["--context-".Length..];
-        if (_rules.FirstOrDefault(r => r.Id == "prepared:" + action)?.Visible != true)
+        var rule = _rules.FirstOrDefault(r => r.Id == "prepared:" + action);
+        if (rule is null || !(rule.Contexts?.Values.Any(v => v) ?? rule.Visible))
             throw new InvalidOperationException("Bu menü eylemi kapalı.");
         foreach (var argument in arguments.Take(100))
         {

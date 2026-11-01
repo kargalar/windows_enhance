@@ -6,6 +6,17 @@ namespace WinForge.Modules.Taskbar;
 internal static class TaskbarStyleCatalog
 {
     internal static readonly string[] Themes = ["Varsayılan", "Saydam", "Cam", "Gece", "Klasik Mavi", "Gül", "Dock"];
+    internal static readonly string[] ClockDisplays = ["Tarih ve saat", "Yalnızca tarih", "Yalnızca saat"];
+    internal static readonly string[] TimeFormats = ["", "HH:mm", "HH:mm:ss", "H:mm", "H:mm:ss", "hh:mm tt", "hh:mm:ss tt", "h:mm tt", "h:mm:ss tt", "HH'.'mm", "HH'.'mm'.'ss", "HH:mm 'saat'"];
+    internal static readonly string[] DateFormats = ["", "dd.MM.yyyy", "d.M.yyyy", "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", "dd-MM-yyyy", "dd.MM.yy", "d MMM yyyy", "dd MMMM yyyy", "d MMM", "d MMMM", "ddd, dd.MM.yyyy", "dddd, d MMMM yyyy", "ddd, d MMM", "dddd, d MMMM", "dddd"];
+
+    internal static IReadOnlyDictionary<string, string> FormatLabels(string[] formats)
+    {
+        var example = new DateTime(2026, 11, 1, 14, 5, 9);
+        return formats.ToDictionary(format => format, format => format.Length == 0
+            ? "Windows varsayılanı"
+            : $"{example.ToString(format, CultureInfo.CurrentCulture)} · {format}");
+    }
     private const string TrayPanel = "<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><WrapGrid Orientation=\"Vertical\" MaximumRowsOrColumns=\"2\" /></ItemsPanelTemplate>";
 
     internal static IReadOnlyList<ShellStyleRule> Build(IModuleSettings settings, DateTime now, IReadOnlyList<ShellVisualNode>? tree = null)
@@ -84,17 +95,41 @@ internal static class TaskbarStyleCatalog
             Add("SystemTray.NotificationAreaIcons SystemTray.NotifyIconView", ("MinWidth", "0"), ("MinHeight", "0"), ("Width", "20"), ("Height", "20"), ("Padding", "0"));
         }
         var time = settings.GetString("time-format").Trim();
+        AddGap("tray-icon-gap", "SystemTray.NotificationAreaIcons SystemTray.NotifyIconView");
+        foreach (var selector in new[] { "SystemTray.OmniButton#ControlCenterButton SystemTray.IconView", "SystemTray.Stack#MainStack SystemTray.IconView", "SystemTray.Stack#NonActivatableStack SystemTray.IconView" })
+            AddGap("system-icon-gap", selector);
+        foreach (var selector in new[] { "SystemTray.Stack#NotifyIconStack", "SystemTray.NotificationAreaIcons", "SystemTray.OmniButton#ControlCenterButton", "SystemTray.Stack#MainStack", "SystemTray.Stack#NonActivatableStack" })
+            AddGap("tray-group-gap", selector);
+        var clockGap = settings.GetInt("clock-gap", -1);
+        if (clockGap >= 0)
+            Add("SystemTray.OmniButton#NotificationCenterButton", ("Margin", $"{Math.Clamp(clockGap, 0, 32)},0,0,0"), ("Padding", "0"));
         var date = settings.GetString("date-format").Trim();
-        if (time.Length > 0) Add("TextBlock#TimeInnerTextBlock", ("Text", Format(now, time)));
-        if (date.Length > 0) Add("TextBlock#DateInnerTextBlock", ("Text", Format(now, date)));
-        if (time.Length > 0 || date.Length > 0)
-            Add("SystemTray.DateTimeIconContent", ("Width", Math.Clamp(settings.GetInt("clock-width", 120), 60, 360).ToString(CultureInfo.InvariantCulture)));
+        var display = settings.GetString("clock-display", ClockDisplays[0]);
+        var hideTime = display == ClockDisplays[1];
+        var hideDate = display == ClockDisplays[2];
+        if (hideTime) Add("TextBlock#TimeInnerTextBlock", ("Visibility", "Collapsed"));
+        else if (time.Length > 0) Add("TextBlock#TimeInnerTextBlock", ("Text", Format(now, time)));
+        if (hideDate) Add("TextBlock#DateInnerTextBlock", ("Visibility", "Collapsed"));
+        else if (date.Length > 0) Add("TextBlock#DateInnerTextBlock", ("Text", Format(now, date)));
+        // Formatting must not reserve a fixed-width tile beside the tray.
+        // Keep native content sizing unless the user explicitly requests a width.
+        var clockWidth = settings.GetInt("clock-width", 0);
+        if (clockWidth > 0 && (time.Length > 0 || date.Length > 0 || hideTime || hideDate))
+            Add("SystemTray.DateTimeIconContent", ("Width", Math.Clamp(clockWidth, 60, 360).ToString(CultureInfo.InvariantCulture)));
         if (tree is not null) rules.AddRange(TaskbarSystemIcons.Build(settings, tree));
         if (TaskbarDockSettings.Build(settings) is { } dockRule) rules.Add(dockRule);
         return rules;
 
         void Add(string selector, params (string Name, string Value)[] properties) =>
             rules.Add(new ShellStyleRule(selector, properties.ToDictionary(property => property.Name, property => property.Value)));
+
+        void AddGap(string key, string selector)
+        {
+            var gap = settings.GetInt(key, -1);
+            if (gap < 0) return;
+            var half = (Math.Clamp(gap, 0, 24) / 2.0).ToString(CultureInfo.InvariantCulture);
+            Add(selector, ("Margin", $"{half},0,{half},0"), ("Padding", "0"));
+        }
     }
 
     private static string Format(DateTime now, string format)

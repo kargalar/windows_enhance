@@ -93,7 +93,7 @@ internal static class Program
             }
             if (args.Contains("--context-menu-ui-only"))
             {
-                ContextMenuPanelChecks.Run(app, TestDirectory, Check);
+                ContextMenuPanelChecks.Run(app, TestDirectory, Check, contextOnly: true);
                 Console.WriteLine($"PASS: {_passed} context menu WebView2 checks.");
                 return 0;
             }
@@ -123,6 +123,7 @@ internal static class Program
             }
             if (args.Contains("--net-speed-only"))
             {
+                NetSpeedVisibilityChecks.Run(Check);
                 var host = CreateHost(Path.Combine(AppContext.BaseDirectory, "modules"), "net-speed");
                 host.Load();
                 var netSpeedModule = host.Modules.Single(module => module.Id == "net-speed");
@@ -298,6 +299,12 @@ internal static class Program
                 var nativeDirectory = Environment.GetEnvironmentVariable("WINFORGE_NATIVE_DIRECTORY") ?? Path.Combine(AppContext.BaseDirectory, "native");
                 ShellEngineChecks.Run(nativeDirectory, Check);
                 Console.WriteLine($"PASS: {_passed} native shell checks.");
+                return 0;
+            }
+            if (args.Contains("--explorer-command-bar-live"))
+            {
+                ExplorerCommandBarChecks.Run(Check, live: true);
+                Console.WriteLine($"PASS: {_passed} Explorer command bar checks.");
                 return 0;
             }
             if (args.Length == 2 && args[0] == "--shell-probe")

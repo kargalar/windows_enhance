@@ -47,6 +47,7 @@ internal static class TaskbarSystemIcons
         var rules = new List<ShellStyleRule>();
         var nodes = tree.ToDictionary(node => node.Handle);
         var children = tree.ToLookup(node => node.Parent);
+        var hiddenIcons = new HashSet<ulong>();
         foreach (var icon in tree.Where(node => node.Type == "SystemTray.IconView"))
         {
             var descendants = Descendants(icon.Handle, 0).ToArray();
@@ -65,12 +66,24 @@ internal static class TaskbarSystemIcons
             }
             var isDesktop = HasAncestor(icon, "ShowDesktopStack");
             if (isDesktop) hide |= preferences.Hidden.Contains("hide-show-desktop");
-            if (hide) Add(icon, new() { ["Visibility"] = "Collapsed" });
+            if (hide)
+            {
+                hiddenIcons.Add(icon.Handle);
+                Add(icon, new() { ["Visibility"] = "Collapsed" });
+            }
             else if (isDesktop && preferences.DesktopWidth is > 0 and var width)
             {
                 var value = Math.Clamp(width, 1, MaximumDesktopWidth).ToString(CultureInfo.InvariantCulture);
                 Add(icon, new() { ["Width"] = value, ["MinWidth"] = value, ["MaxWidth"] = value });
             }
+        }
+        // The quick-settings button retains its own padding after all of its
+        // icons collapse, producing an empty clickable tile beside the clock.
+        foreach (var group in tree.Where(node => node.Type == "SystemTray.OmniButton" && node.Name == "ControlCenterButton"))
+        {
+            var icons = Descendants(group.Handle, 0).Where(node => node.Type == "SystemTray.IconView").ToArray();
+            if (icons.Length > 0 && icons.All(icon => hiddenIcons.Contains(icon.Handle)))
+                Add(group, new() { ["Visibility"] = "Collapsed" });
         }
         return rules;
 
