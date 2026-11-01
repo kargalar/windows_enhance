@@ -10,6 +10,7 @@ extern "C" __declspec(dllexport) whisper_context* wf_load(const char* path, bool
     try {
     auto parameters = whisper_context_default_params();
     parameters.use_gpu = gpu;
+    parameters.flash_attn = gpu;
     auto context = whisper_init_from_file_with_params(path, parameters);
     if (gpu && !ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU)) {
         if (context) whisper_free(context);

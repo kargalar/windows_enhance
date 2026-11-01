@@ -100,6 +100,12 @@ internal static class TaskbarCustomizationChecks
         var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
         var styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
         check(styles.Single(rule => rule.Properties.ContainsKey("DockAnimation")).Properties["DockAnimation"] == "160,50", "Dock animation scale and duration are clamped before crossing the native bridge");
+        settings.Set("taskbar-height", 32);
+        styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
+        check(styles.Single(rule => rule.Selector == "Taskbar.TaskbarFrame").Properties["Height"] == "32" &&
+            styles.Single(rule => rule.Selector == "Taskbar.TaskListButton" && rule.Properties.ContainsKey("MinHeight")).Properties["MinHeight"] == "0" &&
+            styles.Single(rule => rule.Selector == "Image#Icon").Properties["Height"] == "24",
+            "Compact taskbar height shrinks the frame and button minimums with fitting default icons");
     }
 
     internal static void RunLive(Action<bool, string> check)

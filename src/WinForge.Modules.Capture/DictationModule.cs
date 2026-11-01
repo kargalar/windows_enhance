@@ -60,7 +60,7 @@ public sealed class DictationModule : CaptureModuleBase
     {
         if (IsActive) return;
         activeStore = Store;
-        try { ApplyStartupSetting(); Register(); base.Activate(); }
+        try { ApplyStartupSetting(); Register(); base.Activate(); PrepareSelectedModel(); }
         catch { Deactivate(); throw; }
     }
     private void Register()
@@ -99,7 +99,17 @@ public sealed class DictationModule : CaptureModuleBase
     public override void Apply()
     {
         ApplyStartupSetting();
-        if (IsActive) { Cancel(); Register(); }
+        if (IsActive) { Cancel(); Register(); activeStore = Store; PrepareSelectedModel(); }
+    }
+    private void PrepareSelectedModel()
+    {
+        var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
+        var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, 1);
+        var path = Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
+        // Missing models are reported when recording starts, not during application startup.
+        if (File.Exists(path))
+            _ = PrepareModelAsync(new DictationConfiguration(path,
+                Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu")), default);
     }
     private void ApplyStartupSetting()
     {
@@ -167,10 +177,15 @@ public sealed class DictationModule : CaptureModuleBase
     }
     private async Task PrepareModelAsync(DictationConfiguration configuration, CancellationToken token)
     {
-        try { await client.PrepareAsync(configuration, token); }
+        try
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            await client.PrepareAsync(configuration, token);
+            Context.Log.Info($"Dictation model ready: {client.Engine}; preparation={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
+        }
         catch (OperationCanceledException) { }
         // The stop path reports loading errors; preparation must not interrupt microphone capture.
-        catch (Exception error) { System.Diagnostics.Debug.WriteLine(error); }
+        catch (Exception error) { Context.Log.Error("Dictation model preparation", error); }
     }
     private void Samples(ReadOnlySpan<float> samples, int rate)
     {
@@ -199,7 +214,9 @@ public sealed class DictationModule : CaptureModuleBase
             if (!File.Exists(path)) throw new FileNotFoundException("Model bulunamadı. Modelleri yönet bölümünden ekleyin.", path);
             ShowStatus("Konuşma çözümleniyor… · Esc: iptal");
             var config = new DictationConfiguration(path, Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu"));
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
             var text = await client.TranscribeAsync(samples, config, token); token.ThrowIfCancellationRequested();
+            Context.Log.Info($"Dictation transcription: {client.Engine}; audio={(double)samples.Length / DictationAudio.SampleRate:F2} s; elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
             if (text.Length == 0) { ShowStatus("Metin bulunamadı."); return; }
             await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
             token.ThrowIfCancellationRequested();

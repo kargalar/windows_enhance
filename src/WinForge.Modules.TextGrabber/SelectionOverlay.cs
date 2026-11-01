@@ -1,85 +1,95 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using WinForge.Core;
 
 namespace WinForge.Modules.TextGrabber;
 
 public sealed class SelectionOverlay : Window
 {
-    private readonly IFeatureUiSurface uiSurface;
-    private bool finished;
-
+    private readonly Canvas canvas = new();
+    private readonly Rectangle selection = new()
+    {
+        Stroke = Brushes.DeepSkyBlue, StrokeThickness = 2,
+        Fill = new SolidColorBrush(Color.FromArgb(35, 50, 160, 255)),
+        Visibility = Visibility.Collapsed, IsHitTestVisible = false
+    };
+    private readonly GlobalKeyboardHook escape = new();
+    private Point? start;
     public Rect? Result { get; private set; }
 
     public SelectionOverlay(IFeatureUiService? featureUi)
     {
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
-        Background = Brushes.Transparent;
+        Background = new SolidColorBrush(Color.FromArgb(32, 0, 0, 0));
         Topmost = true;
         ShowInTaskbar = false;
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.Manual;
         Cursor = Cursors.Cross;
-        Focusable = true;
         Left = SystemParameters.VirtualScreenLeft;
         Top = SystemParameters.VirtualScreenTop;
         Width = SystemParameters.VirtualScreenWidth;
         Height = SystemParameters.VirtualScreenHeight;
-
-        uiSurface = featureUi?.CreateSurface("screen-text-selection")
-            ?? throw new InvalidOperationException("Ekran metni seçimi için React arayüzü gerekli.");
-        Content = uiSurface.Element;
-        uiSurface.MessageReceived += OnUiMessage;
-        uiSurface.SetState(new { hint = "Alanı seçmek için sürükle · Esc ile iptal" });
-        Closed += (_, _) =>
+        canvas.Background = Brushes.Transparent;
+        canvas.Children.Add(selection);
+        var hint = new TextBlock { Text = "Alanı seçmek için sürükle · Esc ile iptal",
+            Foreground = Brushes.White, Background = Brushes.Black, Padding = new Thickness(12),
+            FontSize = 16, IsHitTestVisible = false };
+        canvas.Children.Add(hint);
+        Content = canvas;
+        SourceInitialized += (_, _) =>
         {
-            uiSurface.MessageReceived -= OnUiMessage;
-            uiSurface.Dispose();
+            // Virtual-screen metrics are physical pixels; avoid mixed-DPI WPF placement errors.
+            Native.SetWindowPos(new WindowInteropHelper(this).Handle, Native.HWND_TOPMOST,
+                Native.GetSystemMetrics(76), Native.GetSystemMetrics(77),
+                Native.GetSystemMetrics(78), Native.GetSystemMetrics(79), 0);
+            Native.GetCursorPos(out var cursor);
+            var point = PointFromScreen(new Point(cursor.X, cursor.Y));
+            Canvas.SetLeft(hint, Math.Max(8, point.X - 100));
+            Canvas.SetTop(hint, Math.Max(8, point.Y - 50));
         };
-        Loaded += (_, _) =>
+        Loaded += (_, _) => { Activate(); Focus(); Keyboard.Focus(this); escape.Install(); };
+        escape.KeyStateChanged += (key, down) =>
         {
-            Activate();
-            Focus();
-            Keyboard.Focus(this);
+            if (key == 0x1B && down) Dispatcher.BeginInvoke(new Action(Close));
         };
-    }
-
-    private void OnUiMessage(string command, System.Text.Json.JsonElement payload)
-    {
-        if (command == "screen-selection.cancel")
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; Close(); } };
+        canvas.MouseRightButtonDown += (_, _) => Close();
+        canvas.MouseLeftButtonDown += (_, e) =>
         {
-            finished = true;
-            Result = null;
+            start = e.GetPosition(canvas);
+            hint.Visibility = Visibility.Collapsed;
+            canvas.CaptureMouse();
+            Draw(start.Value);
+        };
+        canvas.MouseMove += (_, e) => { if (start.HasValue) Draw(e.GetPosition(canvas)); };
+        canvas.MouseLeftButtonUp += (_, e) =>
+        {
+            if (start is not { } origin) return;
+            var end = e.GetPosition(canvas);
+            canvas.ReleaseMouseCapture();
+            start = null;
+            if (Math.Abs(end.X - origin.X) < 6 || Math.Abs(end.Y - origin.Y) < 6) return;
+            var first = PointToScreen(origin);
+            var last = PointToScreen(end);
+            Result = new Rect(first, last);
             Close();
-            return;
-        }
-        if (command != "screen-selection.complete" ||
-            !payload.TryGetProperty("x", out var x) ||
-            !payload.TryGetProperty("y", out var y) ||
-            !payload.TryGetProperty("width", out var width) ||
-            !payload.TryGetProperty("height", out var height) ||
-            width.GetDouble() < 6 || height.GetDouble() < 6) return;
-
-        var transform = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
-        var handle = new WindowInteropHelper(this).Handle;
-        Native.GetWindowRect(handle, out var windowBounds);
-        var left = transform.Transform(new Point(x.GetDouble(), y.GetDouble()));
-        var right = transform.Transform(new Point(x.GetDouble() + width.GetDouble(), y.GetDouble() + height.GetDouble()));
-        Result = new Rect(
-            windowBounds.Left + left.X,
-            windowBounds.Top + left.Y,
-            Math.Max(1, right.X - left.X),
-            Math.Max(1, right.Y - left.Y));
-        finished = true;
-        Close();
+        };
+        Closed += (_, _) => { escape.Dispose(); canvas.ReleaseMouseCapture(); };
     }
 
-    protected override void OnClosed(EventArgs e)
+    private void Draw(Point end)
     {
-        if (!finished) Result = null;
-        base.OnClosed(e);
+        if (start is not { } origin) return;
+        Canvas.SetLeft(selection, Math.Min(origin.X, end.X));
+        Canvas.SetTop(selection, Math.Min(origin.Y, end.Y));
+        selection.Width = Math.Abs(end.X - origin.X);
+        selection.Height = Math.Abs(end.Y - origin.Y);
+        selection.Visibility = Visibility.Visible;
     }
 }

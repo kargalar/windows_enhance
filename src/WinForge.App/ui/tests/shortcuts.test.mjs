@@ -75,6 +75,28 @@ test('recorded key commits its new value immediately; cancel never restarts reco
   } finally { await view.close(); }
 });
 
+test('media shortcut volume amounts save independently for increase and decrease', async () => {
+  const sent = [];
+  const rules = ['volume-up', 'volume-down'].map((action, index) => ({
+    id: action, name: action, enabled: false, shortcut: index ? 'Alt+WheelDown' : 'Alt+WheelUp',
+    action, value: '', arguments: '', hasSecret: false,
+  }));
+  const state = { kind: 'shortcut-actions', capturing: false, actions: rules.map(rule => ({ id: rule.action, name: rule.name })), rules, pendingDisplay: false };
+  const view = await mount(h(ShortcutActionsPanel, { moduleId: 'media-shortcuts', active: true, state,
+    command: (action, data) => sent.push({ action, data }) }));
+  try {
+    const amounts = view.container.querySelectorAll('input[type="number"]');
+    assert.equal(amounts.length, 2);
+    assert.equal(amounts[0].value, '2');
+    await type(amounts[0], '17');
+    await type(amounts[1], '9');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 600)));
+    const saved = sent.filter(command => command.action === 'save').map(command => command.data.rule);
+    assert.equal(saved.find(rule => rule.id === 'volume-up').value, '17');
+    assert.equal(saved.find(rule => rule.id === 'volume-down').value, '9');
+  } finally { await view.close(); }
+});
+
 test('every shortcut action panel automatically saves recorded and manually edited shortcuts', async () => {
   for (const moduleId of ['media-shortcuts', 'window-shortcuts', 'desktop-shortcuts', 'text-shortcuts', 'program-shortcuts', 'monitor-shortcuts']) {
     const sent = [];

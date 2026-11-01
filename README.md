@@ -4,6 +4,8 @@
 
 # WinForge
 
+Son modül düzeltmeleri, klasör seçenekleri ve doğrulama sınırları: [Modül düzeltmeleri](docs/MODULE_FIXES.md).
+
 **Gezgin → Sağ Tık Menüsü** artık mevcut simgeleri, okunabilir adları, özel simge atamasını ve otomatik kaydedilen alt menü gruplarını içerir. Özellikler ve Yeni klasör gibi yerleşik komutlar da gruplandırılabilir. [Kapsam ve kullanım](docs/CONTEXT_MENU.md).
 
 **Verimlilik → Yerel kısayol modülleri:** monitör düzenleri, medya/ses, pencere, sanal masaüstü, şifreli metin yazma ve program açma için ayrı kartlar eklendi. Klavye, fare düğmeleri ve tekerlek kombinasyonları atanabilir. Monitör düzenleri doğrudan Windows üzerinden kaydedilip uygulanır; harici program veya cfg dosyası gerekmez. [Kullanım ve doğrulama](docs/SHORTCUT_ACTIONS.md).
@@ -59,7 +61,6 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **İnternet Hızı** | Anlık indirme/yükleme hızı görev çubuğunun üstünde (isteğe bağlı olarak içinde), bildirim alanına hizalı; otomatik/MB/s/Mbit/s birim, ayarlanabilir yenileme aralığı, taskbar gizliyken otomatik gizlenme |
 | **Her Zaman Üstte** | `Alt+F` ile aktif pencereyi üste sabitler, aynı kısayol bırakır; sabitlenen pencerenin çevresine renkli çerçeve çizer |
 | **Ekrandan Metin Al** | `Alt+Q` ile bölge seçer, OCR ile metni panoya kopyalar |
-| **Klavye Yöneticisi** | Tuşları ve kısayolları genel olarak veya işlem adına göre uygulama bazında eşler, kısayolla Unicode metin yazdırır, 1–4 adımlı ardışık chord kısayollarıyla uygulama/URI başlatır; uygulamaya özel eşleme genel eşlemenin önceliğindedir |
 | **Tam Ekran Pencere Yönetimi** | Açık pencereleri Ana + yığın, Izgara veya Sütunlar düzeninde otomatik yerleştirme; boşluk, ana pencere genişliği ve küçültmeyi engelleme ayarları |
 | **FancyZones · Bölgeli Pencere Taşıma** | Yeni pencereleri en az dolu bölgeye otomatik yerleştirme; Shift ile sürükleyerek pencereyi iki, üç, dört ya da özelleştirilebilir 1–6 sütun × 1–4 satır ızgaraya taşıma; çizgi yakınında komşu bölgeleri, dört alan kesişiminde tüm alanları birleştirme; numara, renk, kenarlık kalınlığı ve birleştirme mesafesi ayarları; çoklu monitör ve ekrana göre ızgara profilleri |
 | **Crop And Lock · Pencere Kırpma** | `Win+Ctrl+Shift+T` ile etkin pencerenin bir alanını sürükleyerek seçer ve alanı canlı, yeniden boyutlandırılabilir küçük pencerede gösterir; kaynak pencereye tıklama göndermez |
@@ -88,27 +89,6 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 Kısayollar: `Alt+F` her zaman üstte · `Alt+Q` ekrandan metin · `Alt+Shift+L` tema ·
 `Win+Alt+C` renk seçici · `Ctrl+Alt+M` ekran cetveli ·
 `Ctrl` çift basış fareyi vurgular.
-
-**Verimlilik → Klavye Yöneticisi** içindeki **Klavye eşlemelerini düzenle**
-düğmesinde her satıra bir eşleme yazın: tuşlar sekmesinde `A = B`, kısayollar
-sekmesinde `Ctrl+C = Ctrl+Insert`; **Metin dizileri** sekmesinde `Ctrl+Alt+T = Toplantı notları` veya `H = Hello!` gibi bir kısayola ya da tek tuşa yazı bağlayın. Metin en fazla 2048 karakterdir ve Unicode karakterleri destekler. **Uygulamaya özel** sekmesinde işlem adını belirtin: `msedge.exe: Ctrl+F = Ctrl+H` veya `notepad.exe: A = B`. Uygulama
-eşlemesi yalnızca o uygulama öndeyken uygulanır ve aynı kaynak için genel
-eşlemenin önüne geçer. İşlem adı `.exe` uzantısıyla veya uzantısız yazılabilir;
-dosya yolu yazılmaz. `#` ile başlayan satırlar açıklama olarak kalır. Windows
-tarafından ayrılmış kısayollar reddedilir. Modülü kapatmak tüm eşlemeleri anında
-durdurur.
-
-**Uygulama veya URI aç** sekmesinde kısayol eylemi ekleyin. URI örneği:
-`Ctrl+Alt+W = uri|https://example.com`; desteklenen şemalar `http`, `https`,
-`mailto`, `ms-settings`, `shell` ve `file` ile sınırlıdır. Uygulama örneği:
-`Ctrl+Alt+N = app|"%WINDIR%\System32\notepad.exe"|--new-window|"%TEMP%"|elevated|show|hidden`.
-Uygulama hedefi, argümanlar ve çalışma klasörü `%...%` ortam değişkenlerini
-destekler. Son üç alan yetki (`normal`, `elevated`, `different-user`), uygulama
-zaten açıksa davranış (`new`, `show`, `nothing`, `close`, `end-task`) ve görünürlük
-(`visible`, `hidden`) seçeneğidir. `end-task` eşleşen süreci zorla kapatır ve
-kaydedilmemiş veriyi kaybettirebilir. Uygulama başlatma klavye kancasını
-geciktirmeyen arka plan işinde yapılır; hata olursa uygulama bildirim ve günlüğe
-yazar.
 
 **Görünüm → Açık / Koyu Tema** modülünde **Temayı saate göre değiştir**
 ayarını açıp `HH:mm` biçiminde açık ve koyu tema saatlerini belirleyin. Plan yerel

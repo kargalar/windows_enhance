@@ -67,6 +67,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--module-fixes-only"))
+            {
+                ModuleFixChecks.Run(TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} module fix checks.");
+                return 0;
+            }
             if (args.Contains("--brightness-wheel-only"))
             {
                 BrightnessWheelChecks.Run(Check);
@@ -993,7 +999,10 @@ internal static class Program
               !(bool)commandRequest.Invoke(null, new object[] { new[] { "--peek", "sample.txt" } })! &&
               !(bool)commandRequest.Invoke(null, new object[] { new[] { "--run", "anything" } })!,
             "Single-instance broker accepts only the registered file command verbs");
-        var keyboardManager = host.Modules.Single(module => module.Id == "keyboard-manager");
+        Check(!host.Modules.Any(module => module.Id == "keyboard-manager"), "Retired Keyboard Manager is absent from module discovery");
+        var keyboardManager = (ITweakModule)Activator.CreateInstance(
+            Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"))
+                .GetType("WinForge.Modules.Extras.KeyboardManagerModule")!)!;
         var editorType = keyboardManager.GetType().Assembly.GetType("WinForge.Modules.Extras.KeyboardMappingEditor")!;
         var parseShortcuts = editorType.GetMethod("ParseShortcutMappings", BindingFlags.NonPublic | BindingFlags.Static)!;
         var validShortcuts = (System.Collections.ICollection)parseShortcuts.Invoke(null, new object[] { "Ctrl+C = Ctrl+Insert" })!;
@@ -1072,10 +1081,6 @@ internal static class Program
               InvocationThrowsFormatException(parseShortcutActions, "Ctrl+Alt+N = app|notepad.exe|||bad-level") &&
               InvocationThrowsFormatException(parseShortcutActions, "Ctrl+Alt+N = app|notepad.exe||||normal|bad-policy"),
             "Keyboard Manager rejects unsafe URI schemes, reserved triggers and invalid app launch policies");
-        host.SetEnabled(keyboardManager, true);
-        Check(keyboardManager.IsActive, "Keyboard Manager activates without installing an empty hook");
-        host.SetEnabled(keyboardManager, false);
-        Check(!keyboardManager.IsActive, "Keyboard Manager deactivates cleanly");
         var powerRename = host.Modules.Single(module => module.Id == "power-rename");
         var renameTransaction = powerRename.GetType().Assembly.GetType("WinForge.Modules.Extras.RenameTransaction")!;
         var renameApply = renameTransaction.GetMethod("Apply", BindingFlags.Public | BindingFlags.Static)!;

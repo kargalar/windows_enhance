@@ -62,6 +62,8 @@ public sealed class SettingsStore
             MigrateCombinedModules();
             Enabled.Remove("peek-preview");
             Values.Remove("peek-preview");
+            Enabled.Remove("keyboard-manager");
+            Values.Remove("keyboard-manager");
         }
         catch
         {

@@ -156,7 +156,11 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             ShowActivated = options.ActivateOnShow;
             Topmost = options.Topmost;
             AllowsTransparency = options.Transparent;
-            Background = options.Transparent ? Brushes.Transparent : (Brush)Application.Current.FindResource("BgBrush");
+            // A fully transparent layered WPF host passes mouse input through pixels
+            // painted only by the child WebView HWND. Keep interactive hosts hit-testable.
+            Background = options.Transparent
+                ? options.ClickThrough ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(1, 0, 0, 0))
+                : (Brush)Application.Current.FindResource("BgBrush");
             WindowStartupLocation = options.Transparent ? WindowStartupLocation.Manual : WindowStartupLocation.CenterScreen;
             if (options.Left is not null || options.Top is not null)
             {
@@ -258,6 +262,9 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
                 base.Show();
             }
             if (ShowActivated) Activate();
+            if (Topmost)
+                Native.SetWindowPos(new WindowInteropHelper(this).Handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
+                    Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
         }
 
         public new void Hide()

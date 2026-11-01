@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Windows.Threading;
 using WinForge.Core;
@@ -139,9 +139,9 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
             case "next": ActionInput.Chord(0xB0); break;
             case "previous": ActionInput.Chord(0xB1); break;
             case "stop": ActionInput.Chord(0xB2); break;
-            case "volume-up": VolumeService.Step(2); break;
-            case "volume-down": VolumeService.Step(-2); break;
-            case "volume-down-5": VolumeService.Step(-5); break;
+            case "volume-up": VolumeService.Step(VolumeStep(r)); break;
+            case "volume-down": VolumeService.Step(-VolumeStep(r)); break;
+            case "volume-down-5": VolumeService.Step(-VolumeStep(r)); break;
             case "mute": VolumeService.SetMuted(!VolumeService.IsMuted()); break;
             case "close": ActionInput.Chord(0x12, 0x73); break;
             case "minimize": ShowWindow(Native.GetForegroundWindow(), 6); break;
@@ -159,6 +159,11 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
                 break;
         }
     }
+    internal static int VolumeStep(ShortcutActionRule rule) => string.IsNullOrWhiteSpace(rule.Value)
+        ? rule.Action == "volume-down-5" ? 5 : 2
+        : int.TryParse(rule.Value, out var step) && step is >= 1 and <= 100 ? step
+        : throw new FormatException("Ses değişim miktarı 1–100 arasında olmalı.");
+
     internal static ProcessStartInfo CreateLaunchInfo(ShortcutActionRule rule)
     {
         if (rule.Action == "downloads")
@@ -290,6 +295,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
             }
             if (r.Enabled && r.Action is "text" or "text-expand" or "launch" or "explorer" && string.IsNullOrWhiteSpace(r.Value)) throw new FormatException("Metin veya program yolu gerekli.");
             if (r.Enabled && r.Action == "explorer") _ = CreateLaunchInfo(r);
+            if (r.Action is "volume-up" or "volume-down" or "volume-down-5") _ = VolumeStep(r);
             if (r.Action == "translate") ValidateTranslation(r);
             if (r.Action == "profile") MonitorLayouts.Validate(r.Value);
         }

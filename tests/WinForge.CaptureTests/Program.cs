@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
@@ -19,6 +20,13 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 1 && args[0] == "--archive-history")
+            {
+                var archiveRoot = Path.Combine(Path.GetTempPath(), "WinForge-ArchiveTests", Guid.NewGuid().ToString("N"));
+                try { ArchiveHistoryChecks.Run(archiveRoot, Check); }
+                finally { if (Directory.Exists(archiveRoot)) Directory.Delete(archiveRoot, true); }
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--capture-shortcuts") { CaptureShortcutChecks.Run(Check); return 0; }
             if (args.Length == 1 && args[0] == "--text-fixture") return TextOutputChecks.RunFixture();
             if (args.Length == 1 && args[0] == "--text-output") { TextOutputChecks.RunAsync(Check).GetAwaiter().GetResult(); return 0; }
@@ -289,6 +297,18 @@ internal static class Program
     private static void Lifecycle(string root)
     {
         var context = new TestContext(root);
+        var capturePaths = new ScreenCaptureModule(); capturePaths.Initialize(context);
+        var export = typeof(ScreenCaptureModule).GetMethod("ExportImage", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var sample = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8);
+        var exported = (string)export.Invoke(capturePaths, [sample])!;
+        Check(File.Exists(exported) && Path.GetDirectoryName(exported) == Path.Combine(root, "captures"),
+            "Captured images use the selected output directory");
+        Check((string)export.Invoke(capturePaths, [sample])! == exported && Directory.GetFiles(Path.Combine(root, "captures")).Length == 1,
+            "Workflow and preview resolve the same captured file without duplicate exports");
+        var recallPaths = new RecallModule(); recallPaths.Initialize(context);
+        var selectedStore = (HistoryStore)typeof(CaptureModuleBase).GetProperty("Store", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(recallPaths)!;
+        Check(selectedStore.DirectoryPath == Path.Combine(root, "history") && Directory.Exists(selectedStore.MediaDirectory),
+            "Screen history stores its database and images under the selected history directory");
         foreach (var module in new ITweakModule[] { new RecallModule(), new DictationModule(), new ScreenCaptureModule() })
         {
             module.Initialize(context); Check(!module.IsActive, module.Name + " defaults to disabled");
@@ -322,7 +342,8 @@ internal static class Program
     {
         public bool GetBool(string key, bool fallback = false) => fallback;
         public int GetInt(string key, int fallback = 0) => fallback;
-        public string GetString(string key, string fallback = "") => key == "storage-directory" ? Path.Combine(root, "history") : fallback;
+        public string GetString(string key, string fallback = "") => key == "storage-directory" ? Path.Combine(root, "history")
+            : key == "image-directory" ? Path.Combine(root, "captures") : fallback;
         public void Set(string key, object? value) { }
     }
     private sealed class TestHotkeys : IHotkeyService

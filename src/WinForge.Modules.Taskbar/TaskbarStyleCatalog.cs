@@ -36,10 +36,14 @@ internal static class TaskbarStyleCatalog
         }
         var iconSize = settings.GetInt("app-icon-size", 0);
         var height = settings.GetInt("taskbar-height", 0);
+        if (height is > 0 and < 48 && iconSize == 0)
+            iconSize = Math.Clamp(height - 8, 16, 32);
         if (height != 0)
         {
-            var value = Math.Clamp(height, 48, 96).ToString(CultureInfo.InvariantCulture);
+            var value = Math.Clamp(height, 24, 96).ToString(CultureInfo.InvariantCulture);
             Add("Taskbar.TaskbarFrame", ("Height", value), ("MinHeight", value), ("MaxHeight", value));
+            Add("Taskbar.TaskListButton", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("Padding", "0"));
+            Add("SystemTray.SystemTrayFrame", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value));
         }
         if (iconSize != 0)
         {

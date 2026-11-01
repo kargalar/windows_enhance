@@ -9,10 +9,10 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Capture;
 
-/// <summary>A short, non-interactive preview on the cursor's monitor.</summary>
+/// <summary>A short preview that reveals the captured file in Explorer.</summary>
 internal sealed class CapturePreviewWindow : Window
 {
-    public CapturePreviewWindow(BitmapSource image)
+    public CapturePreviewWindow(BitmapSource image, Action? reveal = null)
     {
         Native.GetCursorPos(out var cursor);
         var display = DesktopDisplays.ForPoint(cursor);
@@ -32,7 +32,10 @@ internal sealed class CapturePreviewWindow : Window
         ShowInTaskbar = false;
         ShowActivated = false;
         Focusable = false;
-        IsHitTestVisible = false;
+        IsHitTestVisible = true;
+        Cursor = System.Windows.Input.Cursors.Hand;
+        ToolTip = "Dosyayı klasöründe göster";
+        MouseLeftButtonUp += (_, _) => { reveal?.Invoke(); Close(); };
         Topmost = true;
         Opacity = 0;
         Width = width / scale;
@@ -52,7 +55,7 @@ internal sealed class CapturePreviewWindow : Window
             var handle = new WindowInteropHelper(this).Handle;
             var style = Native.GetWindowLongPtr(handle, Native.GWL_EXSTYLE).ToInt64();
             Native.SetWindowLongPtr(handle, Native.GWL_EXSTYLE,
-                new IntPtr(style | Native.WS_EX_NOACTIVATE | Native.WS_EX_TRANSPARENT | Native.WS_EX_TOOLWINDOW));
+                new IntPtr(style | Native.WS_EX_NOACTIVATE | Native.WS_EX_TOOLWINDOW));
             Native.SetWindowPos(handle, Native.HWND_TOPMOST,
                 work.Right - margin - width, work.Bottom - margin - height, width, height, Native.SWP_NOACTIVATE);
         };

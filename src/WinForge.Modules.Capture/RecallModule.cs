@@ -30,6 +30,16 @@ public sealed class RecallModule : CaptureModuleBase
     protected override string Kind => "recall";
     protected override IEnumerable<SettingDescriptor> ModuleSettings =>
     [
+        new() { Key = "storage-directory", Label = "Görseller ve geçmiş klasörü", Kind = SettingKind.Text, Default = "",
+            Description = "Görseller seçilen klasörün media alt klasörüne kaydedilir. Boş: varsayılan konum. Eski kayıtlar önceki klasörde korunur." },
+        new() { Key = "choose-storage", Label = "Görseller ve geçmiş için klasör seç", Kind = SettingKind.Action, Execute = () =>
+        {
+            var picker = new OpenFolderDialog { Title = "Ekran geçmişi klasörünü seç", InitialDirectory = Store.DirectoryPath };
+            if (picker.ShowDialog() != true) return;
+            _ = new HistoryStore(picker.FolderName);
+            Context.Settings.Set("storage-directory", picker.FolderName);
+            Apply();
+        } },
         new() { Key = "interval", Label = "Kayıt aralığı (saniye)", Kind = SettingKind.Number, Min = 1, Max = 3600, Default = 60 },
         new() { Key = "idle-seconds", Label = "Boşta kalınca dur (saniye)", Kind = SettingKind.Number, Min = 10, Max = 3600, Default = 60 },
         new() { Key = "image-format", Label = "Görsel biçimi", Kind = SettingKind.Choice, Default = "webp", Options = ["webp", "png"] },
@@ -77,6 +87,10 @@ public sealed class RecallModule : CaptureModuleBase
     }
     public override void Apply()
     {
+        if (IsActive && store is not null && !string.Equals(store.DirectoryPath, Store.DirectoryPath, StringComparison.OrdinalIgnoreCase))
+        {
+            Deactivate(); Activate(); return;
+        }
         if (IsActive) RegisterPauseHotkey();
     }
     private void RegisterPauseHotkey()

@@ -50,7 +50,12 @@ class TaskbarDockAnimation {
             for (auto const* property : {L"ScaleX", L"ScaleY"}) {
                 Media::Animation::DoubleAnimation animation;
                 animation.To(value);
-                animation.Duration(Duration{std::chrono::milliseconds(milliseconds_)});
+                animation.From(property == std::wstring_view{L"ScaleX"} ? currentX : currentY);
+                animation.Duration(Duration{std::chrono::milliseconds(hovering ? milliseconds_ : milliseconds_ * 5 / 4)});
+                Media::Animation::CubicEase easing;
+                easing.EasingMode(Media::Animation::EasingMode::EaseOut);
+                animation.EasingFunction(easing);
+                animation.EnableDependentAnimation(true);
                 Media::Animation::Storyboard::SetTarget(animation, scale_);
                 Media::Animation::Storyboard::SetTargetProperty(animation, property);
                 next.Children().Append(animation);

@@ -15,7 +15,15 @@ public static class AudioInputDevices
             using var device = root.OpenSubKey(name);
             if (device?.GetValue("DeviceState") is not int state || state != 1) continue;
             using var properties = device.OpenSubKey("Properties");
-            var label = properties?.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},14") as string ?? name;
+            var label = properties?.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},14") as string;
+            if (string.IsNullOrWhiteSpace(label))
+            {
+                var endpoint = properties?.GetValue("{a45c254e-df1c-4efd-8020-67d146a850e0},2") as string;
+                var adapter = properties?.GetValue("{b3f8fa53-0004-438e-9003-51a46e139bfc},6") as string;
+                label = string.IsNullOrWhiteSpace(endpoint) ? adapter : string.IsNullOrWhiteSpace(adapter)
+                    ? endpoint : $"{endpoint} ({adapter})";
+            }
+            label = string.IsNullOrWhiteSpace(label) ? "Mikrofon " + (result.Count) : label.Trim();
             result.Add(new("{0.0.1.00000000}." + name, label));
         }
         return result;

@@ -12,7 +12,7 @@ using static WinForge.Modules.Extras.KeyboardInputSender;
 
 namespace WinForge.Modules.Extras;
 
-public sealed class KeyboardManagerModule : ITweakModule
+internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
 {
     private const int LlkhfInjected = 0x10;
     private const uint InputKeyboard = 1;

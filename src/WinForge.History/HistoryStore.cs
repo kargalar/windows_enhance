@@ -18,6 +18,17 @@ public sealed record ContextUsageDayTotal(string Date, string App, string Type, 
 /// <summary>Each operation owns its connection; media is content addressed and shared safely.</summary>
 public sealed class HistoryStore
 {
+    // Legacy idle rows retain the foreground app in their original metadata.
+    // Prefer measured usage wherever the old and new recorders overlap.
+    private const string ArchivedUsageSql = """
+        SELECT CASE WHEN CASE WHEN json_valid(metadata) THEN
+          lower(coalesce(cast(json_extract(metadata,'$.is_idle') AS TEXT),'')) IN ('1','true')
+          ELSE 0 END THEN 'System Idle' ELSE app END app,
+          created started,created ended,seconds,1 estimated
+        FROM items WHERE kind='recall' AND estimated=1
+        AND ($from='' OR created >= $from) AND ($until='' OR created < $until)
+        AND NOT EXISTS(SELECT 1 FROM usage WHERE started<=items.created AND ended>items.created)
+        """;
     private const string ItemColumns = """
         id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, created TEXT NOT NULL, app TEXT NOT NULL DEFAULT '',
         title TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', media TEXT NOT NULL DEFAULT '',
@@ -44,6 +55,7 @@ public sealed class HistoryStore
             CREATE TABLE IF NOT EXISTS app_tags(app TEXT NOT NULL,tag TEXT NOT NULL,PRIMARY KEY(app,tag));
             CREATE TABLE IF NOT EXISTS tags(name TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS usage(id INTEGER PRIMARY KEY,app TEXT NOT NULL,started TEXT NOT NULL,ended TEXT NOT NULL,seconds REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS usage_time ON usage(started,ended);
             CREATE TABLE IF NOT EXISTS context_usage(id INTEGER PRIMARY KEY,app TEXT NOT NULL,type TEXT NOT NULL,context TEXT NOT NULL,started TEXT NOT NULL,ended TEXT NOT NULL,seconds REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS context_usage_time ON context_usage(started,ended);
             CREATE INDEX IF NOT EXISTS context_usage_context ON context_usage(type,app,context);
@@ -194,15 +206,14 @@ public sealed class HistoryStore
     public IReadOnlyList<UsageTotal> Usage(DateTimeOffset? from = null, DateTimeOffset? until = null)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $$"""
             SELECT app,sum(seconds),estimated FROM (
             SELECT app,0 estimated,CASE WHEN ended<=started THEN seconds ELSE
               seconds*min(1,max(0,(julianday(CASE WHEN $until<>'' AND ended>$until THEN $until ELSE ended END)-
               julianday(CASE WHEN $from<>'' AND started<$from THEN $from ELSE started END)) /
               max(0.0000000001,julianday(ended)-julianday(started)))) END seconds
             FROM usage WHERE app<>'System Idle' AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
-            UNION ALL SELECT app,1 estimated,seconds FROM items WHERE kind='recall' AND estimated=1
-            AND ($from='' OR created >= $from) AND ($until='' OR created < $until))
+            UNION ALL SELECT app,1 estimated,seconds FROM ({{ArchivedUsageSql}}) WHERE app<>'System Idle')
             GROUP BY app,estimated ORDER BY sum(seconds) DESC
             """;
         Bind(command, ("$from", from is { } f ? Timestamp(f) : ""), ("$until", until is { } u ? Timestamp(u) : ""));
@@ -215,7 +226,7 @@ public sealed class HistoryStore
         var active = appUsage.Sum(row => row.Seconds);
         var idle = SumUsage("System Idle", from, until);
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = "SELECT count(*) FROM items WHERE kind='recall' AND ($from='' OR created >= $from) AND ($until='' OR created < $until)";
+        command.CommandText = "SELECT count(*) FROM items WHERE kind='recall' AND media<>'' AND ($from='' OR created >= $from) AND ($until='' OR created < $until)";
         Bind(command, ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } end ? Timestamp(end) : ""));
         var captures = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         var mostUsed = appUsage.GroupBy(row => row.App).OrderByDescending(group => group.Sum(row => row.Seconds)).FirstOrDefault()?.Key ?? "—";
@@ -224,12 +235,14 @@ public sealed class HistoryStore
     private double SumUsage(string app, DateTimeOffset? from, DateTimeOffset? until)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT coalesce(sum(CASE WHEN ended<=started THEN seconds ELSE seconds*min(1,max(0,
+        command.CommandText = $$"""
+            SELECT coalesce(sum(seconds),0) FROM (
+            SELECT CASE WHEN ended<=started THEN seconds ELSE seconds*min(1,max(0,
             julianday(CASE WHEN $until<>'' AND ended>$until THEN $until ELSE ended END)-
             julianday(CASE WHEN $from<>'' AND started<$from THEN $from ELSE started END))/
-            max(0.0000000001,julianday(ended)-julianday(started))) END),0)
+            max(0.0000000001,julianday(ended)-julianday(started))) END seconds
             FROM usage WHERE app=$app AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            UNION ALL SELECT seconds FROM ({{ArchivedUsageSql}}) WHERE app=$app)
             """;
         Bind(command, ("$app", app), ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } end ? Timestamp(end) : ""));
         return Convert.ToDouble(command.ExecuteScalar(), CultureInfo.InvariantCulture);
@@ -329,12 +342,12 @@ public sealed class HistoryStore
     private IReadOnlyList<UsageDayTotal> UsageByDayCore(DateTimeOffset? from, DateTimeOffset? until, bool idleOnly)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $$"""
             SELECT app,started,ended,seconds,0 estimated FROM usage
             WHERE (($idle=0 AND app<>'System Idle') OR ($idle=1 AND app='System Idle'))
             AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
-            UNION ALL SELECT app,created,created,seconds,estimated FROM items WHERE $idle=0 AND kind='recall' AND estimated=1
-            AND ($from='' OR created >= $from) AND ($until='' OR created < $until)
+            UNION ALL SELECT app,started,ended,seconds,estimated FROM ({{ArchivedUsageSql}})
+            WHERE (($idle=0 AND app<>'System Idle') OR ($idle=1 AND app='System Idle'))
             ORDER BY started
             """;
         Bind(command, ("$idle", idleOnly ? 1 : 0), ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } endValue ? Timestamp(endValue) : ""));

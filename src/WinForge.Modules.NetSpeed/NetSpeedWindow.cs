@@ -40,7 +40,7 @@ public sealed class NetSpeedWindow
             new FeatureUiWindowOptions(OverlayWidth, OverlayHeight, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: true));
         _timer = new Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
-        UpdateView(string.Empty, string.Empty);
+        UpdateView(Format(0), Format(0));
     }
 
     public void ApplyOptions(double fontSize, bool showDownload, bool showUpload, int trayGap,
@@ -59,7 +59,7 @@ public sealed class NetSpeedWindow
             _timer.Change(_intervalMilliseconds, _intervalMilliseconds);
 
         Reposition();
-        UpdateView(string.Empty, string.Empty);
+        UpdateView(Format(0), Format(0));
     }
 
     private void Reposition()
@@ -82,11 +82,14 @@ public sealed class NetSpeedWindow
         var scale = Native.GetDpiForWindow(taskbar) / 96.0;
         if (scale <= 0) scale = 1.0;
 
-        var screenWidth = Native.GetSystemMetrics(0);
-        var screenHeight = Native.GetSystemMetrics(1);
+        var display = DesktopDisplays.ForWindow(taskbar);
+        var bounds = display.Bounds;
         var width = rect.Right - rect.Left;
         var height = rect.Bottom - rect.Top;
-        if (width < 8 || height < 8 || rect.Left < 0 || rect.Top < 0 || rect.Right > screenWidth || rect.Bottom > screenHeight)
+        // Auto-hide may leave a one-pixel edge outside the monitor. Full virtual
+        // desktop coordinates (including negative origins) are valid.
+        if (width < 8 || height < 8 || rect.Bottom <= bounds.Top + 2 || rect.Top >= bounds.Bottom - 2 ||
+            rect.Right <= bounds.Left + 2 || rect.Left >= bounds.Right - 2)
         {
             _view.Hide();
             return;
@@ -99,8 +102,8 @@ public sealed class NetSpeedWindow
         double left;
         double top;
         var inside = string.Equals(_position, InsideTaskbar, StringComparison.CurrentCultureIgnoreCase);
-        var screenCenterX = screenWidth / 2.0;
-        var screenCenterY = screenHeight / 2.0;
+        var screenCenterX = (bounds.Left + bounds.Right) / 2.0;
+        var screenCenterY = (bounds.Top + bounds.Bottom) / 2.0;
         if (width >= height)
         {
             left = trayRect.Left / scale - OverlayWidth - _trayGap;
@@ -123,7 +126,8 @@ public sealed class NetSpeedWindow
                 : trayRect.Top / scale - OverlayHeight - _trayGap;
         }
 
-        _view.SetBounds(Math.Max(0, left), Math.Max(0, top), OverlayWidth, OverlayHeight);
+        _view.SetBounds(Math.Clamp(left, bounds.Left / scale, Math.Max(bounds.Left / scale, bounds.Right / scale - OverlayWidth)),
+            Math.Clamp(top, bounds.Top / scale, Math.Max(bounds.Top / scale, bounds.Bottom / scale - OverlayHeight)), OverlayWidth, OverlayHeight);
         _view.Show();
     }
 

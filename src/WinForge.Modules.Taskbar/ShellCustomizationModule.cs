@@ -32,7 +32,7 @@ internal sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         new() { Key = "hide-start", Label = "Başlat düğmesini gizle", Section = "Görünürlük", Default = false, Description = "Başlat menüsü Windows tuşuyla açılmaya devam eder." },
         new() { Key = "theme", Label = "WinForge renk düzeni", Section = "Tasarım", Kind = SettingKind.Choice, Options = TaskbarStyleCatalog.Themes, Default = TaskbarStyleCatalog.Themes[0] },
         new() { Key = "app-icon-size", Label = "Uygulama simgesi boyutu (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 40, Default = 0, Section = "Tasarım" },
-        new() { Key = "taskbar-height", Label = "Görev çubuğu yüksekliği (0: Windows)", Section = "Tasarım", Kind = SettingKind.Number, Min = 0, Max = 96, Default = 0, Description = "Alt yatay görev çubuğu içindir. Özel değerler 48–96 aralığında uygulanır." },
+        new() { Key = "taskbar-height", Label = "Görev çubuğu yüksekliği (0: Windows)", Section = "Tasarım", Kind = SettingKind.Number, Min = 0, Max = 96, Default = 0, Description = "Alt yatay görev çubuğu içindir. Özel değerler 24–96 aralığında uygulanır." },
         new() { Key = "button-width", Label = "Uygulama düğmesi genişliği (0: Windows)", Section = "Tasarım", Kind = SettingKind.Number, Min = 0, Max = 160, Default = 0 },
         new() { Key = "tray-two-rows", Label = "Bildirim simgelerini iki satırda göster", Section = "Bildirim alanı", Default = false },
         new() { Key = "time-format", Label = "Saat biçimi", Kind = SettingKind.Text, Default = "", Section = "Saat", Description = "Örn: HH:mm:ss. Yalnızca görev çubuğunu etkiler; boş değer Windows saatini korur." },

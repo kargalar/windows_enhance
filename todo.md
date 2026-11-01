@@ -3,6 +3,8 @@
 ekran geçmişinde benim userdatada saveler yyüklenmemişti askı kontrlol et
 
 <!--  -->
+programın dashboardını güncelleyleim. soldaki apneli kaldır kategoriler direkt modüllerin üstünde gösterilsn daha kombpakt ir şekildeydi modüller solu kapalyacak. kare kare gridde tutulacak bir satırda 3 öğe oalcak. sağda seçilen modülün detaylar paneli kaplayacak. üst hiçbir şey olmayacak detaylar paelinin. yani modül arama kısmı falan ödüller panelnini üstüne taşınacak. yukarıdaki etkin favori fallan da kaldırılacak çok daha kompakt bir şekilde kullanıacak moüller paelnini üstünde
+
 <!-- Check -->
 
 medya kontrolleri için kısayol atmama modülü ekle. mesela ctrl++sapce durdur/oynat olsun. ctrl+n sonraki parça olsun ctrl+shift+n önceki olsun gibi.mesela alt+mousescroll ile ses seviyesini de ayaralyabileyim.
@@ -58,8 +60,5 @@ yakalan görüntülerin pathini seçebileyiim.
 ekran geçmişi için de path seçemme izin ver görseller için.
 
 sesle yazma modülünde mikrofon seçimlerinde mikofonların ismi düzgün gösterilmiyor. düzelt.
-
-ses veya paralklık değiştiğinde kanda ortada altta açılanpaneldeki ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin
-veya mesela ses iconun basınca mute on/off olsun
 
 medya kısayollarında sesi arttır seçilince ne kadar arttırılacağı ayrıca ayarlansın ayı şekilde azaltırken de

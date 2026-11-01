@@ -29,6 +29,13 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     protected override string Kind => "capture";
     protected override IEnumerable<SettingDescriptor> ModuleSettings =>
     [
+        new() { Key = "image-directory", Label = "Yakalanan görsellerin klasörü", Kind = SettingKind.Text, Default = "",
+            Description = "Boş bırakılırsa geçmişin medya klasörü kullanılır." },
+        new() { Key = "choose-image-directory", Label = "Yakalanan görseller için klasör seç", Kind = SettingKind.Action, Execute = () =>
+        {
+            var picker = new Microsoft.Win32.OpenFolderDialog { Title = "Yakalama klasörünü seç" };
+            if (picker.ShowDialog() == true) Context.Settings.Set("image-directory", picker.FolderName);
+        } },
         new() { Key = "capture", Label = "Yakalama araçlarını aç", Kind = SettingKind.Action, Execute = ShowTools },
         new() { Key = "hotkey", Label = "Bölge yakalama kısayolu", Kind = SettingKind.Text, Default = "Win+Alt+S" },
         new() { Key = "edit", Label = "Yakalama sonrası düzenle", Default = true },
@@ -177,7 +184,20 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     private void ShowPreview(BitmapSource image)
     {
         preview?.Close();
-        var window = new CapturePreviewWindow(image);
+        var store = Store;
+        var window = new CapturePreviewWindow(image, () =>
+        {
+            try
+            {
+                var media = CaptureServices.Save(store, image);
+                store.ReleasePendingMedia(media);
+                var path = ExportImage(image) ?? store.ResolveMedia(media);
+                var info = new System.Diagnostics.ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+                info.Arguments = "/select,\"" + path + "\"";
+                System.Diagnostics.Process.Start(info);
+            }
+            catch (Exception error) { Report(error); }
+        });
         preview = window;
         window.Closed += (_, _) => { if (ReferenceEquals(preview, window)) preview = null; };
         window.Show();
@@ -185,6 +205,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
 
     private async Task ProcessAfterCaptureAsync(BitmapSource image, HistoryStore store, string app, string title, CancellationToken token)
     {
+        ExportImage(image);
         var sequence = Context.Settings.GetString("workflow", "save-copy-edit-upload").Split('-');
         foreach (var step in sequence)
         {
@@ -214,6 +235,22 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                     break;
             }
         }
+    }
+
+    private string? ExportImage(BitmapSource image)
+    {
+        var directory = Context.Settings.GetString("image-directory").Trim();
+        if (directory.Length == 0) return null;
+        directory = System.IO.Path.GetFullPath(Environment.ExpandEnvironmentVariables(directory));
+        System.IO.Directory.CreateDirectory(directory);
+        // Content addressing gives the workflow and preview the same file without duplicate exports.
+        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+        using var bytes = new System.IO.MemoryStream(); encoder.Save(bytes);
+        var data = bytes.ToArray();
+        var name = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)) + ".png";
+        var path = System.IO.Path.Combine(directory, name);
+        if (!System.IO.File.Exists(path)) System.IO.File.WriteAllBytes(path, data);
+        return path;
     }
 
     private static string[] BuildWorkflowOptions()

@@ -11,6 +11,7 @@ public sealed class TextGrabberModule : ITweakModule
     private IModuleContext? _context;
     private IDisposable? _hotkey;
     private bool _busy;
+    private SelectionOverlay? _selection;
 
     public string Id => "text-grabber";
     public string Name => "Ekrandan Metin Al";
@@ -43,6 +44,8 @@ public sealed class TextGrabberModule : ITweakModule
         IsActive = false;
         _hotkey?.Dispose();
         _hotkey = null;
+        _selection?.Close();
+        _selection = null;
     }
 
     public void Apply()
@@ -71,9 +74,12 @@ public sealed class TextGrabberModule : ITweakModule
         try
         {
             var overlay = new SelectionOverlay((_context as IFeatureUiContext)?.FeatureUi);
+            _selection = overlay;
             overlay.ShowDialog();
+            _selection = null;
 
             if (overlay.Result is not { } rect) return;
+            await Task.Delay(80); // Let the compositor remove the selection tint before OCR capture.
 
             var (pixels, width, height) = ScreenCapture.Capture(
                 (int)Math.Round(rect.X),
@@ -105,6 +111,8 @@ public sealed class TextGrabberModule : ITweakModule
         }
         finally
         {
+            _selection?.Close();
+            _selection = null;
             _busy = false;
         }
     }

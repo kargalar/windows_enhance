@@ -226,6 +226,10 @@ internal static class DisplayBrightnessSchedule
 
 internal sealed class DisplayBrightnessSession : IDisposable
 {
+    private readonly string _displayTopology = CurrentTopology();
+    private static string CurrentTopology() => string.Join(";", DesktopDisplays.Enumerate()
+        .OrderBy(display => display.DeviceName).Select(display => $"{display.DeviceName}:{display.Bounds.Left},{display.Bounds.Top},{display.Bounds.Right},{display.Bounds.Bottom}"));
+    internal bool MatchesCurrentDisplays => _displayTopology == CurrentTopology();
     private const uint MonitorDefaultToNearest = 2;
     private readonly List<PhysicalMonitor> _monitors;
     private readonly List<InternalPanelBrightness> _internalPanels;
@@ -517,7 +521,14 @@ internal sealed class DisplayBrightnessSession : IDisposable
             if (code != 0x10) return null;
             supportedValues = Array.Empty<uint>();
         }
-        if (!GetVCPFeatureAndVCPFeatureReply(monitor, code, out _, out var current, out var maximum)) return null;
+        uint current = 0, maximum = 0;
+        var read = false;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (GetVCPFeatureAndVCPFeatureReply(monitor, code, out _, out current, out maximum)) { read = true; break; }
+            if (attempt < 2) Thread.Sleep(80);
+        }
+        if (!read) return null;
         var isContinuous = MonitorCapabilitiesParser.IsContinuousFeature(supportedValues);
         if (isContinuous && maximum == 0) return null;
         if (!isContinuous && supportedValues.Count == 0) return null;
@@ -939,12 +950,22 @@ public sealed class DisplayBrightnessModule : ITweakModule
             var result = await Task.Run(() =>
             {
                 var session = _hotkeyBrightnessSession;
+                if (session is not null && !session.MatchesCurrentDisplays)
+                {
+                    session.Dispose();
+                    session = _hotkeyBrightnessSession = null;
+                }
                 if (session is null)
                 {
                     Task<DisplayBrightnessSession> discovery;
                     lock (_hotkeySessionSync)
                         discovery = _hotkeyBrightnessDiscovery ??= Task.Run(DisplayBrightnessSession.Discover);
                     session = discovery.GetAwaiter().GetResult();
+                    if (!session.MatchesCurrentDisplays)
+                    {
+                        session.Dispose();
+                        session = DisplayBrightnessSession.Discover();
+                    }
                     _hotkeyBrightnessSession = session;
                     lock (_hotkeySessionSync)
                         if (ReferenceEquals(_hotkeyBrightnessDiscovery, discovery)) _hotkeyBrightnessDiscovery = null;
@@ -988,8 +1009,19 @@ public sealed class DisplayBrightnessModule : ITweakModule
             if (!IsActive || request != Volatile.Read(ref _overlayBrightnessRequest)) return;
             var result = await Task.Run(() =>
             {
+                if (_hotkeyBrightnessSession is { } cached && !cached.MatchesCurrentDisplays)
+                {
+                    cached.Dispose();
+                    _hotkeyBrightnessSession = null;
+                }
                 var session = _hotkeyBrightnessSession ??= DisplayBrightnessSession.Discover();
-                return session.SetBrightnessForAllDisplays(percent);
+                var outcome = session.SetBrightnessForAllDisplays(percent);
+                if (outcome.Failed > 0 || outcome.Supported == 0)
+                {
+                    session.Dispose();
+                    _hotkeyBrightnessSession = null;
+                }
+                return outcome;
             });
             if (request == Volatile.Read(ref _overlayBrightnessRequest)) ShowBrightnessOutcome(result);
         }
@@ -1007,7 +1039,9 @@ public sealed class DisplayBrightnessModule : ITweakModule
     private void ShowBrightnessOutcome((int Supported, int Applied, int Failed, int? Brightness) result)
     {
         if (!IsActive || _context is not IDisplayBrightnessOverlayContext overlay) return;
-        var status = $"{result.Applied}/{result.Supported} monitöre uygulandı";
+        var connected = DesktopDisplays.Enumerate().Count;
+        var status = result.Supported == 1 && connected == 1 && result.Failed == 0 ? null
+            : $"{result.Applied}/{Math.Max(connected, result.Supported)} monitöre uygulandı";
         if (result.Failed > 0) status += $" · {result.Failed} hata";
         if (result.Supported == 0) status = "Parlaklık denetimi desteklenmiyor";
         overlay.ShowDisplayBrightness(result.Brightness ?? 0, "all-displays",
