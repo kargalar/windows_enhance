@@ -7,10 +7,10 @@ import { ShortcutField } from './ShortcutField';
 import { useAutoSaveDraft } from './useAutoSaveDraft';
 import { ContextMenuPanel, type ContextMenuState } from './ContextMenuPanel';
 import { DefaultPathsPanel, DefaultAppsPanel } from './features/DefaultSettingsPanels';
-import { groupModules } from './moduleGroups';
 import './styles.css';
 import './island-design.css';
 import './management.css';
+import './dashboard.css';
 
 type Setting = {
   key: string;
@@ -179,56 +179,35 @@ function App() {
   const accentHex = state.appearance.accents.find(accent => accent.name === state.appearance.accent)?.hex ?? '#75A7FF';
   return <div className={`app-shell tone-${state.appearance.tone.toLowerCase()} ${state.appearance.glow ? 'glow' : ''}`} style={{ '--accent': accentHex } as React.CSSProperties}>
     <a className="skip-link" href="#module-details">Seçili modülün ayarlarına geç</a>
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><Icon name="layers" size={21} /></div><div><strong>WinForge</strong><span>WINDOWS ARAÇ KUTUSU</span></div></div>
-      <div className="nav-label">KATEGORİLER</div>
-      <nav className="category-nav" aria-label="Modül kategorileri">
-        {categories.map((item, index) => <button key={item} aria-current={category === item ? 'page' : undefined} className={`nav-item ${category === item ? 'selected' : ''}`} onClick={() => setCategory(item)}>
-          <span className="nav-icon">{index === 0 ? <Icon name="grid" /> : <Icon name="layers" />}</span><span>{item}</span>
-          <span className="nav-count">{item === 'Tümü' ? state.totalCount : state.modules.filter(module => module.category === item).length}</span>
-        </button>)}
-      </nav>
-      <div className="sidebar-bottom">
-        <div className="engine-card"><span className="live-dot" /><div><strong>Motor çalışıyor</strong><small>{state.activeCount} araç etkin</small></div></div>
-        <button className="nav-item appearance-link" onClick={() => setShowAppearance(true)}><span className="nav-icon"><Icon name="settings" /></span><span>Görünüm</span></button>
-        <div className="sidebar-version">WinForge <span>v{state.version}</span></div>
-      </div>
-    </aside>
-
     <main className="main-area">
-      <header className="topbar">
-        <div className="page-intro"><div className="eyebrow">WINFORGE KONTROL PANELİ</div><h1>{category === 'Tümü' ? 'Araçlarını yönet' : category}</h1><p>Aracını bul, durumunu gör ve ayarlarını düzenle.</p></div>
-        <div className="top-actions">
-          <label className="search-box"><Icon name="search" /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => setQuery(event.target.value)} placeholder="Araç veya ayar ara…" /><kbd>Ctrl F</kbd></label>
-          <button className="icon-button" title="Görünüm ayarları" aria-label="Görünüm ayarları" onClick={() => setShowAppearance(true)}><Icon name="settings" /></button>
-          <button className="icon-button" title="WinForge'dan çık" aria-label="WinForge'dan çık" onClick={() => send('app.exit')}><Icon name="power" /></button>
-        </div>
-      </header>
-
-      <div className="overview" aria-label="Araç özeti">
-        <button aria-pressed={status === 'all' && !favoritesOnly && category === 'Tümü' && !query} onClick={clearFilters}><strong>{state.totalCount}</strong><span>Tüm araçlar</span></button>
-        <button aria-pressed={status === 'active'} onClick={() => { clearFilters(); setStatus('active'); }}><strong>{state.activeCount}</strong><span>Etkin araçlar</span></button>
-        <button aria-pressed={favoritesOnly} onClick={() => { clearFilters(); setFavoritesOnly(true); }}><strong>{state.modules.filter(module => favorites.includes(module.id)).length}</strong><span>Favorilerim</span></button>
-      </div>
-
-      <section className="content-toolbar">
-        <div className="result-count"><span role="status"><strong>{filtered.length}</strong> araç</span><span className="toolbar-divider" />
-          <label className="status-filter">Durum <select aria-label="Araç durumuna göre filtrele" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Tümü</option><option value="active">Etkin</option><option value="inactive">Kapalı</option><option value="error">Hatalı</option></select></label>
-          <button className={`filter-chip ${favoritesOnly ? 'on' : ''}`} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(value => !value)}>★ Favoriler</button>
-          {(query || category !== 'Tümü' || status !== 'all' || favoritesOnly) && <button className="filter-chip" onClick={clearFilters}>Temizle</button>}
-        </div>
-        <div className="autosave"><span className="save-dot" />Değişiklikler otomatik kaydedilir</div>
-      </section>
-
-      <section className="workspace">
+      <section className="workspace" aria-label="Modül yönetimi">
         <div className="module-column">
-          <div className="section-heading"><div><h2>{category === 'Tümü' ? 'Tüm modüller' : `${category} modülleri`}</h2><p>Bir aracı seçerek ayarlarını görüntüle.</p></div><span className="count-badge">{filtered.length}</span></div>
+          <header className="module-toolbar">
+            <div className="module-toolbar-heading">
+              <h1>Modüller <span className="count-badge" role="status">{filtered.length}</span></h1>
+              <div className="module-actions">
+                <button className="icon-button" title="Görünüm ayarları" aria-label="Görünüm ayarları" onClick={() => setShowAppearance(true)}><Icon name="settings" size={16} /></button>
+                <button className="icon-button" title="WinForge'dan çık" aria-label="WinForge'dan çık" onClick={() => send('app.exit')}><Icon name="power" size={16} /></button>
+              </div>
+            </div>
+            <label className="search-box"><Icon name="search" size={16} /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => setQuery(event.target.value)} placeholder="Modül veya ayar ara…" /><kbd>Ctrl F</kbd></label>
+            <nav className="module-categories" aria-label="Modül kategorileri">
+              {categories.map(item => <button key={item} className={`category-chip ${category === item ? 'selected' : ''}`} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}
+            </nav>
+            <div className="module-filters">
+              <label className="status-filter"><select aria-label="Araç durumuna göre filtrele" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Tüm durumlar</option><option value="active">Etkin</option><option value="inactive">Kapalı</option><option value="error">Hatalı</option></select></label>
+              <button className={`filter-chip ${favoritesOnly ? 'on' : ''}`} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(value => !value)}>★ Favoriler</button>
+              {(query || category !== 'Tümü' || status !== 'all' || favoritesOnly) && <button className="filter-chip clear-filters" onClick={clearFilters}>Temizle</button>}
+            </div>
+          </header>
           <div className="module-list">
-            {groupModules(filtered).map(group => <details className="module-family" key={group.name} open><summary>{group.name}<span>{group.modules.length} modül</span></summary><div className="module-family-children">{group.modules.map(module => <div className="module-entry" key={module.id}><button aria-pressed={selected?.id === module.id} aria-controls="module-details" className={`module-card ${selected?.id === module.id ? 'active' : ''}`} onClick={() => setSelectedId(module.id)}>
-              <span className={`module-icon ${module.isActive ? 'enabled' : ''}`}><Icon name={module.category === 'Fare' ? 'grid' : module.category === 'Sistem' ? 'settings' : 'layers'} size={18} /></span>
-              <span className="module-copy"><strong>{module.name}</strong><small>{module.description}</small><span className="module-category">{module.category}</span></span>
-              <span className={`module-status ${module.error ? 'has-error' : module.isActive ? 'enabled' : ''}`}>{module.error ? 'Hata' : module.isActive ? 'Etkin' : 'Kapalı'}</span>
-            </button><button className={`favorite-button ${favorites.includes(module.id) ? 'is-favorite' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}>★</button></div>)}</div></details>)}
+            {filtered.map(module => <div className="module-entry" key={module.id}>
+              <button aria-pressed={selected?.id === module.id} aria-controls="module-details" aria-label={`${module.name}: ${module.error ? 'hata' : module.isActive ? 'etkin' : 'kapalı'}. Çift tıklayarak ${module.isActive ? 'kapat' : 'etkinleştir'}.`} className={`module-card ${selected?.id === module.id ? 'active' : ''} ${module.isActive ? 'is-enabled' : 'is-disabled'} ${module.error ? 'has-error' : ''}`} onClick={() => setSelectedId(module.id)} onDoubleClick={() => send('module.toggle', { id: module.id, enabled: !module.isActive })} title={`${module.name} — ${module.description}\nÇift tıklayarak ${module.isActive ? 'kapat' : 'etkinleştir'}.`}>
+                <span className={`module-icon ${module.isActive ? 'enabled' : ''}`}><Icon name={module.category === 'Fare' ? 'grid' : module.category === 'Sistem' ? 'settings' : 'layers'} size={19} /></span>
+                <span className="module-copy"><strong>{module.name}</strong><span className="module-category">{module.category}</span></span>
+              </button>
+              <button className={`favorite-button ${favorites.includes(module.id) ? 'is-favorite' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}>★</button>
+            </div>)}
             {filtered.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="search" size={22} /></div><strong>{favoritesOnly ? 'Bu filtrelerde favori araç yok' : 'Sonuç bulunamadı'}</strong><p>{favoritesOnly ? 'Araçların yanındaki yıldızla favorilerini belirle veya filtreleri temizle.' : 'Arama veya kategori filtresini değiştirmeyi dene.'}</p><button className="secondary-button" onClick={clearFilters}>Filtreleri temizle</button></div>}
           </div>
         </div>

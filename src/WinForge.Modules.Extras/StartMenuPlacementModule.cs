@@ -6,14 +6,17 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-/// <summary>Captures a display once per Start opening and briefly counters shell layout resets.</summary>
+/// <summary>Captures a display once per Start opening and counters shell layout resets until it closes.</summary>
 public sealed class StartMenuPlacementModule : IModuleComponent
 {
     private const uint ObjectHide = 0x8003;
+    private const uint ObjectCloaked = 0x8017;
+    private const uint ObjectUncloaked = 0x8018;
     private readonly Func<IntPtr, bool> _isStart;
     private readonly Dictionary<IntPtr, Opening> _openings = [];
     private WindowEventObserver? _objects;
     private WindowEventObserver? _foreground;
+    private WindowEventObserver? _cloaking;
     private DispatcherTimer? _timer;
     private IModuleContext? _context;
     public StartMenuPlacementModule() : this(IsStartWindow) { }
@@ -36,7 +39,9 @@ public sealed class StartMenuPlacementModule : IModuleComponent
             _timer.Tick += OnTick;
             _objects = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectLocationChange, OnEvent, Report);
             _foreground = new(WindowEventObserver.Foreground, WindowEventObserver.Foreground, OnEvent, Report);
+            _cloaking = new(ObjectCloaked, ObjectUncloaked, OnEvent, Report);
             IsActive = true;
+            _timer.Start();
         }
         catch { Deactivate(); throw; }
     }
@@ -53,39 +58,55 @@ public sealed class StartMenuPlacementModule : IModuleComponent
         {
             _objects = null;
             try { _foreground?.Dispose(); }
-            finally { _foreground = null; _openings.Clear(); Warning = null; }
+            finally
+            {
+                _foreground = null;
+                try { _cloaking?.Dispose(); }
+                finally { _cloaking = null; _openings.Clear(); Warning = null; }
+            }
         }
     }
 
     private void OnEvent(WindowEventObserver.WindowEvent change)
     {
         if (!IsActive) return;
-        if (change.Kind is WindowEventObserver.ObjectDestroy or ObjectHide)
+        if (change.Kind is WindowEventObserver.ObjectDestroy or ObjectHide or ObjectCloaked)
         {
             _openings.Remove(change.Window);
             return;
         }
-        if (change.Kind is not (WindowEventObserver.ObjectShow or WindowEventObserver.Foreground)) return;
-        if (_openings.ContainsKey(change.Window) || !Native.IsWindowVisible(change.Window) || !_isStart(change.Window)) return;
+        if (change.Kind is not (WindowEventObserver.ObjectShow or WindowEventObserver.Foreground or ObjectUncloaked)) return;
+        TrackOpening(change.Window);
+    }
+
+    private void TrackOpening(IntPtr window)
+    {
+        if (window == IntPtr.Zero || _openings.ContainsKey(window) || !IsPresented(window) || !_isStart(window)) return;
         if (!Native.GetCursorPos(out var cursor)) return;
-        _openings[change.Window] = new(DesktopDisplays.ForPoint(cursor), Stopwatch.StartNew());
-        _timer?.Start();
-        Move(change.Window, _openings[change.Window]);
+        _openings[window] = new(DesktopDisplays.ForPoint(cursor));
+        Move(window, _openings[window]);
     }
 
     private void OnTick(object? sender, EventArgs args)
     {
-        var pending = false;
+        if (!IsActive) return;
         foreach (var (window, opening) in _openings.ToArray())
         {
-            if (!Native.IsWindow(window) || !Native.IsWindowVisible(window)) { _openings.Remove(window); continue; }
-            if (opening.Clock.ElapsedMilliseconds > 750 || opening.Blocked) continue;
-            pending = true;
+            if (!Native.IsWindow(window) || !IsPresented(window)) { _openings.Remove(window); continue; }
+            if (opening.Blocked) continue;
             try { Move(window, opening); }
             catch (Exception error) { opening.Blocked = true; Report(error); }
         }
-        if (!pending) _timer?.Stop();
+        // Foreground polling also catches shell openings with no SHOW notification.
+        try { TrackOpening(Native.GetForegroundWindow()); }
+        catch (Exception error) { Report(error); }
     }
+
+    private static bool IsPresented(IntPtr window) => Native.IsWindowVisible(window) &&
+        (DwmGetWindowAttribute(window, 14 /* DWMWA_CLOAKED */, out var cloaked, sizeof(int)) != 0 || cloaked == 0);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
 
     private void Move(IntPtr window, Opening opening)
     {
@@ -129,10 +150,9 @@ public sealed class StartMenuPlacementModule : IModuleComponent
         _context?.Log.Error(Warning, error);
     }
 
-    private sealed class Opening(DesktopDisplay display, Stopwatch clock)
+    private sealed class Opening(DesktopDisplay display)
     {
         internal DesktopDisplay Display { get; } = display;
-        internal Stopwatch Clock { get; } = clock;
         internal bool Blocked { get; set; }
     }
 }

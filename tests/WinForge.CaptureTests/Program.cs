@@ -265,6 +265,7 @@ internal static class Program
         using var client = new DictationClient(Path.GetFullPath(engineDirectory));
         var configuration = new WinForge.Dictation.DictationConfiguration(Path.Combine(modelDirectory, translate ? "ggml-large-v3.bin" : "ggml-large-v3-turbo.bin"), "tr", translate, gpu);
         var result = await client.TranscribeAsync(samples, configuration, default);
+        if (gpu && !fallback) Check(client.Engine == "CUDA", "GPU verification must actually use CUDA rather than silently falling back to CPU");
         Check(translate ? result.Contains("world", StringComparison.OrdinalIgnoreCase) && result.Contains("city", StringComparison.OrdinalIgnoreCase) :
             result.Contains("İstanbul", StringComparison.OrdinalIgnoreCase) && result.Contains("deneme", StringComparison.OrdinalIgnoreCase),
             (translate ? "Real Large-model English translation: " : "Real Turkish Whisper transcription: ") + client.Engine);

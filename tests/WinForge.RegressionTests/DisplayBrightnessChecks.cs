@@ -11,6 +11,13 @@ internal static class DisplayBrightnessChecks
     {
         var sessionType = extras.GetType("WinForge.Modules.Extras.DisplayBrightnessSession")!;
         var monitorType = extras.GetType("WinForge.Modules.Extras.DisplayBrightnessMonitor")!;
+        var rediscover = sessionType.GetMethod("ShouldRediscoverBrightness", BindingFlags.Static | BindingFlags.NonPublic)!;
+        bool NeedsDiscovery(bool matches, int supported, int connected, long age) =>
+            (bool)rediscover.Invoke(null, [matches, supported, connected, age])!;
+        check(!NeedsDiscovery(true, 1, 2, 4999) && NeedsDiscovery(true, 1, 2, 5000),
+            "A partially discovered brightness session retries after five seconds without rescanning on every wheel event");
+        check(!NeedsDiscovery(true, 2, 2, 60000) && NeedsDiscovery(false, 2, 2, 0),
+            "Complete brightness sessions stay cached while topology changes trigger immediate rediscovery");
         var physicalType = sessionType.GetNestedType("PhysicalMonitor", BindingFlags.NonPublic)!;
         var panelType = extras.GetType("WinForge.Modules.Extras.InternalPanelBrightness")!;
         object Monitor(string id, uint current) => monitorType.GetConstructors().Single().Invoke(

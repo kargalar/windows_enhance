@@ -1,9 +1,8 @@
 .\scripts\build.ps1 -Configuration Release -Run
 
-ekran geçmişinde benim userdatada saveler yyüklenmemişti askı kontrlol et
-
 <!--  -->
-programın dashboardını güncelleyleim. soldaki apneli kaldır kategoriler direkt modüllerin üstünde gösterilsn daha kombpakt ir şekildeydi modüller solu kapalyacak. kare kare gridde tutulacak bir satırda 3 öğe oalcak. sağda seçilen modülün detaylar paneli kaplayacak. üst hiçbir şey olmayacak detaylar paelinin. yani modül arama kısmı falan ödüller panelnini üstüne taşınacak. yukarıdaki etkin favori fallan da kaldırılacak çok daha kompakt bir şekilde kullanıacak moüller paelnini üstünde
+
+
 
 <!-- Check -->
 
@@ -36,22 +35,7 @@ context menü ayarlarında seçenekler de ekleyebilelim yani menüde hazır olsu
 
 varsayılan yollar seçenekler ayrı pencerede düzenlemesin normal kendi ppanelinde lsun ayarları
 
-
-
-
-klasör boyutlarını kb değilde max ne ile gösterilebiliyorsa o şekilde dinamik göster mesle 10 kb ise 10 kb yazsın amam 2.2 gb ise 2.2 gb yazmalı 220000000kb falaln değil
-
-
-
-Klavye Yöneticisi modülünü kaldır.
-
 ekrandan metin ala arcını etkinleştiridim ancak taıkdı kaldı esc ile de çıamadım. alaln da seçemedim.
-
-2 monit açık olmasın rağmen parlaklık 1 monitörde değişiyor. ayrıca 1 monitör varsa 1 monitöre uyuglandı diye yazmasın
-
-docker animasyonunu iyileştir.
-
-Görev çubuğu yüksekliğini düşürmeme rağmenküçülmüyor amam yükseltince yükseliyor
 
 İnternet Hızı modülü aktif olmasına rağmen gösterilmiyor.
 

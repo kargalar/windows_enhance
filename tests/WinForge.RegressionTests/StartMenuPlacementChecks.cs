@@ -42,6 +42,30 @@ internal static class StartMenuPlacementChecks
         finally { real.Deactivate(); }
         check(!real.IsActive, "Start placement releases its native event subscriptions");
 
+        var constructor = type.GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(Func<IntPtr, bool>)], null)!;
+        var onEvent = type.GetMethod("OnEvent", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var openingsField = type.GetField("_openings", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var timerField = type.GetField("_timer", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var lifecycle = (ITweakModule)constructor.Invoke([new Func<IntPtr, bool>(window => window == fixture.Handle)]);
+        lifecycle.Initialize(context);
+        try
+        {
+            lifecycle.Activate();
+            var openings = (System.Collections.IDictionary)openingsField.GetValue(lifecycle)!;
+            onEvent.Invoke(lifecycle, [new WindowEventObserver.WindowEvent(0x8018, fixture.Handle)]);
+            check(openings.Contains(fixture.Handle), "Uncloaking Start begins a placement session without a SHOW event");
+            var firstOpening = openings[fixture.Handle];
+            onEvent.Invoke(lifecycle, [new WindowEventObserver.WindowEvent(WindowEventObserver.Foreground, fixture.Handle)]);
+            check(ReferenceEquals(firstOpening, openings[fixture.Handle]), "Repeated foreground events retain the original opening monitor");
+            onEvent.Invoke(lifecycle, [new WindowEventObserver.WindowEvent(0x8017, fixture.Handle)]);
+            check(openings.Count == 0, "Cloaking closes the placement session even while WS_VISIBLE remains set");
+            onEvent.Invoke(lifecycle, [new WindowEventObserver.WindowEvent(0x8018, fixture.Handle)]);
+            check(openings.Contains(fixture.Handle) && !ReferenceEquals(firstOpening, openings[fixture.Handle]),
+                "Reopening the same Start window captures a new monitor selection");
+            check(((DispatcherTimer)timerField.GetValue(lifecycle)!).IsEnabled, "Foreground fallback remains enabled between shell events");
+        }
+        finally { lifecycle.Deactivate(); }
+
         if (!Native.GetCursorPos(out var cursor)) return;
         var target = DesktopDisplays.ForPoint(cursor);
         var other = DesktopDisplays.Enumerate().FirstOrDefault(display => display.Handle != target.Handle);
@@ -49,7 +73,6 @@ internal static class StartMenuPlacementChecks
         using var moving = new NativeWindowFixture("WinForge.StartPlacementFixture", "",
             new() { Left = other.WorkArea.Left + 40, Top = other.WorkArea.Top + 40,
                 Right = other.WorkArea.Left + 440, Bottom = other.WorkArea.Top + 340 }, 0x80000000, 0x08000080);
-        var constructor = type.GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(Func<IntPtr, bool>)], null)!;
         var module = (ITweakModule)constructor.Invoke([new Func<IntPtr, bool>(window => window == moving.Handle)]);
         module.Initialize(context);
         try
@@ -59,6 +82,14 @@ internal static class StartMenuPlacementChecks
             var clock = Stopwatch.StartNew();
             while (DesktopDisplays.ForWindow(moving.Handle).Handle != target.Handle && clock.ElapsedMilliseconds < 1500) Pump();
             check(DesktopDisplays.ForWindow(moving.Handle).Handle == target.Handle, "Native Start fixture moves to the cursor display on its show event");
+            clock.Restart();
+            while (clock.ElapsedMilliseconds < 900) Pump();
+            Native.SetWindowPos(moving.Handle, IntPtr.Zero, other.WorkArea.Left + 40, other.WorkArea.Top + 40,
+                400, 300, 0x0004 | Native.SWP_NOACTIVATE);
+            clock.Restart();
+            while (DesktopDisplays.ForWindow(moving.Handle).Handle != target.Handle && clock.ElapsedMilliseconds < 1500) Pump();
+            check(DesktopDisplays.ForWindow(moving.Handle).Handle == target.Handle,
+                "Start remains on the captured display after a shell layout reset later than 750 ms");
         }
         finally { module.Deactivate(); module.Deactivate(); }
         check(!module.IsActive, "Start placement deactivation is idempotent after a move");

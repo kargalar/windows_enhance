@@ -79,6 +79,12 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} brightness wheel checks.");
                 return 0;
             }
+            if (args.Contains("--start-placement-only"))
+            {
+                StartMenuPlacementChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} Start placement checks.");
+                return 0;
+            }
             if (args.Contains("--combined-modules-only"))
             {
                 CombinedModuleChecks.Run(TestDirectory, Check);

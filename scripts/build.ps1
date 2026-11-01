@@ -5,6 +5,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
+$runningProcesses = @(Get-Process -Name WinForge -ErrorAction SilentlyContinue)
+if ($runningProcesses.Count -gt 0) {
+    Write-Host "Acik WinForge kapatiliyor..." -ForegroundColor Yellow
+    $runningProcesses | Stop-Process -Force
+    foreach ($process in $runningProcesses) {
+        $process.WaitForExit()
+    }
+}
+
 & (Join-Path $PSScriptRoot 'prepare-models.ps1')
 
 Write-Host "WinForge derleniyor ($Configuration)..." -ForegroundColor Cyan
@@ -15,6 +24,5 @@ $output = Join-Path $root "src\WinForge.App\bin\x64\$Configuration\net10.0-windo
 Write-Host "Hazır: $output\WinForge.exe" -ForegroundColor Green
 
 if ($Run) {
-    Stop-Process -Name WinForge -ErrorAction SilentlyContinue
     Start-Process -FilePath (Join-Path $output "WinForge.exe") -WorkingDirectory $output
 }
