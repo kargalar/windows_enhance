@@ -27,6 +27,7 @@ internal static class FeatureVerificationChecks
         TestClassicContextMenu(extras, check);
         TestAppearanceDetailWidth(check);
         TaskbarFeatureChecks.Run(check, nativeSmoke);
+        TaskbarCustomizationChecks.Run(directory, check);
         NotificationsPlacementChecks.Run(extras, directory, check, nativeSmoke);
         DisplayBrightnessChecks.Run(extras, check);
         if (!nativeSmoke) return;

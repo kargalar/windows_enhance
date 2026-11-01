@@ -11,7 +11,8 @@ namespace WinForge.Core;
 public sealed record ShellStyleRule(string Selector, IReadOnlyDictionary<string, string> Properties);
 public sealed record ShellVisualNode(ulong Handle, ulong Parent, string Type, string Name,
     string AutomationId, string AccessibleName, double Width, double Height, double Opacity, string Visibility, string Text, string Fill,
-    double ScreenLeft, double ScreenTop, double ScreenWidth, double ScreenHeight, double HostHeight = 0);
+    double ScreenLeft, double ScreenTop, double ScreenWidth, double ScreenHeight, double HostHeight = 0,
+    bool DockAnimation = false, double DockScale = 1);
 public sealed record ShellDiagnosticsStatus(int Attached, int Elements, int Changes, int Errors, int Restored, uint ProcessId, int AppliedRevision, int LastError, string LastErrorMessage);
 
 /// <summary>Owns the heartbeat and bounded protocol of a WinForge native XAML diagnostics session.</summary>

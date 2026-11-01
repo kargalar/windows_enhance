@@ -8,7 +8,7 @@ internal static class TaskbarStyleCatalog
     internal static readonly string[] Themes = ["Varsayılan", "Saydam", "Cam", "Gece", "Klasik Mavi", "Gül", "Dock"];
     private const string TrayPanel = "<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><WrapGrid Orientation=\"Vertical\" MaximumRowsOrColumns=\"2\" /></ItemsPanelTemplate>";
 
-    internal static IReadOnlyList<ShellStyleRule> Build(IModuleSettings settings, DateTime now)
+    internal static IReadOnlyList<ShellStyleRule> Build(IModuleSettings settings, DateTime now, IReadOnlyList<ShellVisualNode>? tree = null)
     {
         var rules = new List<ShellStyleRule>();
         if (settings.GetBool("hide-start")) Add("[AutomationId=StartButton]", ("Visibility", "Collapsed"));
@@ -34,7 +34,7 @@ internal static class TaskbarStyleCatalog
             Add("Taskbar.TaskbarFrame", ("Margin", "8,4,8,4"));
             Add("Taskbar.TaskListButton", ("Margin", "2,0,2,0"));
         }
-        var iconSize = settings.GetInt("icon-size", 0);
+        var iconSize = settings.GetInt("app-icon-size", 0);
         var height = settings.GetInt("taskbar-height", 0);
         if (height != 0)
         {
@@ -63,6 +63,8 @@ internal static class TaskbarStyleCatalog
         if (date.Length > 0) Add("TextBlock#DateInnerTextBlock", ("Text", Format(now, date)));
         if (time.Length > 0 || date.Length > 0)
             Add("SystemTray.DateTimeIconContent", ("Width", Math.Clamp(settings.GetInt("clock-width", 120), 60, 360).ToString(CultureInfo.InvariantCulture)));
+        if (tree is not null) rules.AddRange(TaskbarSystemIcons.Build(settings, tree));
+        if (TaskbarDockSettings.Build(settings) is { } dockRule) rules.Add(dockRule);
         return rules;
 
         void Add(string selector, params (string Name, string Value)[] properties) =>

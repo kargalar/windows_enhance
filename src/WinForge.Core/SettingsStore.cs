@@ -58,6 +58,7 @@ public sealed class SettingsStore
             }
 
             MigrateWindowControl();
+            MigrateTaskbar();
         }
         catch
         {
@@ -78,6 +79,31 @@ public sealed class SettingsStore
         }
         Enabled.Remove("windhawk-taskbar");
         Values.Remove("windhawk-taskbar");
+    }
+
+    private void MigrateTaskbar()
+    {
+        const string schemaKey = "__taskbar-unified";
+        if (Values.TryGetValue("taskbar", out var existing) && existing.ContainsKey(schemaKey)) return;
+        var hasLegacySettings = Values.ContainsKey("taskbar") || Values.ContainsKey("shell-customization") || Values.ContainsKey("tray-icons") ||
+            Enabled.Overlaps(["taskbar", "shell-customization", "tray-icons"]);
+        if (!hasLegacySettings) return;
+        var taskbar = For("taskbar");
+        taskbar.TryAdd("behavior-enabled", Enabled.Contains("taskbar") ? "true" : "false");
+        taskbar.TryAdd("design-enabled", Enabled.Contains("shell-customization") ? "true" : "false");
+        taskbar.TryAdd("tray-enabled", Enabled.Contains("tray-icons") ? "true" : "false");
+        foreach (var legacyId in new[] { "shell-customization", "tray-icons" })
+        {
+            if (Enabled.Remove(legacyId)) Enabled.Add("taskbar");
+            if (!Values.Remove(legacyId, out var legacy)) continue;
+            var current = For("taskbar");
+            foreach (var (key, value) in legacy)
+            {
+                var targetKey = legacyId == "shell-customization" && key == "icon-size" ? "app-icon-size" : key;
+                current.TryAdd(targetKey, value);
+            }
+        }
+        taskbar[schemaKey] = "1";
     }
 
     public void Save()

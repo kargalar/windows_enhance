@@ -6,8 +6,9 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Taskbar;
 
-public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
+internal sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
 {
+    internal ShellCustomizationModule() { }
     private static readonly TimeSpan ApplicationTimeout = TimeSpan.FromSeconds(3);
     private IModuleContext? _context;
     private ShellDiagnosticsSession? _session;
@@ -15,6 +16,7 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
     private DispatcherTimer? _timer;
     private uint _processId;
     private string _lastRules = "";
+    private IReadOnlyList<ShellVisualNode> _tree = [];
     private string? _error;
     private int _observedErrors;
     private readonly SemaphoreSlim _operationGate = new(1, 1);
@@ -27,12 +29,12 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
     public bool IsActive { get; private set; }
     public IReadOnlyList<SettingDescriptor> Settings { get; } =
     [
-        new() { Key = "hide-start", Label = "Başlat düğmesini gizle", Default = false, Description = "Başlat menüsü Windows tuşuyla açılmaya devam eder." },
-        new() { Key = "theme", Label = "WinForge renk düzeni", Kind = SettingKind.Choice, Options = TaskbarStyleCatalog.Themes, Default = TaskbarStyleCatalog.Themes[0] },
-        new() { Key = "icon-size", Label = "Uygulama simgesi boyutu (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 40, Default = 0 },
-        new() { Key = "taskbar-height", Label = "Görev çubuğu yüksekliği (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 96, Default = 0, Description = "Alt yatay görev çubuğu içindir. Özel değerler 48–96 aralığında uygulanır." },
-        new() { Key = "button-width", Label = "Uygulama düğmesi genişliği (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 160, Default = 0 },
-        new() { Key = "tray-two-rows", Label = "Bildirim simgelerini iki satırda göster", Default = false },
+        new() { Key = "hide-start", Label = "Başlat düğmesini gizle", Section = "Görünürlük", Default = false, Description = "Başlat menüsü Windows tuşuyla açılmaya devam eder." },
+        new() { Key = "theme", Label = "WinForge renk düzeni", Section = "Tasarım", Kind = SettingKind.Choice, Options = TaskbarStyleCatalog.Themes, Default = TaskbarStyleCatalog.Themes[0] },
+        new() { Key = "app-icon-size", Label = "Uygulama simgesi boyutu (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 40, Default = 0, Section = "Tasarım" },
+        new() { Key = "taskbar-height", Label = "Görev çubuğu yüksekliği (0: Windows)", Section = "Tasarım", Kind = SettingKind.Number, Min = 0, Max = 96, Default = 0, Description = "Alt yatay görev çubuğu içindir. Özel değerler 48–96 aralığında uygulanır." },
+        new() { Key = "button-width", Label = "Uygulama düğmesi genişliği (0: Windows)", Section = "Tasarım", Kind = SettingKind.Number, Min = 0, Max = 160, Default = 0 },
+        new() { Key = "tray-two-rows", Label = "Bildirim simgelerini iki satırda göster", Section = "Bildirim alanı", Default = false },
         new() { Key = "time-format", Label = "Saat biçimi", Kind = SettingKind.Text, Default = "", Section = "Saat", Description = "Örn: HH:mm:ss. Yalnızca görev çubuğunu etkiler; boş değer Windows saatini korur." },
         new() { Key = "date-format", Label = "Tarih biçimi", Kind = SettingKind.Text, Default = "", Section = "Saat", Description = "Örn: dd MMM dddd. Boş değer Windows tarihini korur." },
         new() { Key = "clock-width", Label = "Saat alanı genişliği", Kind = SettingKind.Number, Default = 120, Min = 60, Max = 360, Section = "Saat" }
@@ -45,7 +47,6 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         if (IsActive) return;
         try
         {
-            EnsureConnection();
             ApplyRules(force: true);
             _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, OnTick, Dispatcher.CurrentDispatcher);
             IsActive = true;
@@ -56,7 +57,6 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
     public void Apply()
     {
         if (!IsActive) return;
-        EnsureConnection();
         ApplyRules(force: true);
     }
 
@@ -67,9 +67,10 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         {
             if (IsActive) return;
             var rules = TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
+            var preferences = TaskbarSystemIcons.Capture(_context.Settings);
             try
             {
-                await Task.Run(() => { EnsureConnection(); ApplyRules(force: true, rules); });
+                await Task.Run(() => ApplyRules(force: true, rules, preferences));
                 _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, OnTick, Dispatcher.CurrentDispatcher);
                 IsActive = true;
             }
@@ -87,7 +88,8 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         {
             if (!IsActive) return;
             var rules = TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
-            await Task.Run(() => { EnsureConnection(); ApplyRules(force, rules); });
+            var preferences = TaskbarSystemIcons.Capture(_context.Settings);
+            await Task.Run(() => ApplyRules(force, rules, preferences));
             _error = null;
         }
         finally { _operationGate.Release(); }
@@ -114,6 +116,7 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         _lease = null;
         _session = null;
         _lastRules = "";
+        _tree = [];
         var directory = Path.Combine(AppContext.BaseDirectory, "native");
         _lease = ShellDiagnosticsBroker.Acquire(processId, directory);
         _session = _lease.Session;
@@ -127,8 +130,12 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         }
     }
 
-    private void ApplyRules(bool force, IReadOnlyList<ShellStyleRule>? preparedRules = null)
+    private void ApplyRules(bool force, IReadOnlyList<ShellStyleRule>? preparedRules = null, TaskbarSystemIcons.Preferences? preparedPreferences = null)
     {
+        var baseRules = preparedRules ?? TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
+        var preferences = preparedPreferences ?? TaskbarSystemIcons.Capture(_context!.Settings);
+        if (baseRules.Count == 0 && !preferences.IsConfigured && _session is null) return;
+        EnsureConnection();
         var session = _session!;
         if (!force && session.Status.Errors != _observedErrors)
         {
@@ -137,7 +144,9 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
             _lastRules = "";
             throw new InvalidOperationException("Windows görev çubuğu değişikliğini koruyamadı; özelleştirme geri alındı.");
         }
-        var rules = preparedRules ?? TaskbarStyleCatalog.Build(_context!.Settings, DateTime.Now);
+        var tree = session.ReadVisualTree();
+        if (tree.Count > 0) _tree = tree;
+        var rules = baseRules.Concat(TaskbarSystemIcons.Build(preferences, _tree)).ToArray();
         var serialized = JsonSerializer.Serialize(rules);
         if (!force && serialized == _lastRules) return;
         var before = session.Status.Errors;
@@ -190,6 +199,8 @@ public sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
             _processId = 0;
             _lastRules = "";
             IsActive = false;
+            _tree = [];
+            _error = null;
         }
     }
 }

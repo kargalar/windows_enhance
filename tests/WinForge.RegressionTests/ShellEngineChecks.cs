@@ -40,8 +40,11 @@ internal static class ShellEngineChecks
             session.Apply(false, []);
             WaitUntil(() => ReadWidth(window) == 160, "XAML property restoration");
             check(session.Status.Restored > 0, "Disabling shell styles restores the original local property value");
-            session.Apply(true, [new ShellStyleRule("#WinForgeVerificationTarget", new Dictionary<string, string> { ["Width"] = "280" })]);
+            var targetHandle = session.ReadVisualTree().Single(node => node.Name == "WinForgeVerificationTarget").Handle;
+            session.Apply(true, [new ShellStyleRule("@" + targetHandle.ToString(CultureInfo.InvariantCulture), new Dictionary<string, string> { ["Width"] = "280", ["DockAnimation"] = "125,160" })]);
             WaitUntil(() => ReadWidth(window) == 280, "Repeated XAML style application");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Handle == targetHandle && node.DockAnimation), "Native dock attachment");
+            check(!ReadOriginalTransform(window), "Native handle selectors attach the dock controller and preserve the shell transform inside a group");
             var heartbeat = (Timer)typeof(ShellDiagnosticsSession).GetField("_heartbeat", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(session)!;
             heartbeat.DisposeAsync().AsTask().GetAwaiter().GetResult();
             var view = (System.IO.MemoryMappedFiles.MemoryMappedViewAccessor)typeof(ShellDiagnosticsSession)
@@ -49,6 +52,8 @@ internal static class ShellEngineChecks
             const int heartbeatOffset = 16;
             view.Write(heartbeatOffset, 0UL);
             WaitUntil(() => ReadWidth(window) == 160, "Shell heartbeat restoration");
+            WaitUntil(() => ReadOriginalTransform(window), "Dock watchdog restoration");
+            check(true, "Heartbeat loss restores the exact preexisting transform and transform origin without managed cleanup");
             WaitUntil(() => !session.IsConnected, "Native session cleanup acknowledgement after heartbeat loss");
             check(!session.IsConnected, "Loss of the owner heartbeat restores XAML properties while the active style payload remains unchanged and managed disposal has not run");
             session.Dispose();
@@ -140,7 +145,7 @@ internal static class ShellEngineChecks
     private static void TestTaskbarModule(string nativeDirectory, ShellVisualNode originalStart, Action<bool, string> check)
     {
         var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Taskbar.dll"));
-        var module = (ITweakModule)Activator.CreateInstance(assembly.GetType("WinForge.Modules.Taskbar.ShellCustomizationModule")!)!;
+        var module = (ITweakModule)Activator.CreateInstance(assembly.GetType("WinForge.Modules.Taskbar.ShellCustomizationModule")!, nonPublic: true)!;
         var context = new ShellContext();
         context.Settings.Set("hide-start", true);
         context.Settings.Set("theme", "Gece");
@@ -153,7 +158,7 @@ internal static class ShellEngineChecks
             check(module.IsActive && module.Warning is null, "Shipped customization module controls the actual taskbar through its own engine");
             WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "BackgroundFill" && node.Fill == "#F0171B24"), "Theme effective brush readback");
             check(true, "Own taskbar theme changes the actual background brush");
-            context.Settings.Set("icon-size", 32);
+            context.Settings.Set("app-icon-size", 32);
             context.Settings.Set("button-width", 60);
             module.Apply();
             WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "Icon" && node.Type.EndsWith(".Image", StringComparison.Ordinal) && Math.Abs(node.Height - 32) < 0.1), "Actual taskbar icon size");
@@ -235,6 +240,51 @@ internal static class ShellEngineChecks
             var originalSearch = tree.First(node => node.Type == "StartMenu.SearchBoxToggleButton");
             var originalUser = tree.First(node => node.Type == "StartDocked.UserTileView");
             var originalPower = tree.First(node => node.Type == "StartDocked.PowerOptionsView");
+            var originalAllHeading = tree.First(node => node.Name == "AllListHeading");
+            var originalSuggestions = tree.First(node => node.Name == "TopLevelSuggestionsRoot");
+            var originalPinned = tree.First(node => node.Name == "StartMenuPinnedList");
+            var originalAllApps = tree.First(node => node.Name == "AllAppsGrid");
+            var originalLabels = tree.Where(node => node.Name == "DisplayName" && node.Type.EndsWith(".TextBlock", StringComparison.Ordinal)).ToArray();
+            check(originalLabels.Length > 0, "Pinned application and folder names are available for live verification");
+            context.Settings.Set("hide-labels", true);
+            module.Apply();
+            WaitUntil(() => originalLabels.All(original => session.ReadVisualTree().Any(node => node.Handle == original.Handle && node.Visibility == "Collapsed")), "Pinned application and folder names hidden");
+            check(session.Status.Errors == 0 && session.ReadVisualTree().Any(node => node.Name == "Logo" && node.Visibility == "Visible"),
+                "Icon-only mode hides names while keeping application icons visible");
+            context.Settings.Set("hide-labels", false);
+            module.Apply();
+            WaitUntil(() => originalLabels.All(original => session.ReadVisualTree().Any(node => node.Handle == original.Handle && node.Visibility == original.Visibility && node.Text == original.Text)), "Original application and folder names restored");
+            check(session.Status.Errors == 0, "Disabling icon-only mode restores the original label visibility and text");
+            var originalIcons = tree.Where(node => node.Type.EndsWith(".Image", StringComparison.Ordinal) && node.Name is "Logo" or "AllAppsTileLogo").ToArray();
+            check(originalIcons.Any(node => node.Name == "Logo") && originalIcons.Any(node => node.Name == "AllAppsTileLogo"),
+                "Live Start menu exposes pinned and all apps icons for size verification");
+            foreach (var iconSize in new[] { 16, 40, 48 })
+            {
+                context.Settings.Set("icon-size", iconSize);
+                module.Apply();
+                WaitUntil(() => originalIcons.All(original => session.ReadVisualTree().Any(node => node.Handle == original.Handle &&
+                    Math.Abs(node.Width - iconSize) < 0.1 && Math.Abs(node.Height - iconSize) < 0.1)), "Pinned and all apps icon dimensions");
+                check(session.Status.Errors == 0, $"Start application icons resize to {iconSize} logical pixels without shell errors");
+            }
+            context.Settings.Set("icon-size", 0);
+            module.Apply();
+            WaitUntil(() => originalIcons.All(original => session.ReadVisualTree().Any(node => node.Handle == original.Handle &&
+                Math.Abs(node.Width - original.Width) < 0.1 && Math.Abs(node.Height - original.Height) < 0.1)), "Original icon dimensions restored");
+            check(session.Status.Errors == 0, "Zero icon size restores the original Windows icon dimensions");
+            context.Settings.Set("pinned-only", true);
+            module.Apply();
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "AllListHeading" && node.Visibility == "Collapsed"), "All apps heading and view selector hidden");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "TopLevelSuggestionsRoot" && node.Visibility == "Collapsed"), "Start suggestions hidden");
+            WaitUntil(() => AllAppsPanel(session.ReadVisualTree())?.Visibility == "Collapsed", "All apps items panel hidden while retaining pinned header");
+            check(session.ReadVisualTree().Any(node => node.Name == "StartMenuPinnedList" && node.Visibility == originalPinned.Visibility && node.Height > 0) &&
+                  session.ReadVisualTree().Any(node => node.Name == "AllAppsGrid" && node.Visibility == originalAllApps.Visibility) && session.Status.Errors == 0,
+                "Pinned-only mode hides the all apps panel without collapsing its pinned header");
+            context.Settings.Set("pinned-only", false);
+            module.Apply();
+            WaitUntil(() => AllAppsPanel(session.ReadVisualTree())?.Visibility == "Visible", "All apps original items panel restored");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "AllListHeading" && node.Visibility == originalAllHeading.Visibility), "All apps heading restored");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "TopLevelSuggestionsRoot" && node.Visibility == originalSuggestions.Visibility), "Start suggestions restored");
+            check(session.Status.Errors == 0, "Disabling pinned-only mode restores all apps and recommendations");
             context.Settings.Set("width", 700);
             context.Settings.Set("height", 700);
             context.Settings.Set("opacity", 75);
@@ -268,8 +318,36 @@ internal static class ShellEngineChecks
             module.Apply();
             WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "MainMenu" && Math.Abs(node.Opacity - originalMenu.Opacity) < 0.01), "Custom Start rule restoration");
             check(session.Status.Errors == 0, "Custom Start XAML rules apply and restore");
+            context.Settings.Set("pinned-only", true);
+            context.Settings.Set("icon-size", 40);
+            context.Settings.Set("hide-labels", true);
+            module.Apply();
+            WaitUntil(() => AllAppsPanel(session.ReadVisualTree())?.Visibility == "Collapsed", "Pinned-only reapplied");
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "Logo" && Math.Abs(node.Width - 40) < 0.1), "Icon size works with pinned-only mode");
+            module.Deactivate();
+            context.Settings.Set("icon-size", 0);
+            context.Settings.Set("hide-labels", false);
+            module.Activate();
+            var restoredLease = (ShellDiagnosticsBroker.Lease)module.GetType().GetField("_lease", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(module)!;
+            context.Settings.Set("pinned-only", false);
+            module.Apply();
+            WaitUntil(() => AllAppsPanel(restoredLease.Session.ReadVisualTree())?.Visibility == "Visible", "All apps restored after module reactivation");
+            check(restoredLease.Session.Status.Errors == 0, "Pinned-only mode survives module deactivation and reactivation without losing the original panel");
+            WaitUntil(() => originalIcons.All(original => restoredLease.Session.ReadVisualTree().Any(node => node.Handle == original.Handle &&
+                Math.Abs(node.Width - original.Width) < 0.1 && Math.Abs(node.Height - original.Height) < 0.1)), "Icon dimensions restored after module deactivation");
+            check(restoredLease.Session.Status.Errors == 0, "Disabling the module restores application icons after using pinned-only mode");
+            WaitUntil(() => originalLabels.All(original => restoredLease.Session.ReadVisualTree().Any(node => node.Handle == original.Handle && node.Visibility == original.Visibility)), "Names restored after module deactivation");
+            check(restoredLease.Session.Status.Errors == 0, "Module deactivation restores names after combining icon-only, pinned-only and icon resizing");
         }
         finally { module.Deactivate(); }
+    }
+
+    private static ShellVisualNode? AllAppsPanel(IReadOnlyList<ShellVisualNode> tree)
+    {
+        var header = tree.FirstOrDefault(node => node.Name == "TopLevelHeader");
+        var headerPresenter = tree.FirstOrDefault(node => node.Handle == header?.Parent);
+        var headerControl = tree.FirstOrDefault(node => node.Handle == headerPresenter?.Parent);
+        return tree.FirstOrDefault(node => node.Parent == headerControl?.Parent && node.Type.EndsWith(".ItemsWrapGrid", StringComparison.Ordinal));
     }
 
     private sealed class ShellContext : IModuleContext
@@ -297,6 +375,13 @@ internal static class ShellEngineChecks
         if (SendMessageTimeout(window, 0x0401, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) == IntPtr.Zero)
             throw new InvalidOperationException("XAML fixture did not respond.");
         return result.ToInt32();
+    }
+
+    private static bool ReadOriginalTransform(IntPtr window)
+    {
+        if (SendMessageTimeout(window, 0x0403, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) == IntPtr.Zero)
+            throw new InvalidOperationException("XAML transform fixture did not respond.");
+        return result != IntPtr.Zero;
     }
 
     private static void SetBoundWidth(IntPtr window, int value)

@@ -1,16 +1,5 @@
-taskbar özelleştirme modülünü geliştir ve iyileştir
-Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
-taskbardaki start buton gizlenebislin.
-Taskbar Dock Animation
-taskbar ile ilgil item modülleri tek bir modül altında toplanabilir ve tek bir ayar paneli ile yönetilebilir.
-
-
-Replaces the classic "Browse For Folder" dialog
-modülü ekle
 
 ekran görüntüsü alma aracını geliştir ve iyileştir.
-
-
 
 <!-- Check -->
 
@@ -30,3 +19,6 @@ ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin ses ve pa
 file explorer daki şu soldaki menüyü özelleştirmek için modül ekle. paddingignden tut da font rengine kadar her şeyi ayarlanabilsin. yukarıdak home ve galeri öğeleri de gizlenebilsin vesayre ,,
 
 Dynamic Island for Windows diye bir modül vardı windhawk da onu çok beğendim onu ayrı bir modül olarak aynı onun gibi ekle. ayrıca o tasarım dili ve animasyonları fallan aşırı beğendim tüm ui ı tüm ssitemi de bu mantıkta güncelle.
+
+Replaces the classic "Browse For Folder" dialog
+modülü ekle

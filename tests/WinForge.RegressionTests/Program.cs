@@ -214,9 +214,28 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} live taskbar checks.");
                 return 0;
             }
+            if (args.Contains("--taskbar-only"))
+            {
+                TaskbarFeatureChecks.Run(Check, nativeSmoke: false);
+                TaskbarCustomizationChecks.Run(TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} taskbar checks.");
+                return 0;
+            }
+            if (args.Contains("--taskbar-panel-only"))
+            {
+                TaskbarPanelChecks.Run(app, TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} taskbar panel checks.");
+                return 0;
+            }
+            if (args.Contains("--taskbar-customization-live"))
+            {
+                TaskbarCustomizationChecks.RunLive(Check);
+                Console.WriteLine($"PASS: {_passed} taskbar customization live checks.");
+                return 0;
+            }
             if (args.Contains("--tray-live"))
             {
-                TrayIconsLiveChecks.Run(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"), TestDirectory, Check);
+                TrayIconsLiveChecks.Run(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Taskbar.dll"), TestDirectory, Check);
                 Console.WriteLine($"PASS: {_passed} live notification-area checks.");
                 return 0;
             }

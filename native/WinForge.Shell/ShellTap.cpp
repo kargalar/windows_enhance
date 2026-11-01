@@ -38,6 +38,9 @@ using namespace Windows::UI::Xaml::Media;
 
 namespace winforge::shell {
 using XamlValue = winrt::Windows::Foundation::IInspectable;
+}
+#include "TaskbarDockAnimation.h"
+namespace winforge::shell {
 struct SavedProperty {
     DependencyProperty property{nullptr};
     XamlValue value{nullptr};
@@ -53,6 +56,7 @@ struct Node {
     weak_ref<FrameworkElement> element;
     std::vector<SavedProperty> saved;
     std::unique_ptr<TaskbarGeometry> geometry;
+    std::unique_ptr<TaskbarDockAnimation> dock;
 };
 struct SnapshotNode {
     InstanceHandle parent{};
@@ -68,6 +72,8 @@ struct SnapshotNode {
     std::wstring fill;
     Rect screenBounds{};
     double hostHeight{};
+    bool dockAnimation{};
+    double dockScale{1.0};
 };
 
 class Tap;
@@ -164,6 +170,7 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
 
     void Restore(Node& node) noexcept {
         try {
+            node.dock.reset();
             auto element = node.element.get();
             if (!element) { node.saved.clear(); return; }
             for (auto iterator = node.saved.rbegin(); iterator != node.saved.rend(); ++iterator) {
@@ -195,10 +202,29 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
     }
 
     bool Match(std::wstring const& selector, Node const& node) {
+        if (selector.starts_with(L"@")) {
+            wchar_t* end{};
+            auto handle = wcstoull(selector.c_str() + 1, &end, 10);
+            return end != selector.c_str() + 1 && !*end && handle == node.handle;
+        }
         auto element = node.element.get();
         if (!element) return false;
         auto separator = selector.find(L' ');
         auto target = separator == std::wstring::npos ? selector : selector.substr(separator + 1);
+        // Restrict an items panel to its nearest owning ItemsControl, excluding nested pinned grids.
+        auto ownerFilter = target.find(L"[ItemsControl=");
+        if (ownerFilter != std::wstring::npos) {
+            if (!target.ends_with(L"]")) return false;
+            auto ownerName = target.substr(ownerFilter + 14, target.size() - ownerFilter - 15);
+            target = target.substr(0, ownerFilter);
+            auto parent = Media::VisualTreeHelper::GetParent(element);
+            ItemsControl owner{nullptr};
+            while (parent && !owner) {
+                owner = parent.try_as<ItemsControl>();
+                if (!owner) parent = Media::VisualTreeHelper::GetParent(parent);
+            }
+            if (!owner || std::wstring(owner.Name()) != ownerName) return false;
+        }
         if (!MatchIdentity(target, node.type, node.name, std::wstring(Automation::AutomationProperties::GetAutomationId(element)))) return false;
         if (separator == std::wstring::npos) return true;
         auto ancestorSelector = selector.substr(0, separator);
@@ -315,6 +341,20 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
                 RestoreProperty(element, *iterator);
                 node.saved.erase(iterator);
             }
+            if (auto animation = desired.find(L"DockAnimation"); animation != desired.end()) {
+                auto separator = animation->second.find(L',');
+                if (separator == std::wstring::npos) throw hresult_invalid_argument();
+                auto percent = std::stoi(animation->second.substr(0, separator));
+                auto duration = std::stoi(animation->second.substr(separator + 1));
+                if (percent < 105 || percent > 160 || duration < 50 || duration > 500) throw hresult_invalid_argument();
+                auto factor = percent / 100.0;
+                if (!node.dock || !node.dock->Matches(factor, duration)) {
+                    node.dock.reset();
+                    node.dock = std::make_unique<TaskbarDockAnimation>(element, factor, duration);
+                    InterlockedIncrement(&session_.Get()->changed);
+                }
+                desired.erase(animation);
+            } else node.dock.reset();
             if (node.type == L"Taskbar.TaskbarFrame" && desired.contains(L"Height")) {
                 auto host = GetAncestor(HostWindow(node), GA_ROOT);
                 wchar_t name[64]{};
@@ -372,6 +412,8 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
                 node.SetNamedValue(L"screenWidth", JsonValue::CreateNumberValue(entry.screenBounds.Width));
                 node.SetNamedValue(L"screenHeight", JsonValue::CreateNumberValue(entry.screenBounds.Height));
                 node.SetNamedValue(L"hostHeight", JsonValue::CreateNumberValue(entry.hostHeight));
+                node.SetNamedValue(L"dockAnimation", JsonValue::CreateBooleanValue(entry.dockAnimation));
+                node.SetNamedValue(L"dockScale", JsonValue::CreateNumberValue(entry.dockScale));
                 auto characters = node.Stringify().size() + 1;
                 if (serializedCharacters + characters >= (MappingBytes - SnapshotOffset) / sizeof(wchar_t)) break;
                 serializedCharacters += characters;
@@ -522,6 +564,8 @@ public:
         entry.height = element.ActualHeight();
         RECT hostBounds{};
         if (GetWindowRect(HostWindow(node), &hostBounds)) entry.hostHeight = hostBounds.bottom - hostBounds.top;
+        entry.dockAnimation = node.dock != nullptr;
+        entry.dockScale = node.dock ? node.dock->Scale() : 1.0;
         entry.opacity = element.Opacity();
         entry.visibility = element.Visibility() == Visibility::Visible ? L"Visible" : L"Collapsed";
         if (node.type.starts_with(L"Taskbar.") || node.type.starts_with(L"SystemTray.")) {

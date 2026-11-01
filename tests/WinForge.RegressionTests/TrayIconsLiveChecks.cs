@@ -18,7 +18,7 @@ internal static class TrayIconsLiveChecks
 
     internal static void Run(string modulePath, string directory, Action<bool, string> check)
     {
-        var type = Assembly.LoadFrom(modulePath).GetType("WinForge.Modules.Extras.TrayIconsModule", throwOnError: true)!;
+        var type = Assembly.LoadFrom(modulePath).GetType("WinForge.Modules.Taskbar.TrayIconsModule", throwOnError: true)!;
         VerifyRegistryLease(type, directory, check);
         using var fixture = new TrayIconFixture();
         var ownKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

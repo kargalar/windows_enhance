@@ -8,7 +8,9 @@
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Data.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 #include <cstdio>
+#include <cmath>
 
 using namespace winrt;
 using namespace Windows::UI::Xaml;
@@ -21,6 +23,11 @@ static HWND parentWindow{};
 static LRESULT CALLBACK FixtureProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_USER + 1) return static_cast<LRESULT>(fixture.Width());
     if (message == WM_USER + 2) { bindingSource.Value(static_cast<double>(wParam)); return 1; }
+    if (message == WM_USER + 3) {
+        auto transform = fixture.RenderTransform().try_as<Media::TranslateTransform>();
+        auto origin = fixture.RenderTransformOrigin();
+        return transform && transform.X() == 8 && std::abs(origin.X - 0.2f) < 0.001f && std::abs(origin.Y - 0.3f) < 0.001f;
+    }
     if (message == WM_CLOSE) { DestroyWindow(window); return 0; }
     if (message == WM_DESTROY) { PostQuitMessage(0); return 0; }
     return DefWindowProcW(window, message, wParam, lParam);
@@ -55,6 +62,10 @@ int wmain() {
         binding.Mode(Data::BindingMode::OneWay);
         fixture.SetBinding(FrameworkElement::WidthProperty(), binding);
         fixture.Height(80);
+        Media::TranslateTransform originalTransform;
+        originalTransform.X(8);
+        fixture.RenderTransform(originalTransform);
+        fixture.RenderTransformOrigin({0.2f, 0.3f});
         TextBlock label;
         label.Text(L"WinForge native XAML verification");
         fixture.Child(label);

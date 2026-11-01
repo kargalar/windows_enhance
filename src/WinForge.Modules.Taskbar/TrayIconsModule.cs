@@ -4,9 +4,9 @@ using System.Text;
 using Microsoft.Win32;
 using WinForge.Core;
 
-namespace WinForge.Modules.Extras;
+namespace WinForge.Modules.Taskbar;
 
-public sealed class TrayIconsModule : ITweakModule
+internal sealed class TrayIconsModule : ITweakModule
 {
     private const string SettingsKey = @"Control Panel\NotifyIconSettings";
     private const string PromotionValue = "IsPromoted";
@@ -18,7 +18,7 @@ public sealed class TrayIconsModule : ITweakModule
     private readonly IReadOnlySet<string>? _includedSubKeys;
     private IModuleContext? _context;
 
-    public TrayIconsModule() { }
+    internal TrayIconsModule() { }
 
     internal TrayIconsModule(IReadOnlySet<string> includedSubKeys)
     {
@@ -79,7 +79,7 @@ public sealed class TrayIconsModule : ITweakModule
             catch (Exception exception) { failures.Add(exception); }
         }
 
-        Reg.Broadcast("TraySettings");
+        SettingsChangeBroadcaster.Broadcast("TraySettings");
         if (failures.Count != 0) throw new AggregateException("Tepsi simgesi tercihleri tamamen geri yüklenemedi.", failures);
         _originals.Clear();
         IsActive = false;
@@ -106,7 +106,7 @@ public sealed class TrayIconsModule : ITweakModule
             }
         }
 
-        if (changed) Reg.Broadcast("TraySettings");
+        if (changed) SettingsChangeBroadcaster.Broadcast("TraySettings");
     }
 
     private void BuildGroups()

@@ -1,5 +1,11 @@
 # WinForge
 
+**Başlat → Başlat Menüsü Tasarımı → Görünüm → Simge altındaki adları gizle** seçeneği, sabitlenmiş uygulama ve klasörlerin adlarını gizleyerek yalnızca simgelerini gösterir. Simge boyutu ve yalnızca sabitlenmiş uygulamaları gösterme ayarlarıyla birlikte kullanılabilir; seçenek veya modül kapatılınca adlar geri gelir.
+
+**Başlat → Başlat Menüsü Tasarımı → Bölümler → Yalnızca sabitlenmiş uygulamaları göster** seçeneği, yeni Windows 11 Başlat menüsündeki **Tüm uygulamalar / All** başlığını, görünüm seçicisini, uygulama listesini/kategorilerini ve önerileri gizler. Sabitlenmiş uygulamalar görünür kalır. Seçenek veya modül kapatıldığında özgün görünüm geri yüklenir.
+
+Aynı modüldeki **Boyut → Uygulama simgesi boyutu (0: Windows)** ayarı, sabitlenmiş uygulamaların ve Tüm uygulamalar bölümünün simgelerini **16–48 mantıksal piksel** arasında değiştirir. **0** özgün boyutları geri yükler. Klasörlerin küçük önizleme simgeleri korunur; ayar yalnızca sabitlenmiş uygulamaları gösterme seçeneğiyle birlikte de çalışır.
+
 ## Dynamic Island ve yeni arayüz
 
 **Sistem → Dynamic Island**, [Windhawk Dynamic Island](https://github.com/devcode90/Dynamic-Island-for-Windows) tasarımından esinlenen bağımsız WinForge modülüdür; Windhawk kurulumu gerektirmez. Modülü açın, kapsülün üzerine gelin veya tıklayın. Tekerlekle Medya, Takvim, Odak, Pano, Dosya, İndir ve Sistem panellerini değiştirin. Sabitle düğmesi paneli açık tutar; `Ctrl+Alt+D` gizler/gösterir. Modül ayarlarındaki **Adayı göster** eylemi de gizli kapsülü geri açar.
@@ -21,12 +27,10 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 
 | Modül | Ne yapar |
 |---|---|
-| **Taskbar Araçları** | Orta tuşla taskbar düğmesinden pencere kapatma, tekerlekle ses, saatte saniye ve özel saat biçimi, arama/görev görünümü/widget/Copilot düğmeleri, pencere birleştirme, görev çubuğu hizası, "Görevi sonlandır", simge boyutu, saydamlık, vurgu rengi ve tüm tepsi simgelerini gösterme |
-| **Görev Çubuğu Tasarımı** | WinForge'un yerel kabuk motoruyla Başlat düğmesini gizleme, renk düzenleri, simge/düğme boyutları, 48–96 DIP yükseklik, iki satırlı bildirim simgeleri ve görev çubuğuna özel saat/tarih biçimi |
+| **Görev Çubuğu** | Tek panelde fare/ses kısayolları, Windows görev çubuğu tercihleri, Başlat ve sistem simgelerini gizleme (ses, ağ, pil, mikrofon, konum, Studio Effects, Recall, dil, bildirim zili), masaüstünü göster düğmesi görünürlüğü/genişliği, dock büyüme animasyonu, renk ve boyutlar, saat/tarih biçimleri ve uygulama tepsisi seçimleri. Önceki modüllerin ayarları ve açık/kapalı durumları otomatik aktarılır. |
 | **Bildirim Konumu** | Tanınan Windows bildirim pencerelerini ekran/köşe ayarına göre taşır ve kapatılınca özgün sınırlarını geri yükler; gerçek Windows bildirimi doğrulamasının durumu doğrulama belgesinde tutulur |
 | **Tarayıcı Tam Ekran İpucu** | Chromium tarayıcısının üst ortadaki etkileşimsiz tam ekran çıkış ipucunu gizler; gerçek Edge üzerinde gizleme/geri yükleme doğrulandı |
 | **İnternet Hızı** | Anlık indirme/yükleme hızı görev çubuğunun üstünde (isteğe bağlı olarak içinde), bildirim alanına hizalı; otomatik/MB/s/Mbit/s birim, ayarlanabilir yenileme aralığı, taskbar gizliyken otomatik gizlenme |
-| **Sistem Tepsisi Simgeleri** | Bildirim alanında hangi uygulama simgelerinin görüneceğini tek tek seçer; değişiklik anında uygulanır, kapatınca önceki durum geri gelir |
 | **Her Zaman Üstte** | `Alt+F` ile aktif pencereyi üste sabitler, aynı kısayol bırakır; sabitlenen pencerenin çevresine renkli çerçeve çizer |
 | **Ekrandan Metin Al** | `Alt+Q` ile bölge seçer, OCR ile metni panoya kopyalar |
 | **Hızlı Başlatıcı** | `Win+Alt+Space` ile Başlat menüsü, kullanıcı klasörleri ve isteğe bağlı klasörlerde uygulama/dosya/klasör arar; uzantı filtresi, hesap makinesi ve web/Windows URI desteği |

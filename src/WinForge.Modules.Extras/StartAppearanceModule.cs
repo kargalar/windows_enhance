@@ -10,6 +10,8 @@ namespace WinForge.Modules.Extras;
 /// <summary>Customizes the actual Windows Start XAML tree using the shared shell diagnostics engine.</summary>
 public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
 {
+    private const int MinimumIconSize = 16;
+    private const int MaximumIconSize = 48;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(5);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IModuleContext? _context;
@@ -30,8 +32,11 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
     [
         new() { Key = "width", Label = "Menü genişliği (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 2000, Default = 0, Section = "Boyut", Description = "Mantıksal piksel; özel değerler 320–2000 aralığındadır." },
         new() { Key = "height", Label = "Menü yüksekliği (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = 1600, Default = 0, Section = "Boyut", Description = "Mantıksal piksel; özel değerler 320–1600 aralığındadır." },
+        new() { Key = "icon-size", Label = "Uygulama simgesi boyutu (0: Windows)", Kind = SettingKind.Number, Min = 0, Max = MaximumIconSize, Default = 0, Section = "Boyut", Description = "Yeni Windows 11 Başlat menüsündeki uygulama simgelerini 16–48 mantıksal piksel arasında ayarlar. Klasörlerin küçük önizleme simgeleri korunur." },
         new() { Key = "opacity", Label = "Menü opaklığı (%)", Kind = SettingKind.Number, Min = 20, Max = 100, Default = 100, Section = "Görünüm" },
+        new() { Key = "hide-labels", Label = "Simge altındaki adları gizle", Default = false, Section = "Görünüm", Description = "Yeni Windows 11 Başlat menüsünde sabitlenmiş uygulama ve klasörlerin adlarını gizleyerek yalnızca simgelerini gösterir." },
         new() { Key = "hide-search", Label = "Arama alanını gizle", Default = false, Section = "Bölümler" },
+        new() { Key = "pinned-only", Label = "Yalnızca sabitlenmiş uygulamaları göster", Default = false, Section = "Bölümler", Description = "Yeni Windows 11 Başlat menüsünde Tüm uygulamalar başlığını, görünüm seçicisini, uygulama listesini/kategorilerini ve önerileri gizler." },
         new() { Key = "hide-user", Label = "Kullanıcı alanını gizle", Default = false, Section = "Bölümler" },
         new() { Key = "hide-power", Label = "Güç düğmesini gizle", Default = false, Section = "Bölümler" },
         new() { Key = "custom-rules", Label = "Özel XAML kuralları (JSON)", Kind = SettingKind.Text, Default = "", Section = "Gelişmiş", Description = "Örnek: [{\"selector\":\"#MainMenu\",\"properties\":{\"Opacity\":\"0.8\"}}]. Özellik desteği Windows sürümüne ve öğe türüne bağlıdır." }
@@ -121,8 +126,8 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
     private AppearanceSettings ReadSettings()
     {
         var settings = _context!.Settings;
-        return new(settings.GetInt("width"), settings.GetInt("height"), settings.GetInt("opacity", 100),
-            settings.GetBool("hide-search"), settings.GetBool("hide-user"), settings.GetBool("hide-power"), settings.GetString("custom-rules"));
+        return new(settings.GetInt("width"), settings.GetInt("height"), settings.GetInt("icon-size"), settings.GetInt("opacity", 100),
+            settings.GetBool("hide-search"), settings.GetBool("pinned-only"), settings.GetBool("hide-labels"), settings.GetBool("hide-user"), settings.GetBool("hide-power"), settings.GetString("custom-rules"));
     }
 
     private void Update(AppearanceSettings settings, bool force)
@@ -197,8 +202,30 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
             if (redesigned) Add(heightTarget, ("Height", value), ("MinHeight", value), ("MaxHeight", value), ("Margin", "0"));
             else Add(heightTarget, ("Height", value), ("MinHeight", value), ("MaxHeight", value));
         }
+        if (settings.IconSize != 0)
+        {
+            if (!redesigned) throw new InvalidOperationException("Uygulama simgesi boyutu ayarı yeni Windows 11 Başlat menüsünü gerektirir.");
+            var iconSize = Math.Clamp(settings.IconSize, MinimumIconSize, MaximumIconSize).ToString(CultureInfo.InvariantCulture);
+            // Resize the surrounding plates as well so the image stays within its layout bounds.
+            foreach (var name in new[] { "Logo", "LogoContainer", "LogoPlate", "FolderHintPlate" })
+                Add($"StartMenu.PinnedListTile #{name}", ("Width", iconSize), ("Height", iconSize));
+            Add("StartMenu.StartHome Image#AllAppsTileLogo", ("Width", iconSize), ("Height", iconSize));
+        }
         if (settings.Opacity < 100) Add(redesigned ? "StartMenu.StartBlendedFlexFrame #MainMenu" : "StartDocked.StartSizingFrame", ("Opacity", (Math.Clamp(settings.Opacity, 20, 100) / 100.0).ToString(CultureInfo.InvariantCulture)));
+        if (settings.HideLabels)
+        {
+            if (!redesigned) throw new InvalidOperationException("Simge altındaki adları gizleme özelliği yeni Windows 11 Başlat menüsünü gerektirir.");
+            Add("StartMenu.PinnedList TextBlock#DisplayName", ("Visibility", "Collapsed"));
+        }
         if (settings.HideSearch) Add("StartMenu.SearchBoxToggleButton", ("Visibility", "Collapsed"));
+        if (settings.PinnedOnly)
+        {
+            if (!redesigned) throw new InvalidOperationException("Yalnızca sabitlenmiş uygulamaları gösterme özelliği yeni Windows 11 Başlat menüsünü gerektirir.");
+            Add("StartMenu.StartHome #AllListHeading", ("Visibility", "Collapsed"));
+            Add("StartMenu.StartHome #TopLevelSuggestionsRoot", ("Visibility", "Collapsed"));
+            // The pinned section is the grid's header: hide only its items panel, preserving the header.
+            Add("ItemsWrapGrid[ItemsControl=AllAppsGrid]", ("Visibility", "Collapsed"));
+        }
         if (settings.HideUser) Add("StartDocked.UserTileView", ("Visibility", "Collapsed"));
         if (settings.HidePower) Add("StartDocked.PowerOptionsView", ("Visibility", "Collapsed"));
         if (!string.IsNullOrWhiteSpace(settings.CustomRules))
@@ -224,5 +251,5 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
         finally { _lease = null; _processId = 0; _lastRules = ""; IsActive = false; }
     }
 
-    private sealed record AppearanceSettings(int Width, int Height, int Opacity, bool HideSearch, bool HideUser, bool HidePower, string CustomRules);
+    private sealed record AppearanceSettings(int Width, int Height, int IconSize, int Opacity, bool HideSearch, bool PinnedOnly, bool HideLabels, bool HideUser, bool HidePower, string CustomRules);
 }
