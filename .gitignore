@@ -5,6 +5,7 @@ src/WinForge.App/ui/node_modules/
 src/WinForge.App/wwwroot/
 artifacts/
 .playwright-cli/
+/output/playwright/
 /work/corpus/
 /work/tools/
 *.user

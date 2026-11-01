@@ -6,11 +6,18 @@ param(
     [switch]$LiveShell,
     [switch]$LiveBrowser,
     [switch]$LiveAudio,
-    [switch]$LiveNotifications
+    [switch]$LiveNotifications,
+    [switch]$ExplorerNavigationLive
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
+dotnet run --project (Join-Path $root 'tests\WinForge.NavigationTests\WinForge.NavigationTests.csproj') -c $Configuration -p:Platform=x64
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($ExplorerNavigationLive) {
+    dotnet run --project (Join-Path $root 'tests\WinForge.NavigationTests\WinForge.NavigationTests.csproj') -c $Configuration -p:Platform=x64 -- --live
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 & (Join-Path $PSScriptRoot 'prepare-models.ps1')
 dotnet run --project (Join-Path $root 'tests\WinForge.CaptureTests\WinForge.CaptureTests.csproj') -c $Configuration -p:Platform=x64
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -74,6 +81,8 @@ if ($FolderSizesLive) {
 }
 if ($NativeSmoke) {
     & $executable --shell-only
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & (Join-Path $folderSizeNative 'WinForge.ExplorerNavigationFixture.exe') (Join-Path $folderSizeNative 'WinForge.ExplorerNavigationTap.dll')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & (Join-Path $root "native\WinForge.Shell\bin\x64\$Configuration\WinForge.TaskbarGeometryFixture.exe")
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

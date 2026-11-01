@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './features.css';
+import { DefaultAppsPanel, DefaultPathsPanel } from './DefaultSettingsPanels';
 
 type NetSpeedState = {
   download: string;
@@ -918,6 +919,7 @@ export function FeatureApp({ view }: { view: string }) {
   useEffect(() => {
     const bridge = window.chrome?.webview;
     if (!bridge) {
+      if (view === 'default-paths' || view === 'default-apps') return;
       if (import.meta.env.DEV) {
         const preview = view === 'net-speed-overlay'
           ? previewNetSpeed
@@ -944,7 +946,7 @@ export function FeatureApp({ view }: { view: string }) {
   useEffect(() => {
     const beginDrag = (event: PointerEvent) => {
       if (event.button !== 0 || !(event.target instanceof Element)) return;
-      const header = event.target.closest('.feature-root header');
+      const header = event.target.closest('.feature-root header, .defaults-panel > header');
       if (!header || event.target.closest('button,input,select,textarea,a,[role="button"]')) return;
       window.chrome?.webview?.postMessage({ command: 'feature.drag', payload: {} });
     };
@@ -954,6 +956,9 @@ export function FeatureApp({ view }: { view: string }) {
 
   const send = (command: string, payload: Record<string, unknown> = {}) =>
     window.chrome?.webview?.postMessage({ command, payload });
+
+  if (view === 'default-paths') return <DefaultPathsPanel state={state} />;
+  if (view === 'default-apps') return <DefaultAppsPanel state={state} />;
 
   if (view === 'app-dialog') {
     const dialog = state as unknown as AppDialogState | null;

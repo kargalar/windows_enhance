@@ -1,4 +1,4 @@
-param([string]$Configuration = 'Release')
+﻿param([string]$Configuration = 'Release')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $root 'native/WinForge.Shell'
@@ -10,7 +10,7 @@ if (!$developerCommands) { throw 'Visual Studio C++ Build Tools bulunamadı. Mic
 New-Item -ItemType Directory -Path $output -Force | Out-Null
 $common = '/nologo /std:c++20 /EHsc /W4 /WX /MT /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN'
 $libraries = 'windowsapp.lib runtimeobject.lib ole32.lib oleaut32.lib user32.lib uuid.lib'
-foreach ($target in @(@{ Source = 'ShellTap.cpp'; Name = 'WinForge.ShellTap.dll'; Mode = '/LD' }, @{ Source = 'ShellHost.cpp'; Name = 'WinForge.ShellHost.exe'; Mode = '' }, @{ Source = 'ShellFixture.cpp'; Name = 'WinForge.ShellFixture.exe'; Mode = '' }, @{ Source = 'TaskbarGeometryFixture.cpp'; Name = 'WinForge.TaskbarGeometryFixture.exe'; Mode = '' }, @{ Source = 'FolderSizeHost.cpp'; Name = 'WinForge.FolderSizeHost.exe'; Mode = '' }, @{ Source = 'FolderSizeTap.cpp'; Name = 'WinForge.FolderSizeTap.dll'; Mode = '/LD' }, @{ Source = 'FolderSizeFixture.cpp'; Name = 'WinForge.FolderSizeFixture.exe'; Mode = '' })) {
+foreach ($target in @(@{ Source = 'ExplorerNavigationFixture.cpp'; Name = 'WinForge.ExplorerNavigationFixture.exe'; Mode = '' }, @{ Source = 'ExplorerNavigationTap.cpp'; Name = 'WinForge.ExplorerNavigationTap.dll'; Mode = '/LD' }, @{ Source = 'ShellTap.cpp'; Name = 'WinForge.ShellTap.dll'; Mode = '/LD' }, @{ Source = 'ShellHost.cpp'; Name = 'WinForge.ShellHost.exe'; Mode = '' }, @{ Source = 'ShellFixture.cpp'; Name = 'WinForge.ShellFixture.exe'; Mode = '' }, @{ Source = 'TaskbarGeometryFixture.cpp'; Name = 'WinForge.TaskbarGeometryFixture.exe'; Mode = '' }, @{ Source = 'FolderSizeHost.cpp'; Name = 'WinForge.FolderSizeHost.exe'; Mode = '' }, @{ Source = 'FolderSizeTap.cpp'; Name = 'WinForge.FolderSizeTap.dll'; Mode = '/LD' }, @{ Source = 'FolderSizeFixture.cpp'; Name = 'WinForge.FolderSizeFixture.exe'; Mode = '' })) {
     $sourceFile = Join-Path $source $target.Source
     $outputFile = Join-Path $output $target.Name
     $objectFile = Join-Path $output ([IO.Path]::ChangeExtension($target.Source, '.obj'))
@@ -19,11 +19,12 @@ foreach ($target in @(@{ Source = 'ShellTap.cpp'; Name = 'WinForge.ShellTap.dll'
     if ($target.Source -eq 'ShellHost.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'PdfPreviewRenderer.h') }
     if ($target.Source -in @('FolderSizeHost.cpp', 'FolderSizeTap.cpp')) { $inputs += Get-ChildItem -LiteralPath $source -Filter 'FolderSize*.h' }
     if ($target.Mode -eq '/LD') { $inputs += Get-Item -LiteralPath (Join-Path $source ([IO.Path]::ChangeExtension($target.Source, '.def'))) }
-    if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'ShellFixture.manifest') }
+    if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp', 'ExplorerNavigationFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'ShellFixture.manifest') }
     if ((Test-Path -LiteralPath $outputFile) -and !($inputs | Where-Object { $_.LastWriteTimeUtc -gt (Get-Item -LiteralPath $outputFile).LastWriteTimeUtc })) { continue }
     $exports = if ($target.Mode -eq '/LD') { ' /DEF:"' + (Join-Path $source ([IO.Path]::ChangeExtension($target.Source, '.def'))) + '"' } else { '' }
-    if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp')) { $exports += ' /MANIFEST:EMBED /MANIFESTINPUT:"' + (Join-Path $source 'ShellFixture.manifest') + '"' }
+    if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp', 'ExplorerNavigationFixture.cpp')) { $exports += ' /MANIFEST:EMBED /MANIFESTINPUT:"' + (Join-Path $source 'ShellFixture.manifest') + '"' }
     $targetLibraries = $libraries
+    if ($target.Source -in @('ExplorerNavigationTap.cpp', 'ExplorerNavigationFixture.cpp')) { $targetLibraries += ' comctl32.lib gdi32.lib advapi32.lib' }
     if ($target.Source -eq 'ShellHost.cpp') { $targetLibraries += ' d3d11.lib dxgi.lib d2d1.lib windowscodecs.lib windows.data.pdf.lib' }
     if ($target.Source -eq 'FolderSizeHost.cpp') { $targetLibraries += ' dbghelp.lib winhttp.lib' }
     if ($target.Source -eq 'FolderSizeTap.cpp') { $targetLibraries += ' shell32.lib shlwapi.lib' }

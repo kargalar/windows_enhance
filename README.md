@@ -35,6 +35,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Klasik Sağ Tık Menüsü** | Windows 11'in kısa menüsü yerine Windows 10'un tam sağ tık menüsünü kullanır |
 | **Sağ Tık Menüsü** | Gezgin menüsüne özel öğeler ekler ve kayıtlı kabuk uzantılarını gizler; yerleşik komutlar ve diğer uygulamaların kendi menüleri kapsam dışı |
 | **Gezgin İnce Ayarları** | Uzantılar, gizli dosyalar, son/sık kullanılanlar, kompakt mod, tam yol, onay kutuları, ayrı süreç ve masaüstü simgeleri |
+| **Gezgin Sol Panel Tasarımı** | Yatay/dikey padding, yazı tipi/boyutu/kalınlığı, panel/yazı/seçim/hover renkleri, simge boyutu ve aralığı, girinti, seçim kenar boşluğu ve köşeleri; Home, Galeri, OneDrive, Kitaplıklar ve Ağ öğelerini gizleme |
 | **Gezgin Klasör Boyutları** | Ayrıntılar görünümünde yerel klasörlerin boyutlarını arka planda hesaplar, boyuta göre sıralar ve dosyalar değiştikçe günceller |
 | **Toplu Yeniden Adlandırma** | Çoklu dosya seçimi, metin/regex önizlemesi, çakışma denetimi ve en son işlemi pencere/uygulama yeniden açıldıktan sonra da geri alma |
 | **Görsel Boyutlandırıcı** | Birden fazla görsel için 854/1280/1920 px veya özel uzun kenar; en-boy oranı, PNG/JPEG biçimi ve JPEG kalitesi korunur; aynı biçimde EXIF/IPTC metadata aktarımı seçilebilir; arka planda ilerleme/iptal; özgün dosyalar saklanır |
@@ -45,6 +46,8 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Pano Geçmişi** | Pano geçmişini açar; isteğe bağlı cihazlar arası eşitleme, `Win+V` ile son kopyalananlar |
 | **Gelişmiş Yapıştır** | `Win+Shift+V` ile metni Markdown/JSON'a dönüştürür, panodaki görselden OCR yapar veya TXT/HTML/PNG/JPEG/BMP/GIF dosyası olarak yapıştırır; JPEG kalite ayarı sunar |
 | **Ortam Değişkenleri** | Kullanıcı değişkenlerini düzenler; geliştirme/test gibi profilleri etkinleştirir, `%...%` türünü ve önceki değerleri korur |
+| **Varsayılan Yollar** | Masaüstü, Belgeler, İndirilenler, Resimler, Müzik ve Videolar konumlarını onayla değiştirir; ilk konuma dönüş kaydı saklar; yeni uygulama/içerik depolama ayarlarını açar |
+| **Varsayılan Programlar** | Kayıtlı dosya uzantılarını ve geçerli uygulamalarını arar; uzantıyı kopyalayıp program seçimi için Windows varsayılan uygulamalar ekranını açar |
 | **Hosts File Editor** | Windows hosts dosyasında IP-ad eşlemeleri ekler, düzenler, filtreler ve etkinleştirir/devre dışı bırakır; kaydetmeden önce yedek oluşturur ve UAC ister |
 | **Power Display · Ekran Denetimi** | Dahili panel parlaklığını Windows WMI, harici ekranlarda desteklenen parlaklık/kontrast/ses/giriş/renk denetimlerini DDC/CI üzerinden yönetir; profilleri ve gündüz/gece zamanlamasını destekler, imleçteki harici ekran için isteğe bağlı parlaklık kısayolları sunar |
 | **Fluent Medya Flyout’u** | `Win+Alt+M` ve `Ctrl+Alt+V`; ana ses/sessiz denetimi, donanım ses tuşlarında alt-orta ses OSD’si ve medya tuşlarında flyout; Windows Core Audio üzerinden algılanabilen harici kulaklık/aygıt ses değişimlerinde OSD; isteğe bağlı görev çubuğu üstü mini oynatıcı (sağ tıkta medya/ses/oynatıcı eylemleri ve isteğe bağlı ana ses tekerlek kontrolü), WASAPI çıkış sesinden gerçek zamanlı spektrum görselleştiricisi, filtrelenebilir medya uygulamaları ve oturum seçimi/sabitleme, albüm kapağı, oynat/önceki/sonraki, parça arama ve shuffle/repeat, kilit tuşu OSD’si, köşe ve monitör seçimi, siyah koyu görünüm, belirme animasyonu, etkinlik sonrası otomatik kapanma ve tam ekran uygulama bastırması |
@@ -80,6 +83,23 @@ yazar.
 ayarını açıp `HH:mm` biçiminde açık ve koyu tema saatlerini belirleyin. Plan yerel
 saati kullanır, gece yarısını aşan aralıkları destekler ve dakika başına en çok
 bir kez denetler. Zamanlama kapalıyken `Alt+Shift+L` ile manuel geçiş yapılır.
+
+**Sistem → Varsayılan Yollar** panelinde mevcut bir hedef klasör seçip **Uygula**
+ve ardından **Konumu değiştir** düğmesine basın. Bu işlem yalnızca Windows’un
+kullanıcı klasörü konumunu değiştirir; mevcut dosyaları taşımaz. İlk konum
+WinForge ayarlarında saklanır ve **Önceki konuma dön** ile geri uygulanabilir.
+Modülü kapatmak değişikliği geri almaz. Yeni uygulamalar için depolama düğmesi
+Windows’un yeni içeriklerin kaydedileceği yer ayarını açar; klasik masaüstü
+programlarının kurulum klasörü yükleyicilerinden seçilir.
+
+**Sistem → Varsayılan Programlar** panelinde `.pdf` gibi bir uzantı arayın.
+**Kopyala ve program seç** uzantıyı panoya kopyalar ve Windows’un varsayılan
+uygulamalar sayfasını açar. Dosya türü aramasına yapıştırıp istediğiniz programı
+seçin; ardından WinForge panelindeki **Yenile** düğmesine basın. Eşleştirmeler
+Windows’un desteklediği kullanıcı seçimi akışıyla değiştirilir.
+
+Bu iki modülün Windows ayarlarını değiştirmeyen kontrolleri:
+`dotnet run --project tests/WinForge.DefaultSettingsTests -p:Platform=x64`.
 
 **Sistem → Power Display · Ekran Denetimi** modülünü etkinleştirip paneli açın.
 Her ekran için DDC/CI yetenek bildirgesinde desteklenen kontroller görünür:

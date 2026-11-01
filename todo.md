@@ -1,3 +1,16 @@
+taskbar özelleştirme modülünü geliştir ve iyileştir
+Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
+taskbardaki start buton gizlenebislin.
+Taskbar Dock Animation
+taskbar ile ilgil item modülleri tek bir modül altında toplanabilir ve tek bir ayar paneli ile yönetilebilir.
+
+
+Replaces the classic "Browse For Folder" dialog
+modülü ekle
+
+ekran görüntüsü alma aracını geliştir ve iyileştir.
+
+
 
 <!-- Check -->
 
@@ -13,3 +26,5 @@ ektan parlaklığı değişince görünen gösterge ses göstergesiyle aynı ols
 ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin ses ve paralkalık
 
 şu başlat menüs detaylıca ayarlanabilsin genişliğ uzunluğu dahil her şey idüzenlenebilmelidüzgünce detaylıca ekle test et
+
+file explorer daki şu soldaki menüyü özelleştirmek için modül ekle. paddingignden tut da font rengine kadar her şeyi ayarlanabilsin. yukarıdak home ve galeri öğeleri de gizlenebilsin vesayre 

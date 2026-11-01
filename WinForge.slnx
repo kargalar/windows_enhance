@@ -41,9 +41,13 @@
     </Project>
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/WinForge.DefaultSettingsTests/WinForge.DefaultSettingsTests.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/WinForge.FolderSizeTests/WinForge.FolderSizeTests.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/WinForge.CaptureTests/WinForge.CaptureTests.csproj"><Platform Project="x64" /></Project>
     <Project Path="tests/WinForge.FileToolsTests/WinForge.FileToolsTests.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tests/WinForge.NavigationTests/WinForge.NavigationTests.csproj">
       <Platform Project="x64" />
     </Project>
     <Project Path="tests/WinForge.RegressionTests/WinForge.RegressionTests.csproj">

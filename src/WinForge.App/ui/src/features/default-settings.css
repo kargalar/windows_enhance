@@ -1,0 +1,27 @@
+.defaults-panel { box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; height: 100vh; padding: 24px; color: #eef1f6; background: #171a20; font: 14px/1.5 "Segoe UI", sans-serif; }
+.defaults-panel header, .defaults-panel footer, .defaults-toolbar, .defaults-path-edit, .defaults-original { display: flex; align-items: center; gap: 12px; }
+.defaults-panel header, .defaults-panel footer { justify-content: space-between; }
+.defaults-panel h1 { margin: 0; font-size: 23px; }
+.defaults-panel h2 { margin: 0 0 6px; font-size: 16px; }
+.defaults-panel p { margin: 4px 0 10px; overflow-wrap: anywhere; }
+.defaults-panel header p, .defaults-panel small, .defaults-folder > p { color: #b4becd; }
+.defaults-panel button { flex-shrink: 0; min-height: 36px; padding: 6px 12px; border: 1px solid #465265; border-radius: 7px; background: #2a3341; color: #eef1f6; cursor: pointer; }
+.defaults-panel button:disabled { opacity: .45; cursor: default; }
+.defaults-panel button:hover:not(:disabled) { background: #39465a; }
+.defaults-panel button.primary { color: #172219; background: #bed794; border-color: #bed794; }
+.defaults-panel :focus-visible { outline: 2px solid #c2dba6; outline-offset: 3px; }
+.defaults-panel input { box-sizing: border-box; flex: 1; min-width: 0; min-height: 38px; border: 1px solid #465265; border-radius: 7px; padding: 8px 10px; color: #eef1f6; background: #10141b; }
+.defaults-note { padding: 12px 14px; border: 1px solid #49566d; border-radius: 9px; background: #222c3a; }
+.defaults-list { flex: 1; min-height: 0; overflow: auto; }
+.defaults-folder { padding: 16px; margin-bottom: 12px; border: 1px solid #384353; border-radius: 10px; background: #202630; }
+.defaults-original { justify-content: space-between; margin-top: 10px; }
+.defaults-original small { overflow-wrap: anywhere; }
+.defaults-association { display: grid; grid-template-columns: 85px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px; border-bottom: 1px solid #384353; }
+.defaults-association > div { display: flex; min-width: 0; flex-direction: column; }
+.defaults-association small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.defaults-panel footer { border-top: 1px solid #384353; padding-top: 12px; }
+.defaults-panel footer span { overflow-wrap: anywhere; }
+.defaults-confirm { box-sizing: border-box; width: min(560px, calc(100vw - 40px)); max-height: 90vh; overflow: auto; padding: 24px; border: 1px solid #526078; border-radius: 12px; background: #202630; color: #eef1f6; }
+.defaults-confirm::backdrop { background: #000b; }
+.defaults-confirm > div { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+@media (max-width: 700px) { .defaults-panel { padding: 14px; gap: 10px; } .defaults-toolbar, .defaults-path-edit, .defaults-original { flex-wrap: wrap; } .defaults-toolbar input, .defaults-path-edit input { flex-basis: 100%; } .defaults-association { grid-template-columns: 65px minmax(0, 1fr); } .defaults-association > button { grid-column: 2; justify-self: start; } }

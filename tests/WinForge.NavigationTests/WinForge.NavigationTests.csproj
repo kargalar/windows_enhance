@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/WinForge.Core/WinForge.Core.csproj" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ExplorerNavigationModule.cs" Link="ExplorerNavigationModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/Reg.cs" Link="Reg.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.ExplorerNavigationTap.dll" Link="native/WinForge.ExplorerNavigationTap.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.ExplorerNavigationTap.dll')" />
+  </ItemGroup>
+</Project>
