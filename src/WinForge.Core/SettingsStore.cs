@@ -59,6 +59,9 @@ public sealed class SettingsStore
 
             MigrateWindowControl();
             MigrateTaskbar();
+            MigrateCombinedModules();
+            Enabled.Remove("peek-preview");
+            Values.Remove("peek-preview");
         }
         catch
         {
@@ -104,6 +107,33 @@ public sealed class SettingsStore
             }
         }
         taskbar[schemaKey] = "1";
+    }
+
+    private void MigrateCombinedModules()
+    {
+        Merge("start-menu", [("start-appearance", "appearance-enabled"), ("start-tweaks", "cleanup-enabled"), ("search-tweaks", "search-enabled")]);
+        Merge("mouse", [("mouse-tweaks", "tweaks-enabled"), ("mouse-spotlight", "spotlight-enabled")]);
+        Enabled.Remove("mouse-jump");
+        Values.Remove("mouse-jump");
+    }
+
+    private void Merge(string targetId, (string Id, string Toggle)[] sources)
+    {
+        if (!sources.Any(source => Values.ContainsKey(source.Id) || Enabled.Contains(source.Id))) return;
+        var current = For(targetId);
+        var alreadyUnified = current.ContainsKey("__combined");
+        foreach (var (id, toggle) in sources)
+        {
+            var enabled = Enabled.Remove(id);
+            if (!alreadyUnified)
+            {
+                current.TryAdd(toggle, enabled ? "true" : "false");
+                if (enabled) Enabled.Add(targetId);
+            }
+            if (!Values.Remove(id, out var legacy)) continue;
+            foreach (var (key, value) in legacy) current.TryAdd(key, value);
+        }
+        current["__combined"] = "1";
     }
 
     public void Save()

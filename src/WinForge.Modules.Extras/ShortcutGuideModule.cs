@@ -269,7 +269,6 @@ internal sealed class ShortcutGuideWindow : Window
         new("WinForge", "Win + Alt + Space", "Hızlı Başlatıcı’yı aç"),
         new("WinForge", "Win + Alt + M", "Medya ve Ses Flyout’unu aç"),
         new("WinForge", "Win + Alt + C", "Renk seçiciyi aç"),
-        new("WinForge", "Win + Alt + P", "Dosya önizlemesini aç"),
         new("WinForge", "Win + Alt + J", "Ekranlar arası fare taşıma panelini aç"),
         new("WinForge", "Win + Shift + /", "Bu kısayol rehberini aç")
     ];

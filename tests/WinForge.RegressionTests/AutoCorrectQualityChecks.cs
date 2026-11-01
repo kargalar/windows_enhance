@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.IO;
 using System.Text;
 
@@ -292,6 +292,49 @@ internal static class AutoCorrectQualityChecks
         VerifyHistory(extras, check);
         VerifyLearning(extras, check);
         VerifyUndo(extras, check);
+        VerifyBackgroundAnalysis(extras, check);
+    }
+
+    private static void VerifyBackgroundAnalysis(Assembly extras, Action<bool, string> check)
+    {
+        var outcome = Task.Run(() =>
+        {
+            var type = extras.GetType("WinForge.Modules.Extras.AutoCorrectModule")!;
+            var module = Activator.CreateInstance(type)!;
+            var analyze = type.GetMethod("AnalyzeAsync", PrivateInstance)!.MakeGenericMethod(typeof(int));
+            var sequence = type.GetField("_inputSequence", PrivateInstance)!;
+            sequence.SetValue(module, 1L);
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var callerThread = Environment.CurrentManagedThreadId;
+            var workerThread = callerThread;
+            Func<int> work = () =>
+            {
+                workerThread = Environment.CurrentManagedThreadId;
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+                return 7;
+            };
+            var first = (Task<int>)analyze.Invoke(module, [1L, work])!;
+            try
+            {
+                if (!entered.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException();
+                var returnedWithoutBlocking = !first.IsCompleted;
+                var staleRan = false;
+                var stale = (Task<int>)analyze.Invoke(module, [1L, (Func<int>)(() => { staleRan = true; return 0; })])!;
+                sequence.SetValue(module, 2L);
+                release.Set();
+                var result = first.GetAwaiter().GetResult();
+                var canceled = false;
+                try { stale.GetAwaiter().GetResult(); }
+                catch (OperationCanceledException) { canceled = true; }
+                return (Responsive: returnedWithoutBlocking && workerThread != callerThread && result == 7,
+                    StaleDiscarded: canceled && !staleRan);
+            }
+            finally { release.Set(); }
+        }).GetAwaiter().GetResult();
+        check(outcome.Responsive, "Spell analysis returns immediately and computes away from the keyboard hook thread");
+        check(outcome.StaleDiscarded, "Queued obsolete spell analysis is discarded before entering the model");
     }
 
     private static void VerifyUndo(Assembly extras, Action<bool, string> check)

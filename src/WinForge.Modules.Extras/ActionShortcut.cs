@@ -35,6 +35,18 @@ internal static class ActionInput
         throw new InvalidOperationException("Girdi gönderilemedi. Hedef uygulama yönetici olarak çalışıyorsa WinForge'u da yönetici olarak çalıştırın.");
     }
     internal static void Chord(params ushort[] keys) => Send(keys.Select(k => Key(k, k is >= 0x21 and <= 0x28 ? 1u : 0)).Concat(keys.Reverse().Select(k => Key(k, k is >= 0x21 and <= 0x28 ? 3u : 2u))).ToArray());
+    internal static INPUT[] DesktopChord(ushort arrow, IReadOnlyCollection<ushort> held)
+    {
+        // Keep the physical Windows key down so repeated clicks can switch desktops.
+        ushort[] unwanted = held.Where(k => k is 0xA0 or 0xA1 or 0xA4 or 0xA5).ToArray();
+        ushort[] required = [.. held.Any(k => k is 0xA2 or 0xA3) ? Array.Empty<ushort>() : new ushort[] { 0xA2 },
+            .. held.Any(k => k is 0x5B or 0x5C) ? Array.Empty<ushort>() : new ushort[] { 0x5B }];
+        return [.. unwanted.Select(k => Key(k, 2)), .. required.Select(k => Key(k)),
+            Key(arrow, 1), Key(arrow, 3), .. required.Reverse().Select(k => Key(k, 2)),
+            .. unwanted.Select(k => Key(k))];
+    }
+    internal static void SwitchDesktop(ushort arrow) => Send(DesktopChord(arrow,
+        new ushort[] { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C }.Where(k => Down(k)).ToArray()));
     internal static void Text(string text) => Send(text.SelectMany(c => new[] { Key(0, 4, c), Key(0, 6, c) }).ToArray());
 }
 

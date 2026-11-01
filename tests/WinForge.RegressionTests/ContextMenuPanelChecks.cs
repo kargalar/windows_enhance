@@ -52,15 +52,26 @@ internal static class ContextMenuPanelChecks
                 using var capture = File.Create(artifact);
                 Complete(web.CoreWebView2!.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, capture));
             }
-            var start = host.Modules.Single(m => m.Id == "start-appearance");
+            var start = host.Modules.Single(m => m.Id == "start-menu");
             foreach (var key in new[] { "hide-recent", "hide-categories", "hide-all-apps-heading", "hide-places", "hide-user", "hide-power" })
                 check(start.Settings.Any(setting => setting.Key == key && setting.Kind == SettingKind.Toggle), "Start section has independent toggle: " + key);
-            var startType = start.GetType();
+            var appearance = start.GetType().GetField("_appearance", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(start)!;
+            var startType = appearance.GetType();
             host.SettingsOf(start).Set("hide-recent", true);
             host.SettingsOf(start).Set("hide-categories", true);
-            var startSettings = startType.GetMethod("ReadSettings", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(start, null);
+            var startSettings = startType.GetMethod("ReadSettings", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(appearance, null);
             var rules = (IReadOnlyList<ShellStyleRule>)startType.GetMethod("BuildRules", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [startSettings, true])!;
             check(rules.Any(rule => rule.Selector.Contains("CategoryControl")) && rules.Any(rule => rule.Selector.Contains("TopLevelSuggestionsRoot")), "Recent and Categories toggles generate independent native shell rules");
+            Script("[...document.querySelectorAll('.module-card')].find(x => x.querySelector('strong')?.textContent === 'Başlat Menüsü').click()");
+            Wait(() => Script("document.body.textContent.includes('Başlat temizliği etkin') && document.body.textContent.includes('Arama temizliği etkin')") == "true", "Combined Start Menu settings");
+            check(Script("document.body.textContent.includes('Menü genişliği') && document.body.textContent.includes('Web (Bing) sonuçlarını kapat') && document.body.textContent.includes('Yeni uygulama bildirimlerini gizle')") == "true",
+                "Real Start Menu panel combines appearance, cleanup and search settings");
+            Script("[...document.querySelectorAll('.module-card')].find(x => x.querySelector('strong')?.textContent === 'Fare').click()");
+            Wait(() => Script("document.body.textContent.includes('Fare ayarları etkin') && document.body.textContent.includes('Fare işaretçisi etkin')") == "true", "Combined Mouse settings");
+            check(Script("document.body.textContent.includes('Tekerlek kaydırma satırı') && document.body.textContent.includes('Çift Ctrl ile fareyi vurgula')") == "true",
+                "Real Mouse panel combines behavior and pointer settings");
+            check(Script("![...document.querySelectorAll('.module-card strong')].some(x => ['Ekranlar Arası Fare Taşıma', 'Başlat Menüsü Tasarımı', 'Başlat Menüsü Temizliği', 'Arama Temizliği', 'Fare Ayarları', 'Fare İşaretçisi'].includes(x.textContent))") == "true",
+                "Real UI contains no retired module cards");
             check(Script("document.querySelectorAll('.module-family').length > 1") == "true", "Related modules appear in nested families");
             Script("[...document.querySelectorAll('.module-card')].find(x => x.querySelector('strong')?.textContent === 'Sağ Tık Menüsü').click()");
             Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Return to context menu editor");

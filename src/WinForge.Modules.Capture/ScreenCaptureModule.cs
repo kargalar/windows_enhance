@@ -62,8 +62,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     }
     private void RegisterShortcut()
     {
-        var (modifiers, key) = ModuleShortcut.Parse(Context.Settings.GetString("hotkey", "Win+Alt+S"));
-        shortcut?.Dispose(); shortcut = Context.Hotkeys.Register(modifiers, key, () => _ = CaptureAsync("region"));
+        var configured = CaptureShortcut.Parse(Context.Settings.GetString("hotkey", "Win+Alt+S"));
+        shortcut?.Dispose(); shortcut = configured.Register(Context.Hotkeys, () => _ = CaptureAsync("region"));
     }
     public override void Apply() { if (IsActive) RegisterShortcut(); }
     public override void Deactivate() { IsActive = false; shortcut?.Dispose(); shortcut = null; cancellationHook?.Dispose(); cancellationHook = null; Cancel(); controls?.Close(); controls = null; toolsWindow?.Close(); toolsWindow = null; base.Deactivate(); }

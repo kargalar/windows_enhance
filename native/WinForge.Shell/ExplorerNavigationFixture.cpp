@@ -67,14 +67,17 @@ int wmain(int argc, wchar_t** argv) {
         Require(RegisterClassW(&wc) != 0, "Namespace fixture registration failed.");
         INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_TREEVIEW_CLASSES}; InitCommonControlsEx(&controls);
         auto window = CreateWindowW(wc.lpszClassName, L"WinForge navigation fixture", WS_OVERLAPPEDWINDOW, 0, 0, 400, 400, nullptr, nullptr, wc.hInstance, nullptr);
-        auto tree = CreateWindowW(WC_TREEVIEWW, L"", WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS, 0, 0, 300, 300, window, nullptr, wc.hInstance, nullptr);
+        auto tree = CreateWindowW(WC_TREEVIEWW, L"", WS_CHILD | WS_VISIBLE | TVS_HASBUTTONS | TVS_LINESATROOT, 0, 0, 300, 300, window, nullptr, wc.hInstance, nullptr);
         Require(tree != nullptr, "Tree fixture creation failed.");
         auto originalHeight = TreeView_GetItemHeight(tree);
         auto originalIndent = TreeView_GetIndent(tree);
         auto originalBackground = TreeView_GetBkColor(tree);
         auto originalFont = SendMessageW(tree, WM_GETFONT, 0, 0);
         TVINSERTSTRUCTW insert{}; insert.hParent = TVI_ROOT; insert.hInsertAfter = TVI_LAST; insert.item.mask = TVIF_TEXT; wchar_t label[] = L"Padding and font color"; insert.item.pszText = label;
-        TreeView_InsertItem(tree, &insert);
+        auto root = TreeView_InsertItem(tree, &insert);
+        insert.hParent = root;
+        auto child = TreeView_InsertItem(tree, &insert);
+        TreeView_Expand(tree, root, TVE_EXPAND);
         auto library = LoadLibraryW(argv[1]); Require(library != nullptr, "Navigation DLL load failed.");
         auto install = reinterpret_cast<HHOOK(WINAPI*)(DWORD)>(GetProcAddress(library, "InstallNavigationHook"));
         Require(install != nullptr, "Hook export missing.");
@@ -84,12 +87,55 @@ int wmain(int argc, wchar_t** argv) {
         Require(TreeView_GetItemHeight(tree) >= MulDiv(40, static_cast<int>(dpi), 96), "Vertical padding/font size not applied.");
         Require(TreeView_GetIndent(tree) == static_cast<UINT>(MulDiv(31, static_cast<int>(dpi), 96)), "Indent not applied.");
         Require(TreeView_GetBkColor(tree) == RGB(12,34,56), "Background not applied.");
-        auto dc = GetDC(tree); auto memory = CreateCompatibleDC(dc); auto bitmap = CreateCompatibleBitmap(dc, 300, 300); auto previous = SelectObject(memory, bitmap);
+        auto dc = GetDC(tree); auto memory = CreateCompatibleDC(dc);
+        BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = 300; info.bmiHeader.biHeight = -300;
+        info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
+        void* pixels{};
+        auto bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+        Require(bitmap && pixels, "Render bitmap allocation failed.");
+        auto previous = SelectObject(memory, bitmap);
+        auto pixel = [&](int x, int y) {
+            auto value = static_cast<DWORD const*>(pixels)[y * 300 + x];
+            return RGB((value >> 16) & 255, (value >> 8) & 255, value & 255);
+        };
         SendMessageW(tree, WM_PRINTCLIENT, reinterpret_cast<WPARAM>(memory), PRF_CLIENT);
-        Require(GetPixel(memory, 290, 100) == RGB(12,34,56), "Custom panel background was not rendered.");
+        GdiFlush();
+        Require(pixel(290, 100) == RGB(12,34,56), "Custom panel background was not rendered.");
         bool foundText = false;
-        for (int y = 0; y < 60; ++y) for (int x = 0; x < 280; ++x) if (GetPixel(memory, x, y) == RGB(220,210,200)) foundText = true;
+        for (int y = 0; y < 60; ++y) for (int x = 0; x < 280; ++x) if (pixel(x, y) == RGB(220,210,200)) foundText = true;
         Require(foundText, "Custom font color was not rendered.");
+        registry.Number(L"show-icons", 0);
+        registry.Number(L"row-margin", 0);
+        DWORD revision = 1;
+        for (auto indent : {0, 24}) for (auto padding : {0, 15}) for (auto arrows : {0, 1}) {
+            registry.Number(L"indent", indent);
+            registry.Number(L"padding-horizontal", padding);
+            registry.Number(L"show-arrows", arrows);
+            registry.Number(L"revision", ++revision);
+            registry.Heartbeat(GetTickCount64()); Pump(1100);
+            SendMessageW(tree, WM_PRINTCLIENT, reinterpret_cast<WPARAM>(memory), PRF_CLIENT);
+            GdiFlush();
+            for (auto item : {root, child}) {
+                RECT row{}; TreeView_GetItemRect(tree, item, &row, FALSE);
+                // Ignore the arrow at the root by looking beyond its reserved slot.
+                auto expected = MulDiv(padding + (item == child ? indent : 0) + (arrows ? 12 : 0), static_cast<int>(dpi), 96);
+                int first = 300;
+                for (int y = row.top; y < row.bottom; ++y) for (int x = expected; x < 280; ++x)
+                    if (pixel(x, y) == RGB(220,210,200) && x < first) first = x;
+                Require(first >= expected && first <= expected + MulDiv(4, static_cast<int>(dpi), 96), "Unexpected native inset in custom content layout.");
+            }
+        }
+        registry.Number(L"show-arrows", 1); registry.Number(L"padding-horizontal", 0);
+        registry.Number(L"revision", ++revision); registry.Heartbeat(GetTickCount64()); Pump(1100);
+        RECT rootRow{}; TreeView_GetItemRect(tree, root, &rootRow, FALSE);
+        SendMessageW(tree, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(MulDiv(6, static_cast<int>(dpi), 96), (rootRow.top + rootRow.bottom) / 2));
+        Require(!(TreeView_GetItemState(tree, root, TVIS_EXPANDED) & TVIS_EXPANDED), "Drawn arrow did not collapse its folder.");
+        auto click = MAKELPARAM(MulDiv(16, static_cast<int>(dpi), 96), (rootRow.top + rootRow.bottom) / 2);
+        PostMessageW(tree, WM_LBUTTONDOWN, MK_LBUTTON, click);
+        PostMessageW(tree, WM_LBUTTONUP, 0, click);
+        Pump(100);
+        Require(TreeView_GetSelection(tree) == root, "Compact content click did not select its row.");
         SelectObject(memory, previous); DeleteObject(bitmap); DeleteDC(memory); ReleaseDC(tree, dc);
         registry.Number(L"active", 0); Pump(1200);
         Require(TreeView_GetItemHeight(tree) == originalHeight && TreeView_GetIndent(tree) == originalIndent &&

@@ -103,7 +103,7 @@ html { background: var(--island-base); }
 .toast-error { border-radius: 999px; animation: surface-arrive 300ms var(--ease-island); }
 
 /* Tool surfaces share the same material while preserving each tool's layout. */
-.feature-root :is(.launcher-panel, .capture-tools-panel, .history-panel, .paste-panel, .shortcut-guide-panel, .environment-panel, .profile-panel, .locksmith-panel, .power-rename-panel, .image-resizer-panel, .workspaces-panel, .hosts-panel, .keyboard-editor-panel, .display-panel, .recording-panel, .float-shelf-card, .media-flyout-card, .dictation-card, .import-panel, .models-panel, .mouse-jump-panel, .statistics-panel),
+.feature-root :is(.launcher-panel, .capture-tools-panel, .history-panel, .paste-panel, .shortcut-guide-panel, .environment-panel, .profile-panel, .locksmith-panel, .power-rename-panel, .image-resizer-panel, .workspaces-panel, .hosts-panel, .keyboard-editor-panel, .display-panel, .recording-panel, .float-shelf-card, .media-flyout-card, .dictation-card, .import-panel, .models-panel, .statistics-panel),
 .feature-root-app-dialog > section, .defaults-confirm {
   border-color: #ffffff19; border-radius: var(--island-radius); background: radial-gradient(ellipse at 0 0, #ffffff05, transparent 65%), var(--island-surface); box-shadow: 0 18px 50px #0006, inset 0 1px #ffffff08;
   animation: surface-arrive var(--motion-surface) var(--ease-island);

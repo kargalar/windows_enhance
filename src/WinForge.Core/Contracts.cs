@@ -157,6 +157,9 @@ public interface IWindowZoneDragProvider : IWindowZoneProvider
     bool EndWindowZoneDrag(IntPtr window, bool canceled);
 }
 
+/// <summary>A lifecycle component owned by a combined module, excluded from module discovery.</summary>
+public interface IModuleComponent : ITweakModule { }
+
 public interface ITweakModule
 {
     string Id { get; }

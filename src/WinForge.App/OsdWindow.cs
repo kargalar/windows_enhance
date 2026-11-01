@@ -19,11 +19,13 @@ public static class OsdWindow
     private const double IndicatorHeight = 38;
     private static Action<int>? _brightnessChanged;
     private static int _brightnessHovered;
+    private static bool _brightnessDragging;
     private static int _brightnessPercent;
     private static string _brightnessDeviceName = "";
     private static Action? _volumeChanged;
     private static int _volumeDismissSeconds = 3;
     private static int _volumeHovered;
+    private static bool _volumeDragging;
     private static int _volumePercent;
     private static bool _volumeMuted;
 
@@ -71,7 +73,11 @@ public static class OsdWindow
         _brightnessChanged = onBrightnessChanged;
         _brightnessPercent = Math.Clamp(percent, 0, 100);
         _brightnessDeviceName = deviceName;
-        Volatile.Write(ref _brightnessHovered, 0);
+        if (_brightnessView?.IsVisible != true)
+        {
+            Volatile.Write(ref _brightnessHovered, 0);
+            _brightnessDragging = false;
+        }
         var window = EnsureWindow(ref _brightnessView, BrightnessKey, "system-osd", "Ekran parlaklığı",
             new FeatureUiWindowOptions(IndicatorWidth, IndicatorHeight, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: false));
@@ -95,7 +101,11 @@ public static class OsdWindow
             case "brightness.hover":
                 Volatile.Write(ref _brightnessHovered, payload.GetProperty("value").GetBoolean() ? 1 : 0);
                 break;
+            case "brightness.drag":
+                _brightnessDragging = payload.GetProperty("value").GetBoolean();
+                break;
             case "brightness.dismiss":
+                _brightnessDragging = false;
                 _brightnessView?.Hide();
                 return;
             default:
@@ -111,7 +121,7 @@ public static class OsdWindow
 
     private static void RestartBrightnessTimer() => RestartTimer(ref _brightnessTimer, 1500, () =>
     {
-        if (Volatile.Read(ref _brightnessHovered) != 0) RestartBrightnessTimer();
+        if (Volatile.Read(ref _brightnessHovered) != 0 || _brightnessDragging) RestartBrightnessTimer();
         else _brightnessView?.Hide();
     });
 
@@ -122,7 +132,11 @@ public static class OsdWindow
         _volumeDismissSeconds = Math.Clamp(dismissAfterSeconds, 1, 30);
         _volumePercent = Math.Clamp(percent, 0, 100);
         _volumeMuted = isMuted;
-        Volatile.Write(ref _volumeHovered, 0);
+        if (_volumeView?.IsVisible != true)
+        {
+            Volatile.Write(ref _volumeHovered, 0);
+            _volumeDragging = false;
+        }
         var window = EnsureWindow(ref _volumeView, VolumeKey, "system-osd", "Ses düzeyi",
             new FeatureUiWindowOptions(IndicatorWidth, IndicatorHeight, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: false));
@@ -152,18 +166,21 @@ public static class OsdWindow
             {
                 case "volume.set":
                     var target = Math.Clamp(payload.GetProperty("percent").GetInt32(), 0, 100);
-                    var current = VolumeService.Current();
-                    _volumePercent = VolumeService.StepFromFlyout(target - current);
+                    _volumePercent = VolumeService.SetFromFlyout(target);
                     _volumeMuted = VolumeService.IsMuted();
                     _volumeChanged?.Invoke();
                     break;
                 case "volume.toggle-mute":
-                    _volumeMuted = !_volumeMuted;
-                    VolumeService.SetMutedFromFlyout(_volumeMuted);
+                    VolumeService.SetMutedFromFlyout(!VolumeService.IsMuted());
+                    _volumeMuted = VolumeService.IsMuted();
+                    _volumePercent = VolumeService.Current();
                     _volumeChanged?.Invoke();
                     break;
                 case "volume.hover":
                     Volatile.Write(ref _volumeHovered, payload.GetProperty("value").GetBoolean() ? 1 : 0);
+                    break;
+                case "volume.drag":
+                    _volumeDragging = payload.GetProperty("value").GetBoolean();
                     break;
                 case "volume.dismiss":
                     HideVolume();
@@ -175,7 +192,7 @@ public static class OsdWindow
                 if (_volumeView is not null) UpdateVolumeState(_volumeView);
                 RestartVolumeTimer();
             }
-            else if (command == "volume.hover") RestartVolumeTimer();
+            else if (command is "volume.hover" or "volume.drag") RestartVolumeTimer();
         }
         catch
         {
@@ -208,13 +225,14 @@ public static class OsdWindow
         Volatile.Read(ref _volumeHovered) != 0 ? 500 : _volumeDismissSeconds * 1000,
         () =>
         {
-            if (Volatile.Read(ref _volumeHovered) != 0 || AudioVolumeOverlayLifecycle.ShouldKeepOpen)
+            if (Volatile.Read(ref _volumeHovered) != 0 || _volumeDragging || AudioVolumeOverlayLifecycle.ShouldKeepOpen)
                 RestartVolumeTimer();
             else HideVolume();
         });
 
     private static void HideVolume()
     {
+        _volumeDragging = false;
         _volumeTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         _volumeView?.Hide();
         AudioVolumeOverlayLifecycle.NotifyHidden();

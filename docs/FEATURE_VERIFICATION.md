@@ -121,7 +121,7 @@ hardware write test was performed by this workstream.
 The final controlled `--native-smoke` run passed all **802 regression checks with
 process exit 0**, including the 90 feature checks, nine PDF pipeline checks within
 that feature total, and 129 WindowControl checks. The Release/x64 build had zero
-warnings and errors. PDF previews now run in our own native helper using an explicit
+warnings and errors. The file preview module has since been removed; these results are historical. At that time PDF previews ran in our own native helper using an explicit
 Windows WARP software device; the previous hardware PDF shutdown crash no longer
 occurred. A separate final `--shell-only` run passed 11 checks with exit 0, including
 recovery from a disconnected shared consumer while old leases still exist.
@@ -175,7 +175,6 @@ available tests, even when implementation exists.
 | `power-rename` | Preview plus transactional rename, collision checks and durable undo record. | Existing tests perform real file swaps, reversal, conflict rejection, preview application and persistent UI undo on temporary fixtures. Directory locks, external concurrent writers and every filesystem remain unverified. |
 | `image-resizer` | Local WPF codecs, proportional resize, PNG/JPEG conversion, metadata option, bounded background work/cancel. | Existing tests decode actual output, verify sizes/quality/metadata, cancellation and overwrite rejection. Corrupt-image matrix and all codec metadata variants remain unverified. |
 | `file-locksmith` | Windows Restart Manager query and guarded user-process termination action. | Existing live locked-file test locates the test process and confirms scanning does not alter it. Termination is intentionally not exercised against user applications; Restart Manager is not an exhaustive kernel-handle enumerator. |
-| `peek-preview` | Bounded text, image decoding, first PDF page and native Windows media playback controls. | Existing real text/image/limit tests plus direct tall-PDF and WAV playback/resource tests passed. Other audio/video codecs, encrypted PDFs, all image types and subsequent PDF pages are unverified/unsupported respectively. |
 | `start-tweaks` | Writes per-user recommendation/new-app/recent-item preference values. | Source reviewed. The current Start host's actual use of each registry value remains unverified; these are not a custom Start implementation. |
 | `search-tweaks` | Writes per-user Bing/highlight/suggestion preference values. | Source reviewed. These preference names vary in effect across Windows builds. Actual web-result suppression is unverified; no custom search host replaces Windows Search. |
 | `clipboard-history` | Enables Windows clipboard history and configures optional Windows cloud upload preference. | Source reviewed. This is Windows Win+V history, not a WinForge history engine. Cloud/account/policy behavior and actual Win+V contents remain unverified. |
@@ -217,8 +216,6 @@ still incomplete; its exact remaining scope is recorded in
   undefined GDI alpha, and disposes the native SoftwareBitmap.
 - GDI capture deselects the bitmap before GetDIBits, bounds allocation and requires
   the expected number of scanlines.
-- Peek opens media paused before the first click, handles unknown durations, and
-  closes its native media object. PDF rendering bounds both dimensions in advance.
 - Workspace property access reserves 24 native bytes for x64 PROPVARIANT; placement
   uses current monitor work areas, handles very small work areas, and reports
   destroyed/failed window placement rather than counting it as restored.

@@ -67,6 +67,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--combined-modules-only"))
+            {
+                CombinedModuleChecks.Run(TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} combined module checks.");
+                return 0;
+            }
             if (args.Contains("--context-menu-ui-only"))
             {
                 ContextMenuPanelChecks.Run(app, TestDirectory, Check);
@@ -1302,7 +1308,7 @@ internal static class Program
             "Environment profile editor renders profile selection and variable editing controls");
         profilesWindow.Close();
         Registry.CurrentUser.DeleteSubKeyTree(profileRegistryPath, throwOnMissingSubKey: false);
-        var mouseSpotlight = host.Modules.Single(module => module.Id == "mouse-spotlight");
+        var mouseSpotlight = host.Modules.Single(module => module.Id == "mouse");
         var crosshairSettings = mouseSpotlight.Settings.Where(setting => setting.Key.StartsWith("crosshairs-", StringComparison.Ordinal)).ToArray();
         Check(crosshairSettings.Length == 7 &&
               crosshairSettings.Single(setting => setting.Key == "crosshairs-color").Options.SequenceEqual(new[] { "Beyaz", "Sarı", "Camgöbeği" }) &&
@@ -1329,33 +1335,7 @@ internal static class Program
             "Mouse crosshair overlay renders visible lines and follows the active monitor");
         crosshairType.GetMethod("Stop")!.Invoke(crosshairOverlay, null);
         crosshairOverlay.Close();
-        var mouseJump = host.Modules.Single(module => module.Id == "mouse-jump");
-        host.SetEnabled(mouseJump, true);
-        Check(mouseJump.IsActive, "Mouse jump registers its shortcut through the module lifecycle");
-        host.SetEnabled(mouseJump, false);
-        Check(!mouseJump.IsActive, "Mouse jump releases its shortcut when disabled");
-        var captureMonitors = mouseJump.GetType().Assembly.GetType("WinForge.Modules.Extras.MouseJumpWindow")!
-            .GetMethod("CaptureMonitors")!;
-        var monitors = ((System.Collections.IEnumerable)captureMonitors.Invoke(null, null)!).Cast<object>().ToArray();
-        Check(monitors.Length > 0 && monitors.Select((monitor, index) =>
-        {
-            var bounds = (RECT)monitor.GetType().GetProperty("Bounds")!.GetValue(monitor)!;
-            return (int)monitor.GetType().GetProperty("Index")!.GetValue(monitor)! == index &&
-                   bounds.Right > bounds.Left && bounds.Bottom > bounds.Top;
-        }).All(valid => valid), "Mouse jump enumerates each active monitor with valid screen bounds");
-        var previewImage = new System.Windows.Controls.Image
-        {
-            Source = new WriteableBitmap(2, 2, 96, 96, PixelFormats.Bgra32, null),
-            Width = 100,
-            Height = 100
-        };
-        previewImage.Measure(new Size(100, 100));
-        previewImage.Arrange(new Rect(0, 0, 100, 100));
-        var mapPoint = mouseJump.GetType().Assembly.GetType("WinForge.Modules.Extras.MouseJumpWindow")!
-            .GetMethod("MapPoint", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var mappedPoint = (POINT)mapPoint.Invoke(null,
-            new object[] { new RECT { Left = 10, Top = 20, Right = 110, Bottom = 220 }, previewImage, new System.Windows.Point(50, 50) })!;
-        Check(mappedPoint.X == 60 && mappedPoint.Y == 120, "Mouse jump maps preview clicks proportionally to physical screen coordinates");
+        Check(!host.Modules.Any(module => module.Id == "mouse-jump"), "Removed mouse jump is not discoverable");
         var advancedPaste = host.Modules.Single(module => module.Id == "advanced-paste");
         host.SetEnabled(advancedPaste, true);
         Check(advancedPaste.IsActive, "Advanced Paste registers its shortcut through the module lifecycle");
@@ -1390,7 +1370,7 @@ internal static class Program
         var snapshotType = advancedPasteAssembly.GetType("WinForge.Modules.Extras.ClipboardTextSnapshot")!;
         var snapshot = Activator.CreateInstance(snapshotType,
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new object?[] { "plain clipboard text", "<p><strong>rich clipboard</strong></p>", previewImage.Source, 90 }, culture: null)!;
+            args: new object?[] { "plain clipboard text", "<p><strong>rich clipboard</strong></p>", new WriteableBitmap(2, 2, 96, 96, PixelFormats.Bgra32, null), 90 }, culture: null)!;
         var callbackType = typeof(Action<,,>).MakeGenericType(actionType, snapshotType, typeof(string));
         var actionParameter = System.Linq.Expressions.Expression.Parameter(actionType);
         var snapshotParameter = System.Linq.Expressions.Expression.Parameter(snapshotType);
@@ -1463,11 +1443,13 @@ internal static class Program
                   decoder.Frames[0].PixelHeight == 2 && decoder.Frames[0].Format.BitsPerPixel > 0,
                 $"Advanced Paste encodes clipboard images as a valid {format} artifact");
         }
+        Check(host.Modules.All(module => module.Id != "peek-preview"), "Removed file preview module is absent from discovery");
         var commandModules = host.Modules.OfType<IAppCommandModule>().Select(module => module.GetType().Name).ToHashSet(StringComparer.Ordinal);
-        Check(commandModules.SetEquals(new[] { "PeekModule", "PowerRenameModule", "FileLocksmithModule" }),
+        Check(commandModules.SetEquals(new[] { "PowerRenameModule", "FileLocksmithModule" }),
             "Explorer actions expose only the intended file commands to the single-instance broker");
         var commandRequest = typeof(ForgeApplication).GetMethod("IsCommandRequest", BindingFlags.NonPublic | BindingFlags.Static)!;
-        Check((bool)commandRequest.Invoke(null, new object[] { new[] { "--peek", "sample.txt" } })! &&
+        Check((bool)commandRequest.Invoke(null, new object[] { new[] { "--power-rename", "sample.txt" } })! &&
+              !(bool)commandRequest.Invoke(null, new object[] { new[] { "--peek", "sample.txt" } })! &&
               !(bool)commandRequest.Invoke(null, new object[] { new[] { "--run", "anything" } })!,
             "Single-instance broker accepts only the registered file command verbs");
         var launcher = host.Modules.Single(module => module.Id == "launcher");
@@ -1899,68 +1881,6 @@ internal static class Program
               Descendants<TextBox>(locksmithWindow).Single().Text == lockedTestFile,
             "File Locksmith opens from the selected Explorer file and displays process details");
         locksmithWindow.Close();
-        var peek = host.Modules.Single(module => module.Id == "peek-preview");
-        Check(peek.Settings.Any(setting => setting.Key == "pdf-limit-mb" && setting.Kind == SettingKind.Number),
-            "Peek exposes a bounded PDF file-size setting");
-        var peekLoader = peek.GetType().Assembly.GetType("WinForge.Modules.Extras.PeekPreviewLoader")!;
-        var loadPreview = peekLoader.GetMethod("Load", BindingFlags.Public | BindingFlags.Static)!;
-        var textPath = Path.Combine(renameFolder, "preview.txt");
-        File.WriteAllText(textPath, "first line\nsecond line\n", new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-        var textDocument = loadPreview.Invoke(null, new object[] { textPath, 1024, 1024L })!;
-        Check((string)textDocument.GetType().GetProperty("Text")!.GetValue(textDocument)! == "first line\nsecond line\n",
-            "Peek decodes UTF-8 text with a byte-order mark");
-        var truncatedDocument = loadPreview.Invoke(null, new object[] { textPath, 5, 1024L })!;
-        Check((bool)truncatedDocument.GetType().GetProperty("Truncated")!.GetValue(truncatedDocument)! &&
-              ((string)truncatedDocument.GetType().GetProperty("Text")!.GetValue(truncatedDocument)!).Length <= 5,
-            "Peek bounds text reads and marks truncated previews");
-        var imageDocument = loadPreview.Invoke(null, new object[] { imageSource, 1024, 1024L })!;
-        Check((string)imageDocument.GetType().GetProperty("Kind")!.GetValue(imageDocument)! == "image" &&
-              imageDocument.GetType().GetProperty("Image")!.GetValue(imageDocument) is ImageSource,
-            "Peek decodes supported image files for the preview window");
-        var oversizedDocument = loadPreview.Invoke(null, new object[] { imageSource, 1024, 1L })!;
-        Check((string)oversizedDocument.GetType().GetProperty("Kind")!.GetValue(oversizedDocument)! == "limit",
-            "Peek enforces the configured image file size limit before decoding");
-        var unknownPath = Path.Combine(renameFolder, "unknown.bin");
-        File.WriteAllBytes(unknownPath, new byte[] { 1, 2, 3, 4 });
-        var unknownDocument = loadPreview.Invoke(null, new object[] { unknownPath, 1024, 1024L })!;
-        Check((string)unknownDocument.GetType().GetProperty("Kind")!.GetValue(unknownDocument)! == "unsupported",
-            "Peek handles unsupported file types with a clear fallback");
-        var loadPreviewAsync = peekLoader.GetMethod("LoadAsync", BindingFlags.Public | BindingFlags.Static)!;
-        var mediaPath = Path.Combine(renameFolder, "preview.wav");
-        CreateSilentWave(mediaPath);
-        var audioTask = (Task)loadPreviewAsync.Invoke(null, new object[] { mediaPath, 1024, 1024L, 1024L })!;
-        audioTask.GetAwaiter().GetResult();
-        var audioDocument = audioTask.GetType().GetProperty("Result")!.GetValue(audioTask)!;
-        Check((string)audioDocument.GetType().GetProperty("Kind")!.GetValue(audioDocument)! == "audio" &&
-              (string)audioDocument.GetType().GetProperty("MediaPath")!.GetValue(audioDocument)! == mediaPath,
-            "Peek identifies supported audio and routes it to its in-app media player");
-        var videoPath = Path.Combine(renameFolder, "preview.mp4");
-        File.WriteAllBytes(videoPath, new byte[] { 1, 2, 3, 4 });
-        var videoTask = (Task)loadPreviewAsync.Invoke(null, new object[] { videoPath, 1024, 1024L, 1024L })!;
-        videoTask.GetAwaiter().GetResult();
-        var videoDocument = videoTask.GetType().GetProperty("Result")!.GetValue(videoTask)!;
-        Check((string)videoDocument.GetType().GetProperty("Kind")!.GetValue(videoDocument)! == "video",
-            "Peek identifies supported video and routes it to its in-app media player");
-        var oversizedPdfPath = Path.Combine(renameFolder, "oversized.pdf");
-        File.WriteAllBytes(oversizedPdfPath, new byte[] { 1, 2, 3, 4 });
-        var oversizedPdfTask = (Task)loadPreviewAsync.Invoke(null, new object[] { oversizedPdfPath, 1024, 1024L, 1L })!;
-        oversizedPdfTask.GetAwaiter().GetResult();
-        var rejectedPdf = oversizedPdfTask.GetType().GetProperty("Result")!.GetValue(oversizedPdfTask)!;
-        Check((string)rejectedPdf.GetType().GetProperty("Kind")!.GetValue(rejectedPdf)! == "limit",
-            "Peek rejects oversized PDF files before opening the PDF renderer");
-        host.SetEnabled(peek, true);
-        Check(peek.IsActive, "Peek registers its shortcut through the module lifecycle");
-        host.SetEnabled(peek, false);
-        Check(!peek.IsActive, "Peek releases its shortcut when disabled");
-        var peekWindowType = peek.GetType().Assembly.GetType("WinForge.Modules.Extras.PeekPreviewWindow")!;
-        var previewWindow = (Window)Activator.CreateInstance(peekWindowType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new[] { textPath, textDocument }, culture: null)!;
-        previewWindow.Show();
-        Pump(previewWindow);
-        Check(previewWindow.Title.Contains("preview.txt", StringComparison.Ordinal) && Descendants<TextBox>(previewWindow).Single().Text.Contains("first line", StringComparison.Ordinal),
-            "Peek window renders text preview and source file details");
-        previewWindow.Close();
         foreach (var module in host.Modules)
         {
             Check(module.Settings.Select(setting => setting.Key).Distinct().Count() == module.Settings.Count, $"Unique settings: {module.Name}");
@@ -2273,29 +2193,6 @@ internal static class Program
         writer.Write($"trailer\n<< /Size {objects.Length + 1} /Root 1 0 R >>\nstartxref\n{xrefOffset}\n%%EOF\n");
         writer.Flush();
         File.WriteAllBytes(path, stream.ToArray());
-    }
-
-    private static void CreateSilentWave(string path)
-    {
-        const int sampleRate = 8000;
-        const short channels = 1;
-        const short bitsPerSample = 16;
-        const int dataLength = sampleRate * bitsPerSample / 8;
-        using var stream = File.Create(path);
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: false);
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataLength);
-        writer.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
-        writer.Write(16);
-        writer.Write((short)1);
-        writer.Write(channels);
-        writer.Write(sampleRate);
-        writer.Write(sampleRate * channels * bitsPerSample / 8);
-        writer.Write((short)(channels * bitsPerSample / 8));
-        writer.Write(bitsPerSample);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataLength);
-        writer.Write(new byte[dataLength]);
     }
 
     private static void Capture(Window window, string name)

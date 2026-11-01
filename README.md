@@ -71,9 +71,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Renk Seçici** | `Win+Alt+C` ile seçim modunu açar; tıkladığınız noktanın rengini HEX, RGB veya HSL olarak panoya kopyalar |
 | **Düz Metin Yapıştır** | `Win+Ctrl+Alt+V` ile panodaki metnin biçimlendirmesini temizleyip yapıştırır |
 | **Ekran Cetveli** | `Ctrl+Alt+M` ile alan seçip piksel, santimetre veya inç ölçüsünü panoya kopyalar |
-| **Fare Ayarları** | Hızlandırmayı kapatma, tekerlek kaydırma satırı ve çift tık hızı |
-| **Fare İşaretçisi** | Çift Ctrl ile fareyi vurgular; sol, sağ, orta ve yan tuş tıklamalarını isteğe bağlı ayrı renk, halka çapı ve süreyle gösterir; `Win+Alt+.` ile imleç artısı açar |
-| **Ekranlar Arası Fare Taşıma** | `Win+Alt+J` ile ekran önizlemesini açar, tıklanan noktaya veya klavyeyle seçilen ekran merkezine taşır |
+| **Fare** | Hızlandırma, kaydırma satırı ve çift tık hızı; çift Ctrl ile fareyi bulma, tıklama vurguları ve `Win+Alt+.` imleç artısı tek modülde. Önceki ayarlar ve etkin durumlar otomatik aktarılır. |
 | **Arayüz İnce Ayarları** | Pencere animasyonları, menü gecikmesi, görev çubuğu animasyonları ve Aero Shake |
 | **Pencere Köşeleri** | Windows 11'in yuvarlak köşelerini kapatır veya küçük yuvarlak köşelere çevirir |
 | **Klasik Sağ Tık Menüsü** | Windows 11'in kısa menüsü yerine Windows 10'un tam sağ tık menüsünü kullanır |
@@ -84,9 +82,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Toplu Yeniden Adlandırma** | Çoklu dosya seçimi, metin/regex önizlemesi, çakışma denetimi ve en son işlemi pencere/uygulama yeniden açıldıktan sonra da geri alma |
 | **Görsel Boyutlandırıcı** | Birden fazla görsel için 854/1280/1920 px veya özel uzun kenar; en-boy oranı, PNG/JPEG biçimi ve JPEG kalitesi korunur; aynı biçimde EXIF/IPTC metadata aktarımı seçilebilir; arka planda ilerleme/iptal; özgün dosyalar saklanır |
 | **Dosya Kilidi Bulucu** | Windows Restart Manager ile kilit kullanan uygulama ve hizmetleri listeler; kullanıcı uygulamaları ayrıca onayla sonlandırılabilir |
-| **Dosya Önizleme** | `Win+Alt+P` ile metin/görselleri sınırlı bellekle gösterir; PDF'nin ilk sayfasını çizer, ses ve videoyu yerleşik denetimlerle oynatır |
-| **Başlat Menüsü Temizliği** | Önerileri, yeni uygulama bildirimlerini ve son kullanılan öğeleri gizler |
-| **Arama Temizliği** | Web (Bing) sonuçlarını, arama vurgularını ve kutu önerilerini kapatır |
+| **Başlat Menüsü** | Tasarım, boyut, görünür bölümler, öneriler, yeni uygulama bildirimleri, son kullanılan öğeler ve Windows arama temizliği tek modülde. Önceki ayarlar ve etkin durumlar otomatik aktarılır. |
 | **Pano Geçmişi** | Pano geçmişini açar; isteğe bağlı cihazlar arası eşitleme, `Win+V` ile son kopyalananlar |
 | **Gelişmiş Yapıştır** | `Win+Shift+V` ile metni Markdown/JSON'a dönüştürür, panodaki görselden OCR yapar veya TXT/HTML/PNG/JPEG/BMP/GIF dosyası olarak yapıştırır; JPEG kalite ayarı sunar |
 | **Ortam Değişkenleri** | Kullanıcı değişkenlerini düzenler; geliştirme/test gibi profilleri etkinleştirir, `%...%` türünü ve önceki değerleri korur |
@@ -419,32 +415,14 @@ yalnızca o süreci kapatır. WinForge, Windows Gezgini, hizmetler, kritik süre
 ve başka kullanıcı oturumlarındaki süreçler bu yolla sonlandırılamaz. Kaydedilmemiş
 işler kaybolabilir. Bazı süreç bilgilerinin görünürlüğü Windows izinlerine bağlıdır.
 
-## Dosya Önizleme
-
-**Gezgin → Dosya Önizleme** modülünde **Dosya önizle** eylemini kullanın veya
-`Win+Alt+P` kısayoluna basın. Modül etkinse dosyaya sağ tıklayıp **WinForge ile
-önizle** eylemini de kullanabilirsiniz. Metin/kod dosyaları BOM algılamayla okunur;
-metin, görsel ve PDF boyut sınırları ayarlardan değiştirilebilir. Görseller sınırlı
-boyutta çözülür. PDF dosyalarında ilk sayfa gösterilir; ses ve video dosyaları
-Windows'ta kullanılabilir codec'lerle yerleşik oynatıcıda açılır. Codec bulunamazsa
-veya biçim desteklenmiyorsa varsayılan uygulamada açabilirsiniz.
-
 ## Fare İşaretçisi
 
-**Fare → Fare İşaretçisi** modülünde `Win+Alt+.` kısayoluyla imleç artısını
+**Fare → Fare → Fare işaretçisi** bölümünde `Win+Alt+.` kısayoluyla imleç artısını
 açıp kapatın. Artı, imleci geçerli monitörde izler; rengini, saydamlığını, merkez
 boşluğunu, çizgi/kenar kalınlığını ve sabit uzunluğunu ayarlayabilirsiniz. Sabit
 uzunluk `0` olduğunda çizgiler monitörün kenarlarına kadar uzanır. Özelliği
 modül açıldığında etkin başlatmak için **İmleç artısını başlangıçta göster**
 ayarını kullanın.
-
-## Ekranlar Arası Fare Taşıma
-
-**Fare → Ekranlar Arası Fare Taşıma** modülünü `Win+Alt+J` ile açın ve
-önizlemede gitmek istediğiniz noktaya tıklayın. `1`–`9` ilgili ekranın merkezine,
-`P` birincil ekranın merkezine taşır. Ok tuşlarıyla ekran seçip `Enter` ile
-merkezine gidebilir veya `Esc` ile kapatabilirsiniz. Ekran görüntüleri
-yalnızca önizleme penceresinde gösterilir ve diske kaydedilmez.
 
 ## Gelişmiş Yapıştır
 

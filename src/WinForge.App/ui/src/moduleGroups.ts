@@ -1,7 +1,7 @@
 type IdentifiedModule = { id: string; category: string };
 const families: [string, string[]][] = [
   ['Görev Çubuğu', ['taskbar', 'tray-icons', 'shell-customization', 'net-speed']],
-  ['Başlat Menüsü', ['start-appearance', 'start-tweaks', 'search-tweaks']],
+  ['Başlat Menüsü', ['start-menu']],
   ['Sağ Tık Menüsü', ['context-menu', 'classic-context-menu']],
   ['Gezgin', ['explorer-tweaks', 'explorer-navigation', 'explorer-mouse-navigation', 'explorer-folder-sizes', 'folder-dialog']],
   ['Kısayollar ve Klavye', ['keyboard-manager', 'shortcut-guide', 'media-shortcuts', 'window-shortcuts', 'desktop-shortcuts', 'text-shortcuts', 'program-shortcuts', 'monitor-shortcuts', 'combination-translator']],

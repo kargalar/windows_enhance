@@ -41,6 +41,26 @@ internal static class VolumeOverlayChecks
             ui.Window.Send("volume.dismiss", new { });
             check(!ui.Window.IsVisible && !mediaVisible, "Closing the volume panel closes its media companion");
 
+            OsdWindow.ShowVolume(42, false, dismissAfterSeconds: 1);
+            ui.Window.Send("volume.drag", new { value = true });
+            ui.Window.Send("volume.hover", new { value = false });
+            PumpFor(TimeSpan.FromMilliseconds(1250));
+            check(ui.Window.IsVisible, "Dragging outside the volume panel keeps the slider available");
+            ui.Window.Send("volume.drag", new { value = false });
+            PumpFor(TimeSpan.FromMilliseconds(1250));
+            check(!ui.Window.IsVisible, "Releasing the volume slider resumes automatic dismissal");
+
+            var brightness = -1;
+            OsdWindow.ShowBrightness(40, "test-display", percent => brightness = percent);
+            ui.Window.Send("brightness.drag", new { value = true });
+            ui.Window.Send("brightness.set", new { percent = 73 });
+            check(brightness == 73, "Brightness slider forwards the requested percentage to the display control");
+            PumpFor(TimeSpan.FromMilliseconds(1750));
+            check(ui.Window.IsVisible, "Brightness remains visible throughout a drag outside the panel");
+            ui.Window.Send("brightness.drag", new { value = false });
+            PumpFor(TimeSpan.FromMilliseconds(1750));
+            check(!ui.Window.IsVisible, "Releasing the brightness slider resumes automatic dismissal");
+
             OsdWindow.ShowVolume(44, false);
             AudioVolumeOverlayLifecycle.RequestDismiss();
             check(!ui.Window.IsVisible && !mediaVisible, "Closing the media companion closes the volume panel");

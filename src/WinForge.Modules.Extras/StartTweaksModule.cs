@@ -2,7 +2,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public sealed class StartTweaksModule : ITweakModule
+public sealed class StartTweaksModule : IModuleComponent
 {
     private const string Advanced = @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
 

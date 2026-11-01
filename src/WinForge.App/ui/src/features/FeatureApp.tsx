@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './features.css';
+import { OsdControls } from './OsdControls';
 import { CaptureEditorView, type CaptureEditorState } from './CaptureEditor';
 import { DefaultAppsPanel, DefaultPathsPanel } from './DefaultSettingsPanels';
 import { DynamicIsland, previewIsland, type IslandState } from './DynamicIsland';
@@ -71,7 +72,6 @@ type ShortcutGuideState = { query: string; entries: { category: string; keys: st
 type EnvironmentVariablesState = { title: string; description: string; status: string; rows: { name: string; value: string; expandable: boolean }[] };
 type EnvironmentProfilesState = { profiles: { id: string; name: string }[]; selectedId: string; profileName: string; newProfileName: string; enabled: boolean; enabledAllowed: boolean; status: string; confirmDelete: boolean; variables: { name: string; value: string; expandable: boolean }[] };
 type FileLocksmithState = { path: string; status: string; selectedProcessId?: number; canScan: boolean; canTerminate: boolean; confirmTerminate: boolean; processes: { processId: number; processName: string; applicationName: string; status: string; canTerminate: boolean }[] };
-type MouseJumpState = { selected: number; monitors: { index: number; name: string; isPrimary: boolean; width: number; height: number; preview?: string }[] };
 type PowerRenameState = { find: string; replace: string; regex: boolean; caseSensitive: boolean; status: string; canApply: boolean; canUndo: boolean; rows: { originalName: string; newName: string; status: string }[] };
 type ImageResizerState = { preset: string; customSize: string; format: string; quality: string; preserveMetadata: boolean; processing: boolean; progress: number; progressMaximum: number; canResize: boolean; status: string; rows: { index: number; fileName: string; sourceSize: string; targetName: string; targetSize: string; status: string }[] };
 type WorkspacesState = { name: string; selectedId: string; status: string; busy: boolean; presets: { id: string; name: string; savedAt: string; windowCount: number; applications: string }[] };
@@ -95,7 +95,6 @@ type NashiSetupState = { mediaReady: boolean; officeReady: boolean; ready: boole
 type MetadataEditorState = { media: boolean; removeAll: boolean; fields: { key: string; label: string; value: string }[]; details: { label: string; value: string }[]; canSave: boolean };
 type PdfOrganizerState = { uniformWidth: boolean; pages: { id: string; number: number; rotation: number; image: string }[]; selected: string[] };
 type FilePreviewState = { file: string; index: number; count: number; kind: 'message' | 'image' | 'text' | 'pdf' | 'video' | 'audio'; message: string; image: string; text: string; mediaUrl: string; pdfPage: number; pdfPageCount: number; canPrevious: boolean; canNext: boolean };
-type PeekPreviewState = { file: string; path: string; kind: string; summary: string; text: string; image: string; media: string; truncated: boolean; pageCount: number; status: string };
 type FloatShelfState = { items: { path: string; name: string; folder: boolean; extension: string; image: string | null }[]; selected: string[]; expanded: boolean; icons: boolean; edge: string | null; notice: string | null; count: number };
 type WheelState = { externalDrag: boolean; finish: string; selected: number; center: string; subtitle: string; startAngle: number; choices: { id: string; title: string; symbol: string }[] };
 type DictationStatusState = { message: string; result?: string; audioLevel: number; recording: boolean };
@@ -210,21 +209,6 @@ function NashiFilePreviewView({ state }: { state: FilePreviewState }) {
     {state.kind === 'audio' && <div className="file-preview-audio"><span>♫</span><strong>{state.file}</strong><audio key={state.mediaUrl} src={state.mediaUrl} controls onError={() => send('preview.media-error')} /></div>}
     {state.kind === 'message' && <div className="file-preview-message">{state.message}</div>}
     </section><footer><span>Alt + ← / → · Dosyalar&nbsp;&nbsp; Esc · Kapat</span>{state.kind === 'pdf' && <span>← / → · Sayfalar</span>}</footer></main></div>;
-}
-
-function PeekPreviewView({ state }: { state: PeekPreviewState }) {
-  const send = (command: string) => window.chrome?.webview?.postMessage({ command, payload: {} });
-  return <div className="feature-root feature-root-peek-preview"><main><header><div><span className="nashi-eyebrow">DOSYA ÖNİZLEME</span><h1 title={state.path}>{state.file}</h1><p>{state.path} · {state.summary}</p></div><button onClick={() => send('peek.close')} aria-label="Kapat">×</button></header>
-    {state.truncated && <div className="peek-notice">Dosyanın başlangıcı güvenli önizleme sınırı içinde gösteriliyor.</div>}
-    <section className={`peek-preview-content kind-${state.kind}`}>
-      {state.image && <img src={state.image} alt={state.file} />}
-      {state.kind === 'text' && <pre>{state.text}</pre>}
-      {(state.kind === 'unsupported' || state.kind === 'limit') && <div className="peek-preview-message">{state.text || state.summary}</div>}
-      {state.kind === 'video' && <video src={state.media} controls playsInline onError={() => send('peek.open')} />}
-      {state.kind === 'audio' && <div className="peek-audio"><span>♫</span><strong>{state.file}</strong><audio src={state.media} controls onError={() => send('peek.open')} /></div>}
-    </section>
-    <footer><span role="status">{state.status}</span><button onClick={() => send('peek.open')}>Varsayılan uygulamada aç</button></footer>
-  </main></div>;
 }
 
 function FloatShelfView({ state }: { state: FloatShelfState }) {
@@ -846,11 +830,6 @@ export function FeatureApp({ view }: { view: string }) {
     return preview ? <NashiFilePreviewView state={preview} /> : <div className="feature-root feature-root-error">Önizleme hazırlanıyor…</div>;
   }
 
-  if (view === 'peek-preview') {
-    const preview = state as unknown as PeekPreviewState | null;
-    return preview ? <PeekPreviewView state={preview} /> : <div className="feature-root feature-root-error">Önizleme hazırlanıyor…</div>;
-  }
-
   if (view === 'nashi-float-shelf') {
     const shelf = state as unknown as FloatShelfState | null;
     return shelf ? <FloatShelfView state={shelf} /> : <div className="feature-root feature-root-error">Float is getting ready…</div>;
@@ -984,47 +963,6 @@ export function FeatureApp({ view }: { view: string }) {
         {locksmith.confirmTerminate && <div className="history-confirm-backdrop"><section className="history-confirm"><strong>Uygulama sonlandırılsın mı?</strong><p>Kaydedilmemiş çalışmalar kaybolabilir. Yalnızca seçilen uygulama işlemi sonlandırılır.</p><div><button onClick={() => send('file-locksmith.terminate', { confirm: false })}>Vazgeç</button><button className="danger" onClick={() => send('file-locksmith.terminate', { confirm: true })}>Sonlandır</button></div></section></div>}
       </>}
     </section></div>;
-  }
-
-  if (view === 'mouse-jump') {
-    const mouseJump = state as unknown as MouseJumpState | null;
-    const chooseCenter = (index: number) => send('mouse-jump.center', { index });
-    const handleMouseJumpKey = (event: React.KeyboardEvent) => {
-      if (event.key === 'Escape') send('mouse-jump.cancel');
-      else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') send('mouse-jump.move', { delta: -1 });
-      else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') send('mouse-jump.move', { delta: 1 });
-      else if (event.key === 'Home' && mouseJump) send('mouse-jump.select', { index: 0 });
-      else if (event.key === 'End' && mouseJump) send('mouse-jump.select', { index: mouseJump.monitors.length - 1 });
-      else if (event.key === 'Enter' && mouseJump) chooseCenter(mouseJump.selected);
-      else if (event.key.toLowerCase() === 'p' && mouseJump) chooseCenter(mouseJump.monitors.find(monitor => monitor.isPrimary)?.index ?? 0);
-      else if (/^[1-9]$/.test(event.key) && mouseJump) chooseCenter(Number(event.key) - 1);
-      else return;
-      event.preventDefault();
-    };
-    return <div className="feature-root feature-root-mouse-jump" tabIndex={0} autoFocus onKeyDown={handleMouseJumpKey}>
-      {mouseJump && <section className="mouse-jump-panel"><header><div><strong>Ekranlar arası fare taşıma</strong><small>Noktaya tıklayarak imleci o konuma taşıyın</small></div><button onClick={() => send('mouse-jump.cancel')} aria-label="Kapat">×</button></header>
-        <div className="mouse-jump-cards">{mouseJump.monitors.map(monitor => <article key={monitor.index} className={`mouse-jump-card ${mouseJump.selected === monitor.index ? 'selected' : ''}`} onMouseEnter={() => send('mouse-jump.select', { index: monitor.index })}>
-          <div className="mouse-jump-card-title"><strong>{monitor.name}</strong><small>{monitor.width} × {monitor.height}{monitor.isPrimary ? ' · Birincil' : ''}</small></div>
-          <div className="mouse-jump-preview" onClick={event => {
-            if (!monitor.preview) { chooseCenter(monitor.index); return; }
-            const image = event.currentTarget.querySelector('img');
-            if (!image) return;
-            const bounds = event.currentTarget.getBoundingClientRect();
-            const scale = Math.min(1, bounds.width / image.naturalWidth, bounds.height / image.naturalHeight);
-            const displayedWidth = image.naturalWidth * scale;
-            const displayedHeight = image.naturalHeight * scale;
-            const x = Math.max(0, Math.min(1, (event.clientX - bounds.left - (bounds.width - displayedWidth) / 2) / displayedWidth));
-            const y = Math.max(0, Math.min(1, (event.clientY - bounds.top - (bounds.height - displayedHeight) / 2) / displayedHeight));
-            send('mouse-jump.choose', { index: monitor.index, x, y });
-          }} title="Bu noktaya taşı">
-            {monitor.preview ? <img src={monitor.preview} alt={`${monitor.name} önizlemesi`} draggable={false} /> : <span>Önizleme yok<br />Ekran merkezine taşı</span>}
-            <span className="mouse-jump-crosshair" aria-hidden="true">+</span>
-          </div>
-          <button onClick={() => chooseCenter(monitor.index)}>Merkeze taşı</button>
-        </article>)}</div>
-        <footer>← → ekran seç · Enter merkez · 1–9 ekran · P birincil · Esc kapat</footer>
-      </section>}
-    </div>;
   }
 
   if (view === 'power-rename') {
@@ -1364,29 +1302,7 @@ export function FeatureApp({ view }: { view: string }) {
     if (osd.kind === 'toast') return <div className="feature-root feature-root-osd">
       <div className="osd-card osd-toast"><span className="osd-status-dot" /><span>{osd.message}</span></div>
     </div>;
-    if (osd.kind === 'brightness') return <div className="feature-root feature-root-osd">
-      <div className="osd-card osd-volume" onMouseEnter={() => send('brightness.hover', { value: true })} onMouseLeave={() => send('brightness.hover', { value: false })}>
-        <span className="osd-volume-button" aria-hidden="true">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-            <circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42m0-14.14-1.42 1.42M6.35 17.65l-1.42 1.42" />
-          </svg>
-        </span>
-        <input className="osd-volume-range" type="range" min="0" max="100" value={osd.percent} onChange={event => send('brightness.set', { percent: Number(event.target.value) })} onKeyDown={event => { if (event.key === 'Escape') send('brightness.dismiss'); }} aria-label="Ekran parlaklığı" />
-        <strong className="osd-volume-value">{osd.percent}%</strong>
-      </div>
-    </div>;
-    if (osd.kind === 'volume') return <div className="feature-root feature-root-osd">
-      <div className="osd-card osd-volume" onMouseEnter={() => send('volume.hover', { value: true })} onMouseLeave={() => send('volume.hover', { value: false })}>
-        <button className="osd-volume-button" onClick={() => send('volume.toggle-mute')} aria-label={osd.isMuted ? 'Sesi aÃ§' : 'Sessize al'}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M4 9v6h4l5 4V5L8 9H4Z" />
-            {osd.isMuted ? <path d="m17 9 4 6m0-6-4 6" /> : <path d="M16 9.5a4 4 0 0 1 0 5" />}
-          </svg>
-        </button>
-        <input className="osd-volume-range" type="range" min="0" max="100" value={osd.percent} onChange={event => send('volume.set', { percent: Number(event.target.value) })} onKeyDown={event => { if (event.key === 'Escape') send('volume.dismiss'); }} aria-label="Ses dÃ¼zeyi" />
-        <strong className="osd-volume-value">{osd.percent}%</strong>
-      </div>
-    </div>;
+    return <OsdControls kind={osd.kind} percent={osd.percent ?? 0} isMuted={osd.isMuted} send={send} />;
   }
 
   if (view === 'media-flyout') {

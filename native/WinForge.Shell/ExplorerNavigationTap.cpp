@@ -40,7 +40,7 @@ bool ReadOptions(Options& value) {
         value.weight = read(L"font-weight", 400, 100, 900);
         value.horizontal = read(L"padding-horizontal", 8, 0, 48);
         value.vertical = read(L"padding-vertical", 5, 0, 24);
-        value.indent = read(L"indent", 18, 8, 64);
+        value.indent = read(L"indent", 18, 0, 64);
         value.icon = read(L"icon-size", 16, 12, 32);
         value.gap = read(L"icon-gap", 6, 0, 32);
         value.radius = read(L"corner-radius", 6, 0, 24);
@@ -68,6 +68,11 @@ struct TreeState {
     Options options;
     int Scale(int value) const { return MulDiv(value, static_cast<int>(GetDpiForWindow(tree)), 96); }
 };
+int ContentLeft(TreeState const* state, HTREEITEM item) {
+    int depth = 0;
+    for (auto parent = TreeView_GetParent(state->tree, item); parent; parent = TreeView_GetParent(state->tree, parent)) ++depth;
+    return state->Scale(state->options.horizontal + depth * state->options.indent) - GetScrollPos(state->tree, SB_HORZ);
+}
 void Restore(TreeState* state) {
     SendMessageW(state->tree, WM_SETFONT, reinterpret_cast<WPARAM>(state->originalFont), TRUE);
     TreeView_SetItemHeight(state->tree, state->originalHeight);
@@ -140,13 +145,14 @@ LRESULT Paint(TreeState* state, NMTVCUSTOMDRAW* draw) {
     SelectObject(dc, oldPen);
     SelectObject(dc, oldBrush);
     DeleteObject(brush);
-    RECT label{};
-    TreeView_GetItemRect(tree, item, &label, TRUE);
-    // Preserve the native indentation and scrolling origin; padding is additional DIP space.
-    int left = label.left + state->Scale(options.horizontal);
+    // Native label rectangles already include Explorer's root inset, image and
+    // expander slots. Lay out our own content once, keeping only hierarchy and scroll.
+    int left = ContentLeft(state, item);
+    int arrowWidth = options.arrows ? state->Scale(12) : 0;
     int iconSize = state->Scale(options.icon);
     if (options.arrows && data.cChildren != 0) {
-        auto x = label.left - state->Scale(28), y = (row.top + row.bottom) / 2;
+        auto x = left + arrowWidth / 2;
+        auto y = (row.top + row.bottom) / 2;
         POINT points[3];
         if (data.state & TVIS_EXPANDED) { points[0] = {x-3,y-2}; points[1] = {x+3,y-2}; points[2] = {x,y+2}; }
         else { points[0] = {x-2,y-3}; points[1] = {x-2,y+3}; points[2] = {x+2,y}; }
@@ -156,6 +162,7 @@ LRESULT Paint(TreeState* state, NMTVCUSTOMDRAW* draw) {
         Polygon(dc, points, 3);
         SelectObject(dc, oldPen); SelectObject(dc, oldBrush); DeleteObject(arrowBrush);
     }
+    left += arrowWidth;
     if (options.icons) {
         auto images = TreeView_GetImageList(tree, TVSIL_NORMAL);
         auto icon = images ? ImageList_GetIcon(images, selected ? data.iSelectedImage : data.iImage, ILD_TRANSPARENT) : nullptr;
@@ -184,6 +191,26 @@ LRESULT CALLBACK ParentProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
 }
 LRESULT CALLBACK TreeProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR reference) {
     auto state = reinterpret_cast<TreeState*>(reference);
+    if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP || message == WM_LBUTTONDBLCLK ||
+        message == WM_RBUTTONDOWN || message == WM_RBUTTONUP) {
+        TVHITTESTINFO hit{};
+        hit.pt = {static_cast<short>(LOWORD(lparam)), static_cast<short>(HIWORD(lparam))};
+        auto item = TreeView_HitTest(window, &hit);
+        RECT label{};
+        if (item && TreeView_GetItemRect(window, item, &label, TRUE)) {
+            auto left = ContentLeft(state, item);
+            auto arrowWidth = state->options.arrows ? state->Scale(12) : 0;
+            if (arrowWidth && hit.pt.x >= left && hit.pt.x < left + arrowWidth &&
+                (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP || message == WM_LBUTTONDBLCLK)) {
+                if (message == WM_LBUTTONDOWN) TreeView_Expand(window, item, TVE_TOGGLE);
+                return 0;
+            }
+            // Native hit testing must follow the content we drew, rather than
+            // treating its former icon/expander space as the clickable content.
+            if (hit.pt.x >= left + arrowWidth)
+                lparam = MAKELPARAM(label.left + 1, hit.pt.y);
+        }
+    }
     if (message == TVM_SETBKCOLOR) lparam = static_cast<LPARAM>(state->options.background);
     if (message == TVM_SETTEXTCOLOR) lparam = static_cast<LPARAM>(state->options.text);
     if (message == WM_SETFONT && state->font) wparam = reinterpret_cast<WPARAM>(state->font);

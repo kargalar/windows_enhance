@@ -92,6 +92,7 @@ public partial class App : Application
         finally { startupWindow?.Complete(); }
 
         Logger = new FileLogger(Path.Combine(dataDirectory, "winforge.log"));
+        CleanupRetiredPreviewCommand();
         Logger.Info($"WinForge başlatılıyor · {Environment.OSVersion.VersionString}");
 
         Hotkeys = new HotkeyService();
@@ -117,6 +118,24 @@ public partial class App : Application
         _ = StartModulesAsync(initialCommand ? e.Args : null);
     }
 
+    private void CleanupRetiredPreviewCommand()
+    {
+        const string keyPath = @"Software\Classes\*\shell\WinForge.PeekPreview";
+        try
+        {
+            var expectedCommand = $"\"{Environment.ProcessPath}\" --peek \"%1\"";
+            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(keyPath + @"\command"))
+            {
+                if (!string.Equals(key?.GetValue(null) as string, expectedCommand, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(keyPath, throwOnMissingSubKey: false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+        {
+            Logger.Error("Retired file preview context menu entry could not be removed.", exception);
+        }
+    }
+
     private async Task StartModulesAsync(string[]? initialCommand)
     {
         await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
@@ -136,7 +155,7 @@ public partial class App : Application
     }
 
     private static bool IsCommandRequest(IReadOnlyList<string> args) =>
-        args.Count > 0 && args[0] is "--peek" or "--power-rename" or "--file-locksmith" or "--context-desktop-shortcut" or "--context-toggle-hidden";
+        args.Count > 0 && args[0] is "--power-rename" or "--file-locksmith" or "--context-desktop-shortcut" or "--context-toggle-hidden";
 
     private static bool IsModuleCommand(string[] args) => IsCommandRequest(args) && args.Length > 1;
 

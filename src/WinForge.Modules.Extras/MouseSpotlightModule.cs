@@ -4,7 +4,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public sealed class MouseSpotlightModule : ITweakModule
+public sealed class MouseSpotlightModule : IModuleComponent
 {
     private static readonly Color SpotlightColor = Color.FromRgb(76, 194, 255);
     private static readonly Color LeftClickColor = Color.FromRgb(255, 169, 76);

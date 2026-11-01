@@ -17,7 +17,7 @@ feature engines continue to use Windows/.NET APIs and their existing contracts.
 | Displays / Power Display | DDC/CI capability discovery with brightness, contrast, monitor volume, input-source and color-preset controls; Windows WMI brightness for built-in panels; linked brightness levels; async discovery, color-change confirmation, persistent per-monitor profiles, opt-in local-time day/night brightness schedules, and cursor-monitor brightness hotkeys | Add rotation/power controls, custom VCP names, and profile integration with Light Switch |
 | Fluent Flyout | Compact media flyout with Windows media session title/artist and bounded album artwork, selectable sessions and persistently pinnable sessions through the taskbar widget, playback timeline/seek, shuffle/repeat, allowlist/blocklist app filtering, direct play/pause/skip commands (key fallback), independently configurable lock-key OSD and non-activating notifications, `Win+Alt+M`/`Ctrl+Alt+V` shortcuts, hardware media-key triggers, bottom-centered audio volume OSD with interactive slider and media flyout on hardware and compatible external volume changes, Core Audio endpoint volume/mute changes filtered through event context, opt-in compact taskbar-adjacent mini player with edge-aware placement, session-switching context menu and configurable master/player-app volume wheel control, opt-in 24-band WASAPI output spectrum visualizer with silence hiding and optional baseline, Up Next notification, configurable corner/monitor, black dark surfaces with white text and borderless controls, fade animation, inactivity dismissal, fullscreen suppression and high-contrast colors | Direct taskbar embedding and edge-oriented widget layout; marquee/fixed-width widget options; clickable player header that reliably activates the exact player/browser tab; richer Fluent backdrop and animation settings; verify external device behavior across audio drivers and Windows builds |
 | Taskbar and shell | Own taskbar registry/API tweaks, seconds/date format, wheel volume, middle-click close, transparency/accent, tray visibility | Own version-tested shell engine for advanced XAML themes, taskbar geometry/placement, dock animations and Explorer/browser customization; these features are currently unavailable |
-| Explorer and Start | Explorer tweaks, context-menu tools, Start/Search cleanup, bulk rename with persistent last-operation undo, image resize with metadata preservation/progress/cancellation, file-lock inspection with process/service details and post-termination rescan, and Peek preview for text/images/PDF/audio/video | Verify PDF rendering and media codec behavior across supported Windows builds |
+| Explorer and Start | Explorer tweaks, context-menu tools, Start/Search cleanup, bulk rename with persistent last-operation undo, image resize with metadata preservation/progress/cancellation, file-lock inspection with process/service details and post-termination rescan | Verify Explorer integration across supported Windows builds |
 | Themes and system | Theme switch with timed light/dark schedule, Awake, corners, UI tweaks, startup, user and elevated system-scope environment variable editors, plus user profiles | Add reversible power/menu shortcuts |
 | Hosts file management | Entry parsing with unmanaged text/comment preservation, IPv4/IPv6 and host validation, filtering, enable/disable, edit/remove/add, loopback duplicate checks, configurable top/bottom placement, concurrent-edit check, timestamped backups and elevated atomic save | Verify UAC save and rollback/backup behavior against a Windows hosts file; expose backup retention and encoding preferences |
 | Quick access | `Win+Alt+Space` application launcher, fuzzy matching, calculator, direct existing file/folder paths, bounded background indexing of Start Menu/common/custom folders, configurable file-extension filters, opt-in bounded local text-content search and Windows recent-file shortcuts, curated Settings-page commands, module action-provider contract with Workspaces restore actions; searchable Windows/WinForge Shortcut Guide on `Win+Shift+/` plus hold-Win overlay | Add providers for more modules and shell command categories |
@@ -104,9 +104,7 @@ PowerToys utilities not yet covered or only partly covered by WinForge:
   and the reverse transaction is safe. Image
   Resizer supports bounded presets, custom sizing, PNG/JPEG output, and preserves
   source files. File Locksmith uses Restart Manager for app/service inspection
-  and guarded application termination. Peek previews bounded text and images,
-  renders the first PDF page, and offers in-app audio/video controls subject to
-  installed Windows codecs.
+  and guarded application termination.
 - **Mouse utilities:** spotlight, click rings, crosshairs and jump-to-monitor
   exist. Mouse Without Borders and ZoomIt are larger standalone tools
   and need separate scope evaluation.
@@ -193,8 +191,6 @@ No external process or third-party mod settings are needed for these features.
   cancellation before the next item or before an encoded temporary file is
   atomically moved into place. Cross-codec metadata conversion remains omitted
   because metadata schemas are format-specific.
-- Peek follow-up: add runtime verification for PDF rendering and media playback
-  on Windows 10/11, including unavailable-codec and corrupt-document cases.
 - File Locksmith now reports lock owner process/service details and rescans the
   selected path after a guarded termination attempt. Image Resizer metadata,
   progress and cancellation are implemented; these items are complete.
@@ -233,8 +229,8 @@ Workspaces reference: [Microsoft PowerToys Workspaces](https://learn.microsoft.c
 
 ### Current implementation order
 
-1. Complete runtime compatibility checks for native window control, PDF preview,
-   media codecs, and Fluent Flyout audio-device behavior on Windows 10/11.
+1. Complete runtime compatibility checks for native window control
+   and Fluent Flyout audio-device behavior on Windows 10/11.
 2. Finish high-use Fluent Flyout taskbar-widget behavior: edge-oriented layout,
    stable player activation, and width options.
 3. Add more useful module actions to the launcher and Shortcut Guide, keeping

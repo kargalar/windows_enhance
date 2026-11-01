@@ -2,7 +2,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public sealed class SearchTweaksModule : ITweakModule
+public sealed class SearchTweaksModule : IModuleComponent
 {
     private const string Search = @"Software\Microsoft\Windows\CurrentVersion\Search";
 

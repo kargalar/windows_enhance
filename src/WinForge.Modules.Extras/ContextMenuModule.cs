@@ -135,7 +135,10 @@ public sealed partial class ContextMenuModule : ITweakModule, IAppCommandModule
 
             foreach (var name in shell.GetSubKeyNames())
             {
-                if (name.StartsWith(CustomPrefix, StringComparison.OrdinalIgnoreCase))
+                // This module owns only WinForge.<index>; named verbs belong to other features.
+                if (name.StartsWith(CustomPrefix, StringComparison.OrdinalIgnoreCase) &&
+                    name.Length > CustomPrefix.Length &&
+                    name.AsSpan(CustomPrefix.Length).IndexOfAnyExceptInRange('0', '9') < 0)
                     shell.DeleteSubKeyTree(name, throwOnMissingSubKey: false);
             }
         }

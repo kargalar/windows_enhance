@@ -31,7 +31,6 @@ sınırında hata koduna çevrilir; bu, donanım/sürücü kaynaklı çökmeleri
 |---|---|
 | Görev çubuğu, Başlat, Gezgin tasarımları | Modül ana süreçtedir. `ShellHost` yalnız bağlantı kurarken çalışıp çıkar. Hedef Windows sürecindeki XAML çalışma zamanını yükler; farklı Windows/WinUI çalışma zamanlarını ana WPF sürecine taşımamak için bu sınır korunur. |
 | Gezgin klasör boyutları | `FolderSizeHost` sembol hazırlama ve bağlantı için geçicidir. Sürekli klasör taraması Gezgin'e yüklenen DLL'dedir; ayrı sürekli WinForge programı yoktur. |
-| PDF önizleme | İstek başına süre ve çıktı sınırı olan `ShellHost render-pdf` işi kullanılır. Hatalı dosya, sürücü ve takılan yerel işleyici ana arayüzden ayrılır; iptalde süreç kapatılır. |
 | Video, ses, belge ve indirme araçları | FFmpeg, FFprobe ve diğer komut satırı motorları yalnız işlem sırasında çağrılır. Modül ve arayüz WinForge içindedir. Bu motorları tek sürece zorlamak büyük bir yeniden yazım ve bağımlılık değişimi gerektirir. |
 | Program/klasör açma kısayolları | Kullanıcının seçtiği uygulamanın veya Gezgin'in açılması özelliğin kendisidir. |
 | WebView2 | Arayüz uygulama içinde barındırılır. Microsoft WebView2'nin tarayıcı/işleyici süreçleri kendi çalışma mimarisinin parçasıdır. |

@@ -18,7 +18,6 @@ foreach ($target in @(@{ Source = 'ContextMenuTap.cpp'; Name = 'WinForge.Context
     if ($target.Source -in @('ShellTap.cpp', 'TaskbarGeometryFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'TaskbarGeometry.h') }
     if ($target.Source -in @('ContextMenuTap.cpp', 'ContextMenuFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'ContextMenuEngine.h') }
     if ($target.Source -eq 'ShellTap.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'TaskbarDockAnimation.h') }
-    if ($target.Source -eq 'ShellHost.cpp') { $inputs += Get-Item -LiteralPath (Join-Path $source 'PdfPreviewRenderer.h') }
     if ($target.Source -in @('FolderSizeHost.cpp', 'FolderSizeTap.cpp')) { $inputs += Get-ChildItem -LiteralPath $source -Filter 'FolderSize*.h' }
     if ($target.Mode -eq '/LD') { $inputs += Get-Item -LiteralPath (Join-Path $source ([IO.Path]::ChangeExtension($target.Source, '.def'))) }
     if ($target.Source -in @('ShellFixture.cpp', 'FolderSizeFixture.cpp', 'ExplorerNavigationFixture.cpp')) { $inputs += Get-Item -LiteralPath (Join-Path $source 'ShellFixture.manifest') }
@@ -29,7 +28,6 @@ foreach ($target in @(@{ Source = 'ContextMenuTap.cpp'; Name = 'WinForge.Context
     if ($target.Source -in @('ExplorerNavigationTap.cpp', 'ExplorerNavigationFixture.cpp')) { $targetLibraries += ' comctl32.lib gdi32.lib advapi32.lib' }
     if ($target.Source -in @('FolderDialogTap.cpp', 'FolderDialogFixture.cpp')) { $targetLibraries += ' comctl32.lib shell32.lib advapi32.lib' }
     if ($target.Source -in @('ContextMenuTap.cpp', 'ContextMenuFixture.cpp')) { $targetLibraries += ' gdi32.lib advapi32.lib shell32.lib' }
-    if ($target.Source -eq 'ShellHost.cpp') { $targetLibraries += ' d3d11.lib dxgi.lib d2d1.lib windowscodecs.lib windows.data.pdf.lib' }
     if ($target.Source -eq 'FolderSizeHost.cpp') { $targetLibraries += ' dbghelp.lib winhttp.lib' }
     if ($target.Source -eq 'FolderSizeTap.cpp') { $targetLibraries += ' shell32.lib shlwapi.lib' }
     if ($target.Source -eq 'FolderSizeFixture.cpp') { $targetLibraries += ' shell32.lib' }

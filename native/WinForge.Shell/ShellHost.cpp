@@ -4,7 +4,6 @@
 #include <filesystem>
 #include <tlhelp32.h>
 #include "BridgeProtocol.h"
-#include "PdfPreviewRenderer.h"
 
 struct XamlRuntime {
     std::filesystem::path initializer;
@@ -31,23 +30,6 @@ static XamlRuntime FindWinUiRuntime(DWORD processId) {
 }
 
 int wmain(int argc, wchar_t** argv) {
-    if (argc == 5 && wcscmp(argv[1], L"render-pdf") == 0) {
-        wchar_t* end{};
-        auto maximumDimension = wcstoul(argv[4], &end, 10);
-        if (*end || maximumDimension < 64 || maximumDimension > 4096) return 2;
-        try {
-            auto preview = winforge::pdf::RenderPreview(argv[2], argv[3], static_cast<std::uint32_t>(maximumDimension));
-            std::wprintf(L"{\"width\":%u,\"height\":%u,\"pageCount\":%u,\"backend\":\"warp\"}\n",
-                preview.width, preview.height, preview.pageCount);
-            return 0;
-        } catch (winrt::hresult_error const& error) {
-            std::fwprintf(stderr, L"PDF render failed: 0x%08X %s\n", static_cast<unsigned int>(error.code().value), error.message().c_str());
-            return 1;
-        } catch (std::exception const& error) {
-            std::fprintf(stderr, "PDF render failed: %s\n", error.what());
-            return 1;
-        }
-    }
     if ((argc < 5 || argc > 7) || wcscmp(argv[1], L"attach") != 0) return 2;
     wchar_t* end{};
     auto pid = wcstoul(argv[2], &end, 10);

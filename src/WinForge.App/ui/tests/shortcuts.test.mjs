@@ -273,3 +273,49 @@ test('module families preserve all modules and their independent identities', as
   assert.deepEqual(groups[0].modules.map(m => m.id), ['taskbar', 'net-speed']);
   assert.deepEqual(groups.flatMap(g => g.modules), modules);
 });
+
+
+const { OsdControls } = await server.ssrLoadModule('/src/features/OsdControls.tsx');
+
+for (const kind of ['volume', 'brightness']) {
+  test(`${kind} slider updates immediately and preserves a drag across delayed host states`, async () => {
+    const messages = [];
+    const send = (command, payload) => messages.push({ command, payload });
+    let update;
+    function Harness() {
+      const [percent, setPercent] = useState(40);
+      update = setPercent;
+      return h(OsdControls, { kind, percent, send });
+    }
+    const ui = await mount(h(Harness));
+    try {
+      const slider = ui.container.querySelector('input');
+      slider.setPointerCapture = () => {};
+      await act(async () => slider.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, button: 0 })));
+      await type(slider, '73');
+      assert.equal(slider.value, '73');
+      assert.equal(ui.container.querySelector('strong').textContent, '73%');
+      assert.deepEqual(messages.at(-1), { command: `${kind}.set`, payload: { percent: 73 } });
+      await act(async () => update(48));
+      assert.equal(slider.value, '73');
+      await act(async () => slider.dispatchEvent(new window.Event('lostpointercapture', { bubbles: true })));
+      assert.deepEqual(messages.at(-1), { command: `${kind}.drag`, payload: { value: false } });
+      await act(async () => update(80));
+      assert.equal(slider.value, '80');
+      await key(slider, 'Escape', 'Escape');
+      assert.equal(messages.at(-1).command, `${kind}.dismiss`);
+    } finally { await ui.close(); }
+  });
+}
+
+test('volume icon toggles mute and exposes the current state', async () => {
+  const messages = [];
+  const ui = await mount(h(OsdControls, { kind: 'volume', percent: 40, isMuted: true, send: command => messages.push(command) }));
+  try {
+    const button = ui.container.querySelector('button');
+    assert.equal(button.getAttribute('aria-pressed'), 'true');
+    assert.equal(button.getAttribute('aria-label'), 'Sesi a\u00e7');
+    await click(button);
+    assert.deepEqual(messages, ['volume.toggle-mute']);
+  } finally { await ui.close(); }
+});

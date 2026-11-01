@@ -34,6 +34,18 @@ public static class VolumeService
 
     public static int StepFromFlyout(int percent) => StepCore(percent, WinForgeVolumeChangeContext);
 
+    public static int SetFromFlyout(int percent)
+    {
+        using var endpoint = GetVolume();
+        var volume = endpoint.Volume;
+        var next = Math.Clamp(percent, 0, 100) / 100f;
+        var context = WinForgeVolumeChangeContext;
+        Marshal.ThrowExceptionForHR(volume.SetMasterVolumeLevelScalar(next, ref context));
+        if (next > 0f) Marshal.ThrowExceptionForHR(volume.SetMute(false, ref context));
+        Marshal.ThrowExceptionForHR(volume.GetMasterVolumeLevelScalar(out var actual));
+        return (int)Math.Round(actual * 100);
+    }
+
     private static int StepCore(int percent, Guid eventContext)
     {
         using var endpoint = GetVolume();

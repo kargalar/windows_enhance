@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -51,6 +51,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     private readonly SettingDescriptor[] _settings;
     private readonly StringBuilder _word = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
+    private readonly SemaphoreSlim _analysisGate = new(1, 1);
     private readonly HashSet<string> _sessionIgnoredWords = new(StringComparer.OrdinalIgnoreCase);
 
     private SpellEngine? _spellChecker;
@@ -278,6 +279,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     public void Apply()
     {
         if (!IsActive) return;
+        InvalidateInput();
         ReadSettings();
     }
 
@@ -502,7 +504,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
             _dispatcher.BeginInvoke(DispatcherPriority.Background, () => QueueNextWordPredictions(window, sequence, keyboardTag));
     }
 
-    private void ApplyCorrection(string word, IntPtr window, long sequence, string keyboardTag, char triggerChar, string? previous)
+    private async void ApplyCorrection(string word, IntPtr window, long sequence, string keyboardTag, char triggerChar, string? previous)
     {
         try
         {
@@ -512,30 +514,45 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
                 return;
             }
 
-            var languageTags = ResolveLanguageTags(_language, keyboardTag);
-            var supportedTags = languageTags.Where(_spellChecker.IsLanguageSupported).ToArray();
-            if (supportedTags.Length == 0) return;
+            var engine = _spellChecker;
+            var language = _language;
+            var contextAnalysis = _contextAnalysis;
+            var deasciify = _deasciifyTurkish;
+            var expansions = _allowTextExpansions;
+            var personalized = _personalizedFrequency;
+            var replacements = _customReplacements;
+            var analysis = await AnalyzeAsync(sequence, () =>
+            {
+                var languageTags = ResolveLanguageTags(language, keyboardTag);
+                var supportedTags = languageTags.Where(engine.IsLanguageSupported).ToArray();
+                if (supportedTags.Length == 0) return (Known: false, Tag: keyboardTag, Correction: (string?)null);
 
-            var preferredTag = supportedTags.Contains(keyboardTag, StringComparer.OrdinalIgnoreCase)
-                ? keyboardTag
-                : supportedTags[0];
-            var orderedTags = supportedTags.OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, preferredTag) ? 0 : 1);
+                var preferredTag = supportedTags.Contains(keyboardTag, StringComparer.OrdinalIgnoreCase)
+                    ? keyboardTag
+                    : supportedTags[0];
+                var orderedTags = supportedTags.OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, preferredTag) ? 0 : 1);
 
-            var hasExplicitReplacement = _customReplacements.ContainsKey(word.ToLower(SpellEngine.GetCulture(preferredTag))) ||
-                (_allowTextExpansions && SpellLexicons.DefaultTextExpansions.ContainsKey(word));
-            var isKnown = supportedTags.Any(tag => _spellChecker.IsKnownWord(word, tag, _personalizedFrequency));
+                var hasExplicitReplacement = replacements.ContainsKey(word.ToLower(SpellEngine.GetCulture(preferredTag))) ||
+                    (expansions && SpellLexicons.DefaultTextExpansions.ContainsKey(word));
+                var isKnown = supportedTags.Any(tag => engine.IsKnownWord(word, tag, personalized));
 
-            // Preserve words valid in either active language. Single-language mode still
-            // permits the model's explicitly curated real-word confusion rules.
-            var preserveKnown = isKnown && supportedTags.Length > 1 && !hasExplicitReplacement;
-            var result = orderedTags
-                .Select(tag => (Tag: tag, Correction: preserveKnown ? null : _spellChecker.FindCorrection(
-                    word, tag, previous, _contextAnalysis, _deasciifyTurkish, _allowTextExpansions, _personalizedFrequency, _customReplacements)))
-                .FirstOrDefault(candidate => candidate.Correction is not null);
+                // Preserve words valid in either active language. Single-language mode still
+                // permits the model's explicitly curated real-word confusion rules.
+                var preserveKnown = isKnown && supportedTags.Length > 1 && !hasExplicitReplacement;
+                var result = orderedTags
+                    .Select(tag => (Tag: tag, Correction: preserveKnown ? null : engine.FindCorrection(
+                        word, tag, previous, contextAnalysis, deasciify, expansions, personalized, replacements)))
+                    .FirstOrDefault(candidate => candidate.Correction is not null);
+
+                return (Known: isKnown, Tag: result.Tag ?? preferredTag, Correction: result.Correction);
+            });
+            if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+            var isKnown = analysis.Known;
+            var result = (Tag: analysis.Tag, Correction: analysis.Correction);
 
             if (result.Correction is null)
             {
-                RecordPersonalizedUsage(word, isKnown, previous, result.Tag ?? preferredTag);
+                RecordPersonalizedUsage(word, isKnown, previous, result.Tag);
                 return;
             }
             if (string.Equals(word, result.Correction, StringComparison.OrdinalIgnoreCase))
@@ -557,6 +574,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
             if (!string.IsNullOrEmpty(previous)) RememberWord(previous, window, ' ');
             RememberWord(replacement, window, triggerChar);
         }
+        catch (OperationCanceledException) { }
         catch (Exception exception)
         {
             _context?.Log.Error("Otomatik düzeltme uygulanamadı.", exception);
@@ -582,26 +600,44 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
         var keyboardTag = GetKeyboardLanguageTag(window);
         var previous = window == _previousWordWindow
             ? string.Join(' ', new[] { _penultimateWord, _previousWord }.Where(token => !string.IsNullOrEmpty(token))) : null;
-        _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
         {
             var engine = _spellChecker;
             if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window || engine is null) return;
 
-            var tags = ResolveLanguageTags(_language, keyboardTag)
-                .Where(engine.IsLanguageSupported)
-                .OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, keyboardTag) ? 0 : 1)
-                .ToArray();
-            var suggestions = tags.SelectMany(tag => engine.GetSuggestions(
-                    word, tag, previous, _contextAnalysis, _deasciifyTurkish, _allowTextExpansions,
-                    _personalizedFrequency, _customReplacements))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(3)
-                .ToArray();
-            ShowSuggestions(suggestions, window, sequence, word.Length, keyboardTag, previous);
-        });
+            var language = _language;
+            var contextAnalysis = _contextAnalysis;
+            var deasciify = _deasciifyTurkish;
+            var expansions = _allowTextExpansions;
+            var personalized = _personalizedFrequency;
+            var replacements = _customReplacements;
+            try
+            {
+                // Coalesce rapid typing before starting vocabulary/morphology searches.
+                await Task.Delay(60);
+                var suggestions = await AnalyzeAsync(sequence, () =>
+                {
+                    var tags = ResolveLanguageTags(language, keyboardTag)
+                        .Where(engine.IsLanguageSupported)
+                        .OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, keyboardTag) ? 0 : 1)
+                        .ToArray();
+                    var suggestions = tags.SelectMany(tag => engine.GetSuggestions(
+                            word, tag, previous, contextAnalysis, deasciify, expansions,
+                            personalized, replacements))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Take(3)
+                        .ToArray();
+                return suggestions;
+                });
+                if (IsActive && sequence == _inputSequence && Native.GetForegroundWindow() == window)
+                    ShowSuggestions(suggestions, window, sequence, word.Length, keyboardTag, previous);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception) { _context?.Log.Error("Kelime önerileri hesaplanamadı.", exception); }
+        }));
     }
 
-    private void QueueNextWordPredictions(IntPtr window, long sequence, string keyboardTag)
+    private async void QueueNextWordPredictions(IntPtr window, long sequence, string keyboardTag)
     {
         if (!_showSuggestions || !IsActive || sequence != _inputSequence ||
             Native.GetForegroundWindow() != window || !_contextAnalysis)
@@ -616,15 +652,40 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
             return;
         }
 
-        var suggestions = ResolveLanguageTags(_language, keyboardTag)
-            .Where(engine.IsLanguageSupported)
-            .OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, keyboardTag) ? 0 : 1)
-            .SelectMany(tag => SpellContextModel.GetNextWordSuggestions(
-                history, string.Empty, tag, 3, UserFrequencyTracker.Instance, _personalizedFrequency))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(3)
-            .ToArray();
-        ShowSuggestions(suggestions, window, sequence, 0, keyboardTag, history);
+        var language = _language;
+        var personalized = _personalizedFrequency;
+        try
+        {
+            var suggestions = await AnalyzeAsync(sequence, () =>
+            {
+                var suggestions = ResolveLanguageTags(language, keyboardTag)
+                    .Where(engine.IsLanguageSupported)
+                    .OrderBy(tag => StringComparer.OrdinalIgnoreCase.Equals(tag, keyboardTag) ? 0 : 1)
+                    .SelectMany(tag => SpellContextModel.GetNextWordSuggestions(
+                        history, string.Empty, tag, 3, UserFrequencyTracker.Instance, personalized))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(3)
+                    .ToArray();
+            return suggestions;
+            });
+            if (IsActive && sequence == _inputSequence && Native.GetForegroundWindow() == window)
+                ShowSuggestions(suggestions, window, sequence, 0, keyboardTag, history);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) { _context?.Log.Error("Sonraki kelime önerileri hesaplanamadı.", exception); }
+    }
+
+    // Never occupy the dispatcher that services the system-wide keyboard hooks.
+    // Serialize model work and discard obsolete requests before expensive analysis starts.
+    private async Task<T> AnalyzeAsync<T>(long sequence, Func<T> analyze)
+    {
+        await _analysisGate.WaitAsync();
+        try
+        {
+            if (sequence != _inputSequence) throw new OperationCanceledException();
+            return await Task.Run(analyze);
+        }
+        finally { _analysisGate.Release(); }
     }
 
     private void ShowSuggestions(

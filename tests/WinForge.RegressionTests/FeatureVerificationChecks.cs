@@ -3,7 +3,6 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -31,15 +30,12 @@ internal static class FeatureVerificationChecks
         NotificationsPlacementChecks.Run(extras, directory, check, nativeSmoke);
         DisplayBrightnessChecks.Run(extras, check);
         if (!nativeSmoke) return;
-        PdfPreviewPipelineChecks.Run(directory, check);
         TestScreenCapture(check);
         TestOcr(check);
-        TestPdfPreview(extras, directory, check);
         TestTilingExclusions(check);
         TestWindowCorners(extras, check);
         TestAlwaysOnTop(directory, check);
         TestKeyboardDelivery(extras, check);
-        TestMediaPreview(extras, directory, check);
     }
 
     private static void TestAlwaysOnTop(string directory, Action<bool, string> check)
@@ -424,83 +420,6 @@ internal static class FeatureVerificationChecks
             "Windows OCR recognizes a 4000-pixel-wide fixture with GDI-style zero alpha after bounded scaling");
     }
 
-    private static void TestMediaPreview(Assembly extras, string directory, Action<bool, string> check)
-    {
-        var path = Path.Combine(directory, "preview-lifecycle.wav");
-        WriteSilentWave(path);
-        var documentType = extras.GetType("WinForge.Modules.Extras.PeekPreviewDocument")!;
-        var document = Activator.CreateInstance(documentType, "audio", "Fixture", "", null, false, path, 0)!;
-        var windowType = extras.GetType("WinForge.Modules.Extras.PeekPreviewWindow")!;
-        var window = (Window)Activator.CreateInstance(windowType, path, document)!;
-        var media = (MediaElement)windowType.GetField("_mediaElement", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
-        window.ShowActivated = false;
-        window.ShowInTaskbar = false;
-        window.Left = -10000;
-        window.Top = -10000;
-        window.WindowStartupLocation = WindowStartupLocation.Manual;
-        Exception? mediaError = null;
-        media.MediaFailed += (_, args) => mediaError = args.ErrorException;
-        try
-        {
-            window.Show();
-            var opened = windowType.GetField("_mediaOpened", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            PumpUntil(() => (bool)opened.GetValue(window)! || mediaError is not null,
-                TimeSpan.FromSeconds(10), "Media preview preparation");
-            if (mediaError is not null) throw new InvalidOperationException("Windows failed to load the PCM WAV fixture.", mediaError);
-            check(media.NaturalDuration.HasTimeSpan && media.Position == TimeSpan.Zero,
-                "Media preview opens a real PCM WAV while paused before the first Play click");
-            windowType.GetMethod("TogglePlayback", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
-            PumpUntil(() => media.Position > TimeSpan.Zero, TimeSpan.FromSeconds(5), "Media preview first playback");
-            check(media.Position > TimeSpan.Zero, "Media preview responds to the first Play click");
-            windowType.GetMethod("StopPlayback", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
-            check(media.Position == TimeSpan.Zero, "Media preview Stop resets playback to its beginning");
-        }
-        finally { window.Close(); }
-        PumpUntil(() => !media.NaturalDuration.HasTimeSpan, TimeSpan.FromSeconds(5), "Media preview resource release");
-        check(!media.NaturalDuration.HasTimeSpan, "Closing a media preview closes the native media resource");
-    }
-
-    private static void TestPdfPreview(Assembly extras, string directory, Action<bool, string> check)
-    {
-        var path = Path.Combine(directory, "tall-preview.pdf");
-        WritePdf(path, 100, 10000);
-        var loader = extras.GetType("WinForge.Modules.Extras.PeekPreviewLoader")!;
-        var operation = (Task)loader.GetMethod("LoadAsync")!.Invoke(null, [path, 1024, 1024L * 1024, 1024L * 1024])!;
-        PumpUntil(() => operation.IsCompleted, TimeSpan.FromSeconds(15), "PDF preview rendering");
-        operation.GetAwaiter().GetResult();
-        var document = operation.GetType().GetProperty("Result")!.GetValue(operation)!;
-        var image = (BitmapSource)document.GetType().GetProperty("Image")!.GetValue(document)!;
-        check((string)document.GetType().GetProperty("Kind")!.GetValue(document)! == "pdf" &&
-              image.PixelWidth > 0 && image.PixelHeight > image.PixelWidth &&
-              image.PixelWidth <= 1400 && image.PixelHeight <= 1400,
-            "PDF preview renders an actual tall PDF page within bounded width and height before allocating its image");
-    }
-
-    private static void WritePdf(string path, int width, int height)
-    {
-        const string content = "BT /F1 12 Tf 5 20 Td (WinForge PDF fixture) Tj ET\n";
-        string[] objects =
-        [
-            "<< /Type /Catalog /Pages 2 0 R >>",
-            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            $"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-            $"<< /Length {content.Length} >>\nstream\n{content}endstream",
-            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-        ];
-        var builder = new StringBuilder("%PDF-1.4\n");
-        var offsets = new List<int>();
-        for (var index = 0; index < objects.Length; index++)
-        {
-            offsets.Add(builder.Length);
-            builder.Append(CultureInfo.InvariantCulture, $"{index + 1} 0 obj\n{objects[index]}\nendobj\n");
-        }
-        var xref = builder.Length;
-        builder.Append(CultureInfo.InvariantCulture, $"xref\n0 {objects.Length + 1}\n0000000000 65535 f \n");
-        foreach (var offset in offsets) builder.Append(CultureInfo.InvariantCulture, $"{offset:0000000000} 00000 n \n");
-        builder.Append(CultureInfo.InvariantCulture, $"trailer\n<< /Size {objects.Length + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
-        File.WriteAllText(path, builder.ToString(), Encoding.ASCII);
-    }
-
     private static void TestTilingExclusions(Action<bool, string> check)
     {
         var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Tiling.dll"));
@@ -525,26 +444,6 @@ internal static class FeatureVerificationChecks
                 "Tiling checks process exclusions before restoring minimized windows, leaving WinForge's own windows minimized");
         }
         finally { window.Close(); }
-    }
-
-    private static void WriteSilentWave(string path)
-    {
-        const int sampleRate = 8000;
-        const int dataLength = sampleRate * 2 * 3;
-        using var writer = new BinaryWriter(File.Create(path), Encoding.ASCII);
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + dataLength);
-        writer.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
-        writer.Write(16);
-        writer.Write((short)1);
-        writer.Write((short)1);
-        writer.Write(sampleRate);
-        writer.Write(sampleRate * 2);
-        writer.Write((short)2);
-        writer.Write((short)16);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataLength);
-        writer.Write(new byte[dataLength]);
     }
 
     private static void PumpUntil(Func<bool> condition, TimeSpan timeout, string operation)

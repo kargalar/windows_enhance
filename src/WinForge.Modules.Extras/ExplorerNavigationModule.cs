@@ -48,12 +48,22 @@ public sealed class ExplorerNavigationModule : ITweakModule
         var settings = new List<SettingDescriptor>
         {
             Toggle("style-enabled", "Özel panel görünümü", true, "Görünüm"),
-            Text("font-family", "Yazı tipi", "Segoe UI", "Yazı"),
+            new()
+            {
+                Key = "font-family", Label = "Yazı tipi", Kind = SettingKind.Choice, Default = "Segoe UI", Section = "Yazı",
+                Options = System.Windows.Media.Fonts.SystemFontFamilies
+                    .Select(font => font.Source)
+                    .Append("Segoe UI")
+                    .Where(name => name.Length is > 0 and <= 31 && !name.Any(char.IsControl))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                    .ToArray()
+            },
             Number("font-size", "Yazı boyutu (DIP)", 13, 9, 32, "Yazı"),
             new() { Key = "font-weight", Label = "Yazı kalınlığı", Kind = SettingKind.Choice, Default = "400", Section = "Yazı", Options = ["300", "400", "500", "600", "700"], OptionLabels = new Dictionary<string, string> { ["300"] = "İnce", ["400"] = "Normal", ["500"] = "Orta", ["600"] = "Yarı kalın", ["700"] = "Kalın" } },
             Number("padding-horizontal", "Yatay iç boşluk (DIP)", 8, 0, 48, "Boşluklar"),
             Number("padding-vertical", "Dikey iç boşluk (DIP)", 5, 0, 24, "Boşluklar"),
-            Number("indent", "Alt klasör girintisi (DIP)", 18, 8, 64, "Boşluklar"),
+            Number("indent", "Alt klasör girintisi (DIP)", 18, 0, 64, "Boşluklar"),
             Number("row-margin", "Seçim kenar boşluğu (DIP)", 4, 0, 24, "Boşluklar"),
             Number("corner-radius", "Seçim köşe yarıçapı (DIP)", 6, 0, 24, "Boşluklar"),
             Toggle("show-icons", "Simgeleri göster", true, "Simgeler"),

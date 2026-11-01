@@ -118,7 +118,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         {
             // Never send text/Windows chords while the user's physical modifiers remain down.
             var deadline = Environment.TickCount64 + 3000;
-            while (Id != "media-shortcuts" && ActionInput.Modifiers != 0)
+            while (Id != "media-shortcuts" && !(Id == "desktop-shortcuts" && rule.Action is "left" or "right") && ActionInput.Modifiers != 0)
             {
                 if (Environment.TickCount64 >= deadline) return;
                 await Task.Delay(15, token);
@@ -146,8 +146,8 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
             case "close": ActionInput.Chord(0x12, 0x73); break;
             case "minimize": ShowWindow(Native.GetForegroundWindow(), 6); break;
             case "maximize": ShowWindow(Native.GetForegroundWindow(), IsZoomed(Native.GetForegroundWindow()) ? 9 : 3); break;
-            case "left": ActionInput.Chord(0x11, 0x5B, 0x25); break;
-            case "right": ActionInput.Chord(0x11, 0x5B, 0x27); break;
+            case "left": ActionInput.SwitchDesktop(0x25); break;
+            case "right": ActionInput.SwitchDesktop(0x27); break;
             case "create": ActionInput.Chord(0x11, 0x5B, 0x44); break;
             case "text": ActionInput.Text(ShortcutSecret.Unprotect(r.Value)); break;
             case "launch":

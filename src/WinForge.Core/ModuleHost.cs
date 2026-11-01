@@ -62,6 +62,7 @@ public sealed class ModuleHost
                 {
                     if (type.IsAbstract || type.IsInterface) continue;
                     if (!typeof(ITweakModule).IsAssignableFrom(type)) continue;
+                    if (typeof(IModuleComponent).IsAssignableFrom(type)) continue;
                     if (type.GetConstructor(Type.EmptyTypes) is null) continue;
 
                     var module = (ITweakModule)Activator.CreateInstance(type)!;

@@ -3,7 +3,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public sealed class MouseTweaksModule : ITweakModule
+public sealed class MouseTweaksModule : IModuleComponent
 {
     private const uint SpiGetMouse = 0x0003;
     private const uint SpiSetMouse = 0x0004;

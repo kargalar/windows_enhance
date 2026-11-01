@@ -8,7 +8,7 @@ using WinForge.Core;
 namespace WinForge.Modules.Extras;
 
 /// <summary>Customizes the actual Windows Start XAML tree using the shared shell diagnostics engine.</summary>
-public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule, IModulePanel
+public sealed class StartAppearanceModule : IModuleComponent, IAsyncTweakModule, IModulePanel
 {
     private const int MinimumIconSize = 16;
     private const int MaximumIconSize = 48;
@@ -290,6 +290,7 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule, IMo
         }
         if (settings.HideCategories)
         {
+            Add("StartMenu.StartHome #AllListHeading", ("Visibility", "Collapsed"));
             Add("StartMenu.CategoryControl", ("Visibility", "Collapsed"));
             Add("ItemsWrapGrid[ItemsControl=AllAppsGrid]", ("Visibility", "Collapsed"));
         }

@@ -22,6 +22,7 @@ internal static class Program
             }
             Check(ActionShortcut.Parse("ctrl+alt+MouseLeft") == new ActionShortcut(3, 0, "mouseleft"), "Mouse shortcut normalization");
             Check(ActionShortcut.Parse("Ctrl+Space") == new ActionShortcut(2, 32, ""), "Keyboard shortcut parsing");
+            DesktopChordChecks();
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
             Check(ActionShortcut.Parse("MouseX2") == new ActionShortcut(0, 0, "mousex2"), "Bare XButton2 accepted");
             DownloadsShortcutChecks();
@@ -158,6 +159,17 @@ internal static class Program
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void Save(ShortcutActionModule m, ShortcutActionRule rule) => Command(m, "save", new { rule });
+    private static void DesktopChordChecks()
+    {
+        static (ushort Key, uint Flags)[] Events(ushort arrow, params ushort[] held) =>
+            ActionInput.DesktopChord(arrow, held).Select(i => (i.Union.Keyboard.VirtualKey, i.Union.Keyboard.Flags)).ToArray();
+        Check(ActionShortcut.Parse("Win+MouseLeft") == new ActionShortcut(8, 0, "mouseleft"), "Windows left click parses as desktop shortcut");
+        Check(ActionShortcut.Parse("Win+MouseRight") == new ActionShortcut(8, 0, "mouseright"), "Windows right click parses as desktop shortcut");
+        Check(Events(0x25, 0x5B).SequenceEqual(new (ushort, uint)[] { (0xA2, 0), (0x25, 1), (0x25, 3), (0xA2, 2) }), "Desktop left chord preserves held left Windows key for repeated clicks");
+        Check(Events(0x27, 0x5C, 0xA3).SequenceEqual(new (ushort, uint)[] { (0x27, 1), (0x27, 3) }), "Desktop right chord preserves held right Windows and Control keys");
+        Check(Events(0x27, 0x5B, 0xA4, 0xA1).SequenceEqual(new (ushort, uint)[] { (0xA4, 2), (0xA1, 2), (0xA2, 0), (0x27, 1), (0x27, 3), (0xA2, 2), (0xA4, 0), (0xA1, 0) }), "Desktop chord releases and restores unrelated physical modifiers");
+        Check(Events(0x25).SequenceEqual(new (ushort, uint)[] { (0xA2, 0), (0x5B, 0), (0x25, 1), (0x25, 3), (0x5B, 2), (0xA2, 2) }), "Desktop chord supplies and releases missing modifiers");
+    }
     private static void PreparedActionsChecks()
     {
         var context = new Context(); var module = new ContextMenuModule(); module.Initialize(context);
@@ -225,6 +237,7 @@ internal static class Program
 
     private static void ContextMenuChecks()
     {
+        ContextMenuOwnershipChecks();
         Check(ContextMenuCatalog.Normalize("&Properties\tAlt+Enter") == "properties", "Menu labels normalize accelerators");
         Check(ContextMenuCatalog.BestName("as18w0fw0q8", null, "Readable extension", "Unknown") == "Readable extension", "Opaque handler keys use descriptive names");
         Check(ContextMenuCatalog.BestName("ignored", "@shell32.dll,-21770", null, "Unknown").Length > 0, "Indirect shell resources resolve to display names");
@@ -251,6 +264,35 @@ internal static class Program
         properties = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:properties");
         Check(properties.GetProperty("visible").GetBoolean() && properties.GetProperty("group").GetString() == "", "Entry can return to original menu");
         Check(!module.IsActive, "Menu tests leave real Explorer configuration untouched");
+    }
+    private static void ContextMenuOwnershipChecks()
+    {
+        var root = @"Software\WinForge.Tests\ContextMenuOwnership\" + Guid.NewGuid().ToString("N");
+        var flags = System.Reflection.BindingFlags.NonPublic;
+        var apply = typeof(ContextMenuModule).GetMethod("ApplyCustomItems", flags | System.Reflection.BindingFlags.Instance)!;
+        var remove = typeof(ContextMenuModule).GetMethod("RemoveCustomItems", flags | System.Reflection.BindingFlags.Static)!;
+        var preserved = new[] { "WinForge.FileLocksmith", "WinForge.Peek", "WinForge.PowerRename", "WinForge.Prepared.desktop-shortcut", "OtherApp" };
+        try
+        {
+            using var shell = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(root);
+            foreach (var name in preserved.Append("WinForge.0").Append("WinForge.12"))
+            {
+                using var command = shell.CreateSubKey(name + @"\command");
+                command.SetValue(null, "original-command");
+            }
+            apply.Invoke(new ContextMenuModule(), [root, "Test item|notepad.exe"]);
+            Check(!shell.GetSubKeyNames().Contains("WinForge.12") && shell.GetSubKeyNames().Contains("WinForge.0"),
+                "Custom menu apply replaces previous numbered items");
+            remove.Invoke(null, [root]);
+            Check(!shell.GetSubKeyNames().Contains("WinForge.0"), "Custom menu cleanup removes its numbered items");
+            foreach (var name in preserved)
+            {
+                using var command = shell.OpenSubKey(name + @"\command");
+                Check(command?.GetValue(null) as string == "original-command",
+                    "Custom menu apply and cleanup preserve feature registration: " + name);
+            }
+        }
+        finally { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(root, false); }
     }
     private static void TranslationChecks()
     {
