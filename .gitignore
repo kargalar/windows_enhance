@@ -14,3 +14,4 @@ artifacts/
 /.upstream/
 /src/WinForge.Modules.FileTools/Resources/models/
 /work/shutdown-build --no-restore/
+/native/WinForge.Whisper/runtime/

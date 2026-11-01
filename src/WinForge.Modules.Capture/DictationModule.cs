@@ -188,7 +188,7 @@ public sealed class DictationModule : CaptureModuleBase
             var path = Path.Combine(currentStore.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
             if (!File.Exists(path)) throw new FileNotFoundException("Model bulunamadı. Modelleri yönet bölümünden ekleyin.", path);
             ShowStatus("Konuşma çözümleniyor… · Esc: iptal");
-            var config = new WorkerConfiguration(path, Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu"));
+            var config = new DictationConfiguration(path, Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu"));
             var text = await client.TranscribeAsync(samples, config, token); token.ThrowIfCancellationRequested();
             if (text.Length == 0) { ShowStatus("Metin bulunamadı."); return; }
             await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);

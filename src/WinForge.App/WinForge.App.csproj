@@ -75,7 +75,7 @@
       <ModuleProjects Include="@(ProjectReference)" Condition="'%(ProjectReference.ReferenceOutputAssembly)' == 'false'" />
       <ModuleProjects Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />
       <ModuleProjects Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
-      <RetiredFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
+      <RetiredFiles Include="$(OutDir)dictation\WinForge.Dictation.Worker.*;$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
     </ItemGroup>
     <MSBuild Projects="@(ModuleProjects)" Targets="GetTargetPath" BuildInParallel="true" Properties="Configuration=$(Configuration);Platform=$(Platform)" RemoveProperties="RuntimeIdentifier;SelfContained">
       <Output TaskParameter="TargetOutputs" ItemName="ModuleFiles" />
@@ -86,7 +86,7 @@
     <Delete Files="@(RetiredFiles)" />
     <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
     <ItemGroup>
-      <DictationFiles Include="$(MSBuildProjectDirectory)\..\WinForge.Dictation.Worker\bin\$(Configuration)\net10.0\**\*" />
+      <DictationFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\runtime\$(Configuration)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(DictationFiles)" DestinationFiles="@(DictationFiles->'$(OutDir)dictation\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
@@ -110,7 +110,7 @@
 
   <Target Name="GetModuleFiles" DependsOnTargets="CopyModules" Returns="@(ModuleFiles)" />
 
-  <Target Name="PrepareDictationEngine" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\WhisperBridge.cpp;$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\CMakeLists.txt;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1" Outputs="$(MSBuildProjectDirectory)\..\WinForge.Dictation.Worker\bin\$(Configuration)\net10.0\cpu\WinForge.Whisper.dll">
+  <Target Name="PrepareDictationEngine" BeforeTargets="CopyModules" Condition="'$(DesignTimeBuild)' != 'true'" Inputs="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\WhisperBridge.cpp;$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\CMakeLists.txt;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1" Outputs="$(MSBuildProjectDirectory)\..\..\native\WinForge.Whisper\runtime\$(Configuration)\cpu\WinForge.Whisper.dll">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-dictation.ps1&quot; -Configuration &quot;$(Configuration)&quot;" />
   </Target>
 

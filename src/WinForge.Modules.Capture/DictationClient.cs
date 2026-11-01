@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.IO.Pipes;
 using WinForge.Dictation;
 
 namespace WinForge.Modules.Capture;
@@ -10,80 +8,87 @@ internal static class DictationDefaults
     public const string Hotkey = "Shift+Space";
 }
 
-internal sealed class DictationClient(string? workerDirectory = null) : IDisposable
+// Dispose resets a reusable module session. Native resources are freed only after inference returns.
+internal sealed class DictationClient(string? engineDirectory = null,
+    Func<DictationConfiguration, IDictationEngine>? factory = null) : IDisposable
 {
-    private Process? process;
-    private NamedPipeServerStream? pipe;
-    private WorkerConfiguration? loaded;
-    private WorkerConfiguration? fallbackConfiguration;
+    private readonly object state = new();
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private CancellationTokenSource lifetime = new();
+    private IDictationEngine? engine;
+    private DictationConfiguration? loaded, fallbackConfiguration;
     public string Engine { get; private set; } = "";
-    internal bool IsRunning => process is { HasExited: false };
-    private async Task PrepareAsync(WorkerConfiguration configuration, CancellationToken token)
+    internal bool IsRunning => engine is not null;
+
+    public async Task<string> TranscribeAsync(float[] samples, DictationConfiguration configuration, CancellationToken token)
     {
-        if (configuration == loaded && process is { HasExited: false } && pipe is { IsConnected: true }) return;
-        Dispose();
-        var worker = Path.Combine(workerDirectory ?? Path.Combine(AppContext.BaseDirectory, "dictation"), "WinForge.Dictation.Worker.exe");
-        if (!File.Exists(worker)) throw new FileNotFoundException("Dikte worker bulunamadı. build-dictation.ps1 ile hazırlayın.", worker);
-        var backend = configuration.Gpu ? "cuda" : "cpu";
-        if (!File.Exists(Path.Combine(Path.GetDirectoryName(worker)!, backend, "WinForge.Whisper.dll"))) throw new FileNotFoundException(backend + " Whisper motoru bulunamadı.");
-        var name = "WinForge-Dictation-" + Guid.NewGuid().ToString("N");
-        pipe = new(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-        var start = new ProcessStartInfo(worker) { CreateNoWindow = true, UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(worker)! };
-        foreach (var argument in new[] { name, Environment.ProcessId.ToString(), backend }) start.ArgumentList.Add(argument);
-        try
+        if (samples.Length == 0 || samples.Length > DictationAudio.SampleRate * DictationAudio.MaximumSeconds)
+            throw new ArgumentException("Geçersiz kayıt uzunluğu.");
+        CancellationTokenSource operation;
+        lock (state) operation = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
+        using (operation)
         {
-            process = Process.Start(start) ?? throw new InvalidOperationException("Dikte worker başlatılamadı.");
-            using var connection = CancellationTokenSource.CreateLinkedTokenSource(token); connection.CancelAfter(TimeSpan.FromSeconds(15));
-            await pipe.WaitForConnectionAsync(connection.Token);
-            await DictationProtocol.WriteAsync(pipe, configuration, token);
-            using var load = CancellationTokenSource.CreateLinkedTokenSource(token); load.CancelAfter(TimeSpan.FromMinutes(3));
-            var reply = await DictationProtocol.ReadAsync<WorkerReply>(pipe, load.Token);
-            if (!reply.Success) throw new InvalidOperationException(reply.Error);
-            loaded = configuration; Engine = reply.Engine;
-        }
-        catch (Exception) when (token.IsCancellationRequested) { Dispose(); throw new OperationCanceledException(token); }
-        catch { Dispose(); throw; }
-    }
-    public async Task<string> TranscribeAsync(float[] samples, WorkerConfiguration configuration, CancellationToken token)
-    {
-        if (samples.Length == 0 || samples.Length > DictationProtocol.SampleRate * DictationProtocol.MaximumSeconds) throw new ArgumentException("Geçersiz kayıt uzunluğu.");
-        try
-        {
-            if (configuration == fallbackConfiguration)
+            operation.CancelAfter(TimeSpan.FromMinutes(5));
+            var cancellation = operation.Token;
+            await gate.WaitAsync(cancellation).ConfigureAwait(false);
+            try
             {
-                var text = await RunAsync(samples, configuration with { Gpu = false }, token); Engine = "CPU (GPU yerine)"; return text;
+                return await Task.Run(() =>
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    if (configuration == fallbackConfiguration)
+                        return Run(samples, configuration with { Gpu = false }, cancellation, fallback: true);
+                    try { return Run(samples, configuration, cancellation); }
+                    catch (Exception) when (configuration.Gpu && !cancellation.IsCancellationRequested)
+                    {
+                        ReleaseEngine();
+                        var text = Run(samples, configuration with { Gpu = false }, cancellation, fallback: true);
+                        fallbackConfiguration = configuration;
+                        return text;
+                    }
+                }, cancellation).ConfigureAwait(false);
             }
-            return await RunAsync(samples, configuration, token);
+            catch { ReleaseEngine(); throw; }
+            finally
+            {
+                lock (state)
+                {
+                    if (cancellation.IsCancellationRequested) { ReleaseEngine(); fallbackConfiguration = null; }
+                    gate.Release();
+                }
+            }
         }
-        catch (Exception) when (token.IsCancellationRequested) { Dispose(); throw new OperationCanceledException(token); }
-        catch (Exception) when (configuration.Gpu && !token.IsCancellationRequested)
-        {
-            Dispose(); var text = await RunAsync(samples, configuration with { Gpu = false }, token);
-            fallbackConfiguration = configuration; Engine = "CPU (GPU yerine)"; return text;
-        }
-        finally { if (token.IsCancellationRequested) Dispose(); }
     }
-    private async Task<string> RunAsync(float[] samples, WorkerConfiguration configuration, CancellationToken token)
+
+    private string Run(float[] samples, DictationConfiguration configuration, CancellationToken token, bool fallback = false)
     {
-        await PrepareAsync(configuration, token);
-        var bytes = new byte[samples.Length * sizeof(float)]; Buffer.BlockCopy(samples, 0, bytes, 0, bytes.Length);
-        try
+        token.ThrowIfCancellationRequested();
+        if (loaded != configuration || engine is null)
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token); timeout.CancelAfter(TimeSpan.FromMinutes(5));
-            await DictationProtocol.WriteBytesAsync(pipe!, bytes, DictationProtocol.MaximumAudioBytes, timeout.Token);
-            var reply = await DictationProtocol.ReadAsync<WorkerReply>(pipe!, timeout.Token);
-            if (!reply.Success) throw new InvalidOperationException(reply.Error); return reply.Text;
+            ReleaseEngine();
+            engine = factory is null ? new NativeDictationEngine(engineDirectory, configuration) : factory(configuration);
+            loaded = configuration;
         }
-        catch { Dispose(); throw; }
-        finally { Array.Clear(bytes); }
+        token.ThrowIfCancellationRequested();
+        var text = engine.Transcribe(samples, configuration, token);
+        token.ThrowIfCancellationRequested();
+        Engine = fallback ? "CPU (GPU yerine)" : configuration.Gpu ? "CUDA" : "CPU";
+        return text;
     }
+
+    private void ReleaseEngine()
+    {
+        engine?.Dispose(); engine = null; loaded = null; Engine = "";
+    }
+
     public void Dispose()
     {
-        loaded = null; pipe?.Dispose(); pipe = null;
-        if (process is not null)
+        lock (state)
         {
-            try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { }
-            process.Dispose(); process = null;
+            lifetime.Cancel(); lifetime.Dispose(); lifetime = new();
+            if (!gate.Wait(0)) return;
+            try { ReleaseEngine(); fallbackConfiguration = null; }
+            finally { gate.Release(); }
         }
     }
 }

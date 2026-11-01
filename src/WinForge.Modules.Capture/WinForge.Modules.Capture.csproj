@@ -10,8 +10,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WinForge.CaptureTests" />
     <Content Include="../../third_party/Whisper/*" Link="licenses/Whisper/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <ProjectReference Include="../WinForge.Dictation.Worker/WinForge.Dictation.Worker.csproj" ReferenceOutputAssembly="false" />
-    <Compile Include="../WinForge.Dictation.Worker/Protocol.cs" Link="Dictation/Protocol.cs" />
     <Using Include="System.IO" />
     <ProjectReference Include="../WinForge.Core/WinForge.Core.csproj" Private="false" />
     <ProjectReference Include="../WinForge.History/WinForge.History.csproj" />

@@ -57,13 +57,19 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         Context = context;
         if (Id == "monitor-shortcuts") MonitorLayouts.ErrorHandler = ex => context.Notify("Ekran düzeni geri alınamadı: " + ex.Message);
         _rules = JsonSerializer.Deserialize<List<ShortcutActionRule>>(context.Settings.GetString("rules", "null"), Json) ?? Defaults.ToList();
-        if (Id == "media-shortcuts" && !context.Settings.GetBool("mouse-volume-down-5-added"))
+        var defaultRuleId = Id switch
         {
-            var shortcut = Defaults.First(r => r.Id == "mouse-volume-down-5");
-            if (!_rules.Any(r => r.Id == shortcut.Id))
+            "media-shortcuts" => "mouse-volume-down-5",
+            "program-shortcuts" => "mouse-downloads",
+            _ => null
+        };
+        if (defaultRuleId is not null && !context.Settings.GetBool(defaultRuleId + "-added"))
+        {
+            var shortcut = Defaults.First(r => r.Id == defaultRuleId);
+            if (_rules.Count < 64 && !_rules.Any(r => r.Id == shortcut.Id))
                 _rules.Add(shortcut with { Enabled = !_rules.Any(r => r.Enabled && ActionShortcut.Parse(r.Shortcut) == ActionShortcut.Parse(shortcut.Shortcut)) });
             context.Settings.Set("rules", JsonSerializer.Serialize(_rules, Json));
-            context.Settings.Set("mouse-volume-down-5-added", true);
+            context.Settings.Set(defaultRuleId + "-added", true);
         }
         Validate(_rules);
         CaptureChanged += CaptureUpdate;
@@ -145,6 +151,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
             case "create": ActionInput.Chord(0x11, 0x5B, 0x44); break;
             case "text": ActionInput.Text(ShortcutSecret.Unprotect(r.Value)); break;
             case "launch":
+            case "downloads":
             case "explorer": Process.Start(CreateLaunchInfo(r)); break;
             case "profile":
                 MonitorLayouts.Apply(r.Value, DisplayChanged);
@@ -154,6 +161,12 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
     }
     internal static ProcessStartInfo CreateLaunchInfo(ShortcutActionRule rule)
     {
+        if (rule.Action == "downloads")
+        {
+            var info = new ProcessStartInfo(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")) { UseShellExecute = true };
+            info.ArgumentList.Add("shell:Downloads");
+            return info;
+        }
         var target = Environment.ExpandEnvironmentVariables(rule.Value.Trim().Trim('"'));
         if (rule.Action == "explorer" || System.IO.Directory.Exists(target))
         {
@@ -327,7 +340,8 @@ public sealed class ProgramShortcutsModule : ShortcutActionModule
 {
     public override string Id => "program-shortcuts";
     public override string Name => "Program Açma Kısayolları";
-    protected override IReadOnlyDictionary<string, string> Actions => new Dictionary<string, string> { ["launch"] = "Program / dosya / klasör aç", ["explorer"] = "Gezgin’de klasör aç" };
+    protected override IReadOnlyDictionary<string, string> Actions => new Dictionary<string, string> { ["launch"] = "Program / dosya / klasör aç", ["explorer"] = "Gezgin’de klasör aç", ["downloads"] = "İndirilenler klasörünü aç" };
+    protected override IEnumerable<ShortcutActionRule> Defaults => [new("mouse-downloads", "Mouse XButton2 · İndirilenler klasörünü aç", true, "MouseX2", "downloads")];
 }
 public sealed class MonitorShortcutsModule : ShortcutActionModule
 {

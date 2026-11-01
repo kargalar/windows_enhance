@@ -1,13 +1,10 @@
 .\scripts\build.ps1 -Configuration Release -Run
 <!--  -->
+alt+w ile programlar kapanmıyor.
 
-modüller ayrı alt programlar olarak çalışıyor. galiba öyle olanlar var. ben böyle olamsını istememiştim alsında. galiba böyle olmasını sebebi ben şuanki sistemle en iyi şekilde yapılmayacaksa gibi bir şeysöylediğim için oldu. bunu düzeltebilirmiyiz. best practices ne ise en iyi ve optimize ve düzgün yöntem ne ise öyle olacak şekilde güncelle.
+alt+tab veya win+tab gibi kısayllor eskiden anınıda tetiklemiş çaılıyordu. windorge açıkken gedikmeli tetikelniyorlar
 
 <!-- Check -->
-
-taskbardan mouse scroll ile ses değişince farklı bir ses bilgisi continer ggörünmesin kranda. ses seviyesi değişince görünen görünmeli her zaman. ayrıca oradaki slider ile ses seviyesini değiştirebilmeyliyiz
-
-Fluent Medya Flyout da bir sıkıntı var düzgünce gösterilmiyor
 
 internet kulanım değerleri gtaşlarda österilirken arkaplan olamasın ayrıca sadece text olarak göster. yan yana ve alat alta gösterim için seçenek koy
 

@@ -32,14 +32,19 @@ $generator = switch ($vsMajor) {
 $backend = if ($Cuda) { 'cuda' } else { 'cpu' }
 $build = Join-Path $repositoryRoot "native/WinForge.Whisper/bin/$backend"
 $gpuOption = if ($Cuda) { 'ON' } else { 'OFF' }
-& $cmake -S (Join-Path $repositoryRoot 'native/WinForge.Whisper') -B $build -G $generator -A x64 "-DWHISPER_SOURCE=$source" "-DGGML_CUDA=$gpuOption" '-DGGML_NATIVE=OFF' '-DGGML_CCACHE=OFF' '-DCMAKE_WARN_DEPRECATED=OFF' "-DCMAKE_CUDA_ARCHITECTURES=$CudaArchitectures" '-DCMAKE_CUDA_FLAGS=-diag-suppress=177'
+$configureArguments = @()
+$cachePath = Join-Path $build 'CMakeCache.txt'
+if (Test-Path -LiteralPath $cachePath) {
+    $sourceDirectory = (Join-Path $repositoryRoot 'native/WinForge.Whisper').Replace('\', '/')
+    $cachedHome = Get-Content -LiteralPath $cachePath | Where-Object { $_ -like 'CMAKE_HOME_DIRECTORY:INTERNAL=*' } | Select-Object -First 1
+    if ($cachedHome -and $cachedHome.Substring('CMAKE_HOME_DIRECTORY:INTERNAL='.Length) -ne $sourceDirectory) { $configureArguments += '--fresh' }
+}
+& $cmake @configureArguments -S (Join-Path $repositoryRoot 'native/WinForge.Whisper') -B $build -G $generator -A x64 "-DWHISPER_SOURCE=$source" "-DGGML_CUDA=$gpuOption" '-DGGML_NATIVE=OFF' '-DGGML_CCACHE=OFF' '-DCMAKE_WARN_DEPRECATED=OFF' "-DCMAKE_CUDA_ARCHITECTURES=$CudaArchitectures" '-DCMAKE_CUDA_FLAGS=-diag-suppress=177'
 if ($LASTEXITCODE -ne 0) { throw 'Whisper yapılandırılamadı.' }
 $buildLog = Join-Path $build 'build.log'
 & $cmake --build $build --config $Configuration --parallel 4 *> $buildLog
 if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $buildLog -Tail 40; throw 'Whisper derlenemedi.' }
-dotnet build (Join-Path $repositoryRoot 'src/WinForge.Dictation.Worker/WinForge.Dictation.Worker.csproj') -c $Configuration
-if ($LASTEXITCODE -ne 0) { throw 'Dikte worker derlenemedi.' }
-$destination = Join-Path $repositoryRoot "src/WinForge.Dictation.Worker/bin/$Configuration/net10.0/$backend"
+$destination = Join-Path $repositoryRoot "native/WinForge.Whisper/runtime/$Configuration/$backend"
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $build "$Configuration/WinForge.Whisper.dll") -Destination $destination
 if ($Cuda) {

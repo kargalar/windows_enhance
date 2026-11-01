@@ -1,3 +1,5 @@
+**Modül mimarisi:** Özellikler ana WinForge sürecinde DLL modülleri olarak çalışır. Dikte motoru da artık uygulama içindedir; ayrı worker EXE ve named pipe kaldırıldı. Kabuk bağlantısı, PDF ve medya araçlarının süreç sınırları ve doğrulama bilgileri: [Çalışma mimarisi](docs/RUNTIME_ARCHITECTURE.md).
+
 **Panel ve kısayol güncellemesi:** Açılır paneller farenin bulunduğu ekranda açılır. Ayarlar ve kısayol kartları otomatik kaydedilir. Medya Kısayolları’na **MouseX1 → sesi 5 azalt**, **Tuş Kombinasyonu Çevirici** modülüne **Ctrl+D → Alt+W** örneği eklendi. Otomasyon kartlarında isteğe bağlı odak exe’si; program kısayollarında Gezgin klasör yolu desteği bulunur. [Kullanım ve testler](docs/SHORTCUT_ACTIONS.md).
 
 # WinForge

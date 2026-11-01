@@ -10,14 +10,14 @@ public sealed class SpeechBuffer
     private readonly object gate = new();
     private readonly List<float> samples = [];
     private double position;
-    public bool Full { get { lock (gate) return samples.Count >= DictationProtocol.SampleRate * DictationProtocol.MaximumSeconds; } }
+    public bool Full { get { lock (gate) return samples.Count >= DictationAudio.SampleRate * DictationAudio.MaximumSeconds; } }
     public void Append(ReadOnlySpan<float> packet, int sampleRate)
     {
         if (sampleRate < 8000 || sampleRate > 384000) throw new ArgumentOutOfRangeException(nameof(sampleRate));
         lock (gate)
         {
             if (packet.IsEmpty || Full) return;
-            var step = (double)sampleRate / DictationProtocol.SampleRate;
+            var step = (double)sampleRate / DictationAudio.SampleRate;
             while (position < packet.Length && !Full)
             {
                 var left = (int)position; var right = Math.Min(left + 1, packet.Length - 1);
@@ -35,7 +35,7 @@ public sealed class SpeechBuffer
     {
         lock (gate) { CollectionsMarshal.AsSpan(samples).Clear(); samples.Clear(); position = 0; }
     }
-    public static bool ContainsSpeech(float[] audio) => audio.Length >= DictationProtocol.SampleRate / 4 &&
+    public static bool ContainsSpeech(float[] audio) => audio.Length >= DictationAudio.SampleRate / 4 &&
         Math.Sqrt(audio.Sum(sample => (double)sample * sample) / audio.Length) >= SilenceThreshold;
 }
 

@@ -88,13 +88,16 @@ dotnet publish src/WinForge.App/WinForge.App.csproj -c Release -p:Platform=x64 -
 
 whisper.cpp v1.8.3, revision `2eeeba56e9edd762b4b38467bab96c2517163158` kullanılır.
 Kaynaklar `.upstream` altında; WinForge C ABI köprüsü `native/WinForge.Whisper` altındadır.
-Yeni worker kullanıcıya özel named pipe kullanır; üst süreç bitince çıkar. İptal ve modül
-kapanışı worker'ı sonlandırır. Eski RecallClone/Whisper çalıştırılabilirleri çağrılmaz.
+Dikte motoru WinForge sürecine DLL olarak yüklenir; ayrı worker veya named pipe yoktur.
+Çözümleme arka planda seri çalışır ve aynı yapılandırma için model tekrar kullanılır.
+İptal Whisper callback'leriyle iletilir; model ve DLL yerel çağrı döndükten sonra bırakılır.
+Model yüklemesinin ortasında zorla sonlandırma yapılmaz. GPU kullanılamıyorsa CPU'ya geçilir.
+Eski RecallClone/Whisper çalıştırılabilirleri çağrılmaz.
 
 FFmpeg/FFprobe mevcut medya araç deposu ve PATH üzerinden ortak kullanılır. Yakalama araç
 kurulumu yalnız bu iki aracı ister; yt-dlp/Deno indirmez. Mevcut indirme sürüm/özet denetimleri
 korunur. SQLite NuGet istisnası yalnız `WinForge.History` projesi içindir.
-SQLite çalışma kitaplıkları, worker, CPU motoru ve hazırlanmışsa CUDA motoru publish paketine
+SQLite çalışma kitaplıkları, CPU motoru ve hazırlanmışsa CUDA motoru publish paketine
 dahil edilir. Whisper/OpenAI lisansları ve CUDA dağıtım bildirimi paketlenir.
 
 ## Doğrulama
@@ -108,14 +111,14 @@ dotnet run --project tests/WinForge.CaptureTests -- --scrolling
 dotnet run --project tests/WinForge.CaptureTests -- --render
 dotnet run --project tests/WinForge.CaptureTests -- --discovery artifacts/WinForge-capture/modules
 dotnet run --project tests/WinForge.CaptureTests -- --audit
-dotnet run --project tests/WinForge.CaptureTests -- --real-worker artifacts/WinForge-capture/dictation "$env:LOCALAPPDATA/WinForge/History/models" gpu
+dotnet run --project tests/WinForge.CaptureTests -- --real-engine artifacts/WinForge-capture/dictation "$env:LOCALAPPDATA/WinForge/History/models" gpu
 ```
 
 - 52 otomatik geçmiş/aktarım/ses/kısayol/yaşam döngüsü kontrolü geçti.
 - Ayrı test sürecindeki düzenlenebilir alana Türkçe metnin tam yazılması, alan değişince
   yazmama, salt okunur/parola alanlarını reddetme kontrolleri geçti.
 - Gerçek Türkçe örnek, Windows'un yerel Türkçe ses senteziyle oluşturuldu; CPU ve CUDA ile
-  Turbo diktesi ve Large İngilizce çevirisi doğrulandı. Worker iptali ve GPU motoru yokken CPU'ya geçiş ayrıca sınandı.
+  Turbo diktesi ve Large İngilizce çevirisi doğrulandı. Dikte iptali ve GPU motoru yokken CPU'ya geçiş ayrıca sınandı.
 - MP4 sistem sesi, MP4 mikrofon+sistem sesi ve GIF çıktıları; çözünürlük, ses parçası ve
   duraklatma süresinin hariç tutulması üzerinden doğrulandı.
 - Mevcut pano kütüphanesi testleri (109), yerel pano/hedef alan testleri (94) ve paketli

@@ -23,7 +23,7 @@ internal static class Program
             if (args.Length == 1 && args[0] == "--text-output") { TextOutputChecks.RunAsync(Check).GetAwaiter().GetResult(); return 0; }
             if (args.Length == 3 && args[0] == "--import") return Import(args[1], args[2]).GetAwaiter().GetResult();
             if (args.Length == 2 && args[0] == "--models") { CopyModels(args[1]).GetAwaiter().GetResult(); return 0; }
-            if (args.Length == 4 && args[0] == "--real-worker") { RealWorker(args[1], args[2], args[3] != "cpu", args[3] == "fallback", args[3] == "translate").GetAwaiter().GetResult(); return 0; }
+            if (args.Length == 4 && args[0] == "--real-engine") { RealEngine(args[1], args[2], args[3] != "cpu", args[3] == "fallback", args[3] == "translate").GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--recording") { Recording().GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--render") { Render(); return 0; }
             if (args.Length == 1 && args[0] == "--editor-ui") { Render(editorOnly: true); return 0; }
@@ -32,7 +32,7 @@ internal static class Program
             if (args.Length == 1 && args[0] == "--audit") { Audit(); return 0; }
             if (args.Length == 1 && args[0] == "--scrolling") return Scrolling();
             var root = Path.Combine(Path.GetTempPath(), "WinForge-CaptureTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-            try { PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); Protocol().GetAwaiter().GetResult(); }
+            try { PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
             Console.WriteLine($"PASS: {checks} capture/history checks."); return 0;
         }
@@ -175,13 +175,6 @@ internal static class Program
             CaptureServices.Load(importedStore.ResolveMedia(importedMedia)).PixelWidth == width,
             "WebP capture saves and reloads from a long imported-history path");
     }
-    private static async Task Protocol()
-    {
-        using var stream = new MemoryStream(); await WinForge.Dictation.DictationProtocol.WriteAsync(stream, new WinForge.Dictation.WorkerReply(true, "Türkçe", "CPU"), default); stream.Position = 0;
-        var reply = await WinForge.Dictation.DictationProtocol.ReadAsync<WinForge.Dictation.WorkerReply>(stream, default); Check(reply.Text == "Türkçe", "Worker protocol preserves Unicode");
-        using var invalid = new MemoryStream([255, 255, 255, 127]);
-        try { await WinForge.Dictation.DictationProtocol.ReadBytesAsync(invalid, 1024, default); throw new Exception("Oversized frame accepted"); } catch (InvalidDataException) { checks++; }
-    }
     private static void Speech()
     {
         Check(typeof(WasapiLoopbackCapture).GetConstructor(Type.EmptyTypes) is not null, "Existing loopback capture constructor remains binary compatible");
@@ -223,27 +216,32 @@ internal static class Program
             await WhisperModels.CopyAsync(source, directory, name, default); Console.WriteLine("Verified and copied: " + name);
         }
     }
-    private static async Task RealWorker(string worker, string modelDirectory, bool gpu, bool fallback = false, bool translate = false)
+    private static async Task RealEngine(string engineDirectory, string modelDirectory, bool gpu, bool fallback = false, bool translate = false)
     {
         var root = Path.GetFullPath("artifacts/capture-verification"); Directory.CreateDirectory(root);
-        var wav = Path.Combine(root, "turkish.wav"); var raw = Path.Combine(root, "turkish.f32");
+        var wav = Path.Combine(root, "turkish.wav"); var raw = Path.Combine(root, "turkish.f32"); var synthesized = false;
         using (var synth = new Windows.Media.SpeechSynthesis.SpeechSynthesizer())
         {
-            synth.Voice = Windows.Media.SpeechSynthesis.SpeechSynthesizer.AllVoices.First(v => v.Language.StartsWith("tr", StringComparison.OrdinalIgnoreCase));
+            var voice = Windows.Media.SpeechSynthesis.SpeechSynthesizer.AllVoices.FirstOrDefault(v => v.Language.StartsWith("tr", StringComparison.OrdinalIgnoreCase));
+            if (voice is not null)
+            {
+            synth.Voice = voice; synthesized = true;
             using var speech = await synth.SynthesizeTextToStreamAsync("Merhaba dünya. İstanbul güzel bir şehir. Bu bir ekran geçmişi ve sesli yazma denemesidir.");
             await using var output = File.Create(wav); await speech.AsStreamForRead().CopyToAsync(output);
+            }
+            else if (!File.Exists(wav)) throw new InvalidOperationException("Install a Turkish speech voice or provide artifacts/capture-verification/turkish.wav.");
         }
-        await WinForge.FileTools.Engine.ProcessRunner.RunAsync(SharedMediaTools.Ffmpeg, ["-y", "-v", "error", "-i", wav, "-ar", "16000", "-ac", "1", "-f", "f32le", raw]);
+        if (synthesized || !File.Exists(raw)) await WinForge.FileTools.Engine.ProcessRunner.RunAsync(SharedMediaTools.Ffmpeg, ["-y", "-v", "error", "-i", wav, "-ar", "16000", "-ac", "1", "-f", "f32le", raw]);
         var bytes = await File.ReadAllBytesAsync(raw); var samples = new float[bytes.Length / 4]; Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
         if (fallback)
         {
-            var isolated = Path.Combine(root, "cpu-only-worker"); Directory.CreateDirectory(Path.Combine(isolated, "cpu"));
-            foreach (var file in Directory.EnumerateFiles(worker)) File.Copy(file, Path.Combine(isolated, Path.GetFileName(file)), true);
-            File.Copy(Path.Combine(worker, "cpu", "WinForge.Whisper.dll"), Path.Combine(isolated, "cpu", "WinForge.Whisper.dll"), true);
-            worker = isolated;
+            var isolated = Path.Combine(root, "cpu-only-engine"); Directory.CreateDirectory(Path.Combine(isolated, "cpu"));
+            foreach (var file in Directory.EnumerateFiles(engineDirectory)) File.Copy(file, Path.Combine(isolated, Path.GetFileName(file)), true);
+            File.Copy(Path.Combine(engineDirectory, "cpu", "WinForge.Whisper.dll"), Path.Combine(isolated, "cpu", "WinForge.Whisper.dll"), true);
+            engineDirectory = isolated;
         }
-        using var client = new DictationClient(Path.GetFullPath(worker));
-        var configuration = new WinForge.Dictation.WorkerConfiguration(Path.Combine(modelDirectory, translate ? "ggml-large-v3.bin" : "ggml-large-v3-turbo.bin"), "tr", translate, gpu);
+        using var client = new DictationClient(Path.GetFullPath(engineDirectory));
+        var configuration = new WinForge.Dictation.DictationConfiguration(Path.Combine(modelDirectory, translate ? "ggml-large-v3.bin" : "ggml-large-v3-turbo.bin"), "tr", translate, gpu);
         var result = await client.TranscribeAsync(samples, configuration, default);
         Check(translate ? result.Contains("world", StringComparison.OrdinalIgnoreCase) && result.Contains("city", StringComparison.OrdinalIgnoreCase) :
             result.Contains("İstanbul", StringComparison.OrdinalIgnoreCase) && result.Contains("deneme", StringComparison.OrdinalIgnoreCase),
@@ -253,7 +251,7 @@ internal static class Program
         using (var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(10)))
         {
             try { await client.TranscribeAsync(samples, configuration, cancel.Token); throw new InvalidOperationException("Cancellation ignored."); }
-            catch (OperationCanceledException) { Check(!client.IsRunning, "Cancellation terminates the owned worker"); }
+            catch (OperationCanceledException) { Check(!client.IsRunning, "Cancellation releases the in-process model"); }
         }
         Array.Clear(samples); Array.Clear(bytes);
     }

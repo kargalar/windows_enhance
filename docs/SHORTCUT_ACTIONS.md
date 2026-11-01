@@ -29,3 +29,5 @@ Doğrulama: `dotnet run --project tests/WinForge.ShortcutActionTests -c Release 
 Ses, parlaklık, kilit tuşu, bildirim ve açılır araç panelleri her açılışta farenin bulunduğu ekranın çalışma alanına yerleşir. Ekran ölçeği ve negatif ekran koordinatları hesaba katılır. Parlaklık göstergesinin konumu ayarlanan ekranı değiştirmez.
 
 Ek doğrulama: `npm run test:shortcuts` (UI klasöründe), `dotnet run --project tests/WinForge.AutomationTests -c Release -p:Platform=x64` ve derlenmiş `WinForge.RegressionTests.exe --panel-placement-only`. Son test bağlı ekranlar arasında imleci geçici olarak taşır ve sonunda önceki konuma geri getirir.
+
+**Program Açma Kısayolları** bölümündeki etkin **Mouse XButton2 · İndirilenler klasörünü aç** kartı, XButton2 ile Windows İndirilenler klasörünü açar. Klasör taşınmışsa yeni konumu izler; yol veya argüman gerekmez. Mevcut ayarlara bir kez eklenir; aynı tuş zaten atanmışsa yeni kart kapalı eklenir. Kartı kapatmak, düzenlemek veya silmek sonraki açılışlarda korunur.

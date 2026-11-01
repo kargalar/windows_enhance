@@ -24,6 +24,7 @@ internal static class Program
             Check(ActionShortcut.Parse("Ctrl+Space") == new ActionShortcut(2, 32, ""), "Keyboard shortcut parsing");
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
             Check(ActionShortcut.Parse("MouseX2") == new ActionShortcut(0, 0, "mousex2"), "Bare XButton2 accepted");
+            DownloadsShortcutChecks();
             TranslationChecks();
             NativeRecordingChecks();
             TextExpansionChecks();
@@ -304,6 +305,31 @@ internal static class Program
         Check(Panel(reload).GetProperty("rules")[0].GetProperty("value").GetString() == "Alt+W", "Translator rule survives reload");
         Reject(() => Save(reload, new("example", "Example", true, "Ctrl+D", "translate", "Win+L")));
         Reject(() => Save(reload, new("example", "Example", true, "Ctrl+D", "translate", "Ctrl+D")));
+    }
+    private static void DownloadsShortcutChecks()
+    {
+        var context = new Context();
+        var module = new ProgramShortcutsModule(); module.Initialize(context);
+        var rule = Panel(module).GetProperty("rules")[0].Deserialize<ShortcutActionRule>(Json)!;
+        Check(rule.Enabled && rule.Shortcut == "MouseX2" && rule.Action == "downloads", "XButton2 defaults to opening Downloads");
+        var launch = ShortcutActionModule.CreateLaunchInfo(rule);
+        Check(launch.UseShellExecute && launch.FileName.EndsWith("explorer.exe") && launch.ArgumentList.Single() == "shell:Downloads", "Downloads uses Windows shell target to follow folder relocation");
+        Save(module, rule with { Enabled = false });
+        var reload = new ProgramShortcutsModule(); reload.Initialize(context);
+        Check(!Panel(reload).GetProperty("rules")[0].GetProperty("enabled").GetBoolean(), "Disabled Downloads shortcut stays disabled after reload");
+        Command(reload, "delete", new { id = rule.Id });
+        var deleted = new ProgramShortcutsModule(); deleted.Initialize(context);
+        Check(Panel(deleted).GetProperty("rules").GetArrayLength() == 0, "Deleted Downloads shortcut is not re-added");
+
+        var existing = new ShortcutActionRule("custom", "Existing", true, "MouseXButton2", "launch", "notepad.exe");
+        var migratedContext = new Context();
+        migratedContext.Values["rules"] = JsonSerializer.Serialize(new[] { existing }, Json);
+        var migrated = new ProgramShortcutsModule(); migrated.Initialize(migratedContext);
+        var rules = Panel(migrated).GetProperty("rules").Deserialize<List<ShortcutActionRule>>(Json)!;
+        Check(rules.Count == 2 && rules[0] == existing && !rules[1].Enabled, "Migration preserves an existing XButton2 binding and adds Downloads disabled");
+        var emptyContext = new Context(); emptyContext.Values["rules"] = "[]";
+        var empty = new ProgramShortcutsModule(); empty.Initialize(emptyContext);
+        Check(Panel(empty).GetProperty("rules")[0].GetProperty("enabled").GetBoolean(), "Existing empty configuration gets enabled Downloads shortcut");
     }
     private static void Command(ShortcutActionModule m, string action, object data) => m.HandlePanelCommand(action, JsonSerializer.SerializeToElement(data, Json));
     private static JsonElement Panel(ShortcutActionModule m) => JsonSerializer.SerializeToElement(m.GetPanelState(), Json);

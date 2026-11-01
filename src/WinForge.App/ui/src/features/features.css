@@ -164,9 +164,9 @@ body:has(.feature-root) #root {
 @keyframes dictation-pulse { 50% { opacity: .55; transform: scale(.86); } }
 .feature-root-zone-preview { position: relative; display: block; max-width: none; max-height: none; overflow: hidden; background: transparent; pointer-events: none; }
 .tiling-zone, .tiling-zone-merged { position: absolute; box-sizing: border-box; border-style: solid; border-color: var(--zone-color); border-radius: 8px; background: color-mix(in srgb, var(--zone-color) 18%, transparent); box-shadow: 0 2px 12px rgb(0 0 0 / 12%); }
-.tiling-zone.active { background: color-mix(in srgb, var(--zone-color) 38%, transparent); box-shadow: 0 0 24px color-mix(in srgb, var(--zone-color) 35%, transparent), inset 0 0 18px color-mix(in srgb, var(--zone-color) 22%, transparent); }
+.tiling-zone.active { background: color-mix(in srgb, var(--zone-color) 38%, transparent); }
 .tiling-zone span { position: absolute; top: 50%; left: 50%; display: grid; width: 40px; height: 40px; place-items: center; transform: translate(-50%, -50%); border: 1px solid rgb(255 255 255 / 35%); border-radius: 12px; background: rgb(15 20 24 / 38%); color: white; font-size: 24px; font-weight: 650; text-shadow: 0 2px 6px rgb(0 0 0 / 40%); }
-.tiling-zone-merged { z-index: 2; background: transparent; border-radius: 12px; box-shadow: 0 0 26px color-mix(in srgb, var(--zone-color) 30%, transparent); }
+.tiling-zone-merged { z-index: 2; background: transparent; border-radius: 12px; }
 .feature-root-peek-preview { box-sizing: border-box; padding: 20px; background: radial-gradient(ellipse at top left, #252d2a, #141918 64%); color: #eff1ea; }
 .feature-root-peek-preview > main { display: flex; width: min(100%, 1000px); height: 100%; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid rgb(255 255 255 / 9%); border-radius: 18px; background: rgb(24 29 28 / 94%); box-shadow: 0 22px 70px rgb(0 0 0 / 30%); }
 .feature-root-peek-preview header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 19px 22px 15px; border-bottom: 1px solid rgb(255 255 255 / 7%); }
