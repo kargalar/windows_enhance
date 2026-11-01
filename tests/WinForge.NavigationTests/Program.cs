@@ -12,6 +12,7 @@ internal static class Program
     [STAThread]
     private static void Main(string[] arguments)
     {
+        if (arguments.Contains("--folder-dialog")) { VerifyFolderDialog(); return; }
         using (var runtime = Registry.CurrentUser.OpenSubKey(ExplorerNavigationModule.RuntimeKey))
             Check(runtime?.GetValue("active") is not int active || active == 0, "Disable navigation styling before running these tests.");
         Check(ExplorerNavigationModule.ParseColor("#1234AB") == 0xAB3412, "RGB is encoded as Win32 COLORREF.");
@@ -43,6 +44,39 @@ internal static class Program
         if (arguments.Contains("--live")) VerifyExplorer();
         Console.WriteLine("PASS: navigation color validation, descriptor bounds, visibility controls, activation rollback and idempotent shutdown.");
     }
+    private static void VerifyFolderDialog()
+    {
+        var module = new FolderDialogModule();
+        module.Initialize(new Context(new MemorySettings()));
+        using var runtime = Registry.CurrentUser.OpenSubKey(FolderDialogModule.RuntimeKey);
+        Check(runtime?.GetValue("active") is not int active || active == 0, "Disable Modern Folder Dialog before running its tests.");
+        var native = System.IO.Path.Combine(AppContext.BaseDirectory, "native");
+        var start = new System.Diagnostics.ProcessStartInfo(System.IO.Path.Combine(native, "WinForge.FolderDialogFixture.exe"))
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true
+        };
+        start.ArgumentList.Add(System.IO.Path.Combine(native, "WinForge.FolderDialogTap.dll"));
+        start.ArgumentList.Add("--external");
+        try
+        {
+            module.Activate();
+            module.Activate();
+            Check(module.IsActive, "Repeated activation remains active.");
+            using var process = System.Diagnostics.Process.Start(start)!;
+            var deadline = System.Diagnostics.Stopwatch.StartNew();
+            while (!process.HasExited && deadline.Elapsed < TimeSpan.FromSeconds(20)) Pump(TimeSpan.FromMilliseconds(100));
+            if (!process.HasExited) { process.Kill(); throw new Exception("Cross-process folder dialog test timed out."); }
+            var output = process.StandardOutput.ReadToEnd();
+            Check(process.ExitCode == 0, "Managed module injects and replaces a separate process's folder dialog: " + output);
+            Console.Write(output);
+        }
+        finally { module.Deactivate(); module.Deactivate(); }
+        using var stopped = Registry.CurrentUser.OpenSubKey(FolderDialogModule.RuntimeKey);
+        Check(!module.IsActive && stopped?.GetValue("active") is 0, "Repeated deactivation removes the runtime lease.");
+        Console.WriteLine("PASS: managed folder dialog lifecycle and cross-process replacement.");
+    }
+
     private static void VerifyFrequentFolderControl()
     {
         var descriptor = new ExplorerNavigationModule().Settings.Single(setting => setting.Key == "block-frequent-folders");

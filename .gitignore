@@ -8,6 +8,7 @@ artifacts/
 /output/playwright/
 /work/corpus/
 /work/tools/
+/work/*-build/
 *.user
 .vs/
 /.upstream/

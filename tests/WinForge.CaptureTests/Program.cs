@@ -26,12 +26,13 @@ internal static class Program
             if (args.Length == 4 && args[0] == "--real-worker") { RealWorker(args[1], args[2], args[3] != "cpu", args[3] == "fallback", args[3] == "translate").GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--recording") { Recording().GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--render") { Render(); return 0; }
+            if (args.Length == 1 && args[0] == "--editor-ui") { Render(editorOnly: true); return 0; }
             if (args.Length == 2 && args[0] == "--discovery") { Discovery(args[1]); return 0; }
             if (args.Length == 1 && args[0] == "--native-capture") { NativeCapture(); return 0; }
             if (args.Length == 1 && args[0] == "--audit") { Audit(); return 0; }
             if (args.Length == 1 && args[0] == "--scrolling") return Scrolling();
             var root = Path.Combine(Path.GetTempPath(), "WinForge-CaptureTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-            try { PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); Speech(); Lifecycle(root); Protocol().GetAwaiter().GetResult(); }
+            try { PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); Protocol().GetAwaiter().GetResult(); }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
             Console.WriteLine($"PASS: {checks} capture/history checks."); return 0;
         }
@@ -349,7 +350,7 @@ internal static class Program
         protected override nint LoadUnmanagedDll(string name)
         { var path = resolver.ResolveUnmanagedDllToPath(name); return path is null ? 0 : LoadUnmanagedDllFromPath(path); }
     }
-    private static void Render()
+    private static void Render(bool editorOnly = false)
     {
         var root = Path.GetFullPath("artifacts/capture-verification"); Directory.CreateDirectory(root);
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -419,12 +420,19 @@ internal static class Program
         var webViewEnvironment = CoreWebView2Environment.CreateAsync(null, webViewProfile);
         foreach (var item in cases)
         {
+            if (editorOnly && item.View != "capture-editor") continue;
             var window = new ReactCaptureWindow(item.View, item.Width, item.Height, item.State, uiDirectory, webViewEnvironment);
             try
             {
                 window.Show();
                 PumpUntil(() => window.IsReady, TimeSpan.FromSeconds(20));
                 PumpFor(TimeSpan.FromMilliseconds(500));
+                if (editorOnly)
+                {
+                    var verification = window.VerifyEditorAsync();
+                    PumpUntil(() => verification.IsCompleted, TimeSpan.FromSeconds(30));
+                    verification.GetAwaiter().GetResult();
+                }
                 var capture = window.CaptureAsync(Path.Combine(root, item.File));
                 PumpUntil(() => capture.IsCompleted, TimeSpan.FromSeconds(20));
                 capture.GetAwaiter().GetResult();
@@ -523,6 +531,81 @@ internal static class Program
             {
                 initializationError = error;
             }
+        }
+
+        public async Task VerifyEditorAsync()
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher));
+            var core = webView.CoreWebView2;
+            async Task<string> Script(string script) => await core.ExecuteScriptAsync(script);
+            async Task AssertScript(string script, string description) => Check(await Script(script) == "true", description);
+            async Task SelectTool(int tool)
+            {
+                await Script($"document.querySelector('select').value = '{tool}'; document.querySelector('select').dispatchEvent(new Event('change', {{ bubbles: true }}));");
+                await Task.Delay(30);
+            }
+            async Task Mouse(string type, double x, double y)
+            {
+                var bounds = await Script("(() => { const r = document.querySelector('canvas').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()");
+                using var rect = JsonDocument.Parse(bounds);
+                var r = rect.RootElement;
+                await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new
+                {
+                    type,
+                    x = r.GetProperty("x").GetDouble() + r.GetProperty("width").GetDouble() * x,
+                    y = r.GetProperty("y").GetDouble() + r.GetProperty("height").GetDouble() * y,
+                    button = "left",
+                    buttons = type == "mouseReleased" ? 0 : 1,
+                    clickCount = type == "mouseMoved" ? 0 : 1
+                }));
+            }
+            async Task Click(string text)
+            {
+                await Script($"Array.from(document.querySelectorAll('button')).find(b => b.textContent === {JsonSerializer.Serialize(text)}).click()");
+                await Task.Delay(30);
+            }
+            await AssertScript("document.querySelector('canvas').width === 800 && !document.querySelector('fieldset').disabled", "Editor image is ready before drawing");
+            await Script("window.original = document.querySelector('canvas').toDataURL()");
+            await SelectTool((int)DrawingTool.Rectangle);
+            await Mouse("mousePressed", .1, .1);
+            await Mouse("mouseMoved", .6, .6);
+            await AssertScript("document.querySelector('canvas').toDataURL() !== window.original", "Rectangle preview appears before pointer release");
+            await Mouse("mouseReleased", .6, .6);
+            await Click("Geri al");
+            await AssertScript("document.querySelector('canvas').toDataURL() === window.original", "Undo restores exact pixels after a shape");
+            await Click("Yinele");
+            await AssertScript("document.querySelector('canvas').toDataURL() !== window.original", "Redo restores the committed shape");
+            await Script("document.querySelector('.feature-root').dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))");
+            await Task.Delay(30);
+            await AssertScript("document.querySelector('canvas').toDataURL() === window.original", "Ctrl+Z undoes the image edit");
+            await Script("document.querySelector('.feature-root').dispatchEvent(new KeyboardEvent('keydown', { key: 'Z', ctrlKey: true, shiftKey: true, bubbles: true }))");
+            await Task.Delay(30);
+            await AssertScript("document.querySelector('canvas').toDataURL() !== window.original", "Ctrl+Shift+Z redoes the image edit");
+            await Script("document.querySelector('input[type=number]').dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }))");
+            await Task.Delay(30);
+            await AssertScript("document.querySelector('canvas').toDataURL() !== window.original", "Text and number fields keep their native keyboard shortcuts");
+            await Click("Geri al");
+            await Mouse("mousePressed", .2, .2);
+            await Mouse("mouseMoved", .7, .7);
+            await Script("document.querySelector('.feature-root').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+            await Mouse("mouseReleased", .7, .7);
+            await AssertScript("document.querySelector('canvas').toDataURL() === window.original", "Escape cancels an unfinished preview without changing the image");
+            await SelectTool((int)DrawingTool.Crop);
+            await Mouse("mousePressed", .1, .1);
+            await Mouse("mouseMoved", .6, .6);
+            await Mouse("mouseReleased", .6, .6);
+            await AssertScript("document.querySelector('canvas').width === 400 && document.querySelector('canvas').height === 225", "Crop uses image pixels at fitted display size");
+            await Click("Geri al");
+            await AssertScript("document.querySelector('canvas').width === 800 && document.querySelector('canvas').toDataURL() === window.original", "Undo crop restores dimensions and pixels");
+            await SelectTool((int)DrawingTool.Blur);
+            await Mouse("mousePressed", .9, .9);
+            await Mouse("mouseMoved", 1.2, 1.2);
+            await Mouse("mouseReleased", 1.2, 1.2);
+            await Click("Geri al");
+            await AssertScript("document.querySelector('canvas').toDataURL() === window.original", "Effect dragged past the image edge remains undoable");
+            await Script("document.querySelector('[aria-label=\"Yakınlaştırma\"]').value = '2'; document.querySelector('[aria-label=\"Yakınlaştırma\"]').dispatchEvent(new Event('change', { bubbles: true }));");
+            await Task.Delay(30);
+            await AssertScript("document.querySelector('canvas').getBoundingClientRect().width === 1600", "200 percent zoom displays the full-resolution canvas at double size");
         }
 
         public async Task CaptureAsync(string path)

@@ -12,6 +12,7 @@ public sealed class FolderDialogModule : ITweakModule
 {
     internal const string RuntimeKey = @"Software\WinForge\FolderDialog\Runtime";
     private const string LibraryName = "WinForge.FolderDialogTap.dll";
+    private const int LegacyTreeControl = 0x3741;
     private readonly Dictionary<uint, nint> _hooks = [];
     private IModuleContext? _context;
     private DispatcherTimer? _timer;
@@ -86,7 +87,8 @@ public sealed class FolderDialogModule : ITweakModule
         Native.EnumWindows((window, parameter) =>
         {
             if (!Native.IsWindowVisible(window) || Native.ClassNameOf(window) != "#32770" ||
-                FindWindowEx(window, 0, "SHBrowseForFolder ShellNameSpace Control", null) == 0) return true;
+                (FindWindowEx(window, 0, "SHBrowseForFolder ShellNameSpace Control", null) == 0 &&
+                 Native.ClassNameOf(GetDlgItem(window, LegacyTreeControl)) != "SysTreeView32")) return true;
             var thread = Native.GetWindowThreadProcessId(window, out _);
             windows.TryAdd(thread, window);
             return true;
@@ -130,6 +132,7 @@ public sealed class FolderDialogModule : ITweakModule
     private delegate nint InstallHook(uint thread);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern nint FindWindowEx(nint parent, nint after, string className, string? title);
+    [DllImport("user32.dll")] private static extern nint GetDlgItem(nint dialog, int control);
     [DllImport("user32.dll")] private static extern bool PostMessage(nint window, uint message, nint wparam, nint lparam);
     [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
 }

@@ -83,11 +83,17 @@ internal sealed class CaptureEditor
         _window = featureUi.Open("capture-editor-" + Guid.NewGuid().ToString("N"), "capture-editor", "Ekran görüntüsünü düzenle",
             new FeatureUiWindowOptions(1180, 800, Resizable: true, ShowInTaskbar: true));
         _window.MessageReceived += OnMessage;
+        _window.ClosedByHost += () => _completion.TrySetResult(null);
         _window.SetState(new { image = _image, initialTool = _initialTool, workflowCompletion = _workflowCompletion, status = _status });
     }
 
     public Task<BitmapSource?> Completion { get; }
     public void Show() => _window?.Show();
+    public void Close()
+    {
+        _completion.TrySetResult(null);
+        _window?.Close();
+    }
 
     private async void OnMessage(string command, System.Text.Json.JsonElement payload)
     {

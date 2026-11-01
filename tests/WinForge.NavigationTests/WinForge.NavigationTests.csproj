@@ -11,9 +11,11 @@
   <ItemGroup>
     <ProjectReference Include="../../src/WinForge.Core/WinForge.Core.csproj" />
     <Compile Include="../../src/WinForge.Modules.Extras/ExplorerNavigationModule.cs" Link="ExplorerNavigationModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/FolderDialogModule.cs" Link="FolderDialogModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/Reg.cs" Link="Reg.cs" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.FolderDialogTap.dll;../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.FolderDialogFixture.exe" Link="native/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.FolderDialogTap.dll')" />
     <Content Include="../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.ExplorerNavigationTap.dll" Link="native/WinForge.ExplorerNavigationTap.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../native/WinForge.Shell/bin/x64/$(Configuration)/WinForge.ExplorerNavigationTap.dll')" />
   </ItemGroup>
 </Project>

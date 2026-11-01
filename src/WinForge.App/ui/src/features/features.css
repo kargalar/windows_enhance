@@ -1352,3 +1352,11 @@ body:has(.feature-root) #root {
 .feature-root-app-dialog footer button:hover { background: #f5f7f2; }
 .feature-root-app-dialog footer button.app-dialog-primary { border-color: #596f3d; background: #596f3d; color: #fff; }
 .feature-root-app-dialog footer button.app-dialog-primary:hover { background: #4d6234; }
+
+.capture-editor-toolbar { margin: 0; min-width: 0; }
+.capture-editor-toolbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.capture-editor-toolbar input[type=number] { width: 60px; }
+.capture-editor-workspace.zoomed { display: block; }
+.capture-editor-workspace.zoomed canvas { max-width: none; max-height: none; }
+.capture-editor-panel > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.capture-editor-panel > footer select { padding: 5px; border: 1px solid #414754; border-radius: 6px; background: #272c35; color: #edf0f6; }

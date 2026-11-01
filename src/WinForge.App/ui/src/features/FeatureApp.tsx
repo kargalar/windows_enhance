@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './features.css';
+import { CaptureEditorView, type CaptureEditorState } from './CaptureEditor';
 import { DefaultAppsPanel, DefaultPathsPanel } from './DefaultSettingsPanels';
 import { DynamicIsland, previewIsland, type IslandState } from './DynamicIsland';
 
@@ -80,7 +81,6 @@ type KeyboardEditorState = { keys: string; shortcuts: string; applications: stri
 type KeyboardEditorField = 'keys' | 'shortcuts' | 'applications' | 'text' | 'actions';
 type DisplayControl = { code: number; label: string; type: 'slider' | 'select' | 'info'; value: number | string; options?: { value: number; label: string }[] };
 type DisplayBrightnessState = { status: string; linkLevels: boolean; profileName: string; selectedProfileName: string; profiles: string[]; confirmColorPreset: { id: string; value: number; monitorName: string; label?: string } | null; monitors: { id: string; name: string; isInternalPanel: boolean; controls: DisplayControl[] }[] };
-type CaptureEditorState = { image: string; initialTool: number; workflowCompletion: boolean; status: string };
 type NashiState = {
   page: 'home' | 'library' | 'download'; busy: boolean; status: string;
   files: { path: string; name: string; directory: string }[];
@@ -613,152 +613,6 @@ function NashiView({ state }: { state: NashiState }) {
       {state.page === 'library' && <section className="nashi-library-page"><div className="nashi-search-row"><input className="nashi-search" value={state.query} onChange={event => send('nashi.search', { query: event.target.value })} placeholder="Dosya veya araç ara…" /><kbd>Ctrl F</kbd></div><div className="nashi-library-list">{state.library.map(item => <article key={item.id}><span className="nashi-file-icon">{item.paths.length > 1 ? item.paths.length : item.name.split('.').pop()?.slice(0, 4).toUpperCase()}</span><div><strong>{item.name}</strong><small>{item.action} · {item.created}{item.missing ? ` · ${item.available}/${item.paths.length} dosya bulundu` : ''}</small></div>{itemActions(item.id)}</article>)}{state.library.length === 0 && <p className="nashi-empty-note">Eşleşen kayıt yok.</p>}</div></section>}
       {state.page === 'download' && <section className="nashi-download-page"><div className="nashi-download-card"><span className="nashi-download-symbol">⇩</span><span className="nashi-eyebrow">WEB MEDYASI</span><h2>Bağlantıdan dosyaya.</h2><p>Herkese açık bir video, ses veya görsel bağlantısı ekle.</p><label>Bağlantı<input type="url" value={state.downloadUrl} onChange={event => send('nashi.download-update', { url: event.target.value })} placeholder="https://…" /></label><div className="nashi-download-options"><label>İçerik<select value={state.downloadKind} onChange={event => send('nashi.download-update', { kind: event.target.value })}>{state.downloadKinds.map(kind => <option key={kind} value={kind}>{kind === 'video' ? 'Video' : kind === 'audio' ? 'Ses' : kind === 'thumbnail' ? 'Küçük resim' : kind === 'photos' ? 'Fotoğraflar' : 'Görsel'}</option>)}</select></label><label>Kalite<select value={state.quality} onChange={event => send('nashi.download-update', { quality: Number(event.target.value) })}><option value={0}>En iyi</option><option value={1}>1080p</option><option value={2}>720p</option></select></label></div>{!state.mediaReady && <div className="nashi-notice">Video ve ses indirmek için medya araçlarını bir kez kur.</div>}<div className="nashi-actions"><button className="nashi-primary" disabled={state.busy || !state.downloadUrl.trim()} onClick={() => send('nashi.download')}>{state.busy ? 'İşleniyor…' : 'İndir'}</button>{!state.mediaReady && <button onClick={() => send('nashi.setup-media')}>Araçları kur</button>}</div></div></section>}
     </main>
-  </div>;
-}
-
-const captureTools = ['Serbest çizim', 'Dikdörtgen', 'Elips', 'Çizgi', 'Ok', 'Metin', 'Numaralı adım', 'Vurgula', 'Bulanıklaştır', 'Pikselleştir', 'Opak kapat', 'Kırp', 'Seç / taşı'] as const;
-
-function CaptureEditorView({ state }: { state: CaptureEditorState }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const historyRef = useRef<ImageData[]>([]);
-  const redoRef = useRef<ImageData[]>([]);
-  const drawingRef = useRef<{ x: number; y: number } | null>(null);
-  const [tool, setTool] = useState(state.initialTool);
-  const [color, setColor] = useState('#ff4d5e');
-  const [label, setLabel] = useState('Metin');
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
-  const [step, setStep] = useState(1);
-  const sendImage = (command: string) => {
-    const canvas = canvasRef.current;
-    if (canvas) window.chrome?.webview?.postMessage({ command, payload: { image: canvas.toDataURL('image/png') } });
-  };
-
-  useEffect(() => {
-    const image = new Image();
-    image.onload = () => {
-      const canvas = canvasRef.current;
-      const context = canvas?.getContext('2d');
-      if (!canvas || !context) return;
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      context.drawImage(image, 0, 0);
-      imageRef.current = image;
-      historyRef.current = [];
-      redoRef.current = [];
-      setCanUndo(false);
-      setCanRedo(false);
-    };
-    image.src = state.image;
-  }, [state.image]);
-
-  const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: (event.clientX - rect.left) * event.currentTarget.width / rect.width, y: (event.clientY - rect.top) * event.currentTarget.height / rect.height };
-  };
-  const begin = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    if (!canvas || !context || tool === 12) return;
-    drawingRef.current = point(event);
-    historyRef.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    redoRef.current = [];
-    if (historyRef.current.length > 20) historyRef.current.shift();
-    setCanUndo(true);
-    setCanRedo(false);
-    canvas.setPointerCapture(event.pointerId);
-  };
-  const drawMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    const previous = drawingRef.current;
-    if (!canvas || !context || !previous || tool !== 0) return;
-    const next = point(event);
-    context.strokeStyle = color; context.lineWidth = Math.max(3, canvas.width / 400); context.lineCap = 'round';
-    context.beginPath(); context.moveTo(previous.x, previous.y); context.lineTo(next.x, next.y); context.stroke();
-    drawingRef.current = next;
-  };
-  const finish = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    const start = drawingRef.current;
-    if (!canvas || !context || !start) return;
-    drawingRef.current = null;
-    const end = point(event);
-    const left = Math.min(start.x, end.x), top = Math.min(start.y, end.y);
-    const width = Math.max(1, Math.abs(end.x - start.x)), height = Math.max(1, Math.abs(end.y - start.y));
-    context.strokeStyle = color;
-    context.fillStyle = color;
-    context.lineWidth = Math.max(3, canvas.width / 400);
-    context.lineCap = 'round';
-    if (tool === 0) {
-      // Freehand strokes are committed incrementally while the pointer moves.
-    } else if (tool === 3 || tool === 4) {
-      context.beginPath(); context.moveTo(start.x, start.y); context.lineTo(end.x, end.y); context.stroke();
-      if (tool === 4) { const angle = Math.atan2(end.y - start.y, end.x - start.x); context.beginPath(); context.moveTo(end.x, end.y); context.lineTo(end.x - 18 * Math.cos(angle - Math.PI / 6), end.y - 18 * Math.sin(angle - Math.PI / 6)); context.lineTo(end.x - 18 * Math.cos(angle + Math.PI / 6), end.y - 18 * Math.sin(angle + Math.PI / 6)); context.closePath(); context.fill(); }
-    } else if (tool === 1 || tool === 7 || tool === 10) {
-      context.globalAlpha = tool === 7 ? .35 : 1; context.fillStyle = tool === 7 ? '#ffd54a' : tool === 10 ? '#050505' : 'transparent';
-      context.fillRect(left, top, width, height); context.globalAlpha = 1;
-      if (tool === 1) context.strokeRect(left, top, width, height);
-    } else if (tool === 2) {
-      context.beginPath(); context.ellipse(left + width / 2, top + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2); context.stroke();
-    } else if (tool === 5 || tool === 6) {
-      const next = step;
-      context.font = `bold ${tool === 6 ? 32 : 24}px Segoe UI`;
-      if (tool === 6) { context.beginPath(); context.arc(start.x, start.y, 20, 0, Math.PI * 2); context.fillStyle = '#fff'; context.fill(); context.strokeStyle = color; context.stroke(); }
-      context.fillStyle = color; context.fillText(tool === 6 ? String(next) : label, start.x + (tool === 6 ? -8 : 0), start.y + (tool === 6 ? 10 : 26));
-      if (tool === 6) setStep(next + 1);
-    } else if (tool === 8 || tool === 9) {
-      const block = tool === 8 ? 14 : 18;
-      for (let y = top; y < top + height; y += block) for (let x = left; x < left + width; x += block) {
-        const data = context.getImageData(x, y, 1, 1).data; context.fillStyle = `rgb(${data[0]},${data[1]},${data[2]})`; context.fillRect(x, y, block, block);
-      }
-    } else if (tool === 11 && width > 1 && height > 1) {
-      const cropped = context.getImageData(left, top, Math.min(width, canvas.width - left), Math.min(height, canvas.height - top));
-      canvas.width = cropped.width; canvas.height = cropped.height; canvas.getContext('2d')?.putImageData(cropped, 0, 0);
-    }
-  };
-  const undo = () => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    const previous = historyRef.current.pop();
-    if (!canvas || !context || !previous) return;
-    redoRef.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    canvas.width = previous.width; canvas.height = previous.height; context.putImageData(previous, 0, 0); setCanUndo(historyRef.current.length > 0);
-    setCanRedo(true);
-  };
-  const redo = () => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    const next = redoRef.current.pop();
-    if (!canvas || !context || !next) return;
-    historyRef.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    canvas.width = next.width; canvas.height = next.height; context.putImageData(next, 0, 0);
-    setCanUndo(true); setCanRedo(redoRef.current.length > 0);
-  };
-  const applyPreset = (preset: 'grayscale' | 'sepia' | 'invert') => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext('2d');
-    if (!canvas || !context) return;
-    historyRef.current.push(context.getImageData(0, 0, canvas.width, canvas.height));
-    redoRef.current = [];
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    for (let index = 0; index < pixels.data.length; index += 4) {
-      const red = pixels.data[index], green = pixels.data[index + 1], blue = pixels.data[index + 2];
-      if (preset === 'grayscale') { const gray = .2126 * red + .7152 * green + .0722 * blue; pixels.data[index] = pixels.data[index + 1] = pixels.data[index + 2] = gray; }
-      else if (preset === 'invert') { pixels.data[index] = 255 - red; pixels.data[index + 1] = 255 - green; pixels.data[index + 2] = 255 - blue; }
-      else { pixels.data[index] = Math.min(255, .393 * red + .769 * green + .189 * blue); pixels.data[index + 1] = Math.min(255, .349 * red + .686 * green + .168 * blue); pixels.data[index + 2] = Math.min(255, .272 * red + .534 * green + .131 * blue); }
-    }
-    context.putImageData(pixels, 0, 0); setCanUndo(true); setCanRedo(false);
-  };
-  const keyDown = (event: React.KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(); } if (event.key === 'Escape') window.chrome?.webview?.postMessage({ command: 'capture-editor.close', payload: {} }); };
-
-  return <div className="feature-root feature-root-capture-editor" onKeyDown={keyDown} tabIndex={0}>
-    <section className="capture-editor-panel"><header><div><strong>Ekran görüntüsü düzenleyici</strong><small>Çizim, vurgulama, hassas alanları kapatma ve kırpma</small></div><button onClick={() => window.chrome?.webview?.postMessage({ command: 'capture-editor.close', payload: {} })} aria-label="Kapat">×</button></header>
-      <nav className="capture-editor-toolbar"><select value={tool} onChange={event => setTool(Number(event.target.value))} aria-label="Düzenleme aracı">{captureTools.map((name, index) => <option key={name} value={index}>{name}</option>)}</select><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Çizim rengi" /><input value={label} onChange={event => setLabel(event.target.value)} aria-label="Eklenecek metin" /><button disabled={!canUndo} onClick={undo}>Geri al</button><button disabled={!canRedo} onClick={redo}>Yinele</button><button onClick={() => applyPreset('grayscale')}>Siyah-beyaz</button><button onClick={() => applyPreset('sepia')}>Sepya</button><button onClick={() => applyPreset('invert')}>Renkleri ters çevir</button><button onClick={() => sendImage('capture-editor.copy')}>Kopyala</button><button onClick={() => sendImage('capture-editor.save-history')}>Geçmişe kaydet</button><button onClick={() => sendImage('capture-editor.pin')}>Sabitle</button><button onClick={() => sendImage('capture-editor.ocr')}>OCR</button><button onClick={() => sendImage('capture-editor.save-file')}>Dışa aktar</button>{state.workflowCompletion && <button className="primary" onClick={() => sendImage('capture-editor.complete')}>Düzenlemeyi tamamla</button>}</nav>
-      <div className="capture-editor-workspace"><canvas ref={canvasRef} onPointerDown={begin} onPointerMove={drawMove} onPointerUp={finish} /></div><footer role="status">{state.status || 'Araç seçip görsel üzerinde sürükleyin.'}</footer>
-    </section>
   </div>;
 }
 

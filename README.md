@@ -1,5 +1,7 @@
 # WinForge
 
+**Gezgin → Modern Klasör Seçici** klasik “Browse For Folder” penceresini modern Windows klasör seçicisiyle değiştirir. [Kapsam ve doğrulama](docs/FOLDER_DIALOG.md).
+
 **Başlat → Başlat Menüsü Tasarımı → Görünüm → Simge altındaki adları gizle** seçeneği, sabitlenmiş uygulama ve klasörlerin adlarını gizleyerek yalnızca simgelerini gösterir. Simge boyutu ve yalnızca sabitlenmiş uygulamaları gösterme ayarlarıyla birlikte kullanılabilir; seçenek veya modül kapatılınca adlar geri gelir.
 
 **Başlat → Başlat Menüsü Tasarımı → Bölümler → Yalnızca sabitlenmiş uygulamaları göster** seçeneği, yeni Windows 11 Başlat menüsündeki **Tüm uygulamalar / All** başlığını, görünüm seçicisini, uygulama listesini/kategorilerini ve önerileri gizler. Sabitlenmiş uygulamalar görünür kalır. Seçenek veya modül kapatıldığında özgün görünüm geri yüklenir.

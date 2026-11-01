@@ -1,5 +1,4 @@
 
-ekran görüntüsü alma aracını geliştir ve iyileştir.
 
 <!-- Check -->
 

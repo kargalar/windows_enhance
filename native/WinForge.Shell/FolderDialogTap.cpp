@@ -6,8 +6,15 @@
 namespace {
 constexpr wchar_t RuntimeKey[] = L"Software\\WinForge\\FolderDialog\\Runtime";
 constexpr wchar_t HandledProperty[] = L"WinForge.FolderDialog.Handled";
+constexpr wchar_t PendingProperty[] = L"WinForge.FolderDialog.Pending";
+constexpr wchar_t RejectedProperty[] = L"WinForge.FolderDialog.Rejected";
+constexpr wchar_t PreviousProperty[] = L"WinForge.FolderDialog.Previous";
 constexpr UINT_PTR SubclassId = 0x57464644;
+constexpr UINT_PTR ConfirmTimer = SubclassId;
+constexpr int LegacyTreeControl = 0x3741;
 constexpr ULONGLONG LeaseMilliseconds = 6000;
+constexpr UINT LeaseCheckMilliseconds = 500;
+constexpr UINT ConfirmationDelayMilliseconds = 50;
 const UINT OpenMessage = RegisterWindowMessageW(L"WinForge.FolderDialog.Open.v1");
 HMODULE Library{};
 thread_local bool Opening{};
@@ -29,7 +36,10 @@ bool ClassIs(HWND window, wchar_t const* expected) {
 }
 HWND FindTree(HWND dialog) {
     auto container = FindWindowExW(dialog, nullptr, L"SHBrowseForFolder ShellNameSpace Control", nullptr);
-    if (!container) return nullptr;
+    if (!container) {
+        auto tree = GetDlgItem(dialog, LegacyTreeControl);
+        return ClassIs(tree, WC_TREEVIEWW) ? tree : nullptr;
+    }
     return FindWindowExW(container, nullptr, WC_TREEVIEWW, nullptr);
 }
 void CALLBACK CheckLease(HWND, UINT, UINT_PTR, DWORD) {
@@ -43,7 +53,24 @@ void CALLBACK CheckLease(HWND, UINT, UINT_PTR, DWORD) {
 
 LRESULT CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR data) {
     auto picker = reinterpret_cast<IFileDialog*>(data);
+    if (GetPropW(dialog, PendingProperty) && message == BFFM_ENABLEOK && !lparam)
+        SetPropW(dialog, RejectedProperty, reinterpret_cast<HANDLE>(1));
+    if (message == WM_TIMER && wparam == ConfirmTimer) {
+        KillTimer(dialog, ConfirmTimer);
+        auto accepted = Enabled() && !GetPropW(dialog, RejectedProperty) && IsWindowEnabled(GetDlgItem(dialog, IDOK));
+        auto previous = reinterpret_cast<HTREEITEM>(RemovePropW(dialog, PreviousProperty));
+        RemovePropW(dialog, PendingProperty);
+        RemovePropW(dialog, RejectedProperty);
+        if (accepted) PostMessageW(dialog, WM_COMMAND, IDOK, 0);
+        else {
+            auto tree = FindTree(dialog);
+            if (tree) TreeView_SelectItem(tree, previous);
+            ShowWindow(dialog, SW_SHOW);
+        }
+        return 0;
+    }
     if (message == OpenMessage && !Opening && Enabled()) {
+        auto initiallyAllowed = IsWindowEnabled(GetDlgItem(dialog, IDOK));
         Opening = true;
         Microsoft::WRL::ComPtr<IFileOpenDialog> modern;
         auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -59,7 +86,7 @@ LRESULT CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lpa
             if (SUCCEEDED(result)) {
                 SetWindowSubclass(dialog, DialogProc, SubclassId, reinterpret_cast<DWORD_PTR>(modern.Get()));
                 CurrentPicker = modern.Get();
-                auto timer = SetTimer(nullptr, 0, 500, CheckLease);
+                auto timer = SetTimer(nullptr, 0, LeaseCheckMilliseconds, CheckLease);
                 ShowWindow(dialog, SW_HIDE);
                 result = modern->Show(dialog);
                 KillTimer(nullptr, timer);
@@ -74,9 +101,20 @@ LRESULT CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lpa
                     // Clear the previous choice so a rejected path cannot accept an old folder.
                     if (tree) TreeView_SelectItem(tree, nullptr);
                     EnableWindow(GetDlgItem(dialog, IDOK), FALSE);
-                    SendMessageW(dialog, BFFM_SETSELECTIONW, TRUE, reinterpret_cast<LPARAM>(path));
-                    accepted = tree && TreeView_GetSelection(tree) && IsWindowEnabled(GetDlgItem(dialog, IDOK));
-                    if (!accepted && tree) TreeView_SelectItem(tree, previous);
+                    SetPropW(dialog, PendingProperty, reinterpret_cast<HANDLE>(1));
+                    SetPropW(dialog, PreviousProperty, reinterpret_cast<HANDLE>(previous));
+                    PIDLIST_ABSOLUTE selectedPidl{};
+                    if (SUCCEEDED(SHParseDisplayName(path, nullptr, &selectedPidl, 0, nullptr))) {
+                        SendMessageW(dialog, BFFM_SETSELECTIONW, FALSE, reinterpret_cast<LPARAM>(selectedPidl));
+                        CoTaskMemFree(selectedPidl);
+                    }
+                    accepted = initiallyAllowed && tree && TreeView_GetSelection(tree);
+                    if (!accepted) {
+                        RemovePropW(dialog, PendingProperty);
+                        RemovePropW(dialog, PreviousProperty);
+                        RemovePropW(dialog, RejectedProperty);
+                        if (tree) TreeView_SelectItem(tree, previous);
+                    }
                     CoTaskMemFree(path);
                 }
             }
@@ -85,7 +123,11 @@ LRESULT CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lpa
         if (SUCCEEDED(initialized)) CoUninitialize();
         Opening = false;
         if (IsWindow(dialog)) {
-            if (accepted || cancelled) PostMessageW(dialog, WM_COMMAND, accepted ? IDOK : IDCANCEL, 0);
+            // Let the original shell process queued selection callbacks before checking validation.
+            if (accepted) {
+                if (!SetTimer(dialog, ConfirmTimer, ConfirmationDelayMilliseconds, nullptr)) ShowWindow(dialog, SW_SHOW);
+            }
+            else if (cancelled) PostMessageW(dialog, WM_COMMAND, IDCANCEL, 0);
             else ShowWindow(dialog, SW_SHOW);
         }
         return 0;
@@ -93,15 +135,18 @@ LRESULT CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lpa
     if (message == WM_NCDESTROY) {
         if (picker) picker->Close(HRESULT_FROM_WIN32(ERROR_CANCELLED));
         RemovePropW(dialog, HandledProperty);
+        RemovePropW(dialog, PendingProperty);
+        RemovePropW(dialog, RejectedProperty);
+        RemovePropW(dialog, PreviousProperty);
         RemoveWindowSubclass(dialog, DialogProc, SubclassId);
     }
     return DefSubclassProc(dialog, message, wparam, lparam);
 }
 
 LRESULT CALLBACK Hook(int code, WPARAM wparam, LPARAM lparam) {
-    if (code >= 0 && !Opening && !Discovering && Enabled()) {
+    if (code >= 0 && wparam == PM_REMOVE && !Opening && !Discovering && Enabled()) {
         Discovering = true;
-        auto event = reinterpret_cast<CWPSTRUCT const*>(lparam);
+        auto event = reinterpret_cast<MSG const*>(lparam);
         auto dialog = event->hwnd;
         if (ClassIs(dialog, L"#32770") && IsWindowVisible(dialog) && !GetPropW(dialog, HandledProperty) &&
             GetDlgItem(dialog, IDOK) && GetDlgItem(dialog, IDCANCEL) && FindTree(dialog)) {
@@ -119,7 +164,7 @@ LRESULT CALLBACK Hook(int code, WPARAM wparam, LPARAM lparam) {
 }
 }
 extern "C" __declspec(dllexport) HHOOK WINAPI InstallFolderDialogHook(DWORD thread) {
-    return SetWindowsHookExW(WH_CALLWNDPROC, Hook, Library, thread);
+    return SetWindowsHookExW(WH_GETMESSAGE, Hook, Library, thread);
 }
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) { Library = instance; DisableThreadLibraryCalls(instance); }

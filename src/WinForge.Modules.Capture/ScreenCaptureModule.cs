@@ -126,7 +126,11 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 "desktop" => DesktopArea(),
                 _ => CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"))
             };
-            if (area is not { IsValid: true } selected) return;
+            if (area is not { IsValid: true } selected)
+            {
+                if (mode == "last") Context.Notify("Önce bir bölge yakalayın; henüz kayıtlı bir son bölge yok.");
+                return;
+            }
             token.ThrowIfCancellationRequested();
             if (annotationTool is null) lastArea = selected;
             await Task.Delay(120, token); var store = Store;
@@ -183,7 +187,9 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 case "edit" when Context.Settings.GetBool("edit", true):
                     var editor = new CaptureEditor(store, image, workflowCompletion: true,
                         featureUi: (Context as IFeatureUiContext)?.FeatureUi);
-                    var editedImage = await editor.Completion;
+                    BitmapSource? editedImage;
+                    try { editedImage = await editor.Completion.WaitAsync(token); }
+                    finally { editor.Close(); }
                     if (editedImage is null) return;
                     image = editedImage;
                     break;

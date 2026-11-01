@@ -43,7 +43,7 @@ void CALLBACK Tick(HWND, UINT, UINT_PTR, DWORD) {
     HWND modern{};
     EnumWindows(FindModern, reinterpret_cast<LPARAM>(&modern));
     if (!modern) {
-        if ((Mode == 2 || Mode == 3 || Mode == 4) && SawModern && IsWindowVisible(Legacy)) PostMessageW(Legacy, WM_COMMAND, IDCANCEL, 0);
+        if (Mode >= 2 && SawModern && IsWindowVisible(Legacy)) PostMessageW(Legacy, WM_COMMAND, IDCANCEL, 0);
         return;
     }
     SawModern = true;
@@ -55,28 +55,34 @@ void CALLBACK Tick(HWND, UINT, UINT_PTR, DWORD) {
     if (Stage) PostMessageW(modern, WM_COMMAND, IDOK, 0);
 }
 int CALLBACK Browse(HWND window, UINT message, LPARAM, LPARAM) {
-    if (message == BFFM_INITIALIZED) Legacy = window;
+    if (message == BFFM_INITIALIZED) {
+        Legacy = window;
+    }
     if (Mode == 4 && message == BFFM_SELCHANGED) SendMessageW(window, BFFM_ENABLEOK, 0, FALSE);
     return 0;
 }
 }
 int wmain(int count, wchar_t** arguments) {
     setvbuf(stdout, nullptr, _IONBF, 0);
-    if (count != 2 || FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 2;
+    bool external = count == 3 && lstrcmpW(arguments[2], L"--external") == 0;
+    if ((count != 2 && !external) || FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 2;
     DWORD active{}, bytes = sizeof(active);
     RegGetValueW(HKEY_CURRENT_USER, RuntimeKey, L"active", RRF_RT_REG_DWORD, nullptr, &active, &bytes);
-    if (active) { std::puts("Disable Modern Folder Dialog before running fixture."); return 2; }
-    auto library = LoadLibraryW(arguments[1]);
-    if (!library) return 3;
-    auto install = reinterpret_cast<HHOOK(WINAPI*)(DWORD)>(GetProcAddress(library, "InstallFolderDialogHook"));
-    auto hook = install ? install(GetCurrentThreadId()) : nullptr;
-    if (!hook) return 4;
+    if (active && !external) { std::puts("Disable Modern Folder Dialog before running fixture."); return 2; }
+    HHOOK hook{};
+    if (!external) {
+        auto library = LoadLibraryW(arguments[1]);
+        if (!library) return 3;
+        auto install = reinterpret_cast<HHOOK(WINAPI*)(DWORD)>(GetProcAddress(library, "InstallFolderDialogHook"));
+        hook = install ? install(GetCurrentThreadId()) : nullptr;
+        if (!hook) return 4;
+    }
     wchar_t temporary[MAX_PATH]{};
     GetTempPathW(ARRAYSIZE(temporary), temporary);
     Target = std::wstring(temporary) + L"WinForge Folder Dialog Fixture";
     CreateDirectoryW(Target.c_str(), nullptr);
     int failures{};
-    for (Mode = 0; Mode < 6; ++Mode) {
+    for (Mode = 0; Mode < (external ? 1 : 6); ++Mode) {
         Legacy = nullptr; SawModern = false; TimedOut = false; Ticks = 0; Stage = 0;
         Active(1);
         auto timer = SetTimer(nullptr, 0, 250, Tick);
@@ -92,16 +98,16 @@ int wmain(int count, wchar_t** arguments) {
         auto selected = SHBrowseForFolderW(&info);
         KillTimer(nullptr, timer);
         wchar_t path[MAX_PATH]{};
-        bool passed = SawModern && !TimedOut && (Mode == 0 || Mode == 5 ? selected && SHGetPathFromIDListW(selected, path) && Target == path : selected == nullptr);
-        constexpr char const* Labels[] = { "selected path reaches SHBrowseForFolder caller", "modern cancellation cancels classic dialog", "deactivation restores classic dialog", "root restriction restores classic dialog", "application validation restores classic dialog", "old-style classic dialog transfers the selected path" };
+        bool passed = SawModern && !TimedOut && (Mode == 0 ? selected && SHGetPathFromIDListW(selected, path) && Target == path : selected == nullptr);
+        constexpr char const* Labels[] = { "selected path reaches SHBrowseForFolder caller", "modern cancellation cancels classic dialog", "deactivation restores classic dialog", "root restriction restores classic dialog", "initially disabled confirmation restores classic dialog", "unsupported old-style selection safely restores classic dialog" };
         std::printf("%s: %s\n", passed ? "PASS" : "FAIL", Labels[Mode]);
-        if (!passed) ++failures;
+        if (!passed) { ++failures; std::printf("saw=%d timeout=%d selected=%p stage=%d ticks=%d\n", SawModern, TimedOut, selected, Stage, Ticks); }
         CoTaskMemFree(selected);
         CoTaskMemFree(root);
         Target = originalTarget;
     }
     Active(0);
-    UnhookWindowsHookEx(hook);
+    if (hook) UnhookWindowsHookEx(hook);
     RemoveDirectoryW(Target.c_str());
     CoUninitialize();
     return failures ? 1 : 0;
