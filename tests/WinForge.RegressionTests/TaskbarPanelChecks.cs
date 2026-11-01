@@ -23,7 +23,7 @@ internal static class TaskbarPanelChecks
             "The real host exposes taskbar customization and tray settings as one module");
         SetAppProperty(app, nameof(ForgeApplication.Host), host);
         SetAppProperty(app, nameof(ForgeApplication.Logger), logger);
-        var window = new MainWindow();
+        var window = new MainWindow(Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2")));
         try
         {
             window.Show();

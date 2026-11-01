@@ -8,7 +8,7 @@ $root = Split-Path $PSScriptRoot -Parent
 & (Join-Path $PSScriptRoot 'prepare-models.ps1')
 
 Write-Host "WinForge derleniyor ($Configuration)..." -ForegroundColor Cyan
-dotnet build (Join-Path $root "WinForge.slnx") -c $Configuration -p:Platform=x64
+dotnet build (Join-Path $root "src\WinForge.App\WinForge.App.csproj") -c $Configuration -p:Platform=x64
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $output = Join-Path $root "src\WinForge.App\bin\x64\$Configuration\net10.0-windows10.0.19041.0"

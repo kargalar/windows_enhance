@@ -259,11 +259,17 @@ class FolderSizeEngine {
         return used;
     }
 
+    static bool CacheValid(Entry const& entry, ULONGLONG now) {
+        if (!entry.ready) return false;
+        // A live recursive watcher invalidates results on changes. The TTL is only
+        // a safety net for entries we cannot monitor, not a periodic rescan timer.
+        return entry.watch ? entry.watch->Valid() : now < entry.expires;
+    }
+
     std::optional<SnapshotMatch> FindSnapshotAncestor(std::wstring const& path, ULONGLONG now) const {
         std::shared_ptr<Entry> best;
         for (auto const& [candidatePath, candidate] : entries_) {
-            if (!candidate->ready || now >= candidate->expires || !candidate->snapshot ||
-                (candidate->watch && !candidate->watch->Valid()) ||
+            if (!CacheValid(*candidate, now) || !candidate->snapshot ||
                 candidatePath.size() >= path.size() || !IsPathWithin(candidatePath, path)) continue;
             auto found = candidate->snapshot->find(path);
             if (found == candidate->snapshot->end()) continue;
@@ -873,7 +879,7 @@ public:
                 wake_.notify_one();
                 return std::nullopt;
             }
-            if (entry.ready && now < entry.expires) {
+            if (CacheValid(entry, now)) {
                 InterlockedIncrement(&session_.Get()->hits);
                 return entry.bytes;
             }

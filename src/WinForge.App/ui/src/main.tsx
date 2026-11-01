@@ -1,8 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { FeatureApp } from './features/FeatureApp';
+import { AutomationPanel, type AutomationState } from './AutomationPanel';
+import { ShortcutActionsPanel, type ShortcutActionsState } from './ShortcutActionsPanel';
+import { ShortcutField } from './ShortcutField';
+import { useAutoSaveDraft } from './useAutoSaveDraft';
 import './styles.css';
 import './island-design.css';
+import './management.css';
 
 type Setting = {
   key: string;
@@ -27,6 +32,7 @@ type Module = {
   isActive: boolean;
   error?: string;
   settings: Setting[];
+  panel?: AutomationState | ShortcutActionsState;
 };
 
 type Appearance = {
@@ -95,10 +101,21 @@ function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [category, setCategory] = useState('Tümü');
   const [query, setQuery] = useState('');
-  const [activeOnly, setActiveOnly] = useState(false);
+  const [status, setStatus] = useState('all');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem('winforge.favorites') ?? '[]');
+      return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+    } catch { return []; }
+  });
   const [selectedId, setSelectedId] = useState('');
   const [showAppearance, setShowAppearance] = useState(false);
   const [error, setError] = useState('');
+  const clearFilters = () => { setQuery(''); setCategory('Tümü'); setStatus('all'); setFavoritesOnly(false); };
+  useEffect(() => {
+    try { localStorage.setItem('winforge.favorites', JSON.stringify(favorites)); } catch { /* Session favorites remain available. */ }
+  }, [favorites]);
 
   const receive = useCallback((event: MessageEvent) => {
     const message = event.data as { type: string; payload?: AppState; message?: string };
@@ -106,14 +123,16 @@ function App() {
       setState(message.payload);
       setSelectedId(current => current || message.payload!.modules[0]?.id || '');
     }
-    if (message.type === 'error') setError(message.message ?? 'İşlem tamamlanamadı.');
+    if (message.type === 'error') {
+      setError(message.message ?? 'İşlem tamamlanamadı.');
+      if (message.payload) setState(message.payload);
+    }
   }, []);
 
   useEffect(() => {
     const bridge = window.chrome?.webview;
     if (!bridge) {
       if (import.meta.env.DEV) setState(previewState);
-      return;
     }
     bridge?.addEventListener('message', receive);
     bridge?.postMessage({ command: 'ui.ready', payload: {} });
@@ -121,6 +140,7 @@ function App() {
     window.addEventListener('winforge-search', focusSearch);
     window.addEventListener('keydown', onGlobalSearch);
     function onGlobalSearch(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         focusSearch();
@@ -136,10 +156,13 @@ function App() {
 
   const filtered = useMemo(() => (state?.modules ?? []).filter(module => {
     if (category !== 'Tümü' && module.category !== category) return false;
-    if (activeOnly && !module.isActive) return false;
+    if (status === 'active' && !module.isActive) return false;
+    if (status === 'inactive' && module.isActive) return false;
+    if (status === 'error' && !module.error) return false;
+    if (favoritesOnly && !favorites.includes(module.id)) return false;
     const needle = query.trim().toLocaleLowerCase('tr');
-    return !needle || `${module.name} ${module.description} ${module.category}`.toLocaleLowerCase('tr').includes(needle);
-  }), [activeOnly, category, query, state]);
+    return !needle || `${module.name} ${module.description} ${module.category} ${module.settings.map(setting => `${setting.label} ${setting.description ?? ''} ${setting.section ?? ''}`).join(' ')}`.toLocaleLowerCase('tr').includes(needle);
+  }), [status, favoritesOnly, favorites, category, query, state]);
   const selected = filtered.find(module => module.id === selectedId) ?? filtered[0];
   const categories = ['Tümü', ...(state?.categories ?? [])];
 
@@ -150,15 +173,15 @@ function App() {
   if (!state) return <div className="loading"><span className="loader" />WinForge hazırlanıyor</div>;
 
   const accentHex = state.appearance.accents.find(accent => accent.name === state.appearance.accent)?.hex ?? '#75A7FF';
-  const island = state.modules.find(module => module.id === 'dynamic-island');
   return <div className={`app-shell tone-${state.appearance.tone.toLowerCase()} ${state.appearance.glow ? 'glow' : ''}`} style={{ '--accent': accentHex } as React.CSSProperties}>
+    <a className="skip-link" href="#module-details">Seçili modülün ayarlarına geç</a>
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Icon name="layers" size={21} /></div><div><strong>WinForge</strong><span>WINDOWS ARAÇ KUTUSU</span></div></div>
       <div className="nav-label">KATEGORİLER</div>
       <nav className="category-nav" aria-label="Modül kategorileri">
-        {categories.map((item, index) => <button key={item} className={`nav-item ${category === item ? 'selected' : ''}`} onClick={() => setCategory(item)}>
+        {categories.map((item, index) => <button key={item} aria-current={category === item ? 'page' : undefined} className={`nav-item ${category === item ? 'selected' : ''}`} onClick={() => setCategory(item)}>
           <span className="nav-icon">{index === 0 ? <Icon name="grid" /> : <Icon name="layers" />}</span><span>{item}</span>
-          {item === 'Tümü' && <span className="nav-count">{state.totalCount}</span>}
+          <span className="nav-count">{item === 'Tümü' ? state.totalCount : state.modules.filter(module => module.category === item).length}</span>
         </button>)}
       </nav>
       <div className="sidebar-bottom">
@@ -170,23 +193,25 @@ function App() {
 
     <main className="main-area">
       <header className="topbar">
-        <div className="page-intro"><div className="eyebrow">SENİN ALANIN. SENİN AKIŞIN.</div><h1>{category === 'Tümü' ? 'Her şey, bir arada.' : category}</h1><p>Windows deneyimini kendi ritmine göre düzenle.</p></div>
+        <div className="page-intro"><div className="eyebrow">WINFORGE KONTROL PANELİ</div><h1>{category === 'Tümü' ? 'Araçlarını yönet' : category}</h1><p>Aracını bul, durumunu gör ve ayarlarını düzenle.</p></div>
         <div className="top-actions">
-          <label className="search-box"><Icon name="search" /><input id="module-search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Modül ara" /><kbd>Ctrl F</kbd></label>
+          <label className="search-box"><Icon name="search" /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => setQuery(event.target.value)} placeholder="Araç veya ayar ara…" /><kbd>Ctrl F</kbd></label>
           <button className="icon-button" title="Görünüm ayarları" aria-label="Görünüm ayarları" onClick={() => setShowAppearance(true)}><Icon name="settings" /></button>
           <button className="icon-button" title="WinForge'dan çık" aria-label="WinForge'dan çık" onClick={() => send('app.exit')}><Icon name="power" /></button>
         </div>
       </header>
 
-      {island && <button className={`island-entry ${island.isActive ? 'is-live' : ''}`} onClick={() => { setCategory('Tümü'); setQuery(''); setActiveOnly(false); setSelectedId(island.id); }}>
-        <span className="island-entry-preview" aria-hidden="true"><span className="island-entry-orbit" /><span className="island-entry-line" /><span className="island-entry-bars"><i /><i /><i /><i /></span></span>
-        <span className="island-entry-copy"><strong>Dynamic Island</strong><small>{island.isActive ? 'Masaüstünde, akışınla birlikte.' : 'Küçük bir ada. Daha akıcı bir masaüstü.'}</small></span>
-        <span className={`island-entry-status ${island.isActive ? 'enabled' : ''}`}><span />{island.isActive ? 'Etkin' : 'Keşfet'}<Icon name="arrow" size={14} /></span>
-      </button>}
+      <div className="overview" aria-label="Araç özeti">
+        <button aria-pressed={status === 'all' && !favoritesOnly && category === 'Tümü' && !query} onClick={clearFilters}><strong>{state.totalCount}</strong><span>Tüm araçlar</span></button>
+        <button aria-pressed={status === 'active'} onClick={() => { clearFilters(); setStatus('active'); }}><strong>{state.activeCount}</strong><span>Etkin araçlar</span></button>
+        <button aria-pressed={favoritesOnly} onClick={() => { clearFilters(); setFavoritesOnly(true); }}><strong>{state.modules.filter(module => favorites.includes(module.id)).length}</strong><span>Favorilerim</span></button>
+      </div>
 
       <section className="content-toolbar">
-        <div className="result-count"><strong>{filtered.length}</strong><span>modül</span><span className="toolbar-divider" />
-          <button className={`filter-chip ${activeOnly ? 'on' : ''}`} onClick={() => setActiveOnly(value => !value)}><span className="filter-check">{activeOnly && <Icon name="check" size={12} />}</span>Etkin olanlar</button>
+        <div className="result-count"><span role="status"><strong>{filtered.length}</strong> araç</span><span className="toolbar-divider" />
+          <label className="status-filter">Durum <select aria-label="Araç durumuna göre filtrele" value={status} onChange={event => setStatus(event.target.value)}><option value="all">Tümü</option><option value="active">Etkin</option><option value="inactive">Kapalı</option><option value="error">Hatalı</option></select></label>
+          <button className={`filter-chip ${favoritesOnly ? 'on' : ''}`} aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(value => !value)}>★ Favoriler</button>
+          {(query || category !== 'Tümü' || status !== 'all' || favoritesOnly) && <button className="filter-chip" onClick={clearFilters}>Temizle</button>}
         </div>
         <div className="autosave"><span className="save-dot" />Değişiklikler otomatik kaydedilir</div>
       </section>
@@ -195,15 +220,15 @@ function App() {
         <div className="module-column">
           <div className="section-heading"><div><h2>{category === 'Tümü' ? 'Tüm modüller' : `${category} modülleri`}</h2><p>Bir aracı seçerek ayarlarını görüntüle.</p></div><span className="count-badge">{filtered.length}</span></div>
           <div className="module-list">
-            {filtered.map(module => <button key={module.id} className={`module-card ${selected?.id === module.id ? 'active' : ''}`} onClick={() => setSelectedId(module.id)}>
+            {filtered.map(module => <div className="module-entry" key={module.id}><button aria-pressed={selected?.id === module.id} aria-controls="module-details" className={`module-card ${selected?.id === module.id ? 'active' : ''}`} onClick={() => setSelectedId(module.id)}>
               <span className={`module-icon ${module.isActive ? 'enabled' : ''}`}><Icon name={module.category === 'Fare' ? 'grid' : module.category === 'Sistem' ? 'settings' : 'layers'} size={18} /></span>
               <span className="module-copy"><strong>{module.name}</strong><small>{module.description}</small><span className="module-category">{module.category}</span></span>
-              <span className={`status-mark ${module.isActive ? 'enabled' : ''}`} title={module.isActive ? 'Etkin' : 'Kapalı'} />
-            </button>)}
-            {filtered.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="search" size={22} /></div><strong>Sonuç bulunamadı</strong><p>Arama veya kategori filtresini değiştirmeyi dene.</p><button className="secondary-button" onClick={() => { setQuery(''); setCategory('Tümü'); setActiveOnly(false); }}>Filtreleri temizle</button></div>}
+              <span className={`module-status ${module.error ? 'has-error' : module.isActive ? 'enabled' : ''}`}>{module.error ? 'Hata' : module.isActive ? 'Etkin' : 'Kapalı'}</span>
+            </button><button className={`favorite-button ${favorites.includes(module.id) ? 'is-favorite' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}>★</button></div>)}
+            {filtered.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="search" size={22} /></div><strong>{favoritesOnly ? 'Bu filtrelerde favori araç yok' : 'Sonuç bulunamadı'}</strong><p>{favoritesOnly ? 'Araçların yanındaki yıldızla favorilerini belirle veya filtreleri temizle.' : 'Arama veya kategori filtresini değiştirmeyi dene.'}</p><button className="secondary-button" onClick={clearFilters}>Filtreleri temizle</button></div>}
           </div>
         </div>
-        <div className="details-column">
+        <div className="details-column" id="module-details" tabIndex={-1} aria-label="Seçili modülün ayarları">
           {selected ? <ModuleDetails key={selected.id} module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /> : <div className="details-empty">Görüntülenecek modül yok.</div>}
         </div>
       </section>
@@ -230,8 +255,12 @@ function ModuleDetails({ module, onToggle, onUpdate, onExecute }: { module: Modu
     <div className={`module-state ${module.isActive ? 'enabled' : ''}`}><span className="state-dot" />{module.isActive ? 'Bu modül etkin' : 'Bu modül kapalı'}</div>
     {module.warning && <div className="warning-box"><strong>Bilgi</strong><p>{module.warning}</p></div>}
     {module.error && <div className="error-box"><strong>Bir hata oluştu</strong><p>{module.error}</p></div>}
-    {sections.map(([section, settings]) => <section className="settings-section" key={section || 'general'}>
-      {section && <h3>{section}</h3>}
+    {!module.isActive && <p className="inactive-hint">Ayarları düzenleyebilirsin. Kullanmak için üstteki anahtardan modülü etkinleştir.</p>}
+    {sections.length > 1 && <nav className="settings-jumps" aria-label="Ayar bölümleri">{sections.map(([section], index) => <a key={section} href={`#settings-${module.id}-${index}`}>{section || 'Genel'}</a>)}</nav>}
+    {module.id === 'automation' && module.panel && <AutomationPanel state={module.panel as AutomationState} active={module.isActive} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
+    {module.panel && 'kind' in module.panel && module.panel.kind === 'shortcut-actions' && <ShortcutActionsPanel state={module.panel} moduleId={module.id} active={module.isActive} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
+    {sections.map(([section, settings], index) => <section className="settings-section" id={`settings-${module.id}-${index}`} key={section || 'general'}>
+      <h3>{section || 'Genel ayarlar'}</h3>
       {settings.map(setting => <SettingControl key={setting.key} setting={setting} onUpdate={onUpdate} onExecute={onExecute} />)}
     </section>)}
   </div>;
@@ -242,12 +271,10 @@ function Toggle({ checked, label, onChange }: { checked: boolean; label: string;
 }
 
 function SettingControl({ setting, onUpdate, onExecute }: { setting: Setting; onUpdate: (key: string, value: unknown) => void; onExecute: (key: string) => void }) {
-  const [text, setText] = useState(String(setting.value ?? ''));
+  const [text, setText] = useAutoSaveDraft(String(setting.value ?? ''), value => {
+    if (setting.kind === 'text' && (!/^#[0-9a-f]{6}$/i.test(String(setting.defaultValue)) || /^#[0-9a-f]{6}$/i.test(value))) onUpdate(setting.key, value.trim());
+  });
   const [number, setNumber] = useState(Number(setting.value ?? setting.defaultValue ?? 0));
-  const [capture, setCapture] = useState(false);
-  const [captured, setCaptured] = useState('');
-  const hotkeyInput = useRef<HTMLInputElement>(null);
-  useEffect(() => { setText(String(setting.value ?? '')); }, [setting.value]);
   useEffect(() => { setNumber(Number(setting.value ?? setting.defaultValue ?? 0)); }, [setting.value, setting.defaultValue]);
   useEffect(() => {
     if (setting.kind !== 'number' || number === Number(setting.value ?? setting.defaultValue ?? 0)) return;
@@ -255,7 +282,7 @@ function SettingControl({ setting, onUpdate, onExecute }: { setting: Setting; on
     return () => window.clearTimeout(timer);
   }, [number, onUpdate, setting.defaultValue, setting.key, setting.kind, setting.value]);
   const isHotkey = setting.kind === 'text' && /hotkey|shortcut|kısayol/i.test(setting.key + setting.label);
-  const saveText = () => onUpdate(setting.key, text.trim());
+  const saveText = () => setText(text.trim(), true);
 
   if (setting.kind === 'action') return <div className="setting-row action-row"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><button className="primary-button" onClick={() => onExecute(setting.key)}>{setting.label}<Icon name="arrow" size={15} /></button></div>;
   if (setting.kind === 'toggle') return <div className="setting-row"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><Toggle checked={Boolean(setting.value)} label={setting.label} onChange={value => onUpdate(setting.key, value)} /></div>;
@@ -263,33 +290,29 @@ function SettingControl({ setting, onUpdate, onExecute }: { setting: Setting; on
   if (setting.kind === 'choice') return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><select className="white-control" value={String(setting.value ?? setting.defaultValue ?? '')} onChange={event => onUpdate(setting.key, event.target.value)} aria-label={setting.label}>{setting.options.map(option => <option value={option} key={option}>{setting.optionLabels[option] ?? option}</option>)}</select></div>;
   if (setting.kind === 'palette') return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><div className="palette-options">{setting.options.map(option => <button className={`palette-option ${setting.value === option ? 'selected' : ''}`} key={option} title={setting.optionLabels[option] ?? option} style={{ backgroundColor: option }} onClick={() => onUpdate(setting.key, option)} aria-label={setting.optionLabels[option] ?? option} />)}</div></div>;
   if (setting.kind === 'text' && /^#[0-9a-f]{6}$/i.test(String(setting.defaultValue))) return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><div className="input-action-row"><input type="color" value={/^#[0-9a-f]{6}$/i.test(text) ? text : String(setting.defaultValue)} onChange={event => { setText(event.target.value); onUpdate(setting.key, event.target.value); }} aria-label={`${setting.label} seçici`} /><input className="white-control" value={text} maxLength={7} onChange={event => setText(event.target.value)} onBlur={() => { if (/^#[0-9a-f]{6}$/i.test(text)) saveText(); }} onKeyDown={event => { if (event.key === 'Enter' && /^#[0-9a-f]{6}$/i.test(text)) saveText(); }} aria-label={setting.label} aria-invalid={!/^#[0-9a-f]{6}$/i.test(text)} /></div></div>;
-  if (isHotkey) return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><div className="input-action-row"><input ref={hotkeyInput} className="white-control" value={capture ? captured || 'Tuşlara bas…' : text} readOnly={capture} onKeyDown={event => {
-    if (!capture) return;
-    event.preventDefault();
-    if (event.key === 'Escape') { setCapture(false); setCaptured(''); return; }
-    if (event.key === 'Enter') { if (captured) { onUpdate(setting.key, captured); setText(captured); } setCapture(false); return; }
-    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) return;
-    const parts = [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', event.metaKey && 'Win'].filter(Boolean);
-    const key = event.key.startsWith('Arrow') ? event.key.slice(5) : event.key === ' ' ? 'Space' : event.key;
-    parts.push(key.length === 1 ? key.toUpperCase() : key);
-    setCaptured(parts.join('+'));
-  }} onWheel={event => {
-    if (!capture) return;
-    event.preventDefault();
-    const parts = [event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift', event.metaKey && 'Win'].filter(Boolean);
-    parts.push(event.deltaY < 0 ? 'MouseWheelUp' : 'MouseWheelDown');
-    setCaptured(parts.join('+'));
-  }} aria-label={setting.label} /><button className="secondary-button compact" onClick={() => {
-    if (capture) { setCapture(false); setCaptured(''); return; }
-    setCapture(true);
-    setCaptured('');
-    requestAnimationFrame(() => hotkeyInput.current?.focus());
-  }}>{capture ? 'İptal' : 'Ata'}</button>{capture && <button className="primary-button compact" onClick={() => { if (captured) { onUpdate(setting.key, captured); setText(captured); } setCapture(false); }}>Kaydet</button>}</div></div>;
+  if (isHotkey) return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div>
+    <ShortcutField value={text} label={setting.label} onChange={setText} allowWheel={/brightness.*hotkey/.test(setting.key)}
+      onCommit={value => { if (value !== String(setting.value ?? '')) setText(value, true); }} /></div>;
   return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><div className="input-action-row"><input className="white-control" value={text} onChange={event => setText(event.target.value)} onBlur={saveText} onKeyDown={event => { if (event.key === 'Enter') { saveText(); (event.currentTarget as HTMLInputElement).blur(); } }} aria-label={setting.label} /></div></div>;
 }
 
 function AppearanceDialog({ appearance, onClose, onChange, onOpenLogs }: { appearance: Appearance; onClose: () => void; onChange: (value: Record<string, unknown>) => void; onOpenLogs: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="appearance-dialog" role="dialog" aria-modal="true" aria-labelledby="appearance-title">
+  const dialogRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    return () => previous?.focus();
+  }, []);
+  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} className="appearance-dialog" role="dialog" aria-modal="true" aria-labelledby="appearance-title" onKeyDown={event => {
+    if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+    if (event.key !== 'Tab') return;
+    const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, select, a[href], [tabindex="0"]');
+    if (!controls?.length) return;
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }}>
     <header><div><span className="eyebrow">KİŞİSELLEŞTİRME</span><h2 id="appearance-title">Görünüm</h2></div><button className="icon-button" onClick={onClose} aria-label="Kapat"><Icon name="close" /></button></header>
     <div className="appearance-section"><h3>Yüzey tonu</h3><div className="tone-options">{appearance.tones.map(tone => <button key={tone} className={`tone-option ${appearance.tone === tone ? 'selected' : ''}`} onClick={() => onChange({ tone })}><span className={`tone-preview ${tone.toLowerCase()}`}><i /><i /><i /></span><span>{tone}</span>{appearance.tone === tone && <Icon name="check" size={15} />}</button>)}</div></div>
     <div className="appearance-section"><h3>Vurgu rengi</h3><div className="accent-options">{appearance.accents.map(accent => <button key={accent.name} className={`accent-option ${appearance.accent === accent.name ? 'selected' : ''}`} title={accent.name} aria-label={accent.name} style={{ '--swatch': accent.hex } as React.CSSProperties} onClick={() => onChange({ accent: accent.name })}>{appearance.accent === accent.name && <Icon name="check" size={14} />}</button>)}</div></div>

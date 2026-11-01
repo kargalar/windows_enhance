@@ -52,6 +52,7 @@ public sealed class GlobalMouseHook : IDisposable
 
     internal bool ProcessInput(Input input)
     {
+        if (HotkeyService.IsCapturing && input.Message != Native.WM_MBUTTONUP) return false;
         var suppress = false;
         try { suppress = EventFilter?.Invoke(input) == true; }
         catch (Exception exception) { ReportError(exception); }

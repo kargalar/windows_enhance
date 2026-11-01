@@ -1360,3 +1360,10 @@ body:has(.feature-root) #root {
 .capture-editor-workspace.zoomed canvas { max-width: none; max-height: none; }
 .capture-editor-panel > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .capture-editor-panel > footer select { padding: 5px; border: 1px solid #414754; border-radius: 6px; background: #272c35; color: #edf0f6; }
+
+.automation-active-overlay { display: grid; align-content: start; align-items: stretch; justify-content: stretch; box-sizing: border-box; gap: 6px; padding: 8px; pointer-events: none; }
+.automation-active-item { display: flex; align-items: center; gap: 10px; min-width: 0; height: 46px; box-sizing: border-box; padding: 7px 12px; border: 1px solid #41454d; border-radius: 12px; background: #191c23ed; color: #f3f4f8; box-shadow: 0 2px 8px #0003; }
+.automation-active-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #82dfa6; }
+.automation-active-item > div { display: grid; gap: 2px; min-width: 0; }
+.automation-active-item strong { font-size: 12px; line-height: 16px; font-weight: 600; }
+.automation-active-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; line-height: 12px; color: #b9c0cc; }

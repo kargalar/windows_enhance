@@ -3,7 +3,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public sealed class ContextMenuModule : ITweakModule
+public sealed partial class ContextMenuModule : ITweakModule
 {
     private const string CustomPrefix = "WinForge.";
     private const string BlockedKey = @"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked";
@@ -34,7 +34,7 @@ public sealed class ContextMenuModule : ITweakModule
     public string Name => "Sağ Tık Menüsü";
     public string Category => "Gezgin";
     public string Description => "Gezgin sağ tık menüsüne özel öğeler ekler ve kayıtlı kabuk uzantılarını gizler. Değişiklikler çoğunlukla anında görünür; görünmezse Explorer'ı yeniden başlatın.";
-    public string? Warning => "Yalnızca Windows Gezgini menülerini etkiler; diğer uygulamaların kendi sağ tık menüleri değişmez. Kopyala/Yapıştır gibi yerleşik komutlar uzantı olmadığı için bu yolla gizlenemez. Kapatınca eklenen öğeler ve gizlenen uzantılar geri alınır.";
+    public string? Warning => "Gruplar ve öğe simgeleri klasik Gezgin menüsünde / Daha fazla seçenek göster menüsünde uygulanır. Diğer uygulamaların menüleri etkilenmez. Kapatınca özgün menü geri gelir.";
     public bool IsActive { get; private set; }
 
     public IReadOnlyList<SettingDescriptor> Settings => _settings;
@@ -43,6 +43,7 @@ public sealed class ContextMenuModule : ITweakModule
     {
         _context = context;
         BuildSettings();
+        InitializePanel();
     }
 
     public void Activate()
@@ -58,6 +59,7 @@ public sealed class ContextMenuModule : ITweakModule
 
     public void Deactivate()
     {
+        _runtime?.Deactivate();
         foreach (var (_, root) in CustomRoots)
             RemoveCustomItems(root);
 
@@ -80,6 +82,8 @@ public sealed class ContextMenuModule : ITweakModule
 
         foreach (var extension in _extensions)
             SetBlocked(extension.Clsid, settings.GetBool(extension.Key, extension.Blocked));
+
+        _runtime?.Apply(_entries, _rules);
 
         Reg.Broadcast("ShellState");
     }
@@ -193,15 +197,6 @@ public sealed class ContextMenuModule : ITweakModule
             extension.Blocked = blocked.Contains(extension.Clsid);
             _extensions.Add(extension);
 
-            _settings.Add(new SettingDescriptor
-            {
-                Key = extension.Key,
-                Label = extension.Name,
-                Kind = SettingKind.Toggle,
-                Default = extension.Blocked,
-                Section = "Gizlenecek uzantılar",
-                Description = extension.Clsid
-            });
         }
     }
 

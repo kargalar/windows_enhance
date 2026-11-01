@@ -147,6 +147,28 @@ select.white-control { cursor: pointer; }
 .palette-option.selected { box-shadow: 0 0 0 2px #fff; }
 .details-empty { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 11px; }
 
+.automation-panel { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+.automation-master, .automation-card { padding: 15px; border: 1px solid #38383e; border-radius: 15px; background: #1b1b1e; }
+.automation-master { display: grid; gap: 13px; }
+.automation-master .setting-row { padding: 0 0 12px; }
+.automation-panel label { display: grid; gap: 7px; color: #bfc0c8; font-size: 11px; }
+.automation-card { display: flex; flex-direction: column; gap: 14px; }
+.automation-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.automation-card > header > div { display: grid; gap: 5px; }
+.automation-card > header strong { font-size: 13px; color: #f0f0f3; }
+.automation-card small, .automation-hint { color: #a5a6ae; font-size: 11px; line-height: 1.6; }
+.automation-card.is-off { border-style: dashed; }
+.automation-interval { display: grid; gap: 10px; }
+.automation-interval > label { grid-template-columns: 1fr 110px; align-items: center; }
+.automation-steps { display: grid; gap: 10px; }
+.automation-steps > strong { font-size: 12px; }
+.automation-step { display: flex; align-items: flex-start; gap: 7px; padding: 10px; border-radius: 11px; background: #101114; }
+.automation-step-number { width: 17px; padding-top: 10px; color: #90949e; font-size: 11px; }
+.automation-step-fields { flex: 1; min-width: 0; display: grid; gap: 7px; }
+.automation-card footer { display: flex; gap: 7px; flex-wrap: wrap; }
+.automation-panel button:disabled { opacity: .4; cursor: default; }
+.automation-add { align-self: flex-start; }
+
 .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 24px; background: #0009; backdrop-filter: blur(8px); }
 .appearance-dialog { width: min(480px, 100%); padding: 22px; border: 1px solid #3d3d41; border-radius: 20px; background: #1b1b1d; box-shadow: 0 24px 80px #0009; }
 .appearance-dialog header, .appearance-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -180,3 +202,5 @@ select.white-control { cursor: pointer; }
   .workspace { grid-template-columns: minmax(290px, .86fr) minmax(360px, 1.14fr); gap: 11px; }
   .details-scroll { padding: 19px; }
 }
+
+.secret-shortcut-text { -webkit-text-security: disc; min-height: 76px; resize: vertical; }

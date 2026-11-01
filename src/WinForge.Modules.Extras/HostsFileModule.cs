@@ -223,7 +223,7 @@ internal sealed class HostsFileEditorWindow
     {
         _dirty = true;
         _status = "Kaydedilmemiş değişiklikler";
-        PushState();
+        Save();
     }
 
     private void RequestClose()

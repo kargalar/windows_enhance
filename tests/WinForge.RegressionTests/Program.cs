@@ -67,6 +67,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--panel-placement-only"))
+            {
+                PanelPlacementChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} panel placement and automatic settings checks.");
+                return 0;
+            }
             if (args.Contains("--island-ui-only"))
             {
                 DynamicIslandChecks.RunUi(Check);
@@ -1961,7 +1967,7 @@ internal static class Program
             }
         }
         SetProperty(app, nameof(ForgeApplication.Host), host);
-        var window = new MainWindow();
+        var window = new MainWindow(Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2")));
         window.Show();
         Pump(window);
         var list = Find<ListBox>(window, "ModuleList");
@@ -2107,7 +2113,7 @@ internal static class Program
         var host = CreateHost(Path.Combine(TestDirectory, "fixtures"), "ui-toggle");
         host.Load();
         SetProperty(app, nameof(ForgeApplication.Host), host);
-        var window = new MainWindow();
+        var window = new MainWindow(Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2")));
         window.Show();
         Pump(window);
         var list = Find<ListBox>(window, "ModuleList");

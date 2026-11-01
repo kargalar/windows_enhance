@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/WinForge.Core/WinForge.Core.csproj" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ActionShortcut.cs" Link="ActionShortcut.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ShortcutActionModule.cs" Link="ShortcutActionModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/MonitorLayouts.cs" Link="MonitorLayouts.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ShortcutSecret.cs" Link="ShortcutSecret.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/AutomationCommands.cs" Link="AutomationCommands.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/KeyboardInputSender.cs" Link="KeyboardInputSender.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/KeyboardManagerModule.cs" Link="KeyboardManagerModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/CombinationTranslatorModule.cs" Link="CombinationTranslatorModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ExplorerMouseNavigationModule.cs" Link="ExplorerMouseNavigationModule.cs" />
+  </ItemGroup>
+</Project>

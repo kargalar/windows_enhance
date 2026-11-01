@@ -305,7 +305,7 @@ internal sealed class StatusOverlay : IDisposable
 
     public void Place(string position)
     {
-        var area = SystemParameters.WorkArea;
+        var area = CursorPanelPlacement.WorkArea;
         PlaceWindow(statusWindow, position, StatusWidth, StatusHeight, area);
         PlaceWindow(resultWindow, position, ResultWidth, ResultHeight, area);
     }

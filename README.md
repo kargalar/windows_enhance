@@ -1,4 +1,24 @@
+**Panel ve kısayol güncellemesi:** Açılır paneller farenin bulunduğu ekranda açılır. Ayarlar ve kısayol kartları otomatik kaydedilir. Medya Kısayolları’na **MouseX1 → sesi 5 azalt**, **Tuş Kombinasyonu Çevirici** modülüne **Ctrl+D → Alt+W** örneği eklendi. Otomasyon kartlarında isteğe bağlı odak exe’si; program kısayollarında Gezgin klasör yolu desteği bulunur. [Kullanım ve testler](docs/SHORTCUT_ACTIONS.md).
+
 # WinForge
+
+**Verimlilik → Yerel kısayol modülleri:** monitör düzenleri, medya/ses, pencere, sanal masaüstü, şifreli metin yazma ve program açma için ayrı kartlar eklendi. Klavye, fare düğmeleri ve tekerlek kombinasyonları atanabilir. Monitör düzenleri doğrudan Windows üzerinden kaydedilip uygulanır; harici program veya cfg dosyası gerekmez. [Kullanım ve doğrulama](docs/SHORTCUT_ACTIONS.md).
+
+## Kısayol komutları ve otomatik tıklama
+
+Aç/kapat şeklinde tekrarlanan otomasyonlar çalıştıkları sürece ekranın sol üstünde **F1 aktif** gibi bir göstergeyle görünür. Birden fazla çalışan otomasyon ayrı satırlarda listelenir. Gösterge odağı almaz ve fare tıklamalarını engellemez; durdurma, duraklatma, ayar değişikliği veya modülün kapanmasıyla temizlenir. Tek seferlik komutlar bu kalıcı göstergeye eklenmez.
+
+**Verimlilik → Otomasyon · Kısayol Komutları** içindeki otomasyon kartları doğrudan ana panelde düzenlenir; ayrı bir düzenleyici penceresi yoktur. Önceki metin komutları otomatik olarak kartlara aktarılır.
+
+Her kartta ayrı **aç/kapat anahtarı**, **başlat/durdur kısayolu**, **çalışma şekli**, **tekrar aralığı** ve **komut adımları** bulunur. Kısayolu yazabilir veya **Tuş ata** ile kaydedebilirsiniz. Aralığı kaydırıcıyla ya da sayı alanına örneğin **500** yazarak değiştirebilirsiniz (10–3600000 ms). Sayı alanı ve kaydırıcı değişiklikleri otomatik kaydedilir. Alanlar yazmayı bıraktıktan yaklaşık 450 ms sonra otomatik kaydedilir; Kaydet düğmesi gerekmez. Yeni otomasyonlar kapalı eklenir.
+
+Hazır **F1** otomasyonu yaklaşık 100 ms aralıkla sol tıklar; F1 tekrar basılınca durur. Kısayolunu, sol/sağ/orta tıklama komutunu ve aralığını ayrı ayrı değiştirebilirsiniz. **Alt+S** otomasyonu seçili metni kopyalayıp varsayılan tarayıcıda Google’da bir kez arar; seçim kopyalanamazsa eski pano içeriğini aramaz. Tuş, metin, bekleme ve Google araması adımları da eklenebilir. Google araması yalnızca tek seferlik çalışır.
+
+Panelin üstündeki anahtar veya varsayılan **Ctrl+Alt+F8** genel kısayolu tüm otomasyonları duraklatır/devam ettirir. Bu kısayol değiştirilebilir. Duraklatma çalışan komutları durdurur ve otomasyon kısayollarını serbest bırakır; genel devam kısayolu kayıtlı kalır. Devam etmek komutları otomatik başlatmaz, her otomasyon kendi kısayolunu bekler. **Çalışan tüm komutları durdur** düğmesi de tüm dizileri durdurur.
+
+Kısayollar tam eşleşir: **Shift+F1 düz F1 otomasyonunu tetiklemez**. Ctrl, Alt, Shift veya Win basılıyken komutlar bekler. Ayar değişikliği, modülün kapanması ve uygulamadan çıkış çalışan komutları durdurur. Kısayol kaydederken kayıtlı kısayollar geçici olarak bırakılır; Esc ile iptal edilir ve 20 saniyede otomatik geri açılır. Geçersiz/kullanımdaki kısayollarda önceki yapılandırma korunur. Bu modül AutoHotkey betik dili yorumlayıcısı değildir.
+
+Doğrulama: `dotnet run --project tests/WinForge.AutomationTests -c Release -p:Platform=x64`. Testler ayrıştırma, zamanlama, başlat/durdur, temizleme ve seçili metin aramasını kapsar. Gerçek Windows kısayollarında ek değiştirici / tuş tekrarı testleri için klavyeye dokunmadan `-- --native-hotkeys` ekleyin.
 
 **Gezgin → Modern Klasör Seçici** klasik “Browse For Folder” penceresini modern Windows klasör seçicisiyle değiştirir. [Kapsam ve doğrulama](docs/FOLDER_DIALOG.md).
 
@@ -335,7 +355,9 @@ boyutlarına göre sıralanır; sonuçlar değiştiğinde sıralama güncellenir
 Ağ ve çıkarılabilir sürücüler, klasör bağlantıları ve bağlantı olarak işaretli
 bulut klasörleri taranmaz. Okunamayan, çok büyük veya ayarlanan süreyi aşan
 klasörlerin sonucu boş kalır; eksik toplam gösterilmez. Sembolik bağlantılar
-izlenmez. Tarama süresi ve önbellek süresi modül ayarlarından değiştirilebilir.
+izlenmez. İzleyici çalışırken önbellekteki sonuçlar süre dolduğu için yeniden
+taranmaz; yalnızca değişiklik bildirimleriyle güncellenir. Ayarlanabilir önbellek
+süresi, izlenemeyen sonuçlar ve başarısız taramaların yeniden denenmesi içindir.
 Boyuta göre sıralama istendiğinde ilgili taramalar öncelik kazanır. Tamamlanan
 bir üst klasör taraması alt klasör boyutlarını da önbelleğe alır; klasör içeriği
 değiştiğinde yalnız etkilenen alt ağaç yeniden taranıp toplamlar güncellenir.

@@ -20,10 +20,12 @@ internal sealed class EnvironmentProfilesWindow : Window
     private bool _loading;
     private bool _deleteConfirmedFromUi;
     private bool _confirmDelete;
+    private readonly AutomaticSettingsSave _autosave;
 
     public EnvironmentProfilesWindow(EnvironmentProfileService service, IFeatureUiService? featureUi = null)
     {
         _service = service;
+        _autosave = new(SaveProfile);
         _uiSurface = featureUi?.CreateSurface("environment-profiles")
             ?? throw new InvalidOperationException("The React environment profiles view is required.");
         _uiSurface.MessageReceived += OnUiMessage;
@@ -37,7 +39,7 @@ internal sealed class EnvironmentProfilesWindow : Window
         Content = _uiSurface.Element;
 
         RefreshProfiles(null);
-        Closed += (_, _) => _uiSurface.Dispose();
+        Closed += (_, _) => { _autosave.Dispose(); _uiSurface.Dispose(); };
     }
 
     private UserEnvironmentProfile? SelectedProfile => _profiles.FirstOrDefault(profile => profile.Id == _selectedId);
@@ -149,6 +151,7 @@ internal sealed class EnvironmentProfilesWindow : Window
             case "profiles.save": SaveProfile(); break;
             case "profiles.close": Close(); break;
         }
+        if (command is "profiles.name" or "profiles.variable-update" or "profiles.variable-remove") _autosave.Schedule();
     }
 
     private static string ReadString(JsonElement payload, string name) =>

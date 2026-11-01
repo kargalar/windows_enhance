@@ -259,6 +259,12 @@ public sealed class KeyboardManagerModule : ITweakModule
                 return new IntPtr(1);
             }
 
+            if (HotkeyService.IsCapturing)
+            {
+                if (isUp) _pressedKeys.Remove(key);
+                return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+            }
+
             if (isDown && TryGetShortcut(key, appMappings, out var shortcut))
             {
                 if (SendShortcut(shortcut, PressedModifierKeys()))
@@ -750,6 +756,7 @@ public sealed class KeyboardManagerModule : ITweakModule
 
 internal sealed class KeyboardMappingEditor
 {
+    private readonly AutomaticSettingsSave _autosave;
     private readonly IFeatureUiWindow _window;
     private readonly Action<List<object>, List<object>, List<object>, List<object>, List<object>> _save;
     private string _keys;
@@ -769,6 +776,7 @@ internal sealed class KeyboardMappingEditor
         Action<List<object>, List<object>, List<object>, List<object>, List<object>> save)
     {
         _save = save;
+        _autosave = new(SaveMappings);
         _keys = string.Join(Environment.NewLine, keys.Select(FormatKeyMapping));
         _shortcuts = string.Join(Environment.NewLine, shortcuts.Select(FormatShortcutMapping));
         _applications = string.Join(Environment.NewLine, appSpecificMappings.Select(FormatAppSpecificMapping));
@@ -777,6 +785,7 @@ internal sealed class KeyboardMappingEditor
         _window = featureUi.Open("keyboard-mapping-editor-" + Guid.NewGuid().ToString("N"), "keyboard-mapping-editor", "Klavye eşlemeleri",
             new FeatureUiWindowOptions(940, 760, ShowInTaskbar: true, Resizable: true));
         _window.MessageReceived += OnMessage;
+        _window.ClosedByHost += _autosave.Dispose;
         PushState();
     }
 
@@ -805,6 +814,7 @@ internal sealed class KeyboardMappingEditor
             case "actions": _actions = value; break;
         }
         _error = "";
+        _autosave.Schedule();
         PushState();
     }
 
@@ -844,6 +854,7 @@ internal sealed class KeyboardMappingEditor
                 _captureStatus = $"Eklendi: {_capturedShortcut}";
                 _captureTarget = null;
                 _capturedShortcut = null;
+                _autosave.Schedule();
             }
             PushState();
             return;
@@ -953,7 +964,8 @@ internal sealed class KeyboardMappingEditor
 
             _save(keyMappings.Cast<object>().ToList(), shortcutMappings.Cast<object>().ToList(), appMappings.Cast<object>().ToList(),
                 textMappings.Cast<object>().ToList(), shortcutActions.Cast<object>().ToList());
-            _window.Close();
+            _error = "";
+            PushState();
         }
         catch (FormatException exception)
         {

@@ -83,6 +83,8 @@ internal static class Program
             Check(Scan(host, item) == 3072, "Directory links are not followed");
         }
         catch (UnauthorizedAccessException) { Console.WriteLine("SKIP: symbolic links are unavailable to this account."); }
+        catch (IOException exception) when (exception.HResult == unchecked((int)0x80070522))
+        { Console.WriteLine("SKIP: symbolic links require a privilege unavailable to this account."); }
         var sparseFolder = Path.Combine(root, "sparse");
         Directory.CreateDirectory(sparseFolder);
         using (var file = new FileStream(Path.Combine(sparseFolder, "large.bin"), FileMode.CreateNew, FileAccess.Write))
@@ -182,7 +184,7 @@ internal static class Program
             handle = new IntPtr(long.Parse(parts[1], CultureInfo.InvariantCulture));
             Check(processId == fixture.Id, "Owned Explorer view process was identified");
             if (coexist) diagnostics = ShellDiagnosticsSession.ConnectAsync(processId, native).GetAwaiter().GetResult();
-            session = ExplorerFolderSizeSession.ConnectAsync(processId, native).GetAwaiter().GetResult();
+            session = ExplorerFolderSizeSession.ConnectAsync(processId, native, cacheSeconds: 5).GetAwaiter().GetResult();
             Check(session.IsConnected, "Owned Explorer view callback attached");
             if (diagnostics is not null)
             {
@@ -211,6 +213,14 @@ internal static class Program
             WaitUntil(() => session.Status.Pending == 0, "all queued folder scans complete", () => session.Status.ToString());
             var completedScansBeforeDescendant = session.Status.Completed;
             var subtreeHitsBeforeDescendant = session.Status.SubtreeCacheHits;
+            // Cross the fallback TTL before querying both an existing entry and a new descendant.
+            Thread.Sleep(5500);
+            var hitsBeforeRefresh = session.Status.CacheHits;
+            SHChangeNotify(0x00001000, 0x00002005, root, IntPtr.Zero);
+            WaitUntil(() => session.Status.CacheHits > hitsBeforeRefresh && SizeIs(handle, "WinForge fixture folder", "3"),
+                "watched folder remains cached beyond the fallback TTL", () => session.Status.ToString());
+            Check(session.Status.Completed == completedScansBeforeDescendant,
+                "Unchanged watched folders do not rescan when the fallback cache duration expires");
             SendMessage(handle, 0x8003, IntPtr.Zero, IntPtr.Zero);
             WaitUntil(() => session.Status.SubtreeCacheHits > subtreeHitsBeforeDescendant,
                 "nested folder reuses its parent's snapshot", () => session.Status.ToString());

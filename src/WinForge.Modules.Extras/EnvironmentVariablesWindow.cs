@@ -14,6 +14,7 @@ internal sealed class EnvironmentVariablesWindow : Window
     private readonly string _descriptionText;
     private string _statusText = "";
     private string[] _originalNames = Array.Empty<string>();
+    private readonly AutomaticSettingsSave _autosave;
 
     public EnvironmentVariablesWindow(UserEnvironmentVariableStore store, IFeatureUiService? featureUi = null)
         : this(store, "Kullanıcı Ortam Değişkenleri",
@@ -25,6 +26,7 @@ internal sealed class EnvironmentVariablesWindow : Window
         IFeatureUiService? featureUi = null)
     {
         _store = store;
+        _autosave = new(Save);
         _descriptionText = descriptionText;
         _uiSurface = featureUi?.CreateSurface("environment-variables")
             ?? throw new InvalidOperationException("The React environment variables view is required.");
@@ -42,7 +44,7 @@ internal sealed class EnvironmentVariablesWindow : Window
 
         Content = _uiSurface.Element;
         Reload();
-        Closed += (_, _) => _uiSurface.Dispose();
+        Closed += (_, _) => { _autosave.Dispose(); _uiSurface.Dispose(); };
     }
 
     private void OnUiMessage(string command, JsonElement payload)
@@ -67,6 +69,7 @@ internal sealed class EnvironmentVariablesWindow : Window
             case "environment.reload": Reload(); break;
             case "environment.close": Close(); break;
         }
+        if (command is "environment.update" or "environment.remove") _autosave.Schedule();
     }
 
     private void PushUiState() => _uiSurface.SetState(new
@@ -105,7 +108,7 @@ internal sealed class EnvironmentVariablesWindow : Window
         try
         {
             _store.Save(_originalNames, _entries.ToArray());
-            Reload();
+            _originalNames = _entries.Select(entry => entry.Name).ToArray();
             _statusText = "Ortam değişkenleri kaydedildi.";
         }
         catch (Exception exception)

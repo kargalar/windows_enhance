@@ -177,6 +177,14 @@ public interface ITweakModule
     void Apply();
 }
 
+/// <summary>Provides an interactive panel inside the main module settings surface.</summary>
+public interface IModulePanel
+{
+    object GetPanelState();
+    void HandlePanelCommand(string action, System.Text.Json.JsonElement payload);
+    event Action? PanelStateChanged;
+}
+
 /// <summary>Modules with potentially slow lifecycle operations can keep the UI dispatcher responsive.</summary>
 public interface IAsyncTweakModule
 {

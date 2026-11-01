@@ -14,14 +14,25 @@ namespace WinForge.App;
 public partial class MainWindow : Window
 {
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly Task<CoreWebView2Environment> _webViewEnvironment;
     private bool _backgroundNoticeShown;
+    private IDisposable? _shortcutCapture;
+    private readonly System.Windows.Threading.DispatcherTimer _shortcutCaptureTimer = new() { Interval = TimeSpan.FromSeconds(30) };
 
-    public MainWindow()
+    public MainWindow(Task<CoreWebView2Environment> webViewEnvironment)
     {
+        _webViewEnvironment = webViewEnvironment;
         InitializeComponent();
         Appearance.Load();
         ApplyAppearance();
+        _shortcutCaptureTimer.Tick += (_, _) =>
+        {
+            try { EndShortcutCapture(); }
+            catch (Exception ex) { App.Instance.Logger.Error("Kısayollar geri açılamadı.", ex); }
+        };
         Loaded += OnLoaded;
+        foreach (var panel in App.Instance.Host.Modules.OfType<IModulePanel>())
+            panel.PanelStateChanged += () => Dispatcher.BeginInvoke(new Action(RefreshState));
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -40,7 +51,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            await UiWebView.EnsureCoreWebView2Async();
+            await UiWebView.EnsureCoreWebView2Async(await _webViewEnvironment);
             var core = UiWebView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.AreDevToolsEnabled = false;
@@ -66,8 +77,11 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             App.Instance.Logger.Error("Web arayüzü başlatılamadı.", exception);
+            var runtimeMessage = exception is WebView2RuntimeNotFoundException
+                ? "Microsoft Edge WebView2 Runtime bulunamadı. Runtime'ı yükleyip WinForge'u yeniden başlatın."
+                : "WebView2 arayüzü başlatılamadı. WebView2 Runtime'ın yüklü olduğunu ve WinForge userdata klasörünün erişilebilir olduğunu kontrol edin.";
             MessageBox.Show(this,
-                "WinForge arayüzü başlatılamadı. WebView2 Runtime'ın yüklü olduğunu kontrol edin.\n\n" + exception.Message,
+                runtimeMessage + "\n\n" + exception.Message,
                 "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -86,6 +100,9 @@ public partial class MainWindow : Window
                 "module.toggle" => await ToggleModule(payload),
                 "setting.update" => await UpdateSetting(payload),
                 "setting.execute" => ExecuteSetting(payload),
+                "module.command" => ExecutePanelCommand(payload),
+                "shortcut.capture-begin" => BeginShortcutCapture(),
+                "shortcut.capture-end" => EndShortcutCapture(),
                 "appearance.update" => UpdateAppearance(payload),
                 "system.openLogs" => OpenLogs(),
                 "app.exit" => ExitApp(),
@@ -101,6 +118,23 @@ public partial class MainWindow : Window
         }
     }
 
+    private object BeginShortcutCapture()
+    {
+        _shortcutCapture ??= App.Instance.Hotkeys.Suspend();
+        _shortcutCaptureTimer.Stop();
+        _shortcutCaptureTimer.Start();
+        return BuildState();
+    }
+
+    private object EndShortcutCapture()
+    {
+        _shortcutCaptureTimer.Stop();
+        var capture = _shortcutCapture;
+        _shortcutCapture = null;
+        capture?.Dispose();
+        return BuildState();
+    }
+
     private object BuildState()
     {
         var modules = App.Instance.Host.Modules.Select(module => new
@@ -112,6 +146,7 @@ public partial class MainWindow : Window
             warning = module.Warning,
             isActive = module.IsActive,
             error = App.Instance.Host.ErrorOf(module),
+            panel = (module as IModulePanel)?.GetPanelState(),
             settings = module.Settings.Select(setting => new
             {
                 key = setting.Key,
@@ -182,8 +217,16 @@ public partial class MainWindow : Window
             _ => throw new InvalidOperationException("Bu ayar doğrudan düzenlenemez.")
         };
 
-        App.Instance.Host.SettingsOf(module).Set(descriptor.Key, settingValue);
+        var settings = App.Instance.Host.SettingsOf(module);
+        var previous = ReadSetting(module, descriptor);
+        settings.Set(descriptor.Key, settingValue);
         await App.Instance.Host.ApplyAsync(module);
+        if (App.Instance.Host.ErrorOf(module) is { } error)
+        {
+            settings.Set(descriptor.Key, previous);
+            await App.Instance.Host.ApplyAsync(module);
+            throw new InvalidOperationException("Ayar uygulanamadı; önceki kayıt korundu. " + error);
+        }
         return BuildState();
     }
 
@@ -196,6 +239,14 @@ public partial class MainWindow : Window
         if (descriptor.Kind != SettingKind.Action)
             throw new InvalidOperationException("Bu ayar bir eylem değil.");
         descriptor.Execute?.Invoke();
+        return BuildState();
+    }
+
+    private object ExecutePanelCommand(JsonElement payload)
+    {
+        var module = FindModule(payload.GetProperty("moduleId").GetString());
+        if (module is not IModulePanel panel) throw new InvalidOperationException("Modül paneli bulunamadı.");
+        panel.HandlePanelCommand(payload.GetProperty("action").GetString() ?? "", payload.GetProperty("data"));
         return BuildState();
     }
 
@@ -268,6 +319,7 @@ public partial class MainWindow : Window
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
+        if (_shortcutCapture is not null) return;
         if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
         {
             UiWebView.CoreWebView2?.ExecuteScriptAsync("window.dispatchEvent(new Event('winforge-search'))");
@@ -277,6 +329,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        EndShortcutCapture();
         if (!App.Instance.IsExiting)
         {
             e.Cancel = true;

@@ -21,12 +21,14 @@ internal sealed partial class ClipboardShelfWindow
         private readonly IFeatureUiSurface uiSurface;
         private ClipPreferences draft;
         private string shortcutsText;
-        private string status = "Değişiklikler kaydedilene kadar geçerli ayarlar kullanılır.";
+        private string status = "Değişiklikler otomatik kaydedilir.";
+        private readonly AutomaticSettingsSave autosave;
 
         public ClipboardSettingsWindow(ClipboardShelfWindow shelf, ClipPreferences preferences,
             IFeatureUiService? featureUi)
         {
             this.shelf = shelf;
+            autosave = new(() => { try { Save(); } catch (Exception error) { status = error.Message; PushState(); } });
             draft = preferences;
             shortcutsText = string.Join(Environment.NewLine,
                 ClipboardKeymap.Defaults.Select(entry =>
@@ -42,7 +44,7 @@ internal sealed partial class ClipboardShelfWindow
                 ?? throw new InvalidOperationException("Pano ayarları için React arayüzü gerekli.");
             uiSurface.MessageReceived += OnUiMessage;
             Content = uiSurface.Element;
-            Closed += (_, _) => uiSurface.Dispose();
+            Closed += (_, _) => { autosave.Dispose(); uiSurface.Dispose(); };
             PushState();
         }
 
@@ -63,6 +65,7 @@ internal sealed partial class ClipboardShelfWindow
                     case "clipboard-settings.folder-remove": RemoveFolder(payload); break;
                     case "clipboard-settings.save": Save(); break;
                 }
+                if (command is "clipboard-settings.toggle" or "clipboard-settings.select" or "clipboard-settings.shortcuts" or "clipboard-settings.folder-add" or "clipboard-settings.folder-remove") autosave.Schedule();
             }
             catch (Exception error)
             {
@@ -136,7 +139,8 @@ internal sealed partial class ClipboardShelfWindow
             shelf._capture.RefreshWatchers();
             shelf._library.Expire();
             shelf.ResetAndRender();
-            DialogResult = true;
+            status = "Değişiklikler otomatik kaydedildi.";
+            PushState();
         }
 
         private void PushState() => uiSurface.SetState(new

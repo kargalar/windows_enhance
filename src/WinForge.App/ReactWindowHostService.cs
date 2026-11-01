@@ -19,6 +19,8 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
     private readonly Task<CoreWebView2Environment> _webViewEnvironment;
     private bool _disposed;
 
+    internal Task<CoreWebView2Environment> WebViewEnvironment => _webViewEnvironment;
+
     public ReactWindowHostService()
     {
         var userDataDirectory = Path.Combine(WinForge.Core.AppData.DirectoryPath, "WebView2");
@@ -125,6 +127,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
         private readonly Task<CoreWebView2Environment> _webViewEnvironment;
         private readonly WebView2 _webView;
         private readonly bool _resizable;
+        private readonly bool _centerAtCursor;
         private object? _state;
         private bool _disposed;
 
@@ -139,6 +142,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             _jsonOptions = jsonOptions;
             _webViewEnvironment = webViewEnvironment;
             _resizable = options.Resizable;
+            _centerAtCursor = options.Left is null && options.Top is null;
             Title = title;
             Width = options.Width;
             Height = options.Height;
@@ -248,7 +252,11 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
                 Dispatcher.Invoke(Show);
                 return;
             }
-            if (!IsVisible) base.Show();
+            if (!IsVisible)
+            {
+                if (_centerAtCursor) CursorPanelPlacement.Center(this);
+                base.Show();
+            }
             if (ShowActivated) Activate();
         }
 

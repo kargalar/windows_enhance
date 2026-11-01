@@ -63,6 +63,15 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler((sender, _) =>
+        {
+            if (sender is Window { WindowStartupLocation: WindowStartupLocation.CenterScreen or WindowStartupLocation.CenterOwner } window)
+            {
+                CursorPanelPlacement.Center(window);
+                window.IsVisibleChanged += (_, _) => { if (window.IsVisible) CursorPanelPlacement.Center(window); };
+            }
+        }));
+
         var initialCommand = IsModuleCommand(e.Args);
         var showMain = !e.Args.Any(arg => arg.Equals("--startup", StringComparison.OrdinalIgnoreCase)) && !initialCommand;
         var startupWindow = showMain ? new StartupWindow() : null;
@@ -86,7 +95,8 @@ public partial class App : Application
         Logger.Info($"WinForge başlatılıyor · {Environment.OSVersion.VersionString}");
 
         Hotkeys = new HotkeyService();
-        FeatureUi = new ReactWindowHostService();
+        var featureUi = new ReactWindowHostService();
+        FeatureUi = featureUi;
         OsdWindow.Configure(FeatureUi);
 
         var modulesDirectory = Path.Combine(AppContext.BaseDirectory, "modules");
@@ -94,7 +104,7 @@ public partial class App : Application
             OsdWindow.ShowVolume, FeatureUi);
         Host.Load();
 
-        MainView = new MainWindow();
+        MainView = new MainWindow(featureUi.WebViewEnvironment);
         MainWindow = MainView;
         if (showMain)
             MainView.Show();

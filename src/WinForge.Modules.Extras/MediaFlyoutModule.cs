@@ -251,12 +251,12 @@ public sealed class MediaFlyoutModule : ITweakModule
                 Label = "Flyout monitörü",
                 Kind = SettingKind.Choice,
                 Default = "cursor",
-                Options = ["cursor", "primary", "active"],
+                Options = ["cursor"],
                 OptionLabels = new Dictionary<string, string>
                 {
-                    ["cursor"] = "Fare imlecinin bulunduğu", ["primary"] = "Birincil", ["active"] = "Etkin pencerenin bulunduğu"
+                    ["cursor"] = "Fare imlecinin bulunduğu"
                 },
-                Description = "Birden fazla ekran kullanırken flyout’un hangi ekranda açılacağını belirler.",
+                Description = "Tüm açılır paneller fare imlecinin bulunduğu ekranda açılır.",
                 Section = "Görünüm"
             },
             new SettingDescriptor
@@ -729,7 +729,7 @@ internal static class LockKeysStatusWindow
     public static void Show(string key, bool enabled)
     {
         if (_featureUi is null) return;
-        var bounds = SystemParameters.WorkArea;
+        var bounds = CursorPanelPlacement.WorkArea;
         _instance = _featureUi.Open("lock-keys-status", "lock-keys-status", "Kilit tuşu durumu",
             new FeatureUiWindowOptions(230, 76, Topmost: true, ActivateOnShow: false, Transparent: true));
         _instance.SetBounds(bounds.Left + (bounds.Width - 230) / 2, bounds.Top + 48, 230, 76);
@@ -1325,7 +1325,7 @@ internal sealed class MediaFlyoutWindow : Window
         int autoDismissSeconds = 3, bool suppressOnFullscreen = false)
     {
         var newPosition = position is "bottom-left" or "top-right" or "top-left" ? position : "bottom-right";
-        var newMonitor = monitor is "primary" or "active" ? monitor : "cursor";
+        var newMonitor = "cursor";
         if (newPosition != _position || newMonitor != _monitor)
             _hasCustomPosition = false;
         _position = newPosition;
@@ -1498,12 +1498,7 @@ internal sealed class MediaFlyoutWindow : Window
     private void PositionFlyout()
     {
         var cursor = GetCursorPoint();
-        var monitor = _monitor switch
-        {
-            "primary" => GetPrimaryMonitor(),
-            "active" => MonitorFromWindow(GetForegroundWindow(), MonitorDefaultToNearest),
-            _ => MonitorFromPoint(cursor, MonitorDefaultToNearest)
-        };
+        var monitor = MonitorFromPoint(cursor, MonitorDefaultToNearest);
         if (!TryGetMonitorInfo(monitor, out var info))
         {
             var workArea = SystemParameters.WorkArea;

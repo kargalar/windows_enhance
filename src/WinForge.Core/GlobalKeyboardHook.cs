@@ -35,6 +35,14 @@ public sealed class GlobalKeyboardHook : IDisposable
         {
             var message = wParam.ToInt64();
             var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            if (HotkeyService.IsCapturing)
+            {
+                // Keep releases observable so recording/drag state can finish safely.
+                if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
+                _controlDown = false;
+                _lastControlUp = -DoublePressWindowMs;
+                return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
+            }
             if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN) NotifyKeyStateChanged(info.vkCode, isDown: true);
             else if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
 

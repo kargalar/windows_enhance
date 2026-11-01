@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:shortcuts": "node --test tests/shortcuts.test.mjs",
     "build": "tsc -b && vite build"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.1.2",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.8.3",
     "vite": "^8.3.5"
   }

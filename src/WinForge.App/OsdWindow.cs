@@ -78,7 +78,7 @@ public static class OsdWindow
         if (window is null) return;
         window.MessageReceived -= OnBrightnessMessage;
         window.MessageReceived += OnBrightnessMessage;
-        PositionOnDisplay(window, deviceName, 56);
+        PositionAtBottom(window, IndicatorWidth, IndicatorHeight, 56);
         UpdateBrightnessState(window);
         RestartBrightnessTimer();
     });
@@ -193,22 +193,9 @@ public static class OsdWindow
 
     private static void PositionAtBottom(IFeatureUiWindow window, double width, double height, double bottomOffset)
     {
-        var area = SystemParameters.WorkArea;
+        var area = CursorPanelPlacement.WorkArea;
         window.SetBounds(area.Left + (area.Width - width) / 2,
             area.Bottom - bottomOffset - height, width, height);
-    }
-
-    private static void PositionOnDisplay(IFeatureUiWindow window, string deviceName, double bottomOffset)
-    {
-        var area = DesktopDisplays.Enumerate()
-            .FirstOrDefault(display => display.DeviceName.Equals(deviceName, StringComparison.OrdinalIgnoreCase))?.WorkArea;
-        var width = IndicatorWidth;
-        var height = IndicatorHeight;
-        var workArea = area is { } displayArea
-            ? new Rect(displayArea.Left, displayArea.Top, displayArea.Right - displayArea.Left, displayArea.Bottom - displayArea.Top)
-            : SystemParameters.WorkArea;
-        window.SetBounds(workArea.Left + (workArea.Width - width) / 2,
-            workArea.Bottom - bottomOffset - height, width, height);
     }
 
     private static void RestartTimer(ref System.Threading.Timer? timer, int milliseconds, Action callback)
