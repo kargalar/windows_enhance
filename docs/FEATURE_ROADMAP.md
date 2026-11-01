@@ -9,18 +9,14 @@ feature engines continue to use Windows/.NET APIs and their existing contracts.
 | Area | Current WinForge coverage | Remaining work |
 |---|---|---|
 | Window management | Automatic full-screen tiling, Shift-drag zone placement, arrow-key zone navigation and Ctrl+arrow adjacent rectangular zone spanning during drag, preset zones, configurable 1–6 column × 1–4 row custom grids, per-monitor grid profiles, same-zone window cycling on `Win+PageUp`/`Win+PageDown`, direct active-window movement to adjacent zones using `Win+Ctrl+Alt+Arrow`, and live read-only cropped window thumbnails | Interactive reparent mode |
-| Workspaces | Named snapshots of visible desktop application paths and window bounds; launches or reuses matching app windows, maps missing displays to an available monitor; optionally captures and restores parsed process arguments and working directories; captures packaged app window IDs and activates them through Windows app activation | Restore app-specific document tabs |
 | Always on top and mouse move/resize | Own Always On Top and Window Control engines; configurable actions, edge snapping, magnets, input exclusions, reversible opacity/borders and migrated preferences | Broader Windows-build, DPI and elevated-window verification |
 | OCR and screen tools | Text Extractor, Screen Ruler, Color Picker | Improve capture reliability and keyboard/accessibility flows |
 | Mouse | Double-Ctrl spotlight; click rings for left, right, middle and both side buttons with an opt-in all-button scope, independent per-button colors, configurable click diameter and fade duration; configurable crosshairs; monitor jump | Add richer click highlighter modes such as per-button animation styles |
-| Clipboard | Windows clipboard history, plain-text paste, Markdown/JSON conversion, local OCR, and TXT/HTML/PNG file paste | Add media conversion and richer history search |
 | Displays / Power Display | DDC/CI capability discovery with brightness, contrast, monitor volume, input-source and color-preset controls; Windows WMI brightness for built-in panels; linked brightness levels; async discovery, color-change confirmation, persistent per-monitor profiles, opt-in local-time day/night brightness schedules, and cursor-monitor brightness hotkeys | Add rotation/power controls, custom VCP names, and profile integration with Light Switch |
 | Fluent Flyout | Compact media flyout with Windows media session title/artist and bounded album artwork, selectable sessions and persistently pinnable sessions through the taskbar widget, playback timeline/seek, shuffle/repeat, allowlist/blocklist app filtering, direct play/pause/skip commands (key fallback), independently configurable lock-key OSD and non-activating notifications, `Win+Alt+M`/`Ctrl+Alt+V` shortcuts, hardware media-key triggers, bottom-centered audio volume OSD with interactive slider and media flyout on hardware and compatible external volume changes, Core Audio endpoint volume/mute changes filtered through event context, opt-in compact taskbar-adjacent mini player with edge-aware placement, session-switching context menu and configurable master/player-app volume wheel control, opt-in 24-band WASAPI output spectrum visualizer with silence hiding and optional baseline, Up Next notification, configurable corner/monitor, black dark surfaces with white text and borderless controls, fade animation, inactivity dismissal, fullscreen suppression and high-contrast colors | Direct taskbar embedding and edge-oriented widget layout; marquee/fixed-width widget options; clickable player header that reliably activates the exact player/browser tab; richer Fluent backdrop and animation settings; verify external device behavior across audio drivers and Windows builds |
 | Taskbar and shell | Own taskbar registry/API tweaks, seconds/date format, wheel volume, middle-click close, transparency/accent, tray visibility | Own version-tested shell engine for advanced XAML themes, taskbar geometry/placement, dock animations and Explorer/browser customization; these features are currently unavailable |
 | Explorer and Start | Explorer tweaks, context-menu tools, Start/Search cleanup, bulk rename with persistent last-operation undo, image resize with metadata preservation/progress/cancellation, file-lock inspection with process/service details and post-termination rescan | Verify Explorer integration across supported Windows builds |
-| Themes and system | Theme switch with timed light/dark schedule, Awake, corners, UI tweaks, startup, user and elevated system-scope environment variable editors, plus user profiles | Add reversible power/menu shortcuts |
-| Hosts file management | Entry parsing with unmanaged text/comment preservation, IPv4/IPv6 and host validation, filtering, enable/disable, edit/remove/add, loopback duplicate checks, configurable top/bottom placement, concurrent-edit check, timestamped backups and elevated atomic save | Verify UAC save and rollback/backup behavior against a Windows hosts file; expose backup retention and encoding preferences |
-| Quick access | `Win+Alt+Space` application launcher, fuzzy matching, calculator, direct existing file/folder paths, bounded background indexing of Start Menu/common/custom folders, configurable file-extension filters, opt-in bounded local text-content search and Windows recent-file shortcuts, curated Settings-page commands, module action-provider contract with Workspaces restore actions; searchable Windows/WinForge Shortcut Guide on `Win+Shift+/` plus hold-Win overlay | Add providers for more modules and shell command categories |
+| Themes and system | Theme switch with timed light/dark schedule, corners, UI tweaks, startup | Add reversible power/menu shortcuts |
 
 ## Catalog gaps to track
 
@@ -61,36 +57,6 @@ Upstream references: [FluentFlyout features](https://fluentflyout.com/),
 
 PowerToys utilities not yet covered or only partly covered by WinForge:
 
-- **Advanced Paste:** local text conversion and preview actions are implemented
-  for plain text, Markdown, JSON, CSV, XML and INI, with local image OCR and
-  clipboard file generation for TXT/HTML/PNG/JPEG/BMP/GIF. JPEG quality is
-  adjustable from 10–100% (default 90%); transparent pixels are composited onto
-  white and image dimensions are preserved. Consider local audio/video
-  conversion separately if useful platform codecs are available without adding
-  fragile dependencies or a cloud service.
-- **Command Palette / PowerToys Run:** application/calculator/path search,
-  bounded background indexing, configurable roots and file extensions, opt-in
-  local text-content search, and opt-in Windows Recent `.lnk`/`.url` items are
-  implemented. Searchable built-in commands open common Windows Settings pages
-  through Microsoft's documented `ms-settings:` URI scheme. Content search reads at most 128 KB per supported text file,
-  scans at most 2,000 indexed candidates per query, requires three characters,
-  shows up to eight snippets, and stores no file contents. The module action
-  provider contract is implemented; the active Workspaces module contributes
-  saved-layout restore actions. More providers and shell command categories remain.
-- **Environment Variables:** user-scope variable editing and named profiles are
-  implemented with string/expand-string preservation, baseline restoration, and
-  Windows environment-change broadcasts. System-scope edits use a separate UAC
-  helper with rollback on failure; profile switching remains user-scope only.
-- **Hosts File Editor:** preserves unmanaged comments and lines; supports active
-  and disabled IPv4/IPv6 mappings, filtering and CRUD; places new entries after
-  the Windows header or at EOF; rejects duplicate active loopback mappings;
-  detects concurrent edits; and saves through a UAC helper after a timestamped
-  backup. Live UAC/write and backup verification remains necessary.
-- **Workspaces:** named desktop layouts with visible classic desktop and packaged app windows, per-monitor window positions, and reuse of matching existing windows are implemented. Optional command-line argument capture/relaunch is disabled by default because commands may contain sensitive values; document/session-aware app restore remains.
-- **Shortcut Guide:** searchable categorized Windows and WinForge shortcut list on
-  `Win+Shift+/`; the configurable hold-Win overlay opens after 500 ms by default,
-  stays non-activating so it does not steal focus, cancels when another key is
-  pressed, and hides when Win is released.
 - **Crop And Lock:** `Win+Ctrl+Shift+T` selects a region of the active window and displays a resizable, always-on-top live DWM thumbnail. The thumbnail follows source-window updates and is read-only; PowerToys' interactive Reparent mode and static screenshot mode remain future work. `Esc` cancels selection.
 - **Keyboard Manager:** global and process-scoped key/shortcut remaps plus
   shortcut-triggered Unicode text sequences are implemented; app-specific rules
@@ -128,35 +94,6 @@ PCM/float decoding, packet accumulation, stream cleanup and endpoint switching),
 and a COM WMI connection for monitor brightness and workspace process arguments.
 No external process or third-party mod settings are needed for these features.
 ## Delivery order
-
-### 1. WinForge Run / Command Palette — first slice implemented
-
-- Global shortcut opens a focused search window.
-- Index Start Menu shortcuts for the current user and all users, plus files and
-  folders below Desktop, Documents, Downloads, Pictures, Music and Videos.
-- Build the index off the UI thread, refresh it on demand every two minutes, skip
-  hidden/system/reparse directories, and cap it at 25,000 entries.
-- Rank exact, prefix, word-prefix, and substring matches; keyboard navigation and
-  Enter launch the selected result.
-- Keep indexing failures isolated per folder/shortcut; refresh the index when
-  the launcher opens so installed applications appear without restarting.
-- Evaluate calculator expressions with parentheses and arithmetic precedence;
-  Enter copies the result.
-- Direct existing file/folder path opening and HTTP(S), mailto, ms-settings, and
-  shell URI handlers are implemented.
-- Configurable additional roots and extension filters are persisted in the module
-  settings and re-indexed in the background; Start Menu shortcuts and folder
-  entries stay available through filtering. Opt-in text-content search is
-  debounced, runs off the UI thread against indexed roots, rejects short queries,
-  ignores unsupported/binary files, bounds each file, scan and result count, and
-  retains snippets only in transient UI memory. Recent-item support reads the
-  current user's Windows Recent folder, keeps the newest 20 shell shortcuts, and
-  remains disabled by default. Settings commands cover display, audio, Wi-Fi,
-  Bluetooth, installed/startup apps, Windows Update, clipboard, privacy, mouse,
-  and power pages. The launcher catalog includes actions only from active modules,
-  bounds each provider to 40 results, isolates provider errors, and routes action
-  failures through the host logger and notification service. Workspaces exposes
-  saved layouts by name and app names. More providers and command categories remain.
 
 ### 2. Keyboard Manager — global and process-scoped remapping implemented
 
@@ -201,15 +138,8 @@ No external process or third-party mod settings are needed for these features.
   selection, rectangular adjacent-zone spanning during drag, per-monitor grid
   profiles, same-zone window cycling, and four configurable direct keyboard
   move actions are implemented.
-- Extend Workspaces with an existing-window picker and richer per-app reopen
-  behavior after document/session-aware app activation is designed.
 - Add mouse crosshairs and jump-to-monitor with independent shortcuts/options.
 - Keep changes reversible and avoid injecting code into Explorer or DWM.
-
-Workspaces reference: [Microsoft PowerToys Workspaces](https://learn.microsoft.com/en-us/windows/powertoys/workspaces).
-- [Microsoft AppUserModelID window property](https://learn.microsoft.com/en-us/windows/win32/properties/props-system-appusermodel-id)
-- [Microsoft IApplicationActivationManager](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-iapplicationactivationmanager)
-- [Microsoft GetPackageFullName](https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefullname)
 
 ### 5. Own shell customization engine
 
@@ -233,12 +163,9 @@ Workspaces reference: [Microsoft PowerToys Workspaces](https://learn.microsoft.c
    and Fluent Flyout audio-device behavior on Windows 10/11.
 2. Finish high-use Fluent Flyout taskbar-widget behavior: edge-oriented layout,
    stable player activation, and width options.
-3. Add more useful module actions to the launcher and Shortcut Guide, keeping
-   action providers tied to the active module state.
-4. Evaluate remaining PowerToys gaps by daily usefulness and platform support:
-   interactive Crop And Lock reparenting, document-aware Workspaces restore,
-   and richer PowerRename history.
-5. Implement remaining shell features with a WinForge-owned engine only after
+3. Evaluate remaining PowerToys gaps by daily usefulness and platform support:
+   interactive Crop And Lock reparenting, and richer PowerRename history.
+4. Implement remaining shell features with a WinForge-owned engine only after
    Windows-build compatibility and reversible state restoration are verified.
 
 ## Source references
@@ -247,8 +174,6 @@ Workspaces reference: [Microsoft PowerToys Workspaces](https://learn.microsoft.c
 - [Microsoft Keyboard Manager remapping behavior and reserved keys](https://learn.microsoft.com/en-us/windows/powertoys/keyboard-manager)
 - [Microsoft FancyZones interaction and layout behavior](https://learn.microsoft.com/en-us/windows/powertoys/fancyzones)
 - [Microsoft Restart Manager functions](https://learn.microsoft.com/en-us/windows/win32/rstmgr/functions)
-- [Microsoft PowerToys Environment Variables](https://learn.microsoft.com/en-us/windows/powertoys/environment-variables)
-- [Microsoft PowerToys Hosts File Editor](https://learn.microsoft.com/en-us/windows/powertoys/hosts-file-editor)
 - [Microsoft monitor brightness APIs](https://learn.microsoft.com/en-us/windows/win32/api/_monitor/)
 - [Microsoft PowerToys Power Display](https://learn.microsoft.com/en-us/windows/powertoys/power-display)
 - [Microsoft WmiMonitorBrightness class](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorbrightness)

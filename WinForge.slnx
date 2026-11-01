@@ -30,9 +30,6 @@
     <Project Path="src/WinForge.Modules.Tiling/WinForge.Modules.Tiling.csproj">
       <Platform Project="x64" />
     </Project>
-    <Project Path="src/WinForge.Modules.Launcher/WinForge.Modules.Launcher.csproj">
-      <Platform Project="x64" />
-    </Project>
     <Project Path="src/WinForge.Modules.Extras/WinForge.Modules.Extras.csproj">
       <Platform Project="x64" />
     </Project>

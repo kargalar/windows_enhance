@@ -8,11 +8,17 @@ internal static class DictationEngineChecks
         var configuration = new DictationConfiguration("model.bin", "tr", false, false);
         var engines = new List<FakeEngine>();
         using var client = new DictationClient(factory: _ => { var engine = new FakeEngine(); engines.Add(engine); return engine; });
+        await client.PrepareAsync(configuration, default);
+        check(engines.Count == 1 && engines[0].Calls == 0, "Preparation loads the model without running inference");
         check(await client.TranscribeAsync([.2f], configuration, default) == "İstanbul", "In-process engine preserves Unicode");
         await client.TranscribeAsync([.2f], configuration, default);
         check(engines.Count == 1 && engines[0].Calls == 2, "Repeated dictation reuses the loaded model");
         await client.TranscribeAsync([.2f], configuration with { Language = "en" }, default);
-        check(engines.Count == 2 && engines[0].Disposed, "Configuration changes release the previous model");
+        check(engines.Count == 1 && engines[0].Calls == 3, "Language changes reuse the loaded model");
+        await client.TranscribeAsync([.2f], configuration with { Translate = true }, default);
+        check(engines.Count == 1 && engines[0].Calls == 4, "Translation changes reuse the loaded model");
+        await client.PrepareAsync(configuration with { Model = "other.bin" }, default);
+        check(engines.Count == 2 && engines[0].Disposed, "Model changes release the previous model");
         client.Dispose(); client.Dispose();
         check(!client.IsRunning && engines[1].Disposed, "Repeated session shutdown releases the model");
         await client.TranscribeAsync([.2f], configuration, default);
@@ -24,8 +30,9 @@ internal static class DictationEngineChecks
             if (config.Gpu) { gpuAttempts++; throw new InvalidOperationException("GPU unavailable"); }
             return new FakeEngine();
         });
+        await fallback.PrepareAsync(configuration with { Gpu = true }, default);
         await fallback.TranscribeAsync([.2f], configuration with { Gpu = true }, default);
-        await fallback.TranscribeAsync([.2f], configuration with { Gpu = true }, default);
+        await fallback.TranscribeAsync([.2f], configuration with { Gpu = true, Language = "en" }, default);
         check(gpuAttempts == 1 && fallback.Engine == "CPU (GPU yerine)", "GPU failure selects and reuses the CPU backend");
 
         var blocking = new FakeEngine { Block = true };

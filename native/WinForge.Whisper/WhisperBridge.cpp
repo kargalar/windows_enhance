@@ -23,6 +23,8 @@ extern "C" __declspec(dllexport) int wf_transcribe_cancellable(whisper_context* 
     const char* language, bool translate, char* output, int capacity, bool (*abort)(void*), void* user_data) {
     try {
         auto parameters = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+        // Interactive dictation needs one decoder, including temperature fallback passes.
+        parameters.greedy.best_of = 1;
         parameters.n_threads = std::max(1, std::min(8, static_cast<int>(std::thread::hardware_concurrency())));
         parameters.translate = translate;
         parameters.language = language;

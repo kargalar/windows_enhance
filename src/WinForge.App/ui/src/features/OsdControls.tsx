@@ -4,10 +4,11 @@ type Props = {
   kind: 'volume' | 'brightness';
   percent: number;
   isMuted?: boolean;
+  status?: string;
   send: (command: string, payload?: Record<string, unknown>) => void;
 };
 
-export function OsdControls({ kind, percent, isMuted, send }: Props) {
+export function OsdControls({ kind, percent, isMuted, status, send }: Props) {
   const [value, setValue] = useState(percent);
   const dragging = useRef(false);
   useEffect(() => { if (!dragging.current) setValue(percent); }, [percent, kind]);
@@ -18,7 +19,7 @@ export function OsdControls({ kind, percent, isMuted, send }: Props) {
   };
 
   return <div className="feature-root feature-root-osd">
-    <div className="osd-card osd-volume" onPointerEnter={() => send(`${kind}.hover`, { value: true })} onPointerLeave={() => send(`${kind}.hover`, { value: false })} onKeyDown={event => { if (event.key === 'Escape') { endDrag(); send(`${kind}.dismiss`); } }}>
+    <div className={`osd-card osd-volume${kind === 'brightness' ? ' osd-brightness' : ''}`} onPointerEnter={() => send(`${kind}.hover`, { value: true })} onPointerLeave={() => send(`${kind}.hover`, { value: false })} onKeyDown={event => { if (event.key === 'Escape') { endDrag(); send(`${kind}.dismiss`); } }}>
       {kind === 'volume' ? <button type="button" className="osd-volume-button" onClick={() => send('volume.toggle-mute')} aria-label={isMuted ? 'Sesi aç' : 'Sessize al'} aria-pressed={!!isMuted} title={isMuted ? 'Sesi aç' : 'Sessize al'}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M4 9v6h4l5 4V5L8 9H4Z" />
@@ -43,6 +44,7 @@ export function OsdControls({ kind, percent, isMuted, send }: Props) {
           send(`${kind}.set`, { percent: next });
         }} aria-label={kind === 'volume' ? 'Ses düzeyi' : 'Ekran parlaklığı'} />
       <strong className="osd-volume-value">{value}%</strong>
+      {kind === 'brightness' && status && <small className="osd-brightness-status" role="status">{status}</small>}
     </div>
   </div>;
 }

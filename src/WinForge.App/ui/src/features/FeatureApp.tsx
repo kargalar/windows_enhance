@@ -26,6 +26,7 @@ type OsdState = {
   kind: 'toast' | 'brightness' | 'volume';
   message?: string;
   deviceName?: string;
+  status?: string;
   percent?: number;
   isMuted?: boolean;
   icon?: string;
@@ -59,23 +60,16 @@ type MediaFlyoutState = {
 
 type LockKeysState = { key: string; enabled: boolean };
 type TaskbarWidgetState = { title: string; tooltip?: string; player: string; isPlaying: boolean; canPrevious: boolean; canNext: boolean; sessions: { id: string; label: string }[]; selectedSessionId: string; showSessionSelector: boolean; pinnedSessionId: string; scrollMode: string };
-type LauncherState = { query: string; selectedIndex: number; focusGeneration: number; results: { name: string; path: string; isCalculation: boolean; isRecent: boolean }[] };
 type CaptureToolsState = { title: string };
 type CaptureRecordingState = { gif: boolean; busy: boolean; paused: boolean; status: string };
 type CaptureHistoryState = { title: string; kind: string; search: string; app: string; tag: string; from: string; until: string; offset: number; status: string; selectedId?: number; selectedText: string; selectedTags: string; preview?: string; cursor?: { x: number; y: number; width: number; height: number }; mediaType: string; confirmDelete: boolean; confirmDeleteRange: boolean; confirmDeleteAll: boolean; rows: { id: number; label: string; app: string; title: string; created: string; icon?: string; hasMedia: boolean; mediaType: string; tags: string }[] };
 type UsageState = { from: string; until: string; status: string; summary: string; applications: { app: string; seconds: number; duration: string; estimated: boolean }[]; days: { date: string; active: number; idle: number }[]; dayApplications: { date: string; app: string; duration: string; estimated: boolean }[]; contexts: { date: string; type: string; app: string; context: string; duration: string }[]; tags: { tag: string; seconds: number; duration: string; applications: number }[] };
 type ImportState = { title: string; kind: string; root: string; status: string; progress: number; busy: boolean; selectedDatabase: string; sources: { database: string; imagesDirectory: string }[]; preview?: { records: number; existingRecords: number; bytes: number; missingFiles: number; destination: string } };
 type ModelsState = { directory: string; status: string; models: { name: string; installed: boolean }[] };
-type AdvancedPasteState = { options: { name: string; action: string }[]; selectedIndex: number; jpegQuality: number; jpegVisible: boolean; sourceText: string; sourceLength: number; hasImage: boolean; imageWidth: number; imageHeight: number; preview: string; status: string; canCopy: boolean; canPaste: boolean; pasteLabel: string };
 type SuggestionsState = { suggestions: string[] };
-type ShortcutGuideState = { query: string; entries: { category: string; keys: string; description: string }[] };
-type EnvironmentVariablesState = { title: string; description: string; status: string; rows: { name: string; value: string; expandable: boolean }[] };
-type EnvironmentProfilesState = { profiles: { id: string; name: string }[]; selectedId: string; profileName: string; newProfileName: string; enabled: boolean; enabledAllowed: boolean; status: string; confirmDelete: boolean; variables: { name: string; value: string; expandable: boolean }[] };
 type FileLocksmithState = { path: string; status: string; selectedProcessId?: number; canScan: boolean; canTerminate: boolean; confirmTerminate: boolean; processes: { processId: number; processName: string; applicationName: string; status: string; canTerminate: boolean }[] };
 type PowerRenameState = { find: string; replace: string; regex: boolean; caseSensitive: boolean; status: string; canApply: boolean; canUndo: boolean; rows: { originalName: string; newName: string; status: string }[] };
 type ImageResizerState = { preset: string; customSize: string; format: string; quality: string; preserveMetadata: boolean; processing: boolean; progress: number; progressMaximum: number; canResize: boolean; status: string; rows: { index: number; fileName: string; sourceSize: string; targetName: string; targetSize: string; status: string }[] };
-type WorkspacesState = { name: string; selectedId: string; status: string; busy: boolean; presets: { id: string; name: string; savedAt: string; windowCount: number; applications: string }[] };
-type HostsState = { filter: string; status: string; dirty: boolean; selectedLine: number | null; canEdit: boolean; confirmDiscard: boolean; confirmRemove: boolean; entry: { address: string; hostNames: string; comment: string; isActive: boolean; lineIndex: number; error: string } | null; rows: { lineIndex: number; address: string; hostNames: string; comment: string; isActive: boolean }[] };
 type CaptureImagePreviewState = { image: string; pinned: boolean };
 type KeyboardEditorState = { keys: string; shortcuts: string; applications: string; text: string; actions: string; error: string; captureTarget: string | null; captureStatus: string };
 type KeyboardEditorField = 'keys' | 'shortcuts' | 'applications' | 'text' | 'actions';
@@ -308,12 +302,16 @@ function WheelView({ state }: { state: WheelState }) {
 function DictationStatusView({ state }: { state: DictationStatusState }) {
   const send = (command: string) => window.chrome?.webview?.postMessage({ command, payload: {} });
   return <div className={`feature-root feature-root-dictation ${state.result ? 'has-result' : ''}`}>
-    <section className="dictation-card">
-      <div className="dictation-indicator"><i className={state.recording ? 'recording' : ''} /><span>{state.recording ? 'LISTENING' : state.result ? 'TRANSCRIPTION' : 'DICTATION'}</span></div>
-      <p role="status">{state.message}</p>
+    <section className="osd-card dictation-card">
+      <div className="dictation-status-row">
+        <span className={`dictation-microphone ${state.recording ? 'recording' : ''}`} aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" /></svg>
+        </span>
+        <div className="dictation-status-text"><strong>{state.recording ? 'Dinleniyor' : state.result ? 'Metin hazır' : 'Sesle yazma'}</strong><p role="status">{state.message}</p></div>
+        {!state.result && <kbd>Esc</kbd>}
+      </div>
       {state.recording && <div className="dictation-level"><i style={{ width: `${Math.max(3, Math.min(100, state.audioLevel))}%` }} /></div>}
-      {state.result && <><pre>{state.result}</pre><button className="dictation-copy" onClick={() => send('dictation.copy')}>Copy text</button></>}
-      {!state.result && <small>Esc · Cancel</small>}
+      {state.result && <><pre>{state.result}</pre><button className="dictation-copy" onClick={() => send('dictation.copy')}>Metni kopyala</button></>}
     </section>
   </div>;
 }
@@ -745,18 +743,9 @@ export function FeatureApp({ view }: { view: string }) {
   const [historyTagsDraft, setHistoryTagsDraft] = useState<string | null>(null);
   const [historyPreviewOpen, setHistoryPreviewOpen] = useState(false);
   const [statisticsTab, setStatisticsTab] = useState('applications');
-  const launcherInput = useRef<HTMLInputElement>(null);
-  const launcherState = state as unknown as LauncherState | null;
   const [activeKeyboardTab, setActiveKeyboardTab] = useState<KeyboardEditorField>('keys');
   const captureRef = useRef<HTMLDivElement>(null);
   const keyboardEditorState = state as unknown as KeyboardEditorState | null;
-
-  useEffect(() => {
-    if (view === 'launcher' && launcherState) {
-      launcherInput.current?.focus();
-      launcherInput.current?.select();
-    }
-  }, [view, launcherState?.focusGeneration]);
 
   useEffect(() => {
     if (view === 'keyboard-mapping-editor' && keyboardEditorState?.captureTarget) captureRef.current?.focus();
@@ -917,42 +906,6 @@ export function FeatureApp({ view }: { view: string }) {
     </div>;
   }
 
-  if (view === 'shortcut-guide') {
-    const guide = state as unknown as ShortcutGuideState | null;
-    return <div className="feature-root feature-root-shortcuts">
-      {guide && <section className="shortcut-guide-panel"><header><div><strong>Kısayol rehberi</strong><small>Windows ve WinForge kısayollarını arayın</small></div><button onClick={() => send('shortcut-guide.close')} aria-label="Kapat">×</button></header>
-        <input value={guide.query} onChange={event => send('shortcut-guide.search', { query: event.target.value })} onKeyDown={event => { if (event.key === 'Escape') send('shortcut-guide.close'); }} placeholder="Kısayol, kategori veya işlev ara…" aria-label="Kısayol ara" />
-        <div className="shortcut-guide-list">{guide.entries.map((entry, index) => <article key={`${entry.keys}-${index}`}><span>{entry.category}</span><kbd>{entry.keys}</kbd><p>{entry.description}</p></article>)}{guide.entries.length === 0 && <div className="history-empty">Eşleşen kısayol bulunamadı.</div>}</div>
-      </section>}
-    </div>;
-  }
-
-  if (view === 'environment-variables') {
-    const environment = state as unknown as EnvironmentVariablesState | null;
-    return <div className="feature-root feature-root-environment">
-      {environment && <section className="environment-panel"><header><div><strong>{environment.title}</strong><small>{environment.description}</small></div><button onClick={() => send('environment.close')} aria-label="Kapat">×</button></header>
-        <div className="environment-table"><div className="environment-table-heading"><span>Değişken</span><span>Değer</span><span>%…% genişlet</span><span /></div>
-          {environment.rows.map((row, index) => <div className="environment-row" key={index}><input aria-label="Değişken adı" value={row.name} onChange={event => send('environment.update', { index, name: event.target.value })} /><input aria-label="Değişken değeri" value={row.value} onChange={event => send('environment.update', { index, value: event.target.value })} /><input aria-label="Genişletilebilir değer" type="checkbox" checked={row.expandable} onChange={event => send('environment.update', { index, expandable: event.target.checked })} /><button onClick={() => send('environment.remove', { index })} aria-label="Satırı sil">Sil</button></div>)}
-          {environment.rows.length === 0 && <div className="history-empty">Ortam değişkeni bulunamadı.</div>}
-        </div>
-        <footer><span>{environment.status}</span><button onClick={() => send('environment.add')}>Değişken ekle</button><button onClick={() => send('environment.reload')}>Yenile</button><span>Değişiklikler otomatik kaydedilir.</span></footer>
-      </section>}
-    </div>;
-  }
-
-  if (view === 'environment-profiles') {
-    const profiles = state as unknown as EnvironmentProfilesState | null;
-    return <div className="feature-root feature-root-environment">
-      {profiles && <section className="environment-panel profile-panel"><header><div><strong>Ortam değişkeni profilleri</strong><small>Profiller kullanıcı değişkenlerini birlikte uygular. Aynı anda bir profil etkin olabilir; devre dışı bırakıldığında önceki değerler geri yüklenir.</small></div><button onClick={() => send('profiles.close')} aria-label="Kapat">×</button></header>
-        <div className="profile-toolbar"><select value={profiles.selectedId} onChange={event => send('profiles.select', { id: event.target.value })}><option value="">Profil seçin…</option>{profiles.profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select><input value={profiles.profileName} onChange={event => send('profiles.name', { name: event.target.value })} placeholder="Seçili profilin adı" /><input value={profiles.newProfileName} onChange={event => send('profiles.new-name', { name: event.target.value })} placeholder="Yeni profil adı" /><button onClick={() => send('profiles.new', { name: profiles.newProfileName })}>Yeni</button><button disabled={!profiles.selectedId} onClick={() => send('profiles.delete')}>Profili sil</button></div>
-        <label className="profile-enabled"><input type="checkbox" checked={profiles.enabled} disabled={!profiles.enabledAllowed} onChange={event => send('profiles.toggle', { enabled: event.target.checked })} /> Bu profili kullanıcı ortam değişkenlerine uygula</label>
-        <div className="environment-table"><div className="environment-table-heading"><span>Değişken</span><span>Değer</span><span>%…% genişlet</span><span /></div>{profiles.variables.map((variable, index) => <div className="environment-row" key={index}><input value={variable.name} onChange={event => send('profiles.variable-update', { index, name: event.target.value })} aria-label="Değişken adı" /><input value={variable.value} onChange={event => send('profiles.variable-update', { index, value: event.target.value })} aria-label="Değişken değeri" /><input type="checkbox" checked={variable.expandable} onChange={event => send('profiles.variable-update', { index, expandable: event.target.checked })} aria-label="Genişletilebilir" /><button onClick={() => send('profiles.variable-remove', { index })}>Sil</button></div>)}{profiles.variables.length === 0 && <div className="history-empty">Bu profilde değişken yok.</div>}</div>
-        <footer><span>{profiles.status}</span><button onClick={() => send('profiles.variable-add')}>Değişken ekle</button><span>Değişiklikler otomatik kaydedilir.</span></footer>
-        {profiles.confirmDelete && <div className="history-confirm-backdrop"><section className="history-confirm"><strong>Profili sil?</strong><p>Etkin profildeki değişkenler önceki değerlerine döndürülür.</p><div><button onClick={() => send('profiles.delete-confirm', { confirm: false })}>Vazgeç</button><button className="danger" onClick={() => send('profiles.delete-confirm', { confirm: true })}>Sil</button></div></section></div>}
-      </section>}
-    </div>;
-  }
-
   if (view === 'file-locksmith') {
     const locksmith = state as unknown as FileLocksmithState | null;
     return <div className="feature-root feature-root-locksmith"><section className="locksmith-panel">
@@ -984,30 +937,6 @@ export function FeatureApp({ view }: { view: string }) {
       <label className="image-resizer-metadata"><input type="checkbox" disabled={resizer.processing} checked={resizer.preserveMetadata} onChange={event => send('image-resizer.options', { preserveMetadata: event.target.checked })} /> EXIF/IPTC metadatasını koru</label>
       <div className="image-resizer-table"><div className="image-resizer-table-heading"><span>Dosya</span><span>Özgün boyut</span><span>Çıktı</span><span>Boyut</span><span>Durum</span><span /></div>{resizer.rows.map(row => <div className="image-resizer-row" key={`${row.fileName}-${row.index}`}><span title={row.fileName}>{row.fileName}</span><span>{row.sourceSize}</span><span title={row.targetName}>{row.targetName}</span><span>{row.targetSize}</span><span>{row.status}</span><button disabled={resizer.processing} onClick={() => send('image-resizer.remove', { index: row.index })} aria-label={`${row.fileName} listesinden kaldır`}>×</button></div>)}{resizer.rows.length === 0 && <div className="history-empty">Boyutlandırmak için görsel ekleyin.</div>}</div>
       <footer><div><div className="image-resizer-progress"><span style={{ width: `${resizer.progressMaximum ? Math.min(100, 100 * resizer.progress / resizer.progressMaximum) : 0}%` }} /></div><span role="status">{resizer.status}</span></div><div>{resizer.processing && <button onClick={() => send('image-resizer.cancel')}>İptal et</button>}<button className="primary" disabled={!resizer.canResize} onClick={() => send('image-resizer.run')}>Boyutlandır</button></div></footer>
-    </section>}</div>;
-  }
-
-  if (view === 'workspaces') {
-    const workspaces = state as unknown as WorkspacesState | null;
-    return <div className="feature-root feature-root-workspaces">{workspaces && <section className="workspaces-panel">
-      <header><div><strong>Çalışma alanları</strong><small>Açık masaüstü uygulamalarını ve pencere konumlarını kaydedip birlikte geri yükleyin.</small></div><button onClick={() => send('workspaces.close')} aria-label="Kapat">×</button></header>
-      <section className="workspaces-capture"><label>Çalışma alanı adı<input maxLength={64} value={workspaces.name} onChange={event => send('workspaces.name', { name: event.target.value })} placeholder="Örn. Kodlama, Toplantı" /></label><button className="primary" disabled={workspaces.busy} onClick={() => send('workspaces.capture')}>Açık pencereleri kaydet</button></section>
-      <div className="workspaces-list">{workspaces.presets.map(preset => <button key={preset.id} className={`workspace-card ${workspaces.selectedId === preset.id ? 'selected' : ''}`} onClick={() => send('workspaces.select', { id: preset.id })}><span className="workspace-card-icon">▦</span><span><strong>{preset.name}</strong><small>{preset.windowCount} pencere · {preset.applications || 'Uygulama bilgisi yok'}</small><small>{preset.savedAt}</small></span></button>)}{workspaces.presets.length === 0 && <div className="history-empty">Henüz kaydedilmiş çalışma alanı yok. Açık uygulama pencerelerini kaydedin.</div>}</div>
-      <footer><span role="status">{workspaces.status}</span><div>{workspaces.busy && <button onClick={() => send('workspaces.cancel')}>Durdur</button>}<button disabled={workspaces.busy || !workspaces.selectedId} onClick={() => send('workspaces.delete')}>Sil</button><button className="primary" disabled={workspaces.busy || !workspaces.selectedId} onClick={() => send('workspaces.restore')}>Çalışma alanını aç</button></div></footer>
-    </section>}</div>;
-  }
-
-  if (view === 'hosts-file-editor') {
-    const hosts = state as unknown as HostsState | null;
-    const filteredRows = hosts?.rows.filter(row => `${row.address} ${row.hostNames} ${row.comment}`.toLowerCase().includes(hosts.filter.trim().toLowerCase())) ?? [];
-    return <div className="feature-root feature-root-hosts">{hosts && <section className="hosts-panel">
-      <header><div><strong>Hosts dosyası</strong><small>Etkin girdiler Windows ad çözümlemesini değiştirir. Kaydederken yedek alınır ve yönetici onayı istenir.</small></div><button onClick={() => send('hosts.close')} aria-label="Kapat">×</button></header>
-      <div className="hosts-toolbar"><input value={hosts.filter} onChange={event => send('hosts.filter', { query: event.target.value })} placeholder="IP, ana bilgisayar adı veya yorumda ara" aria-label="Hosts girdilerinde ara" /><button onClick={() => send('hosts.reload')}>Yeniden yükle</button></div>
-      <div className="hosts-table"><div className="hosts-table-heading"><span>IP adresi</span><span>Ana bilgisayar adları</span><span>Yorum</span><span>Durum</span></div>{filteredRows.map(row => <button key={row.lineIndex} className={`hosts-row ${hosts.selectedLine === row.lineIndex ? 'selected' : ''}`} onClick={() => send('hosts.select', { lineIndex: row.lineIndex })}><span>{row.address}</span><span>{row.hostNames}</span><span>{row.comment || '—'}</span><span className={row.isActive ? 'active' : 'inactive'}>{row.isActive ? 'Etkin' : 'Kapalı'}</span></button>)}{filteredRows.length === 0 && <div className="history-empty">Eşleşen hosts girdisi yok.</div>}</div>
-      <footer><span role="status">{hosts.status}{hosts.dirty ? ' · Kaydedilmemiş değişiklikler' : ''}</span><div><button onClick={() => send('hosts.add')}>Yeni girdi</button><button disabled={!hosts.canEdit} onClick={() => send('hosts.edit')}>Düzenle</button><button disabled={!hosts.canEdit} onClick={() => send('hosts.toggle')}>Etkinleştir / devre dışı bırak</button><button disabled={!hosts.canEdit} onClick={() => send('hosts.remove')}>Sil</button><span>Değişiklikler otomatik kaydedilir.</span></div></footer>
-      {hosts.entry && <div className="history-confirm-backdrop"><section className="hosts-entry-dialog"><header><div><strong>{hosts.entry.lineIndex < 0 ? 'Yeni hosts girdisi' : 'Hosts girdisini düzenle'}</strong><small>IP adresi ve bir veya daha fazla ana bilgisayar adı girin.</small></div></header><label>IP adresi<input value={hosts.entry.address} onChange={event => send('hosts.entry-update', { address: event.target.value })} /></label><label>Ana bilgisayar adları<input value={hosts.entry.hostNames} onChange={event => send('hosts.entry-update', { hostNames: event.target.value })} /></label><label>Yorum<input value={hosts.entry.comment} onChange={event => send('hosts.entry-update', { comment: event.target.value })} /></label><label className="hosts-entry-enabled"><input type="checkbox" checked={hosts.entry.isActive} onChange={event => send('hosts.entry-update', { isActive: event.target.checked })} /> Etkin</label>{hosts.entry.error && <p role="alert">{hosts.entry.error}</p>}<div><button onClick={() => send('hosts.entry-cancel')}>Vazgeç</button><button className="primary" onClick={() => send('hosts.entry-save')}>Uygula</button></div></section></div>}
-      {hosts.confirmRemove && <div className="history-confirm-backdrop"><section className="history-confirm"><strong>Hosts girdisi silinsin mi?</strong><p>Seçili eşleme kaydedilene kadar bellekteki taslaktan kaldırılır.</p><div><button onClick={() => send('hosts.remove-confirm', { confirm: false })}>Vazgeç</button><button className="danger" onClick={() => send('hosts.remove-confirm', { confirm: true })}>Sil</button></div></section></div>}
-      {hosts.confirmDiscard && <div className="history-confirm-backdrop"><section className="history-confirm"><strong>Kaydedilmemiş değişiklikler var</strong><p>Devam ederseniz düzenlemeler kaybolur.</p><div><button onClick={() => send('hosts.discard-confirm', { confirm: false })}>Düzenlemeye dön</button><button className="danger" onClick={() => send('hosts.discard-confirm', { confirm: true })}>Değişiklikleri sil</button></div></section></div>}
     </section>}</div>;
   }
 
@@ -1177,20 +1106,6 @@ export function FeatureApp({ view }: { view: string }) {
     </div>;
   }
 
-  if (view === 'advanced-paste') {
-    const paste = state as unknown as AdvancedPasteState | null;
-    return <div className="feature-root feature-root-paste" tabIndex={0} autoFocus onKeyDown={event => { if (event.key === 'Escape') send('paste.cancel'); }}>
-      {paste && <section className="paste-panel">
-        <header><span className="paste-mark">⇧</span><div><strong>Gelişmiş yapıştır</strong><small>Pano içeriğini dönüştür ve gönder</small></div><button onClick={() => send('paste.cancel')} aria-label="Kapat">×</button></header>
-        <div className="paste-source"><small>GİRDİ ÖNİZLEMESİ · {paste.sourceLength.toLocaleString('tr-TR')} KARAKTER</small><p>{paste.sourceText || (paste.hasImage ? `Panoda görsel · ${paste.imageWidth} × ${paste.imageHeight} piksel` : 'Pano metni boş')}</p></div>
-        <label className="paste-format">Biçim<select value={paste.selectedIndex} onChange={event => send('paste.select', { index: Number(event.target.value) })}>{paste.options.map((option, index) => <option key={option.action} value={index}>{option.name}</option>)}</select></label>
-        {paste.jpegVisible && <label className="paste-quality">JPEG kalite · {paste.jpegQuality}%<input type="range" min="10" max="100" step="5" value={paste.jpegQuality} onChange={event => send('paste.quality', { quality: Number(event.target.value) })} /></label>}
-        <textarea className="paste-preview" readOnly value={paste.preview} placeholder="Dönüştürülmüş önizleme" />
-        <footer><span>{paste.status}</span><button disabled={!paste.canCopy} onClick={() => send('paste.copy')}>Panoya kopyala</button><button disabled={!paste.canPaste} onClick={() => send('paste.paste')}>{paste.pasteLabel}</button></footer>
-      </section>}
-    </div>;
-  }
-
   if (view === 'dictation-status') {
     const dictation = state as unknown as DictationStatusState | null;
     return dictation ? <DictationStatusView state={dictation} /> : <div className="feature-root feature-root-error">Dictation is getting ready…</div>;
@@ -1222,29 +1137,6 @@ export function FeatureApp({ view }: { view: string }) {
   }
 
   if (view === 'screen-color-picker') return <ScreenColorPickerView />;
-
-  if (view === 'launcher') {
-    const launcher = launcherState;
-    const handleLauncherKey = (event: React.KeyboardEvent) => {
-      if (event.key === 'Escape') { send('launcher.dismiss'); event.preventDefault(); }
-      else if (event.key === 'Enter') { send('launcher.activate', { index: launcher?.selectedIndex ?? 0 }); event.preventDefault(); }
-      else if (event.key === 'ArrowDown') { send('launcher.move', { delta: 1 }); event.preventDefault(); }
-      else if (event.key === 'ArrowUp') { send('launcher.move', { delta: -1 }); event.preventDefault(); }
-    };
-    return <div className="feature-root feature-root-launcher">
-      <section className="launcher-panel">
-        <div className="launcher-heading"><span className="launcher-mark">W</span><span>WinForge <small>HIZLI BAŞLATICI</small></span><kbd>ESC</kbd></div>
-        <input ref={launcherInput} className="launcher-search" value={launcher?.query ?? ''} onChange={event => send('launcher.search', { query: event.target.value })} onKeyDown={handleLauncherKey} placeholder="Uygulama, dosya veya komut ara…" aria-label="Arama" />
-        <div className="launcher-results" role="listbox" aria-label="Arama sonuçları">
-          {(launcher?.results ?? []).map((result, index) => <button key={`${result.path}-${index}`} className={`launcher-result ${launcher?.selectedIndex === index ? 'selected' : ''}`} onMouseEnter={() => send('launcher.select', { index })} onClick={() => send('launcher.activate', { index })} onKeyDown={handleLauncherKey} role="option" aria-selected={launcher?.selectedIndex === index}>
-            <span className="launcher-result-icon">{result.isCalculation ? '=' : result.isRecent ? '◷' : result.path.startsWith('ms-settings:') ? '⚙' : '◈'}</span><span><strong>{result.name}</strong><small>{result.path}</small></span><kbd>↵</kbd>
-          </button>)}
-          {launcher && launcher.results.length === 0 && <div className="launcher-empty">Sonuç bulunamadı</div>}
-        </div>
-        <footer className="launcher-footer"><span>↑ ↓ seç</span><span>Enter aç veya kopyala</span><span>= hesapla</span></footer>
-      </section>
-    </div>;
-  }
 
   if (view === 'taskbar-media-widget') {
     const widget = state as unknown as TaskbarWidgetState | null;
@@ -1302,7 +1194,7 @@ export function FeatureApp({ view }: { view: string }) {
     if (osd.kind === 'toast') return <div className="feature-root feature-root-osd">
       <div className="osd-card osd-toast"><span className="osd-status-dot" /><span>{osd.message}</span></div>
     </div>;
-    return <OsdControls kind={osd.kind} percent={osd.percent ?? 0} isMuted={osd.isMuted} send={send} />;
+    return <OsdControls kind={osd.kind} percent={osd.percent ?? 0} isMuted={osd.isMuted} status={osd.status} send={send} />;
   }
 
   if (view === 'media-flyout') {

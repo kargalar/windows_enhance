@@ -46,6 +46,25 @@ internal static class DisplayBrightnessChecks
         var read = sessionType.GetMethod("GetVCPFeatureAndVCPFeatureReply", BindingFlags.Static | BindingFlags.NonPublic)!;
         check(read.GetParameters()[2].ParameterType == typeof(uint).MakeByRefType(),
             "Native DDC/CI code-type output reserves the full 32-bit MC_VCP_CODE_TYPE enum storage");
+        var apply = sessionType.GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+            .Single(method => method.Name == "ApplyBrightnessToMonitors");
+        var requests = new List<(string Id, int Percent)>();
+        Func<string, int, int?> setter = (id, percent) => { requests.Add((id, percent)); return percent; };
+        object?[] InvokeArgs(int? percent, int delta, Func<string, int, int?> write) => [monitors, percent, delta, write];
+        var outcome = ((int Supported, int Applied, int Failed, int? Brightness))apply.Invoke(null, InvokeArgs(null, -5, setter))!;
+        check(outcome == (3, 3, 0, 38) && requests.Select(item => item.Percent).Distinct().Single() == 38 &&
+              requests.Select(item => item.Id).Distinct().Count() == 3,
+            "Shared brightness applies one target to every external and internal display with different starting levels");
+        requests.Clear();
+        outcome = ((int, int, int, int?))apply.Invoke(null, InvokeArgs(120, 0, setter))!;
+        check(outcome == (3, 3, 0, 100) && requests.All(item => item.Percent == 100),
+            "Overlay brightness clamps and applies the absolute value to every monitor");
+        outcome = ((int, int, int, int?))apply.Invoke(null, InvokeArgs(45, 0,
+            (id, percent) => id == @"\\.\DISPLAY8:0" ? throw new InvalidOperationException("fixture") : percent))!;
+        check(outcome == (3, 2, 1, 45),
+            "A failed monitor does not stop siblings and the displayed success count excludes failures");
+        outcome = ((int, int, int, int?))apply.Invoke(null, InvokeArgs(45, 0, (_, _) => null))!;
+        check(outcome == (3, 0, 3, null), "All failed writes report zero applied monitors and no successful brightness");
         // Fixture handles are zero and were never acquired from Windows; no physical resources need disposal.
     }
 

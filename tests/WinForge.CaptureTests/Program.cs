@@ -27,6 +27,7 @@ internal static class Program
             if (args.Length == 4 && args[0] == "--real-engine") { RealEngine(args[1], args[2], args[3] != "cpu", args[3] == "fallback", args[3] == "translate").GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--recording") { Recording().GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--render") { Render(); return 0; }
+            if (args.Length == 1 && args[0] == "--dictation-ui") { Render(dictationOnly: true); return 0; }
             if (args.Length == 1 && args[0] == "--editor-ui") { Render(editorOnly: true); return 0; }
             if (args.Length == 2 && args[0] == "--discovery") { Discovery(args[1]); return 0; }
             if (args.Length == 1 && args[0] == "--native-capture") { NativeCapture(); return 0; }
@@ -185,6 +186,18 @@ internal static class Program
         Check(audio.Take().Length == 0, "Consumed audio is cleared");
         Check(!SpeechBuffer.ContainsSpeech(new float[16000]) && !SpeechBuffer.ContainsSpeech([0.5f]), "Silence and short recordings do not invoke Whisper");
         audio.Append([float.NaN, float.PositiveInfinity], 16000); Check(audio.Take().All(float.IsFinite), "Invalid audio samples sanitized");
+        audio.Append(new float[32000], 16000);
+        audio.Append(Enumerable.Repeat(0.01f, 16000).ToArray(), 16000);
+        audio.Append(new float[48000], 16000);
+        var trimmed = audio.Take(trimSilence: true);
+        Check(trimmed.Length == 22400 && trimmed[3200] == 0.01f && trimmed[19199] == 0.01f,
+            "Edge silence is trimmed with 200 ms padding while retaining quiet speech");
+        audio.Append(new float[16000], 16000);
+        Check(audio.Take(trimSilence: true).Length == 0, "Silent recordings are removed before inference");
+        audio.Append(Enumerable.Repeat(0.1f, 8000).ToArray(), 16000);
+        audio.Append(new float[16000], 16000);
+        audio.Append(Enumerable.Repeat(0.1f, 8000).ToArray(), 16000);
+        Check(audio.Take(trimSilence: true).Length == 32000, "Natural pauses and speech at recording boundaries are preserved");
         var keys = new DictationShortcutState();
         Check(keys.Press(false) == DictationKeyAction.Start && keys.Press(false) == DictationKeyAction.None, "Repeated keydown during one press is ignored");
         Check(keys.Release(TimeSpan.FromMilliseconds(100)) == DictationKeyAction.None, "Quick tap leaves dictation running");
@@ -349,7 +362,7 @@ internal static class Program
         protected override nint LoadUnmanagedDll(string name)
         { var path = resolver.ResolveUnmanagedDllToPath(name); return path is null ? 0 : LoadUnmanagedDllFromPath(path); }
     }
-    private static void Render(bool editorOnly = false)
+    private static void Render(bool editorOnly = false, bool dictationOnly = false)
     {
         var root = Path.GetFullPath("artifacts/capture-verification"); Directory.CreateDirectory(root);
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -364,6 +377,12 @@ internal static class Program
         var imageData = "data:image/png;base64," + Convert.ToBase64String(imageStream.ToArray());
         var cases = new (string View, string File, double Width, double Height, object State)[]
         {
+            ("dictation-status", "dictation-listening.png", 360, 76,
+                new { message = "Dinleniyor… · Esc: iptal", audioLevel = 63, recording = true }),
+            ("dictation-status", "dictation-processing.png", 360, 76,
+                new { message = "Konuşma çözümleniyor… · Esc: iptal", audioLevel = 0, recording = false }),
+            ("dictation-status", "dictation-result.png", 480, 210,
+                new { message = "Panoya kopyalandı · metin yazıldı · CPU", result = "Merhaba dünya. İstanbul güzel bir şehir.\nBu bir sesle yazma denemesidir.", audioLevel = 0, recording = false }),
             ("nashi", "nashi.png", 1280, 860, new
             {
                 page = "home", busy = false, status = "Dosyalar bilgisayarınızda kalır.",
@@ -420,6 +439,7 @@ internal static class Program
         foreach (var item in cases)
         {
             if (editorOnly && item.View != "capture-editor") continue;
+            if (dictationOnly && item.View != "dictation-status") continue;
             var window = new ReactCaptureWindow(item.View, item.Width, item.Height, item.State, uiDirectory, webViewEnvironment);
             try
             {
@@ -496,6 +516,7 @@ internal static class Program
             this.webViewEnvironment = webViewEnvironment;
             Width = width;
             Height = height;
+            if (view == "dictation-status") { WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; }
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             Content = webView;
             Loaded += OnLoaded;

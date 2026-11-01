@@ -51,19 +51,19 @@ internal static class NativeInfrastructureChecks
     {
         var path = Path.Combine(directory, "legacy-engine.json");
         File.WriteAllText(path, """
-            {"Enabled":["altsnap","windhawk-taskbar","awake"],"Values":{
+            {"Enabled":["altsnap","windhawk-taskbar","always-on-top"],"Values":{
               "altsnap":{"LMB":"Taşı","Hotkeys":"Sol Alt","SnapThreshold":"37","__native-LMB":"Taşı"},
               "window-control":{"SnapThreshold":"18"},"windhawk-taskbar":{"styler-theme":"DockLike"},
-              "awake":{"keep-screen":"true"}}}
+              "always-on-top":{"border-enabled":"true"}}}
             """);
         var store = new SettingsStore(path);
-        check(store.Enabled.SetEquals(["window-control", "awake"]) && store.For("window-control")["LMB"] == "Taşı" &&
+        check(store.Enabled.SetEquals(["window-control", "always-on-top"]) && store.For("window-control")["LMB"] == "Taşı" &&
             store.For("window-control")["SnapThreshold"] == "18" && !store.Values.ContainsKey("altsnap") &&
             !store.Values.ContainsKey("windhawk-taskbar") && !store.For("window-control").ContainsKey("__native-LMB"),
             "Legacy engine settings migrate without overwriting current preferences or enabling retired shell mods");
         store.Save();
         var reloaded = new SettingsStore(path);
-        check(reloaded.Enabled.SetEquals(store.Enabled) && reloaded.For("awake")["keep-screen"] == "true",
+        check(reloaded.Enabled.SetEquals(store.Enabled) && reloaded.For("always-on-top")["border-enabled"] == "true",
             "Engine migration survives save/reload and preserves unrelated module settings");
     }
 

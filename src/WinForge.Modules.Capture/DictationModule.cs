@@ -48,9 +48,9 @@ public sealed class DictationModule : CaptureModuleBase
                 new() { Key = "start-with-windows", Label = "Windows açıldığında WinForge'u başlat", Default = false },
                 new() { Key = "mute-playback", Label = "Dikte sırasında etkin ses çıkışlarını sessize al", Default = true },
                 new() { Key = "result-duration", Label = "Sonuç bildirimi süresi (saniye; 0 = sürekli)", Kind = SettingKind.Number, Min = 0, Max = 120, Default = 5 },
-                new() { Key = "overlay-position", Label = "Dikte bildiriminin konumu", Kind = SettingKind.Choice, Default = "bottom-right",
-                    Options = ["top-left", "top-right", "bottom-left", "bottom-right", "center"],
-                    OptionLabels = new Dictionary<string, string> { ["top-left"] = "Sol üst", ["top-right"] = "Sağ üst", ["bottom-left"] = "Sol alt", ["bottom-right"] = "Sağ alt", ["center"] = "Ekran ortası" } },
+                new() { Key = "overlay-position", Label = "Dikte bildiriminin konumu", Kind = SettingKind.Choice, Default = "bottom-center",
+                    Options = ["bottom-center", "top-left", "top-right", "bottom-left", "bottom-right", "center"],
+                    OptionLabels = new Dictionary<string, string> { ["bottom-center"] = "Alt orta", ["top-left"] = "Sol üst", ["top-right"] = "Sağ üst", ["bottom-left"] = "Sol alt", ["bottom-right"] = "Sağ alt", ["center"] = "Ekran ortası" } },
                 new() { Key = "models", Label = "Modelleri yönet", Kind = SettingKind.Action, Execute = () => new ModelWindow(Store, (Context as IFeatureUiContext)?.FeatureUi).Show() },
                 new() { Key = "cancel", Label = "Kaydı / çözümlemeyi iptal et", Kind = SettingKind.Action, Execute = Cancel }
             ];
@@ -142,6 +142,9 @@ public sealed class DictationModule : CaptureModuleBase
                 microphone.Dispose(); microphone = new(true); microphone.SamplesAvailable += Samples; microphone.Start(); Context.Notify("Seçilen mikrofon bulunamadı; varsayılan kullanılıyor.");
             }
             recording = true; lastWaveformUpdate = DateTime.MinValue; ShowStatus("Dinleniyor… · Esc: iptal"); overlay?.BeginRecording();
+            _ = PrepareModelAsync(new DictationConfiguration(
+                Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model]),
+                Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu")), token);
             monitor = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             monitor.Tick += (_, _) =>
             {
@@ -162,6 +165,13 @@ public sealed class DictationModule : CaptureModuleBase
             }
         }
     }
+    private async Task PrepareModelAsync(DictationConfiguration configuration, CancellationToken token)
+    {
+        try { await client.PrepareAsync(configuration, token); }
+        catch (OperationCanceledException) { }
+        // The stop path reports loading errors; preparation must not interrupt microphone capture.
+        catch (Exception error) { System.Diagnostics.Debug.WriteLine(error); }
+    }
     private void Samples(ReadOnlySpan<float> samples, int rate)
     {
         audio.Append(samples, rate);
@@ -178,7 +188,7 @@ public sealed class DictationModule : CaptureModuleBase
         if (!recording || busy) return;
         recording = false; busy = true; monitor?.Stop(); monitor = null; microphone?.Dispose(); microphone = null;
         RestorePlayback();
-        var samples = audio.Take();
+        var samples = audio.Take(trimSilence: true);
         var token = operation!.Token; var currentStore = activeStore!;
         try
         {
@@ -220,14 +230,14 @@ public sealed class DictationModule : CaptureModuleBase
         if (!IsActive) return;
             overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
             overlay.ShowStatus(text);
-            overlay.Place(Context.Settings.GetString("overlay-position", "bottom-right"));
+            overlay.Place(Context.Settings.GetString("overlay-position", "bottom-center"));
     }
     private void ShowResult(string text, string status)
     {
         if (!IsActive) return;
             overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
             overlay.ShowResult(text, status, Context.Settings.GetInt("result-duration", 5));
-        overlay.Place(Context.Settings.GetString("overlay-position", "bottom-right"));
+        overlay.Place(Context.Settings.GetString("overlay-position", "bottom-center"));
     }
     public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Concat(new[]
     {
@@ -238,8 +248,8 @@ public sealed class DictationModule : CaptureModuleBase
 
 internal sealed class StatusOverlay : IDisposable
 {
-    private const double StatusWidth = 420;
-    private const double StatusHeight = 104;
+    private const double StatusWidth = 360;
+    private const double StatusHeight = 76;
     private const double ResultWidth = 480;
     private const double ResultHeight = 210;
     private readonly IFeatureUiService? featureUi;
@@ -370,13 +380,14 @@ internal sealed class StatusOverlay : IDisposable
         var left = position switch
         {
             "top-left" or "bottom-left" => area.Left + margin,
-            "center" => area.Left + (area.Width - width) / 2,
+            "center" or "bottom-center" => area.Left + (area.Width - width) / 2,
             _ => area.Right - width - margin
         };
         var top = position switch
         {
             "top-left" or "top-right" => area.Top + margin,
             "center" => area.Top + (area.Height - height) / 2,
+            "bottom-center" => area.Bottom - height - 56,
             _ => area.Bottom - height - margin
         };
         window.SetBounds(left, top, width, height);

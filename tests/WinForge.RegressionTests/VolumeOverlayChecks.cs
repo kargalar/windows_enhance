@@ -51,7 +51,9 @@ internal static class VolumeOverlayChecks
             check(!ui.Window.IsVisible, "Releasing the volume slider resumes automatic dismissal");
 
             var brightness = -1;
-            OsdWindow.ShowBrightness(40, "test-display", percent => brightness = percent);
+            OsdWindow.ShowBrightness(40, "test-display", percent => brightness = percent, "2/2 monitöre uygulandı");
+            check(ui.Window.State.GetProperty("status").GetString() == "2/2 monitöre uygulandı",
+                "Brightness overlay carries the applied monitor count");
             ui.Window.Send("brightness.drag", new { value = true });
             ui.Window.Send("brightness.set", new { percent = 73 });
             check(brightness == 73, "Brightness slider forwards the requested percentage to the display control");
@@ -132,6 +134,7 @@ internal static class VolumeOverlayChecks
 
     private sealed class OverlayWindow : IFeatureUiWindow
     {
+        public JsonElement State { get; private set; }
         public bool IsVisible { get; private set; }
         public event Action<string, JsonElement>? MessageReceived;
         public event Action? ClosedByHost { add { } remove { } }
@@ -140,7 +143,7 @@ internal static class VolumeOverlayChecks
         public void Close() => Hide();
         public void Dispose() => Close();
         public void SetBounds(double left, double top, double width, double height) { }
-        public void SetState(object state) { }
+        public void SetState(object state) => State = JsonSerializer.SerializeToElement(state);
         public void Send(string command, object payload) => MessageReceived?.Invoke(command, JsonSerializer.SerializeToElement(payload));
     }
 }

@@ -20,10 +20,17 @@ internal sealed class DictationClient(string? engineDirectory = null,
     public string Engine { get; private set; } = "";
     internal bool IsRunning => engine is not null;
 
-    public async Task<string> TranscribeAsync(float[] samples, DictationConfiguration configuration, CancellationToken token)
+    public Task PrepareAsync(DictationConfiguration configuration, CancellationToken token) => ExecuteAsync(null, configuration, token);
+
+    public Task<string> TranscribeAsync(float[] samples, DictationConfiguration configuration, CancellationToken token)
     {
         if (samples.Length == 0 || samples.Length > DictationAudio.SampleRate * DictationAudio.MaximumSeconds)
             throw new ArgumentException("Geçersiz kayıt uzunluğu.");
+        return ExecuteAsync(samples, configuration, token);
+    }
+
+    private async Task<string> ExecuteAsync(float[]? samples, DictationConfiguration configuration, CancellationToken token)
+    {
         CancellationTokenSource operation;
         lock (state) operation = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
         using (operation)
@@ -36,7 +43,7 @@ internal sealed class DictationClient(string? engineDirectory = null,
                 return await Task.Run(() =>
                 {
                     cancellation.ThrowIfCancellationRequested();
-                    if (configuration == fallbackConfiguration)
+                    if (configuration.Gpu && configuration.Model == fallbackConfiguration?.Model)
                         return Run(samples, configuration with { Gpu = false }, cancellation, fallback: true);
                     try { return Run(samples, configuration, cancellation); }
                     catch (Exception) when (configuration.Gpu && !cancellation.IsCancellationRequested)
@@ -60,17 +67,18 @@ internal sealed class DictationClient(string? engineDirectory = null,
         }
     }
 
-    private string Run(float[] samples, DictationConfiguration configuration, CancellationToken token, bool fallback = false)
+    private string Run(float[]? samples, DictationConfiguration configuration, CancellationToken token, bool fallback = false)
     {
         token.ThrowIfCancellationRequested();
-        if (loaded != configuration || engine is null)
+        // Language and translation are inference options, not model-loading options.
+        if (loaded?.Model != configuration.Model || loaded?.Gpu != configuration.Gpu || engine is null)
         {
             ReleaseEngine();
             engine = factory is null ? new NativeDictationEngine(engineDirectory, configuration) : factory(configuration);
             loaded = configuration;
         }
         token.ThrowIfCancellationRequested();
-        var text = engine.Transcribe(samples, configuration, token);
+        var text = samples is null ? "" : engine.Transcribe(samples, configuration, token);
         token.ThrowIfCancellationRequested();
         Engine = fallback ? "CPU (GPU yerine)" : configuration.Gpu ? "CUDA" : "CPU";
         return text;

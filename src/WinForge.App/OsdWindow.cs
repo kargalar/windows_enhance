@@ -22,6 +22,7 @@ public static class OsdWindow
     private static bool _brightnessDragging;
     private static int _brightnessPercent;
     private static string _brightnessDeviceName = "";
+    private static string? _brightnessStatus;
     private static Action? _volumeChanged;
     private static int _volumeDismissSeconds = 3;
     private static int _volumeHovered;
@@ -68,23 +69,24 @@ public static class OsdWindow
         RestartTimer(ref _toastTimer, Math.Clamp(1400 + message.Length * 28, 1800, 6000), () => _toastView?.Hide());
     });
 
-    public static void ShowBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null) => OnUiThread(() =>
+    public static void ShowBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null) => OnUiThread(() =>
     {
         _brightnessChanged = onBrightnessChanged;
         _brightnessPercent = Math.Clamp(percent, 0, 100);
         _brightnessDeviceName = deviceName;
+        _brightnessStatus = status;
         if (_brightnessView?.IsVisible != true)
         {
             Volatile.Write(ref _brightnessHovered, 0);
             _brightnessDragging = false;
         }
         var window = EnsureWindow(ref _brightnessView, BrightnessKey, "system-osd", "Ekran parlaklığı",
-            new FeatureUiWindowOptions(IndicatorWidth, IndicatorHeight, Topmost: true, ActivateOnShow: false,
+            new FeatureUiWindowOptions(240, 60, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: false));
         if (window is null) return;
         window.MessageReceived -= OnBrightnessMessage;
         window.MessageReceived += OnBrightnessMessage;
-        PositionAtBottom(window, IndicatorWidth, IndicatorHeight, 56);
+        PositionAtBottom(window, 240, 60, 56);
         UpdateBrightnessState(window);
         RestartBrightnessTimer();
     });
@@ -116,7 +118,7 @@ public static class OsdWindow
 
     private static void UpdateBrightnessState(IFeatureUiWindow window) => window.SetState(new
     {
-        kind = "brightness", percent = _brightnessPercent, deviceName = _brightnessDeviceName
+        kind = "brightness", percent = _brightnessPercent, deviceName = _brightnessDeviceName, status = _brightnessStatus
     });
 
     private static void RestartBrightnessTimer() => RestartTimer(ref _brightnessTimer, 1500, () =>

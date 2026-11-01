@@ -8,7 +8,7 @@ public sealed class ModuleHost
     private readonly FileLogger _log;
     private readonly IHotkeyService _hotkeys;
     private readonly Action<string> _notify;
-    private readonly Action<int, string, Action<int>?>? _showDisplayBrightness;
+    private readonly Action<int, string, Action<int>?, string?>? _showDisplayBrightness;
     private readonly Action<int, bool, Action?, int>? _showAudioVolume;
     private readonly string _modulesDirectory;
     private readonly List<ITweakModule> _modules = new();
@@ -20,7 +20,7 @@ public sealed class ModuleHost
     private bool _stopping;
 
     public ModuleHost(SettingsStore store, FileLogger log, IHotkeyService hotkeys, string modulesDirectory, Action<string> notify,
-        Action<int, string, Action<int>?>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null,
+        Action<int, string, Action<int>?, string?>? showDisplayBrightness = null, Action<int, bool, Action?, int>? showAudioVolume = null,
         IFeatureUiService? featureUi = null)
     {
         _store = store;
@@ -311,7 +311,7 @@ public sealed class ModuleHost
         IDisplayBrightnessOverlayContext, IAudioVolumeOverlayContext, IFeatureUiContext
     {
         private readonly Action<string> _notify;
-        private readonly Action<int, string, Action<int>?>? _showDisplayBrightness;
+        private readonly Action<int, string, Action<int>?, string?>? _showDisplayBrightness;
         private readonly Action<int, bool, Action?, int>? _showAudioVolume;
         private readonly IFeatureUiService? _featureUi;
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
@@ -319,7 +319,7 @@ public sealed class ModuleHost
         private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
-            IQuickActionService quickActions, Action<int, string, Action<int>?>? showDisplayBrightness,
+            IQuickActionService quickActions, Action<int, string, Action<int>?, string?>? showDisplayBrightness,
             Action<int, bool, Action?, int>? showAudioVolume, IFeatureUiService? featureUi,
             Func<IntPtr, POINT, bool> placeWindow,
             Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
@@ -344,9 +344,9 @@ public sealed class ModuleHost
         public IFeatureUiService? FeatureUi => _featureUi;
 
         public void Notify(string message) => _notify(message);
-        public void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null)
+        public void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null)
         {
-            if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName, onBrightnessChanged);
+            if (_showDisplayBrightness is not null) _showDisplayBrightness(percent, deviceName, onBrightnessChanged, status);
             else _notify($"Parlaklık {percent}%");
         }
         public void ShowAudioVolume(int percent, bool isMuted, Action? onVolumeChanged = null, int dismissAfterSeconds = 3)

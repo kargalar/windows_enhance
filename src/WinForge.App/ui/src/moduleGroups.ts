@@ -4,8 +4,8 @@ const families: [string, string[]][] = [
   ['Başlat Menüsü', ['start-menu']],
   ['Sağ Tık Menüsü', ['context-menu', 'classic-context-menu']],
   ['Gezgin', ['explorer-tweaks', 'explorer-navigation', 'explorer-mouse-navigation', 'explorer-folder-sizes', 'folder-dialog']],
-  ['Kısayollar ve Klavye', ['keyboard-manager', 'shortcut-guide', 'media-shortcuts', 'window-shortcuts', 'desktop-shortcuts', 'text-shortcuts', 'program-shortcuts', 'monitor-shortcuts', 'combination-translator']],
-  ['Pencere Yönetimi', ['window-control', 'window-tweaks', 'always-on-top', 'fancy-zones', 'tiling', 'workspaces', 'crop-and-lock', 'square-corners']],
+  ['Kısayollar ve Klavye', ['keyboard-manager', 'media-shortcuts', 'window-shortcuts', 'desktop-shortcuts', 'text-shortcuts', 'program-shortcuts', 'monitor-shortcuts', 'combination-translator']],
+  ['Pencere Yönetimi', ['window-control', 'window-tweaks', 'always-on-top', 'fancy-zones', 'tiling', 'crop-and-lock', 'square-corners']],
   ['Medya', ['media-flyout', 'dynamic-island']],
   ['Varsayılanlar', ['default-paths', 'default-apps']],
 ];

@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -397,24 +397,42 @@ internal sealed class DisplayBrightnessSession : IDisposable
     private (int Supported, int Applied, int Failed, int? Brightness) AdjustBrightness(
         IEnumerable<DisplayBrightnessMonitor> monitors, int delta)
     {
-        var supported = 0;
+        return ApplyBrightnessToMonitors(monitors, null, delta);
+    }
+
+    internal (int Supported, int Applied, int Failed, int? Brightness) SetBrightnessForAllDisplays(int percent) =>
+        ApplyBrightnessToMonitors(Monitors, percent, 0);
+
+    private (int Supported, int Applied, int Failed, int? Brightness) ApplyBrightnessToMonitors(
+        IEnumerable<DisplayBrightnessMonitor> monitors, int? percent, int delta)
+    {
+        ThrowIfDisposed();
+        return ApplyBrightnessToMonitors(monitors, percent, delta, (id, target) =>
+            SetBrightness(id, target, out var applied) ? applied : null);
+    }
+
+    // One shared slider must send one shared target, including monitors already at a limit.
+    internal static (int Supported, int Applied, int Failed, int? Brightness) ApplyBrightnessToMonitors(
+        IEnumerable<DisplayBrightnessMonitor> monitors, int? percent, int delta, Func<string, int, int?> setBrightness)
+    {
+        var targets = monitors.Where(monitor => monitor.SupportsBrightness || monitor.VcpBrightness is not null).ToArray();
+        if (targets.Length == 0) return (0, 0, 0, null);
+        var target = Math.Clamp(percent ?? (int)Math.Round(targets.Average(monitor => monitor.Percent)) + delta, 0, 100);
         var applied = 0;
-        var failed = 0;
-        var appliedBrightnessTotal = 0;
-        var supportedMonitors = monitors
-            .Where(monitor => monitor.SupportsBrightness || monitor.VcpBrightness is not null)
-            .ToArray();
-        Parallel.ForEach(supportedMonitors, monitor =>
+        var total = 0;
+        // Some drivers share a DDC/CI transport; serialize writes to avoid dropping a sibling display's command.
+        foreach (var monitor in targets)
         {
-            Interlocked.Increment(ref supported);
-            if (SetBrightness(monitor.Id, Math.Clamp(monitor.Percent + delta, 0, 100), out var appliedPercent))
+            try
             {
-                Interlocked.Increment(ref applied);
-                Interlocked.Add(ref appliedBrightnessTotal, appliedPercent);
+                if (setBrightness(monitor.Id, target) is not { } actual) continue;
+                applied++;
+                total += actual;
             }
-            else Interlocked.Increment(ref failed);
-        });
-        return (supported, applied, failed, applied == 0 ? null : (int)Math.Round(appliedBrightnessTotal / (double)applied));
+            catch { /* Continue applying to the other monitors and report this display as failed. */ }
+        }
+        return (targets.Length, applied, targets.Length - applied,
+            applied == 0 ? null : (int)Math.Round(total / (double)applied));
     }
 
     internal static IReadOnlyList<DisplayBrightnessMonitor> FindMonitorsForDevice(
@@ -802,8 +820,13 @@ public sealed class DisplayBrightnessModule : ITweakModule
             RegisterBrightnessShortcut(brightenHotkey, 1);
             if (dimHotkey.WheelDirection != 0 || brightenHotkey.WheelDirection != 0)
             {
-                _brightnessMouseHook = new GlobalMouseHook();
-                _brightnessMouseHook.WheelMoved += OnBrightnessWheelMoved;
+                var dispatcher = Dispatcher.CurrentDispatcher;
+                _brightnessMouseHook = new GlobalMouseHook
+                {
+                    EventFilter = input => IsActive && _context is not null &&
+                        HandleBrightnessWheel(input, GetPressedHotkeyModifiers(), dimHotkey, brightenHotkey,
+                            direction => dispatcher.BeginInvoke(new Action(() => _ = AdjustBrightnessAsync(direction))))
+                };
                 _brightnessMouseHook.Install();
             }
         }
@@ -824,18 +847,19 @@ public sealed class DisplayBrightnessModule : ITweakModule
         else _brightenBrightnessHotkey = registration;
     }
 
-    private void OnBrightnessWheelMoved(POINT point, int wheelDelta)
+    internal static bool HandleBrightnessWheel(GlobalMouseHook.Input input, uint modifiers,
+        (uint Modifiers, uint VirtualKey, int WheelDirection) dimShortcut,
+        (uint Modifiers, uint VirtualKey, int WheelDirection) brightenShortcut, Action<int> adjust)
     {
-        if (!IsActive || _context is null || wheelDelta == 0) return;
-        var modifiers = GetPressedHotkeyModifiers();
-        var dimShortcut = ParseBrightnessHotkey(_context.Settings.GetString("brightness-dim-hotkey", DefaultDimBrightnessHotkey));
-        var brightenShortcut = ParseBrightnessHotkey(_context.Settings.GetString("brightness-brighten-hotkey", DefaultBrightenBrightnessHotkey));
-        var wheelDirection = Math.Sign(wheelDelta);
+        if (HotkeyService.IsCapturing || input.Message != Native.WM_MOUSEWHEEL || input.WheelDelta == 0) return false;
+        var wheelDirection = Math.Sign(input.WheelDelta);
 
         if (dimShortcut.WheelDirection == wheelDirection && dimShortcut.Modifiers == modifiers)
-            _ = AdjustBrightnessAsync(-1);
+            adjust(-1);
         else if (brightenShortcut.WheelDirection == wheelDirection && brightenShortcut.Modifiers == modifiers)
-            _ = AdjustBrightnessAsync(1);
+            adjust(1);
+        else return false;
+        return true;
     }
 
     private static uint GetPressedHotkeyModifiers()
@@ -928,23 +952,8 @@ public sealed class DisplayBrightnessModule : ITweakModule
                 var outcome = session.AdjustBrightnessForAllDisplays(step * direction);
                 if (outcome.Failed > 0 || outcome.Supported == 0)
                 {
-                    try
-                    {
-                        session.Dispose();
-                        var freshSession = DisplayBrightnessSession.Discover();
-                        _hotkeyBrightnessSession = freshSession;
-                        outcome = freshSession.AdjustBrightnessForAllDisplays(step * direction);
-                        if (outcome.Failed > 0 || outcome.Supported == 0)
-                        {
-                            freshSession.Dispose();
-                            _hotkeyBrightnessSession = null;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _hotkeyBrightnessSession = null;
-                        _context?.Log.Error("Power Display oturum yenileme başarısız.", ex);
-                    }
+                    session.Dispose();
+                    _hotkeyBrightnessSession = null;
                 }
                 return outcome;
             });
@@ -953,8 +962,7 @@ public sealed class DisplayBrightnessModule : ITweakModule
                 _context.Notify("Bağlı ekranlarda desteklenen bir parlaklık denetimi bulunamadı.");
             else if (result.Failed > 0)
                 _context.Notify($"Ekran parlaklığı: {result.Applied}/{result.Supported} ekrana uygulandı; {result.Failed} hata.");
-            if (result.Brightness is { } brightness && _context is IDisplayBrightnessOverlayContext overlay)
-                overlay.ShowDisplayBrightness(brightness, "all-displays", percent => _ = SetOverlayBrightnessAsync(percent));
+            ShowBrightnessOutcome(result);
         }
         catch (Exception exception)
         {
@@ -978,13 +986,12 @@ public sealed class DisplayBrightnessModule : ITweakModule
         try
         {
             if (!IsActive || request != Volatile.Read(ref _overlayBrightnessRequest)) return;
-            await Task.Run(() =>
+            var result = await Task.Run(() =>
             {
-                var session = _hotkeyBrightnessSession;
-                if (session is null) return;
-                foreach (var monitor in session.Monitors.Where(m => m.SupportsBrightness || m.VcpBrightness is not null))
-                    session.SetBrightness(monitor.Id, percent, out _);
+                var session = _hotkeyBrightnessSession ??= DisplayBrightnessSession.Discover();
+                return session.SetBrightnessForAllDisplays(percent);
             });
+            if (request == Volatile.Read(ref _overlayBrightnessRequest)) ShowBrightnessOutcome(result);
         }
         catch (Exception exception)
         {
@@ -995,6 +1002,16 @@ public sealed class DisplayBrightnessModule : ITweakModule
             if (!IsActive) Interlocked.Exchange(ref _hotkeyBrightnessSession, null)?.Dispose();
             _brightnessAdjustmentGate.Release();
         }
+    }
+
+    private void ShowBrightnessOutcome((int Supported, int Applied, int Failed, int? Brightness) result)
+    {
+        if (!IsActive || _context is not IDisplayBrightnessOverlayContext overlay) return;
+        var status = $"{result.Applied}/{result.Supported} monitöre uygulandı";
+        if (result.Failed > 0) status += $" · {result.Failed} hata";
+        if (result.Supported == 0) status = "Parlaklık denetimi desteklenmiyor";
+        overlay.ShowDisplayBrightness(result.Brightness ?? 0, "all-displays",
+            percent => _ = SetOverlayBrightnessAsync(percent), status);
     }
 
     private void DisposeHotkeyBrightnessSessionIfIdle()
@@ -1133,7 +1150,7 @@ internal sealed class DisplayBrightnessWindow
     private readonly IFeatureUiWindow _window;
     private List<DisplaySettingsProfile> _profiles;
     private DisplayBrightnessSession? _session;
-    private bool _linkLevels;
+    private bool _linkLevels = true;
     private bool _isClosed;
     private int _refreshGeneration;
     private string _status = "Ekran bilgileri yükleniyor…";
@@ -1387,10 +1404,14 @@ internal sealed class DisplayBrightnessWindow
         if (_session is null || (_pendingBrightness.Count == 0 && _pendingVcpFeatures.Count == 0)) return (0, 0);
         var succeeded = 0;
         var failed = 0;
+        var brightnessRequested = _pendingBrightness.Count;
         foreach (var (id, percent) in _pendingBrightness.ToArray())
         {
             if (ApplyBrightness(id, percent)) succeeded++; else failed++;
         }
+        if (brightnessRequested > 0)
+            _status = $"Parlaklık: {succeeded}/{brightnessRequested} monitöre uygulandı" +
+                (failed > 0 ? $" · {failed} hata. DDC/CI desteğini ve bağlantıyı kontrol edin." : ".");
         _pendingBrightness.Clear();
         foreach (var ((id, code), value) in _pendingVcpFeatures.ToArray())
         {

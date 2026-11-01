@@ -103,7 +103,7 @@ html { background: var(--island-base); }
 .toast-error { border-radius: 999px; animation: surface-arrive 300ms var(--ease-island); }
 
 /* Tool surfaces share the same material while preserving each tool's layout. */
-.feature-root :is(.launcher-panel, .capture-tools-panel, .history-panel, .paste-panel, .shortcut-guide-panel, .environment-panel, .profile-panel, .locksmith-panel, .power-rename-panel, .image-resizer-panel, .workspaces-panel, .hosts-panel, .keyboard-editor-panel, .display-panel, .recording-panel, .float-shelf-card, .media-flyout-card, .dictation-card, .import-panel, .models-panel, .statistics-panel),
+.feature-root :is(.capture-tools-panel, .history-panel, .locksmith-panel, .power-rename-panel, .image-resizer-panel, .keyboard-editor-panel, .display-panel, .recording-panel, .float-shelf-card, .media-flyout-card, .dictation-card, .import-panel, .models-panel, .statistics-panel),
 .feature-root-app-dialog > section, .defaults-confirm {
   border-color: #ffffff19; border-radius: var(--island-radius); background: radial-gradient(ellipse at 0 0, #ffffff05, transparent 65%), var(--island-surface); box-shadow: 0 18px 50px #0006, inset 0 1px #ffffff08;
   animation: surface-arrive var(--motion-surface) var(--ease-island);
@@ -112,8 +112,8 @@ html { background: var(--island-base); }
 .feature-root:not(.feature-root-island) :is(button, input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { border-radius: 14px; transition: background var(--motion-quick), border-color var(--motion-quick), transform var(--motion-surface) var(--ease-island); }
 .feature-root:not(.feature-root-island) button:active:not(:disabled) { transform: scale(.97); }
 .feature-root:not(.feature-root-island) :is(button, input, select, textarea):focus-visible { outline: 2px solid #a5baff; outline-offset: 2px; }
-.feature-root :is(.launcher-search, .history-detail, .hosts-row, .display-monitor) { border-radius: 20px; border-color: #ffffff14; background-color: #ffffff04; }
-.feature-root :is(.launcher-result, .capture-tool, .history-row) { border-radius: 18px; }
+.feature-root :is(.history-detail, .display-monitor) { border-radius: 20px; border-color: #ffffff14; background-color: #ffffff04; }
+.feature-root :is(.capture-tool, .history-row) { border-radius: 18px; }
 .defaults-panel { background: var(--island-base); padding: 26px; }
 .defaults-folder, .defaults-note { border-radius: 23px; border-color: #ffffff15; background: var(--island-surface); }
 .defaults-panel button, .defaults-panel input { border-radius: 999px; border-color: #ffffff20; background: #ffffff08; }

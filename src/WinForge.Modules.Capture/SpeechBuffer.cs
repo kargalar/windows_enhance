@@ -16,9 +16,10 @@ public sealed class SpeechBuffer
         if (sampleRate < 8000 || sampleRate > 384000) throw new ArgumentOutOfRangeException(nameof(sampleRate));
         lock (gate)
         {
-            if (packet.IsEmpty || Full) return;
+            var limit = DictationAudio.SampleRate * DictationAudio.MaximumSeconds;
+            if (packet.IsEmpty || samples.Count >= limit) return;
             var step = (double)sampleRate / DictationAudio.SampleRate;
-            while (position < packet.Length && !Full)
+            while (position < packet.Length && samples.Count < limit)
             {
                 var left = (int)position; var right = Math.Min(left + 1, packet.Length - 1);
                 var value = (float)(packet[left] + (packet[right] - packet[left]) * (position - left));
@@ -27,9 +28,36 @@ public sealed class SpeechBuffer
             position -= packet.Length;
         }
     }
-    public float[] Take()
+    public float[] Take(bool trimSilence = false)
     {
-        lock (gate) { var result = samples.ToArray(); Clear(); return result; }
+        lock (gate)
+        {
+            var audio = CollectionsMarshal.AsSpan(samples);
+            var start = 0;
+            var end = audio.Length;
+            if (trimSilence)
+            {
+                // Inspect 20 ms RMS windows; retain 200 ms around speech for word boundaries.
+                const int frame = DictationAudio.SampleRate / 50;
+                const int padding = DictationAudio.SampleRate / 5;
+                var first = -1;
+                var last = 0;
+                for (var offset = 0; offset < audio.Length; offset += frame)
+                {
+                    var length = Math.Min(frame, audio.Length - offset);
+                    double energy = 0;
+                    foreach (var sample in audio.Slice(offset, length)) energy += (double)sample * sample;
+                    if (energy / length < SilenceThreshold * SilenceThreshold) continue;
+                    if (first < 0) first = offset;
+                    last = offset + length;
+                }
+                start = first < 0 ? 0 : Math.Max(0, first - padding);
+                end = first < 0 ? 0 : Math.Min(audio.Length, last + padding);
+            }
+            var result = audio[start..end].ToArray();
+            Clear();
+            return result;
+        }
     }
     public void Clear()
     {

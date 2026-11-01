@@ -1,6 +1,23 @@
 .\scripts\build.ps1 -Configuration Release -Run
 <!--  -->
 
+2 monit açık olmasın rağmen parlaklık 1 monitörde değişiyor. ayrıca 1 monitör varsa 1 monitöre uyuglandı diye yazmasın
+
+docker animasyonunu iyileştir.
+
+Görev çubuğu yüksekliğini düşürmeme rağmenküçülmüyor amam yükseltince yükseliyor
+
+İnternet Hızı modülü aktif olmasına rağmen gösterilmiyor.
+
+ekran yakalayınca sağ altta çaıaln yakalan görüntüye basarsam yakaklalankonumda yönlendirsin beni.
+yakalan görüntülerin pathini seçebileyiim.
+ekran geçmişi için de path seçemme izin ver görseller için.
+
+
+ekran geçmişinde benim userdatada saveler yyüklenmemişti askı kontrlol et
+
+
+sesle yazma modülünde mikrofon seçimlerinde mikofonların ismi düzgün gösterilmiyor. düzelt.
 <!-- Check -->
 
 medya kontrolleri için kısayol atmama modülü ekle. mesela ctrl++sapce durdur/oynat olsun. ctrl+n sonraki parça olsun ctrl+shift+n önceki olsun gibi.mesela alt+mousescroll ile ses seviyesini de ayaralyabileyim.
@@ -34,3 +51,5 @@ varsayılan yollar seçenekler ayrı pencerede düzenlemesin normal kendi ppanel
 
 ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin
 veya mesela ses iconun basınca mute on/off olsun
+
+Ekran yakalama modülü için bir güncelleme yapalım. Ekran görüntüsü alındıktan sonra birkaç saniye fade in fade out şeklinde sağ altta gösterilsin mouse'un bulunduğu monitörde.

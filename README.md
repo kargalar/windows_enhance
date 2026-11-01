@@ -59,17 +59,13 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **İnternet Hızı** | Anlık indirme/yükleme hızı görev çubuğunun üstünde (isteğe bağlı olarak içinde), bildirim alanına hizalı; otomatik/MB/s/Mbit/s birim, ayarlanabilir yenileme aralığı, taskbar gizliyken otomatik gizlenme |
 | **Her Zaman Üstte** | `Alt+F` ile aktif pencereyi üste sabitler, aynı kısayol bırakır; sabitlenen pencerenin çevresine renkli çerçeve çizer |
 | **Ekrandan Metin Al** | `Alt+Q` ile bölge seçer, OCR ile metni panoya kopyalar |
-| **Hızlı Başlatıcı** | `Win+Alt+Space` ile Başlat menüsü, kullanıcı klasörleri ve isteğe bağlı klasörlerde uygulama/dosya/klasör arar; uzantı filtresi, hesap makinesi ve web/Windows URI desteği |
-| **Kısayol Rehberi** | `Win+Shift+/` ile açılır; Win tuşunu basılı tutunca odak çalmayan katman Windows ve WinForge kısayollarını kategorilere göre listeler ve aratır |
 | **Klavye Yöneticisi** | Tuşları ve kısayolları genel olarak veya işlem adına göre uygulama bazında eşler, kısayolla Unicode metin yazdırır, 1–4 adımlı ardışık chord kısayollarıyla uygulama/URI başlatır; uygulamaya özel eşleme genel eşlemenin önceliğindedir |
 | **Tam Ekran Pencere Yönetimi** | Açık pencereleri Ana + yığın, Izgara veya Sütunlar düzeninde otomatik yerleştirme; boşluk, ana pencere genişliği ve küçültmeyi engelleme ayarları |
 | **FancyZones · Bölgeli Pencere Taşıma** | Yeni pencereleri en az dolu bölgeye otomatik yerleştirme; Shift ile sürükleyerek pencereyi iki, üç, dört ya da özelleştirilebilir 1–6 sütun × 1–4 satır ızgaraya taşıma; çizgi yakınında komşu bölgeleri, dört alan kesişiminde tüm alanları birleştirme; numara, renk, kenarlık kalınlığı ve birleştirme mesafesi ayarları; çoklu monitör ve ekrana göre ızgara profilleri |
 | **Crop And Lock · Pencere Kırpma** | `Win+Ctrl+Shift+T` ile etkin pencerenin bir alanını sürükleyerek seçer ve alanı canlı, yeniden boyutlandırılabilir küçük pencerede gösterir; kaynak pencereye tıklama göndermez |
 | **Pencere Kontrolü** | WinForge motoruyla Alt + fare ile taşıma/boyutlandırma; çoklu monitör, kenarlara oturtma, mıknatıslanma, ayarlanabilir eylemler ve uygulama/pencere istisnaları |
-| **Uyanık Kal** | Modül açıkken sistemin uykuya geçmesini engeller; isteğe bağlı olarak ekranı da açık tutar |
 | **Açık / Koyu Tema** | `Alt+Shift+L` ile temayı değiştirir veya isteğe bağlı yerel saat planında 07:00 / 19:00 varsayılanlarına göre otomatik geçiş yapar |
 | **Renk Seçici** | `Win+Alt+C` ile seçim modunu açar; tıkladığınız noktanın rengini HEX, RGB veya HSL olarak panoya kopyalar |
-| **Düz Metin Yapıştır** | `Win+Ctrl+Alt+V` ile panodaki metnin biçimlendirmesini temizleyip yapıştırır |
 | **Ekran Cetveli** | `Ctrl+Alt+M` ile alan seçip piksel, santimetre veya inç ölçüsünü panoya kopyalar |
 | **Fare** | Hızlandırma, kaydırma satırı ve çift tık hızı; çift Ctrl ile fareyi bulma, tıklama vurguları ve `Win+Alt+.` imleç artısı tek modülde. Önceki ayarlar ve etkin durumlar otomatik aktarılır. |
 | **Arayüz İnce Ayarları** | Pencere animasyonları, menü gecikmesi, görev çubuğu animasyonları ve Aero Shake |
@@ -83,19 +79,14 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 | **Görsel Boyutlandırıcı** | Birden fazla görsel için 854/1280/1920 px veya özel uzun kenar; en-boy oranı, PNG/JPEG biçimi ve JPEG kalitesi korunur; aynı biçimde EXIF/IPTC metadata aktarımı seçilebilir; arka planda ilerleme/iptal; özgün dosyalar saklanır |
 | **Dosya Kilidi Bulucu** | Windows Restart Manager ile kilit kullanan uygulama ve hizmetleri listeler; kullanıcı uygulamaları ayrıca onayla sonlandırılabilir |
 | **Başlat Menüsü** | Tasarım, boyut, görünür bölümler, öneriler, yeni uygulama bildirimleri, son kullanılan öğeler ve Windows arama temizliği tek modülde. Önceki ayarlar ve etkin durumlar otomatik aktarılır. |
-| **Pano Geçmişi** | Pano geçmişini açar; isteğe bağlı cihazlar arası eşitleme, `Win+V` ile son kopyalananlar |
-| **Gelişmiş Yapıştır** | `Win+Shift+V` ile metni Markdown/JSON'a dönüştürür, panodaki görselden OCR yapar veya TXT/HTML/PNG/JPEG/BMP/GIF dosyası olarak yapıştırır; JPEG kalite ayarı sunar |
-| **Ortam Değişkenleri** | Kullanıcı değişkenlerini düzenler; geliştirme/test gibi profilleri etkinleştirir, `%...%` türünü ve önceki değerleri korur |
 | **Varsayılan Yollar** | Masaüstü, Belgeler, İndirilenler, Resimler, Müzik ve Videolar konumlarını onayla değiştirir; ilk konuma dönüş kaydı saklar; yeni uygulama/içerik depolama ayarlarını açar |
 | **Varsayılan Programlar** | Kayıtlı dosya uzantılarını ve geçerli uygulamalarını arar; uzantıyı kopyalayıp program seçimi için Windows varsayılan uygulamalar ekranını açar |
-| **Hosts File Editor** | Windows hosts dosyasında IP-ad eşlemeleri ekler, düzenler, filtreler ve etkinleştirir/devre dışı bırakır; kaydetmeden önce yedek oluşturur ve UAC ister |
 | **Power Display · Ekran Denetimi** | Dahili panel parlaklığını Windows WMI, harici ekranlarda desteklenen parlaklık/kontrast/ses/giriş/renk denetimlerini DDC/CI üzerinden yönetir; profilleri ve gündüz/gece zamanlamasını destekler, imleçteki harici ekran için isteğe bağlı parlaklık kısayolları sunar |
 | **Fluent Medya Flyout’u** | `Win+Alt+M` ve `Ctrl+Alt+V`; ana ses/sessiz denetimi, donanım ses tuşlarında alt-orta ses OSD’si ve medya tuşlarında flyout; Windows Core Audio üzerinden algılanabilen harici kulaklık/aygıt ses değişimlerinde OSD; isteğe bağlı görev çubuğu üstü mini oynatıcı (sağ tıkta medya/ses/oynatıcı eylemleri ve isteğe bağlı ana ses tekerlek kontrolü), WASAPI çıkış sesinden gerçek zamanlı spektrum görselleştiricisi, filtrelenebilir medya uygulamaları ve oturum seçimi/sabitleme, albüm kapağı, oynat/önceki/sonraki, parça arama ve shuffle/repeat, kilit tuşu OSD’si, köşe ve monitör seçimi, siyah koyu görünüm, belirme animasyonu, etkinlik sonrası otomatik kapanma ve tam ekran uygulama bastırması |
-| **Çalışma Alanları** | Açık masaüstü uygulamalarını ve pencere konumlarını adlandırılmış bir düzen olarak kaydeder; seçilen düzeni uygulamaları yeniden açarak geri yükler; isteğe bağlı olarak komut satırı argümanlarını ve dosya yollarını da kaydedip yeniden kullanır |
 | **Başlangıçta Aç** | Windows oturum açtığında WinForge'u arka planda (tepside) başlatır |
 
-Kısayollar: `Alt+F` her zaman üstte · `Alt+Q` ekrandan metin · `Win+Alt+Space` hızlı başlatıcı · `Alt+Shift+L` tema ·
-`Win+Alt+C` renk seçici · `Win+Ctrl+Alt+V` düz metin yapıştır · `Ctrl+Alt+M` ekran cetveli ·
+Kısayollar: `Alt+F` her zaman üstte · `Alt+Q` ekrandan metin · `Alt+Shift+L` tema ·
+`Win+Alt+C` renk seçici · `Ctrl+Alt+M` ekran cetveli ·
 `Ctrl` çift basış fareyi vurgular.
 
 **Verimlilik → Klavye Yöneticisi** içindeki **Klavye eşlemelerini düzenle**
@@ -164,14 +155,6 @@ kısayollarını da ayrı ayrı değiştirebilirsiniz; `Ctrl+Alt+PageDown` gibi 
 bir değiştirici ve bir işlem tuşu kullanın. Fare tekerleği için
 `Ctrl+Alt+MouseWheelDown` ve `Ctrl+Alt+MouseWheelUp` biçimini kullanabilirsiniz.
 Klavye kısayolu başka uygulamada kayıtlıysa hata bildirilir.
-
-**Sistem → Hosts File Editor** içinden hosts dosyasını açın. IP adresi, bir veya
-daha fazla alan adı ve isteğe bağlı yorumla girdi ekleyin; seçili girdiyi
-düzenleyin, silin veya etkinliğini değiştirin. Filtre IP, alan adı ve yorumda
-çalışır. Yeni satırlar varsayılan olarak Windows başlık yorumlarından sonra
-eklenir; modül ayarından dosya sonunu seçebilirsiniz. Kaydetme UAC ister;
-dosya dışarıdan değişmişse kaydetme reddedilir, önce yeniden yükleyin. Her kayıt
-öncesi aynı klasörde tarihli yedek alınır; en az son beş yedek tutulur.
 
 **Sistem → Fluent Medya Flyout’u** modülünü etkinleştirip `Win+Alt+M` veya
 `Ctrl+Alt+V` ile açın. İki kısayol da modül ayarlarından ayrı ayrı
@@ -323,16 +306,6 @@ Bu özellikler **Verimlilik** altında ayrı modüllerdir:
   tuşlarını kullanın; bu dört kısayol **Etkin pencereyi kısayolla komşu bölgeye
   taşı** ayarından kapatılabilir.
 
-**Çalışma Alanları** modülünde görünür masaüstü uygulamalarını ve pencere
-konumlarını adlandırılmış bir düzene kaydedip sonra birlikte geri yükleyin.
-İsteğe bağlı **Komut satırı bağımsız değişkenlerini kaydet** ayarı dosya yolları
-ve uygulama argümanlarını da kaydeder; bazı uygulamalar bu alana hassas değerler
-koyabildiği için ayar varsayılan olarak kapalıdır. Geri yükleme aynı argümanları
-ayrı parametreler olarak başlatıcıya verir. Klasik masaüstü pencerelerinin yanında
-Windows’un uygulama kimliği sağlayabildiği paketlenmiş uygulamalar da yakalanıp
-etkinleştirilebilir; uygulamaya özgü açık belge sekmelerinin geri yüklenmesi henüz
-desteklenmez.
-
 ## Pencere Kırpma
 
 **Pencereler → Crop And Lock · Pencere Kırpma** modülünü etkinleştirin ve
@@ -423,65 +396,6 @@ boşluğunu, çizgi/kenar kalınlığını ve sabit uzunluğunu ayarlayabilirsin
 uzunluk `0` olduğunda çizgiler monitörün kenarlarına kadar uzanır. Özelliği
 modül açıldığında etkin başlatmak için **İmleç artısını başlangıçta göster**
 ayarını kullanın.
-
-## Gelişmiş Yapıştır
-
-**Sistem → Gelişmiş Yapıştır** modülünü `Win+Shift+V` ile açın. Pano içeriğinin
-önizlemesini görün, sonra düz metin, Markdown veya JSON biçimini seçin. Markdown
-HTML panosundan başlıkları, bağlantıları, kalın/italik yazıyı ve listeleri
-dönüştürür. JSON dönüşümü mevcut JSON'u biçimlendirir; CSV, XML ve INI verilerini
-JSON nesnelerine çevirir; diğer metinleri satır dizisi yapar. Görselden metin
-seçeneği Windows OCR ile yerel çalışır. Metin, HTML veya görseli `.txt`, `.html`,
-`.png`, `.jpg`, `.bmp` veya `.gif` dosyası olarak panoya koyup hedef uygulamaya
-yapıştırabilirsiniz. PNG kayıpsızdır; JPEG kalite değeri %10–100 aralığında
-ayarlanır (varsayılan %90) ve saydam pikseller beyaz arka planla birleştirilir;
-BMP ve GIF WPF'nin yerel kodlayıcılarıyla oluşturulur. Dönüşümler görselin piksel
-boyutunu korur.
-Üretilen dosyalar `%TEMP%\WinForge\AdvancedPaste` klasöründe tutulur; 30 günden
-eski WinForge çıktıları yeni bir dosya oluşturulurken temizlenir. Dönüşümler
-yereldir; bu akışta AI ve ses/video dönüştürme yoktur.
-
-## Hızlı Başlatıcı
-
-`Win+Alt+Space` penceresinde uygulama adlarını arayın veya mevcut bir dosya ya da
-klasörün tam yolunu yazıp `Enter`'a basın. Tırnak içindeki yollar da açılır.
-`https`, `http`, `mailto`, `ms-settings:` ve `shell:` URI'leri Windows'un kayıtlı
-uygulama işleyicisine gönderilir. Diğer URI şemaları ve mevcut olmayan yollar
-başlatıcı tarafından çalıştırılmaz. `=` ile başlayan ifadeler hesap makinesini
-kullanır.
-`ayarlar`, `ekran`, `ses`, `wifi`, `bluetooth`, `uygulamalar`, `başlangıç`,
-`güncelleme`, `pano`, `gizlilik`, `fare` veya `güç` aramaları ilgili Windows
-Ayarlar sayfasına giden yerleşik komutları gösterir.
-**Çalışma Alanları** modülü etkinse kayıtlı alan adını veya içindeki uygulama
-adını arayın; sonucu seçmek alanı yönetici penceresini açıp geri yüklemeyi başlatır.
-İsteğe bağlı **Son kullanılan öğeleri göster** ayarı, Windows Son Kullanılanlar
-klasöründeki en yeni 20 `.lnk`/`.url` öğesini sonuçların başına ekler. Bu ayar
-varsayılan olarak kapalıdır; kısayollar seçildiğinde Windows'un kendi dosya
-ilişkilendirmesiyle açılır.
-Varsayılan dizinlere ek klasör eklemek için **Ek arama klasörleri** ayarına
-tam yolları `;` ile ayırarak yazın; `%USERPROFILE%` gibi ortam değişkenleri
-desteklenir. **Dosya türü filtresi** ayarına `pdf, docx` veya `*.pdf;*.docx`
-yazın. Boş değer tüm dosya türlerini indeksler; klasörler ve Başlat menüsü
-kısayolları filtre dışında tutulur. Özel klasörlerde gizli, sistem ve yeniden
-ayrıştırma noktası dizinleri taranmaz; indeks 25.000 öğeyle sınırlıdır.
-İsteğe bağlı **Dosya içeriklerinde ara** ayarı, desteklenen metin dosyalarının
-ilk 128 KB bölümünde arar; 3 karakterden kısa sorgularda başlamaz ve sonuçları
-yalnızca bellekte tutar. İçerik araması varsayılan olarak kapalıdır; arama yalnızca
-indeksteki kullanıcı klasörleri ve eklediğiniz köklerle sınırlıdır.
-
-## Ortam Değişkenleri
-
-**Sistem → Ortam Değişkenleri** modülünü etkinleştirip **Kullanıcı
-değişkenlerini düzenle** eylemini açın. Değişken ekleyin, ad/değer değiştirin,
-genişletme türünü seçin veya satırı silin; **Kaydet** yalnızca geçerli
-kullanıcının `Environment` kayıt defteri anahtarını günceller ve Windows'a ortam
-değişikliği bildirimini gönderir. `%TEMP%` gibi ifadeler genişletilebilir türde
-saklanabilir. **Değişken profillerini yönet** eyleminde profiller oluşturup
-değişken kümelerini kaydedin; aynı anda tek profil etkin olur ve kapatınca
-önceki kullanıcı değerleri geri yüklenir. Sistem değişkenlerini düzenlemek için
-**Sistem değişkenlerini düzenle (yönetici)** eylemini açın. Değerleri hazırlayıp
-kaydettiğinizde Windows yönetici onayı ister; kayıt başarısız olursa önceki
-sistem değerleri geri yüklenir.
 
 ## Pencere Kontrolü
 

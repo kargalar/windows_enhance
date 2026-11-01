@@ -9,8 +9,6 @@ The application no longer needs Windhawk, AltSnap, NAudio, or System.Management
 packages. It still calls Windows APIs for windows, input, audio, OCR, PDF rendering,
 media codecs, registry settings, WMI, and display hardware. These are operating
 system facilities; shipping a local engine does not replace Windows itself.
-Clipboard cloud synchronization, when explicitly enabled, is a Windows service
-feature and is not a local clipboard-history implementation.
 
 ## Evidence and reproduction
 
@@ -40,9 +38,6 @@ controlled x64 build:
   of minimization is enabled.
 - The shared keyboard engine submits real Unicode input to Windows and the exact
   fixture text appears in an owned WPF editor. The native INPUT buffer is 40 bytes.
-- Deterministic paste fixtures verify waiting for actual key release, focus-change
-  cancellation, deadline cancellation, and cancellation when either Plain Paste
-  or Advanced Paste is disabled. These tests inject no input into user windows.
 - The mouse fixture verifies correct native commands, exact baseline restoration,
   idempotence and failure cleanup. All native calls are intercepted, so the user's
   actual pointer settings are untouched.
@@ -152,17 +147,13 @@ available tests, even when implementation exists.
 | `tray-icons` (internal component of `taskbar`) | Reads per-user notification-icon registry entries, sets promotion, restores saved values and rejects changed icon identities. | The fixture now loads the component from `WinForge.Modules.Taskbar.dll`; Windows may rewrite promotion when an app registers again. |
 | `always-on-top` | Applies a topmost window style, draws a tracking border, registers Alt+F, restores the captured original style. | Actual owned-window pin/unpin, disable restoration, preexisting-topmost preservation and destroyed-target fixtures passed in the 58-check run. Tracking borders on multiple external applications remain unverified. |
 | `text-grabber` | Captures a selected screen region, runs local Windows OCR, copies text to the clipboard. | Direct capture and 4000-pixel/zero-alpha OCR tests passed. Selection/copy/hotkey end-to-end, mixed-DPI monitor boundaries and noninstalled OCR languages remain unverified. |
-| `launcher` | Bounded application/file/folder indexing, arithmetic parser, validated path/URI targets, opt-in recent items/content search, module quick actions. | Existing tests exercise index fixtures, limits, calculator, URI validation, recent items and Workspace action lookup. Actual launch of each target category remains unverified. |
-| `shortcut-guide` | Searchable shortcut list and nonactivating hold-Win overlay. | Existing tests render/filter the guide and simulate key-state observation/hold/cancel/release. Physical keyboard combinations in other applications remain unverified. |
 | `keyboard-manager` | Own low-level hook, key/shortcut/text/app mappings, bounded chord sequences and validated application/URI actions. | Existing parser, conflict/reserved-key validation and chord-state tests; actual Unicode input reached an owned fixture editor. Physical remapping in every application and privilege level remains unverified. Windows secure combinations cannot be remapped. |
 | `auto-tiling` | Independent fullscreen window tiling module with master/grid/column layouts. | Existing geometry/navigation/profile tests; direct excluded-minimized-window test passed. Minimum-sized apps remain unverified. |
 | `fancy-zones` | Independent drag-to-zone module with palette-based overlay colors, divider-proximity multi-zone selection, least-occupied-zone placement for new windows, maximized overflow when all zones are occupied, keyboard movement, monitor profiles and same-zone cycling; includes WinForge windows while excluding the preview overlay. | Geometry/navigation/profile, divider-selection, least-occupied-zone and full-grid occupancy checks. Actual drag/drop across DPI changes and full-screen games remain unverified. |
 | `crop-and-lock` | Live read-only DWM thumbnail with a selected source rectangle. | Existing selection geometry and thumbnail UI checks. Interactive/reparent and static snapshot modes are not implemented. Protected/minimized source rendering depends on DWM. |
 | `window-control` | Own low-level mouse engine and window actions, geometry, snapping/magnets and exclusions. | 129 checks passed in the final 802-check run, including owned native actions and actual menu selection/activation. Advanced legacy INI behavior remains incomplete as listed in `src/WinForge.Modules.WindowControl/PARITY.md`. |
-| `awake` | Sets Windows thread execution-state flags and optional duration timer. | Existing live test checks activation-thread flags, expiry clearing and timer release. Long sleep/lock/resume and every power policy remain unverified. |
 | `theme-switch` | User theme registry preferences, broadcast, hotkey and local-time scheduling. | Existing schedule calculations and UI checks. Visible changes across all shell/app surfaces and resume/time-zone transitions remain unverified. |
 | `color-picker` | Own overlay, GDI pixel sampling and HEX/RGB/HSL clipboard formatting. | Module/settings coverage exists. Selected-pixel accuracy on HDR, mixed-DPI screens and clipboard contention remain unverified. |
-| `plain-paste` | Reads clipboard text, waits for physical hotkey release and an unchanged target, replaces rich formats with text and synthesizes a paste shortcut. | Deterministic focus/release/timeout/disable cancellation tests passed. Shared native keyboard input reached a fixture editor. Full clipboard paste into every application is unverified. |
 | `screen-ruler` | Own selection overlay and pixel/physical-unit calculations. | Source/module/UI coverage. Physical units depend on configured DPI and are not monitor calibration. Actual selection-to-clipboard end-to-end remains unverified. |
 | `mouse-tweaks` | Reads/writes acceleration and wheel lines via SystemParametersInfo, reads timing with GetDoubleClickTime and sets it with SPI_SETDOUBLECLICKTIME. | Corrected a native command mix-up that previously reset timing on read and swapped mouse buttons on write. Injected native-call, exact restore, idempotence and failure fixtures passed. Real pointer settings are not changed by these tests. |
 | `mouse-spotlight` | Own input observers, double-Ctrl spotlight, configured click rings and crosshair overlay. | Existing crosshair construction and button-decoding checks. Hardware buttons, multiple monitors and render timing remain unverified. |
@@ -177,13 +168,8 @@ available tests, even when implementation exists.
 | `file-locksmith` | Windows Restart Manager query and guarded user-process termination action. | Existing live locked-file test locates the test process and confirms scanning does not alter it. Termination is intentionally not exercised against user applications; Restart Manager is not an exhaustive kernel-handle enumerator. |
 | `start-tweaks` | Writes per-user recommendation/new-app/recent-item preference values. | Source reviewed. The current Start host's actual use of each registry value remains unverified; these are not a custom Start implementation. |
 | `search-tweaks` | Writes per-user Bing/highlight/suggestion preference values. | Source reviewed. These preference names vary in effect across Windows builds. Actual web-result suppression is unverified; no custom search host replaces Windows Search. |
-| `clipboard-history` | Enables Windows clipboard history and configures optional Windows cloud upload preference. | Source reviewed. This is Windows Win+V history, not a WinForge history engine. Cloud/account/policy behavior and actual Win+V contents remain unverified. |
-| `advanced-paste` | Local Markdown/JSON transforms, image OCR and TXT/HTML/PNG/JPEG/BMP/GIF artifacts. | Existing tests inspect real file contents and decoded images, including JPEG transparency/quality; shared native OCR fixture passed. Full clipboard-to-selected-application delivery remains unverified. |
-| `environment-variables` | User variable CRUD/profiles with baseline and registry type preservation; separate elevation helper for system changes. | Existing fixture-registry/profile activation, concurrency and restoration tests. Live UAC/system-environment writes and a new child process observing each value remain unverified. |
-| `hosts-file-editor` | Hosts parser/editor, lossless unmanaged lines/comments, active/disabled mappings, concurrency checks, backup and elevation helper. | Existing parse/render/change/conflict tests on fixtures. Live administrator save, backup restoration and OS DNS result are unverified; no hosts file is changed by feature smoke tests. |
 | `display-brightness` | Own WMI COM for internal brightness; Windows DDC/CI/VCP for advertised external monitor controls, profiles and schedules. | Read-only actual brightness/capabilities succeeded for two connected VG24VQE monitors; DISPLAY6 also returned contrast/input/color values. Intermittent missing feature readback is not treated as unsupported hardware. Internal WMI brightness is unsupported on this machine. Actual hardware writes, scheduling effects and cursor hotkeys on hardware remain unverified. |
 | `media-flyout` | Own flyout/widget and mixer using Windows media sessions/Core Audio; own WASAPI PCM decoder and FFT spectrum. | Existing session/endpoint enumeration, filters, FFT/stream-format tests and UI rendering. Direct WAV preview playback passed independently. Session transport, volume writes, Bluetooth events, endpoint failover and every player integration remain unverified. |
-| `workspaces` | Saves classic/packaged application identifiers, optional process arguments and monitor geometry; launches/reuses/windows and restores bounds. | Existing capture/reuse/argument/AUMID tests; direct work-area remapping, full native PROPVARIANT buffer and invalid-handle rejection passed. App-owned document tabs/sessions are not implemented. All application cold launches and minimized-window capture remain unverified. |
 | `startup` | Per-user Run registration for the current executable with background startup. | Source/module coverage. Fresh Windows sign-in and installed/moved executable-path behavior remain unverified. |
 
 ## Former customization-engine scope
@@ -216,14 +202,9 @@ still incomplete; its exact remaining scope is recorded in
   undefined GDI alpha, and disposes the native SoftwareBitmap.
 - GDI capture deselects the bitmap before GetDIBits, bounds allocation and requires
   the expected number of scanlines.
-- Workspace property access reserves 24 native bytes for x64 PROPVARIANT; placement
-  uses current monitor work areas, handles very small work areas, and reports
-  destroyed/failed window placement rather than counting it as restored.
 - Tiling filters excluded processes/classes before any minimized-window restore.
 - Audio session name lookup and app-specific keyboard lookup dispose their Process
-  wrappers. Keyboard injection now reserves the full native x64 INPUT union; plain
-  and Advanced Paste wait for actual activation-key release, preserve the intended
-  target and cancel pending input when disabled or focus changes.
+  wrappers. Keyboard injection now reserves the full native x64 INPUT union.
 - Mouse preference interop uses GetDoubleClickTime and the correct setter command;
   partial capture failures do not write invented defaults. Corner customization
   preserves each window's original DWM preference instead of resetting to a default.

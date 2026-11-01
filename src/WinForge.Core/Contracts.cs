@@ -110,7 +110,7 @@ public interface IFeatureUiContext
 /// <summary>Shows a transient brightness indicator on the display being adjusted.</summary>
 public interface IDisplayBrightnessOverlayContext
 {
-    void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null);
+    void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null);
 }
 
 /// <summary>Shows a transient audio volume indicator.</summary>
@@ -122,7 +122,7 @@ public interface IAudioVolumeOverlayContext
 /// <summary>A searchable action contributed by an active module.</summary>
 public sealed record QuickAction(string Id, string Name, string SearchTerms, Action Execute);
 
-/// <summary>Contributes lightweight searchable actions to the quick launcher.</summary>
+/// <summary>Contributes lightweight searchable module actions.</summary>
 public interface IQuickActionProvider
 {
     IEnumerable<QuickAction> GetQuickActions(string query);

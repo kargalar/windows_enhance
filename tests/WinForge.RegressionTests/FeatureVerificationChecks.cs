@@ -18,8 +18,7 @@ internal static class FeatureVerificationChecks
     internal static void Run(string directory, Action<bool, string> check, bool nativeSmoke)
     {
         var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
-        TestWorkspacePlacement(extras, check);
-        TestPasteCoordination(extras, check);
+        TestKeyboardLayout(extras, check);
         TestMouseSettings(extras, directory, check);
         TestAnimationSettings(extras, check);
         TestWordCorrectionEngine(extras, check);
@@ -239,56 +238,8 @@ internal static class FeatureVerificationChecks
         public void Notify(string message) => Notifications.Add(message);
     }
 
-    private static void TestPasteCoordination(Assembly extras, Action<bool, string> check)
+    private static void TestKeyboardLayout(Assembly extras, Action<bool, string> check)
     {
-        var operation = extras.GetType("WinForge.Modules.Extras.PasteOperation")!
-            .GetMethods(BindingFlags.Static | BindingFlags.NonPublic).Single(method => method.Name == "ExecuteAsync" && method.GetParameters().Length == 6);
-        var target = new IntPtr(100);
-        var foreground = target;
-        var checks = 0;
-        var deliveries = 0;
-        var delays = 0;
-        var released = (Task<bool>)operation.Invoke(null,
-            [target, (Func<IntPtr>)(() => foreground), (Func<bool>)(() => ++checks <= 3),
-             (Action)(() => deliveries++), CancellationToken.None,
-             (Func<TimeSpan, CancellationToken, Task>)((_, _) => { delays++; return Task.CompletedTask; })])!;
-        check(released.GetAwaiter().GetResult() && delays == 3 && deliveries == 1,
-            "Paste waits for physical activation modifiers to release before delivering exactly one shortcut");
-
-        deliveries = 0;
-        var moved = (Task<bool>)operation.Invoke(null,
-            [target, (Func<IntPtr>)(() => foreground), (Func<bool>)(() => true),
-             (Action)(() => deliveries++), CancellationToken.None,
-             (Func<TimeSpan, CancellationToken, Task>)((_, _) => { foreground = new IntPtr(200); return Task.CompletedTask; })])!;
-        check(!moved.GetAwaiter().GetResult() && deliveries == 0,
-            "Paste cancels if foreground focus changes while the activation keys are held");
-
-        foreach (var moduleName in new[] { "PlainPasteModule", "AdvancedPasteModule" })
-        {
-            foreground = target;
-            deliveries = 0;
-            using var cancellation = new CancellationTokenSource();
-            var moduleType = extras.GetType("WinForge.Modules.Extras." + moduleName)!;
-            var module = (ITweakModule)Activator.CreateInstance(moduleType)!;
-            moduleType.GetField("_pendingPaste", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(module, cancellation);
-            var pending = (Task<bool>)operation.Invoke(null,
-                [target, (Func<IntPtr>)(() => foreground), (Func<bool>)(() => true),
-                 (Action)(() => deliveries++), cancellation.Token,
-                 (Func<TimeSpan, CancellationToken, Task>)((_, _) => { module.Deactivate(); return Task.CompletedTask; })])!;
-            try { pending.GetAwaiter().GetResult(); }
-            catch (OperationCanceledException) { }
-            check(pending.IsCanceled && deliveries == 0 && cancellation.IsCancellationRequested,
-                $"Disabling {moduleName} cancels pending delivery without injecting input");
-        }
-
-        foreground = target;
-        deliveries = 0;
-        var held = (Task<bool>)operation.Invoke(null,
-            [target, (Func<IntPtr>)(() => foreground), (Func<bool>)(() => true),
-             (Action)(() => deliveries++), CancellationToken.None,
-             (Func<TimeSpan, CancellationToken, Task>)((_, _) => Task.CompletedTask)])!;
-        check(!held.GetAwaiter().GetResult() && deliveries == 0,
-            "Paste has a bounded wait and never injects a modified shortcut after its key-release deadline");
         check(Marshal.SizeOf(extras.GetType("WinForge.Modules.Extras.KeyboardInputSender+INPUT")!) == 40,
             "Shared keyboard injection reserves the native x64 INPUT union required by SendInput");
     }
@@ -349,36 +300,6 @@ internal static class FeatureVerificationChecks
 
     [DllImport("user32.dll")]
     private static extern bool AttachThreadInput(uint firstThread, uint secondThread, bool attach);
-
-    private static void TestWorkspacePlacement(Assembly extras, Action<bool, string> check)
-    {
-        var native = extras.GetType("WinForge.Modules.Extras.WorkspaceNative")!;
-        var savedType = extras.GetType("WinForge.Modules.Extras.WorkspaceWindow")!;
-        var boundsType = extras.GetType("WinForge.Modules.Extras.WorkspaceBounds")!;
-        var saved = Activator.CreateInstance(savedType,
-            "app.exe", "app", "fixture", -2000, -50, 1200, 1000, false, "old", -2000, -50, 1920, 1080)!;
-        var currentMonitor = Activator.CreateInstance(boundsType, -1280, 40, 0, 720, "new", true)!;
-        var map = native.GetMethod("MapToMonitor", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var placed = (RECT)map.Invoke(null, [saved, currentMonitor])!;
-        check(placed.Left >= -1280 && placed.Top >= 40 && placed.Right <= 0 && placed.Bottom <= 720,
-            "Workspace remapping keeps a large saved window inside a negative-coordinate monitor work area");
-        var smallMonitor = Activator.CreateInstance(boundsType, 0, 0, 200, 100, "tiny", true)!;
-        var smallPlacement = (RECT)map.Invoke(null, [saved, smallMonitor])!;
-        check(smallPlacement.Left == 0 && smallPlacement.Top == 0 && smallPlacement.Right == 200 && smallPlacement.Bottom == 100,
-            "Workspace remapping handles work areas smaller than its preferred minimum without throwing or overflowing");
-        var variant = extras.GetType("WinForge.Modules.Extras.WindowsAppUserModel+PropVariant")!;
-        check(Marshal.SizeOf(variant) == 24,
-            "Workspace property-store interop reserves the full native x64 PROPVARIANT buffer");
-        try
-        {
-            native.GetMethod("RestoreWindow")!.Invoke(null, [IntPtr.Zero, placed, false]);
-            check(false, "Workspace restoration rejects a destroyed window instead of reporting success");
-        }
-        catch (TargetInvocationException exception) when (exception.InnerException is InvalidOperationException)
-        {
-            check(true, "Workspace restoration rejects a destroyed window instead of reporting success");
-        }
-    }
 
     private static void TestScreenCapture(Action<bool, string> check)
     {

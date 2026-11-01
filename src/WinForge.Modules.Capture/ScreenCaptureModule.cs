@@ -22,6 +22,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
     private ScreenRecording? recording;
     private IFeatureUiWindow? controls;
     private IFeatureUiWindow? toolsWindow;
+    private CapturePreviewWindow? preview;
     public override string Id => "screen-capture";
     public override string Name => "Ekran Yakalama";
     public override string Description => "Bölge/pencere/ekran, kayan yakalama, işaretleme, OCR, video ve GIF kaydı.";
@@ -66,7 +67,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         shortcut?.Dispose(); shortcut = configured.Register(Context.Hotkeys, () => _ = CaptureAsync("region"));
     }
     public override void Apply() { if (IsActive) RegisterShortcut(); }
-    public override void Deactivate() { IsActive = false; shortcut?.Dispose(); shortcut = null; cancellationHook?.Dispose(); cancellationHook = null; Cancel(); controls?.Close(); controls = null; toolsWindow?.Close(); toolsWindow = null; base.Deactivate(); }
+    public override void Deactivate() { IsActive = false; shortcut?.Dispose(); shortcut = null; cancellationHook?.Dispose(); cancellationHook = null; Cancel(); preview?.Close(); controls?.Close(); controls = null; toolsWindow?.Close(); toolsWindow = null; base.Deactivate(); }
     private void ShowTools()
     {
         if (!IsActive) { Context.Notify("Önce Ekran Yakalama modülünü etkinleştirin."); return; }
@@ -103,6 +104,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         if (busy || !IsActive) return; busy = true; operation?.Dispose(); operation = new(); var token = operation.Token;
         try
         {
+            preview?.Close();
             await Task.Delay(200 + Math.Clamp(Context.Settings.GetInt("delay"), 0, 30) * 1000, token);
             var foreground = CaptureServices.Foreground();
             if (mode == "multi-region")
@@ -148,6 +150,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 title = $"Kayan yakalama · %{result.Confidence * 100:0} güven{(result.Partial ? " · KISMİ SONUÇ" : "")}"; Context.Notify(title);
             }
             token.ThrowIfCancellationRequested();
+            ShowPreview(image!);
             if (annotationTool is null) await ProcessAfterCaptureAsync(image!, store, foreground.App, title, token);
             else new CaptureEditor(store, image!, annotationTool, featureUi: (Context as IFeatureUiContext)?.FeatureUi).Show();
         }
@@ -163,10 +166,21 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         for (var index = 0; index < areas.Count; index++)
         {
             token.ThrowIfCancellationRequested();
+            preview?.Close();
             var image = CaptureServices.Capture(areas[index]); lastArea = areas[index];
+            ShowPreview(image);
             await ProcessAfterCaptureAsync(image, store, foreground.App, $"Çoklu bölge {index + 1}/{areas.Count}", token);
         }
         Context.Notify($"{areas.Count} bölge yakalandı.");
+    }
+
+    private void ShowPreview(BitmapSource image)
+    {
+        preview?.Close();
+        var window = new CapturePreviewWindow(image);
+        preview = window;
+        window.Closed += (_, _) => { if (ReferenceEquals(preview, window)) preview = null; };
+        window.Show();
     }
 
     private async Task ProcessAfterCaptureAsync(BitmapSource image, HistoryStore store, string app, string title, CancellationToken token)

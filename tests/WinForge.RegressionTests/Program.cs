@@ -67,6 +67,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--brightness-wheel-only"))
+            {
+                BrightnessWheelChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} brightness wheel checks.");
+                return 0;
+            }
             if (args.Contains("--combined-modules-only"))
             {
                 CombinedModuleChecks.Run(TestDirectory, Check);
@@ -257,6 +263,12 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} live notification-area checks.");
                 return 0;
             }
+            if (args.Contains("--display-brightness-only"))
+            {
+                DisplayBrightnessChecks.Run(Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll")), Check);
+                Console.WriteLine($"PASS: {_passed} display brightness checks.");
+                return 0;
+            }
             if (args.Contains("--display-readonly"))
             {
                 DisplayBrightnessChecks.ReadConnected(Check);
@@ -404,44 +416,7 @@ internal static class Program
         host.Load();
         Check(host.Modules.Count >= 25 && host.Modules.Any(module => module.Id == "window-control"), "All shipped modules including the native window engine load and initialize");
         Check(host.Modules.Select(module => module.Id).Distinct().Count() == host.Modules.Count, "Module IDs are unique");
-        var hostsModule = host.Modules.Single(module => module.Id == "hosts-file-editor");
-        Check(hostsModule.Settings.Any(setting => setting.Key == "open-editor" && setting.Kind == SettingKind.Action) &&
-              (hostsModule.Warning ?? "").Contains("yedek", StringComparison.OrdinalIgnoreCase),
-            "Hosts File Editor exposes the editor action and warns about DNS impact and backups");
-        var hostsType = hostsModule.GetType().Assembly.GetType("WinForge.Modules.Extras.HostsFileDocument")!;
-        var parseHosts = hostsType.GetMethod("Parse", BindingFlags.Static | BindingFlags.Public)!;
-        const string hostsFixture = "# sample header\r\n127.0.0.1 localhost # local resolver\n# 192.0.2.9 disabled.test # parked\r\nnot an entry\n";
-        var hostsDocument = parseHosts.Invoke(null, new object[] { hostsFixture })!;
-        var hostsEntries = (System.Collections.IList)hostsType.GetProperty("Entries")!.GetValue(hostsDocument)!;
-        Check(hostsEntries.Count == 2 && hostsType.GetMethod("Render")!.Invoke(hostsDocument, null) as string == hostsFixture,
-            "Hosts parser preserves mixed line endings, final newline, comments and unmanaged text");
-        var firstHostsEntry = hostsEntries[0]!;
-        var firstLineIndex = (int)firstHostsEntry.GetType().GetProperty("LineIndex")!.GetValue(firstHostsEntry)!;
-        hostsType.GetMethod("Toggle")!.Invoke(hostsDocument, new object[] { firstLineIndex });
-        var toggledHosts = (string)hostsType.GetMethod("Render")!.Invoke(hostsDocument, null)!;
-        Check(toggledHosts.Contains("# 127.0.0.1\tlocalhost\t# local resolver", StringComparison.Ordinal) &&
-              toggledHosts.Contains("# 192.0.2.9 disabled.test # parked", StringComparison.Ordinal),
-            "Hosts activation toggles only the selected entry and retains its comment");
-        var hostsEntryType = hostsType.Assembly.GetType("WinForge.Modules.Extras.HostsFileEntry")!;
-        var addHosts = hostsType.GetMethod("Add", new[] { hostsEntryType })!;
-        var addHostsNearHeader = hostsType.GetMethod("Add", new[] { hostsEntryType, typeof(bool) })!;
-        var newHostsEntry = Activator.CreateInstance(hostsEntryType, "203.0.113.4", "preview.test", "staging", true, -1)!;
-        var topHostsDocument = parseHosts.Invoke(null, new object[] { hostsFixture })!;
-        addHostsNearHeader.Invoke(topHostsDocument, new object[] { newHostsEntry, true });
-        Check(((string)hostsType.GetMethod("Render")!.Invoke(topHostsDocument, null)!).IndexOf("203.0.113.4", StringComparison.Ordinal) <
-              ((string)hostsType.GetMethod("Render")!.Invoke(topHostsDocument, null)!).IndexOf("127.0.0.1", StringComparison.Ordinal),
-            "Hosts File Editor inserts new entries after the leading Windows comment block when requested");
-        var freshHostsDocument = parseHosts.Invoke(null, new object[] { hostsFixture })!;
-        var duplicateHosts = Activator.CreateInstance(hostsEntryType, "::1", "localhost", "duplicate", true, -1)!;
-        try { addHosts.Invoke(freshHostsDocument, new[] { duplicateHosts }); Check(false, "Hosts duplicate loopback mappings are rejected"); }
-        catch (TargetInvocationException exception) when (exception.InnerException is ArgumentException)
-        { Check(true, "Hosts duplicate loopback mappings are rejected"); }
-        var hostsStoreType = hostsType.Assembly.GetType("WinForge.Modules.Extras.HostsFileStore")!;
-        var buildHostsScript = hostsStoreType.GetMethod("BuildElevatedScript", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var hostsScript = (string)buildHostsScript.Invoke(null, new object[] { "cGF0aA==" })!;
-        Check(hostsScript.IndexOf("ExpectedSha256", StringComparison.Ordinal) < hostsScript.IndexOf("[System.IO.File]::Copy", StringComparison.Ordinal) &&
-              hostsScript.IndexOf("[System.IO.File]::Copy", StringComparison.Ordinal) < hostsScript.IndexOf("[System.IO.File]::Replace", StringComparison.Ordinal),
-            "Hosts elevated save checks for concurrent edits, creates a backup, then atomically replaces the file");
+        Check(host.Modules.All(module => module.Id is not ("workspaces" or "awake" or "advanced-paste" or "hosts-file-editor" or "environment-variables" or "clipboard-history" or "plain-paste" or "launcher" or "shortcut-guide")), "Removed modules are absent from the shipped module catalog");
         var tiling = host.Modules.Single(module => module.Id == "auto-tiling");
         TilingInteractionChecks.Run(tiling.GetType(), Check);
         var fancyZones = host.Modules.Single(module => module.Id == "fancy-zones");
@@ -605,6 +580,7 @@ internal static class Program
             "Light Switch accepts strict HH:mm values and rejects invalid schedule text");
         Check(host.Modules.All(module => module.Id != "windhawk-taskbar"), "Removed external shell integration is not discovered");
         var displayBrightness = host.Modules.Single(module => module.Id == "display-brightness");
+        BrightnessWheelChecks.Run(Check);
         Check(displayBrightness.Settings.Single(setting => setting.Key == "open-panel").Kind == SettingKind.Action &&
               displayBrightness.Settings.Single(setting => setting.Key == "brightness-schedule-enabled").Default is false &&
               displayBrightness.Settings.Single(setting => setting.Key == "day-start-time").Default as string == "07:00" &&
@@ -675,161 +651,6 @@ internal static class Program
               (byte)mapPanelPercent.Invoke(null, [-10, discretePanelLevels])! == 5 &&
               (byte)mapPanelPercent.Invoke(null, [110, discretePanelLevels])! == 85,
             "Power Display maps percentages to discrete internal-panel brightness levels and clamps both ends");
-        var workspaces = host.Modules.Single(module => module.Id == "workspaces");
-        Check(workspaces.Settings.Single(setting => setting.Key == "open-manager").Kind == SettingKind.Action &&
-              workspaces.Settings.Single(setting => setting.Key == "capture-command-line-arguments") is
-              { Kind: SettingKind.Toggle, Default: false } &&
-              !(workspaces.Warning ?? "").Contains("UWP uygulamalar henüz desteklenmez", StringComparison.OrdinalIgnoreCase) &&
-              (workspaces.Warning ?? "").Contains("hassas", StringComparison.OrdinalIgnoreCase),
-            "Workspaces exposes its manager and opt-in command-line capture with a privacy warning");
-        var workspaceNative = workspaces.GetType().Assembly.GetType("WinForge.Modules.Extras.WorkspaceNative")!;
-        var isValidAppUserModelId = workspaceNative.GetMethod("IsValidAppUserModelId", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var buildAumidActivation = workspaceNative.GetMethod("BuildAppUserModelActivationArguments", BindingFlags.Static | BindingFlags.NonPublic)!;
-        const string calculatorAumid = "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App";
-        Check((bool)isValidAppUserModelId.Invoke(null, [calculatorAumid])! &&
-              !(bool)isValidAppUserModelId.Invoke(null, ["shell:AppsFolder\\Microsoft.WindowsCalculator!App"])! &&
-              !(bool)isValidAppUserModelId.Invoke(null, ["Package!App!Extra"])! &&
-              (string)buildAumidActivation.Invoke(null, [calculatorAumid])! == calculatorAumid,
-            "Workspaces validates packaged app IDs before activation and rejects shell/path injection");
-        var commandLineParser = workspaces.GetType().Assembly
-            .GetType("WinForge.Modules.Extras.WindowsCommandLine")!
-            .GetMethod("ParseArguments", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var parsedCommandLine = (string[])commandLineParser.Invoke(null,
-            ["\"C:\\Program Files\\Editor\\editor.exe\" --profile \"work space\" \"C:\\Docs\\report 1.md\""])!;
-        Check(parsedCommandLine.SequenceEqual(new[]
-              { "C:\\Program Files\\Editor\\editor.exe", "--profile", "work space", "C:\\Docs\\report 1.md" }),
-            "Workspaces parses quoted executable paths, arguments and document paths without losing boundaries");
-        var createWorkspaceStartInfo = workspaces.GetType().Assembly
-            .GetType("WinForge.Modules.Extras.WorkspaceNative")!
-            .GetMethod("CreateStartInfo", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var launchArguments = new[] { "--profile", "work space", "C:\\Docs\\report 1.md", "secret-like value" };
-        var startInfo = (ProcessStartInfo)createWorkspaceStartInfo.Invoke(null,
-            [Environment.ProcessPath!, launchArguments])!;
-        Check(!startInfo.UseShellExecute && startInfo.ArgumentList.SequenceEqual(launchArguments) &&
-              startInfo.WorkingDirectory == Path.GetDirectoryName(Environment.ProcessPath),
-            "Workspaces relaunches captured arguments as distinct parameters in the app working directory");
-        var workspaceProviderFixture = System.Text.Json.JsonSerializer.Serialize(new[]
-        {
-            new
-            {
-                Id = "focus-workspace",
-                Name = "Focus",
-                SavedAt = DateTimeOffset.Now,
-                Windows = new[]
-                {
-                    new
-                    {
-                        ExecutablePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "notepad.exe"),
-                        ProcessName = "notepad.exe", Title = "Notes", Left = 10, Top = 10, Width = 800, Height = 600,
-                        Maximized = false, MonitorName = "DISPLAY1", MonitorLeft = 0, MonitorTop = 0,
-                        MonitorWidth = 1920, MonitorHeight = 1080, Arguments = new[] { "--new-window", "C:\\Docs\\notes.txt" },
-                        AppUserModelId = calculatorAumid
-                    }
-                }
-            }
-        });
-        var loadWorkspacePresets = workspaces.GetType().Assembly
-            .GetType("WinForge.Modules.Extras.WorkspacesWindow")!
-            .GetMethod("LoadPresets", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var loadedWorkspacePresets = ((System.Collections.IEnumerable)loadWorkspacePresets.Invoke(null, [workspaceProviderFixture])!)
-            .Cast<object>().ToArray();
-        var persistedWorkspaceWindow = ((System.Collections.IEnumerable)loadedWorkspacePresets[0]
-            .GetType().GetProperty("Windows")!.GetValue(loadedWorkspacePresets[0])!).Cast<object>().Single();
-        Check((string?)persistedWorkspaceWindow.GetType().GetProperty("AppUserModelId")!.GetValue(persistedWorkspaceWindow) == calculatorAumid &&
-              ((string[])persistedWorkspaceWindow.GetType().GetProperty("Arguments")!.GetValue(persistedWorkspaceWindow)!).SequenceEqual(new[] { "--new-window", "C:\\Docs\\notes.txt" }),
-            "Workspaces persists packaged app IDs and classic app arguments in workspace snapshots");
-        host.SettingsOf(workspaces).Set("presets", workspaceProviderFixture);
-        host.SetEnabled(workspaces, true);
-        workspaces.Settings.Single(setting => setting.Key == "open-manager").Execute!();
-        var launcherModule = host.Modules.Single(module => module.Id == "launcher");
-        var launcherContext = (IQuickActionContext)launcherModule.GetType()
-            .GetField("_context", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(launcherModule)!;
-        var workspaceActions = launcherContext.QuickActions.Search("focus");
-        Check(workspaceActions.Count == 1 && workspaceActions[0].Id == "workspace:focus-workspace" &&
-              workspaceActions[0].Name.Contains("Focus", StringComparison.Ordinal) &&
-              workspaceActions[0].SearchTerms.Contains("notepad.exe", StringComparison.OrdinalIgnoreCase),
-            "Quick action catalog discovers active Workspaces presets and indexes their app names");
-        var providerLauncherWindowType = launcherModule.GetType().Assembly.GetType("WinForge.Modules.Launcher.LauncherWindow")!;
-        var quickLauncherWindow = (Window)Activator.CreateInstance(providerLauncherWindowType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new object?[] { new Action<string>(_ => { }), new Action<string>(_ => { }), Array.Empty<string>(),
-                new HashSet<string>(StringComparer.OrdinalIgnoreCase), false, false, launcherContext.QuickActions }, culture: null)!;
-        quickLauncherWindow.Show();
-        ((TextBox)providerLauncherWindowType.GetField("_searchBox", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(quickLauncherWindow)!).Text = "focus";
-        Pump(quickLauncherWindow);
-        var quickLauncherResults = ((System.Collections.IEnumerable)providerLauncherWindowType
-            .GetField("_results", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(quickLauncherWindow)!).Cast<object>().ToArray();
-        Check(quickLauncherResults.Any(entry =>
-                  ((string)entry.GetType().GetProperty("Name")!.GetValue(entry)!).Contains("Focus", StringComparison.Ordinal) &&
-                  entry.GetType().GetProperty("ProviderAction")!.GetValue(entry) is QuickAction),
-            "Quick launcher surfaces provider actions as searchable selectable results");
-        quickLauncherWindow.Close();
-        host.SetEnabled(workspaces, false);
-        Check(launcherContext.QuickActions.Search("focus").Count == 0,
-            "Quick action catalog removes actions contributed by disabled modules");
-        host.SetEnabled(workspaces, true);
-        workspaces.Settings.Single(setting => setting.Key == "open-manager").Execute!();
-        var workspacesWindowType = workspaces.GetType().Assembly.GetType("WinForge.Modules.Extras.WorkspacesWindow")!;
-        var workspacesWindow = app.Windows.Cast<Window>().Single(window => window.GetType() == workspacesWindowType);
-        workspacesWindow.Show();
-        Pump(workspacesWindow);
-        Check(Descendants<Button>(workspacesWindow).Any(button => button.Content?.ToString() == "Açık pencereleri kaydet") &&
-              Descendants<ListBox>(workspacesWindow).Any() &&
-              Descendants<TextBlock>(workspacesWindow).Any(block => block.Text.Contains("Uygulamalarını birlikte aç", StringComparison.Ordinal)),
-            "Workspaces manager renders capture, saved preset list and restore workflow after corrupt saved data");
-        var workspaceNativeType = workspaces.GetType().Assembly.GetType("WinForge.Modules.Extras.WorkspaceNative")!;
-        var capturedWorkspaces = (System.Collections.IList)workspaceNativeType
-            .GetMethods(BindingFlags.Static | BindingFlags.Public)
-            .Single(method => method.Name == "CaptureWindows" && method.GetParameters().Length == 0)
-            .Invoke(null, null)!;
-        Check(capturedWorkspaces.Count > 0, "Workspaces captures a visible desktop application window");
-        var isWorkspaceAumidValid = workspaceNativeType
-            .GetMethod("IsValidAppUserModelId", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var settingsFrameProcess = Process.GetProcessesByName("ApplicationFrameHost")
-            .FirstOrDefault(process => process.MainWindowTitle.Contains("Settings", StringComparison.OrdinalIgnoreCase));
-        var getWindowAppUserModelId = workspaces.GetType().Assembly
-            .GetType("WinForge.Modules.Extras.WindowsAppUserModel")!
-            .GetMethod("GetWindowId", BindingFlags.Static | BindingFlags.NonPublic)!;
-        if (settingsFrameProcess is not null)
-        {
-            using (settingsFrameProcess)
-            {
-                var settingsAumid = (string?)getWindowAppUserModelId.Invoke(null, [settingsFrameProcess.MainWindowHandle]);
-                Check((bool)isWorkspaceAumidValid.Invoke(null, [settingsAumid])!,
-                    $"Windows Settings window exposes a valid AppUserModelID: {settingsAumid ?? "not exposed"}");
-                var isWorkspaceWindowUsable = workspaceNativeType
-                    .GetMethod("IsUsableAppWindow", BindingFlags.Static | BindingFlags.NonPublic)!;
-                var isWorkspaceProcessPackaged = workspaceNativeType
-                    .GetMethod("IsPackagedProcess", BindingFlags.Static | BindingFlags.NonPublic)!;
-                var settingsProcessPath = settingsFrameProcess.MainModule?.FileName ?? "unavailable";
-                Check(true, $"Workspace Settings capture diagnostics: usable={(bool)isWorkspaceWindowUsable.Invoke(null, [settingsFrameProcess.MainWindowHandle])!}, packaged={isWorkspaceProcessPackaged.Invoke(null, [settingsFrameProcess])}, process={settingsFrameProcess.ProcessName}, path={Path.GetFileName(settingsProcessPath)}");
-            }
-        }
-        var capturedPackagedWindows = capturedWorkspaces.Cast<object>()
-            .Where(window => !string.IsNullOrWhiteSpace((string?)window.GetType().GetProperty("AppUserModelId")!.GetValue(window)))
-            .ToArray();
-        Check(capturedPackagedWindows.All(window =>
-                  (bool)isWorkspaceAumidValid.Invoke(null, [window.GetType().GetProperty("AppUserModelId")!.GetValue(window)])! &&
-                  string.IsNullOrEmpty((string?)window.GetType().GetProperty("ExecutablePath")!.GetValue(window)) &&
-                  ((string[])window.GetType().GetProperty("Arguments")!.GetValue(window)!).Length == 0),
-            $"Workspaces captures packaged window IDs and excludes executable paths/arguments ({capturedPackagedWindows.Length} found)");
-        var sampleWindow = capturedWorkspaces[0]!;
-        var mappedBounds = workspaceNativeType.GetMethod("MapToCurrentMonitor", BindingFlags.Static | BindingFlags.Public)!
-            .Invoke(null, new[] { sampleWindow })!;
-        var mappedWidth = (int)mappedBounds.GetType().GetField(nameof(RECT.Right))!.GetValue(mappedBounds)! -
-                          (int)mappedBounds.GetType().GetField(nameof(RECT.Left))!.GetValue(mappedBounds)!;
-        var mappedHeight = (int)mappedBounds.GetType().GetField(nameof(RECT.Bottom))!.GetValue(mappedBounds)! -
-                           (int)mappedBounds.GetType().GetField(nameof(RECT.Top))!.GetValue(mappedBounds)!;
-        Check(mappedWidth >= 240 && mappedHeight >= 160,
-            "Workspaces remaps saved window geometry to a connected monitor with safe minimum bounds");
-        var restoreTask = (Task)workspaceNativeType.GetMethod("LaunchAndWaitAsync", BindingFlags.Static | BindingFlags.Public)!
-            .Invoke(null, new[] { sampleWindow, (object)TimeSpan.FromSeconds(1), new HashSet<IntPtr>(), CancellationToken.None })!;
-        restoreTask.GetAwaiter().GetResult();
-        var restoredTarget = restoreTask.GetType().GetProperty("Result")!.GetValue(restoreTask)!;
-        Check((IntPtr)restoredTarget.GetType().GetProperty("Handle")!.GetValue(restoredTarget)! != IntPtr.Zero,
-            "Workspaces reuses a matching open application window without launching a duplicate");
-        workspacesWindow.Close();
-        host.SetEnabled(workspaces, false);
         var mediaFlyout = host.Modules.Single(module => module.Id == "media-flyout");
         Check(mediaFlyout.Settings.Any(setting => setting.Key == "open-flyout" && setting.Kind == SettingKind.Action) &&
               mediaFlyout.Settings.Any(setting => setting.Key == "hotkey-enabled" && setting.Default is true) &&
@@ -1003,57 +824,6 @@ internal static class Program
                 ? "Taskbar audio visualizer starts WASAPI loopback capture on this device"
                 : "Taskbar audio visualizer reports unavailable output gracefully");
         visualizer.Close();
-        var shortcutGuide = host.Modules.Single(module => module.Id == "shortcut-guide");
-        Check(shortcutGuide.Settings.Any(setting => setting.Key == "open-guide" && setting.Kind == SettingKind.Action) &&
-              shortcutGuide.Settings.Any(setting => setting.Key == "hotkey-enabled" && setting.Default is true) &&
-              shortcutGuide.Settings.Any(setting => setting.Key == "hold-win-enabled" && setting.Default is true) &&
-              shortcutGuide.Settings.Any(setting => setting.Key == "hold-win-delay-ms" && setting.Default is 500),
-            "Shortcut Guide exposes its shortcut and configurable hold-Win overlay");
-        var shortcutGuideWindowType = shortcutGuide.GetType().Assembly.GetType("WinForge.Modules.Extras.ShortcutGuideWindow")!;
-        var shortcutWindow = (Window)Activator.CreateInstance(shortcutGuideWindowType, nonPublic: true)!;
-        shortcutWindow.Show();
-        Pump(shortcutWindow);
-        var shortcutGrid = Descendants<DataGrid>(shortcutWindow).Single();
-        Check(shortcutGrid.Items.Count >= 25 && shortcutGrid.Columns.Count == 3,
-            "Shortcut Guide renders categorized Windows and WinForge shortcuts");
-        Descendants<TextBox>(shortcutWindow).Single().Text = "Win + V";
-        Pump(shortcutWindow);
-        Check(shortcutGrid.Items.Count == 1,
-            "Shortcut Guide filters entries by shortcut text");
-        shortcutWindow.Close();
-        host.SettingsOf(shortcutGuide).Set("hold-win-delay-ms", 250);
-        host.SetEnabled(shortcutGuide, true);
-        var shortcutKeyboardHook = shortcutGuide.GetType().GetField("_keyboardHook", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(shortcutGuide);
-        Check(shortcutGuide.IsActive && shortcutKeyboardHook is GlobalKeyboardHook,
-            "Shortcut Guide registers its shortcut and non-blocking Win-key observer through module activation");
-        var holdKeyState = shortcutGuide.GetType().GetMethod("OnKeyboardKeyStateChanged", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var holdWindowField = shortcutGuide.GetType().GetField("_heldWindow", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var holdPumpWindow = new Window();
-        holdPumpWindow.Show();
-        holdKeyState.Invoke(shortcutGuide, new object[] { 0x5Bu, true });
-        PumpUntil(holdPumpWindow, () => holdWindowField.GetValue(shortcutGuide) is Window window && window.IsVisible,
-            TimeSpan.FromSeconds(3));
-        var holdOverlay = (Window)holdWindowField.GetValue(shortcutGuide)!;
-        Check(holdOverlay.IsVisible && !holdOverlay.ShowActivated,
-            "Shortcut Guide displays the hold-Win overlay without activating or taking keyboard focus");
-        holdKeyState.Invoke(shortcutGuide, new object[] { 0x45u, true });
-        PumpUntil(holdPumpWindow, () => !holdOverlay.IsVisible, TimeSpan.FromSeconds(3));
-        Check(!holdOverlay.IsVisible,
-            "Shortcut Guide cancels and hides the hold overlay as soon as another key is pressed");
-        holdKeyState.Invoke(shortcutGuide, new object[] { 0x45u, false });
-        holdKeyState.Invoke(shortcutGuide, new object[] { 0x5Bu, false });
-        holdKeyState.Invoke(shortcutGuide, new object[] { 0x5Bu, true });
-        PumpUntil(holdPumpWindow, () => holdWindowField.GetValue(shortcutGuide) is Window window && window.IsVisible,
-            TimeSpan.FromSeconds(3));
-        holdKeyState.Invoke(shortcutGuide, new object[] { 0x5Bu, false });
-        PumpUntil(holdPumpWindow, () => !((Window)holdWindowField.GetValue(shortcutGuide)!).IsVisible,
-            TimeSpan.FromSeconds(3));
-        Check(!((Window)holdWindowField.GetValue(shortcutGuide)!).IsVisible,
-            "Shortcut Guide hides its hold overlay immediately when the Win key is released");
-        ((Window)holdWindowField.GetValue(shortcutGuide)!).Close();
-        holdPumpWindow.Close();
-        host.SetEnabled(shortcutGuide, false);
-        Check(!shortcutGuide.IsActive, "Shortcut Guide releases its shortcut when disabled");
         var autoCorrectModule = host.Modules.Single(module => module.Id == "auto-correct");
         var autoCorrectType = autoCorrectModule.GetType();
         var parseExcludedProcesses = autoCorrectType.GetMethod("ParseExcludedProcesses", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -1186,128 +956,6 @@ internal static class Program
             "Power Display UI exposes exactly the controls discovered from connected monitor capabilities");
         brightnessWindow.Close();
         host.SetEnabled(displayBrightness, false);
-        var environmentModule = host.Modules.Single(module => module.Id == "environment-variables");
-        Check(environmentModule.Settings.Count == 3 && environmentModule.Settings.All(setting => setting.Kind == SettingKind.Action),
-            "Environment Variables exposes user editing, profiles and elevated system editing actions");
-        Check(environmentModule.Settings.Any(setting => setting.Key == "open-system-editor" &&
-              (setting.Description ?? "").Contains("yönetici izni", StringComparison.OrdinalIgnoreCase)),
-            "System environment editor explains its administrator prompt and system-wide scope");
-        var environmentStoreType = environmentModule.GetType().Assembly.GetType("WinForge.Modules.Extras.UserEnvironmentVariableStore")!;
-        var environmentVariableType = environmentModule.GetType().Assembly.GetType("WinForge.Modules.Extras.UserEnvironmentVariable")!;
-        var systemStoreType = environmentModule.GetType().Assembly.GetType("WinForge.Modules.Extras.SystemEnvironmentVariableStore")!;
-        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{}"));
-        var systemScript = (string)systemStoreType.GetMethod("BuildScript", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, new object[] { payload })!;
-        Check(systemScript.Contains("SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", StringComparison.Ordinal) &&
-              systemScript.Contains("$restoreKind", StringComparison.Ordinal) &&
-              systemScript.Contains("SendMessageTimeout", StringComparison.Ordinal),
-            "Elevated system edit script targets HKLM, rolls back failures and broadcasts environment changes");
-        Check(InvocationThrowsFormatException(
-                systemStoreType.GetMethod("BuildScript", BindingFlags.Static | BindingFlags.NonPublic)!, "not base64!"),
-            "Elevated system edit script rejects malformed payloads");
-        var environmentRegistryPath = $@"Software\WinForge\Regression\Environment\{Guid.NewGuid():N}";
-        using (var environmentRegistry = Registry.CurrentUser.CreateSubKey(environmentRegistryPath))
-        {
-            environmentRegistry.SetValue("WF_TEST_EXPAND", "%TEMP%\\old", RegistryValueKind.ExpandString);
-            environmentRegistry.SetValue("WF_TEST_REMOVE", "remove", RegistryValueKind.String);
-        }
-        var environmentNotifications = 0;
-        var environmentStore = Activator.CreateInstance(environmentStoreType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new object[] { environmentRegistryPath, new Action(() => environmentNotifications++) }, culture: null)!;
-        var environmentEntries = ((System.Collections.IEnumerable)environmentStoreType.GetMethod("Read")!.Invoke(environmentStore, null)!).Cast<object>().ToArray();
-        var expandableEntry = environmentEntries.Single(entry => (string)environmentVariableType.GetProperty("Name")!.GetValue(entry)! == "WF_TEST_EXPAND");
-        Check((bool)environmentVariableType.GetProperty("Expandable")!.GetValue(expandableEntry)! &&
-              (string)environmentVariableType.GetProperty("Value")!.GetValue(expandableEntry)! == "%TEMP%\\old",
-            "Environment Variables preserves expandable user values without expanding them");
-        var entryConstructor = environmentVariableType.GetConstructor(new[] { typeof(string), typeof(string), typeof(bool) })!;
-        var desiredVariables = Array.CreateInstance(environmentVariableType, 2);
-        desiredVariables.SetValue(entryConstructor.Invoke(new object[] { "WF_TEST_EXPAND", "%USERPROFILE%\\new", true }), 0);
-        desiredVariables.SetValue(entryConstructor.Invoke(new object[] { "WF_TEST_ADD", "created", false }), 1);
-        environmentStoreType.GetMethod("Save")!.Invoke(environmentStore,
-            new object[] { new[] { "WF_TEST_EXPAND", "WF_TEST_REMOVE" }, desiredVariables });
-        using (var environmentRegistry = Registry.CurrentUser.OpenSubKey(environmentRegistryPath))
-        {
-            Check((string)environmentRegistry!.GetValue("WF_TEST_EXPAND", "", RegistryValueOptions.DoNotExpandEnvironmentNames)! == "%USERPROFILE%\\new" &&
-                  environmentRegistry.GetValueKind("WF_TEST_EXPAND") == RegistryValueKind.ExpandString,
-                "Environment Variables updates a value while retaining expandable registry type");
-            Check((string)environmentRegistry.GetValue("WF_TEST_ADD", "")! == "created" &&
-                  !environmentRegistry.GetValueNames().Contains("WF_TEST_REMOVE", StringComparer.OrdinalIgnoreCase),
-                "Environment Variables adds and removes only the requested user variables");
-        }
-        Check(environmentNotifications == 1, "Environment Variables broadcasts a change after successful save");
-        var environmentWindowType = environmentModule.GetType().Assembly.GetType("WinForge.Modules.Extras.EnvironmentVariablesWindow")!;
-        var environmentWindow = (Window)Activator.CreateInstance(environmentWindowType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new[] { environmentStore }, culture: null)!;
-        environmentWindow.Show();
-        Pump(environmentWindow);
-        Check(Descendants<DataGrid>(environmentWindow).Single().Columns.Count == 3,
-            "Environment Variables editor renders name, value and expansion type columns");
-        environmentWindow.Close();
-        Registry.CurrentUser.DeleteSubKeyTree(environmentRegistryPath, throwOnMissingSubKey: false);
-        var profileRegistryPath = $@"Software\WinForge\Regression\EnvironmentProfiles\{Guid.NewGuid():N}";
-        using (var profileRegistry = Registry.CurrentUser.CreateSubKey(profileRegistryPath))
-            profileRegistry.SetValue("WF_PROFILE_MODE", "base", RegistryValueKind.String);
-        var profileFile = Path.Combine(TestDirectory, "environment-profiles.json");
-        var profileServiceType = environmentModule.GetType().Assembly.GetType("WinForge.Modules.Extras.EnvironmentProfileService")!;
-        var profileServiceConstructor = profileServiceType.GetConstructor(new[] { typeof(string), typeof(string), typeof(Action) })!;
-        var profileNotifications = 0;
-        var profileService = profileServiceConstructor.Invoke(new object[]
-        {
-            profileRegistryPath, profileFile, new Action(() => profileNotifications++)
-        });
-        var createProfile = profileServiceType.GetMethod("CreateProfile")!;
-        var developerProfileId = (string)createProfile.Invoke(profileService, new object[] { "Geliştirme" })!;
-        var profileVariableConstructor = environmentVariableType.GetConstructor(new[] { typeof(string), typeof(string), typeof(bool) })!;
-        var developerVariables = Array.CreateInstance(environmentVariableType, 1);
-        developerVariables.SetValue(profileVariableConstructor.Invoke(new object[] { "WF_PROFILE_MODE", "dev", false }), 0);
-        var saveProfile = profileServiceType.GetMethod("SaveProfile")!;
-        saveProfile.Invoke(profileService, new object[] { developerProfileId, "Geliştirme", developerVariables });
-        var setActiveProfile = profileServiceType.GetMethod("SetActiveProfile")!;
-        setActiveProfile.Invoke(profileService, new object?[] { developerProfileId });
-        using (var profileRegistry = Registry.CurrentUser.OpenSubKey(profileRegistryPath))
-            Check((string)profileRegistry!.GetValue("WF_PROFILE_MODE", "")! == "dev",
-                "Environment profile activation applies its variable set");
-        using (var profileRegistry = Registry.CurrentUser.OpenSubKey(profileRegistryPath, writable: true))
-            profileRegistry!.SetValue("WF_PROFILE_MODE", "external-change", RegistryValueKind.String);
-        setActiveProfile.Invoke(profileService, new object?[] { null });
-        using (var profileRegistry = Registry.CurrentUser.OpenSubKey(profileRegistryPath))
-            Check((string)profileRegistry!.GetValue("WF_PROFILE_MODE", "")! == "external-change",
-                "Environment profile shutdown preserves a value changed outside the profile");
-        using (var profileRegistry = Registry.CurrentUser.OpenSubKey(profileRegistryPath, writable: true))
-            profileRegistry!.SetValue("WF_PROFILE_MODE", "base", RegistryValueKind.String);
-        setActiveProfile.Invoke(profileService, new object?[] { developerProfileId });
-        var qaProfileId = (string)createProfile.Invoke(profileService, new object[] { "Test" })!;
-        var qaVariables = Array.CreateInstance(environmentVariableType, 1);
-        qaVariables.SetValue(profileVariableConstructor.Invoke(new object[] { "WF_PROFILE_MODE", "qa", false }), 0);
-        saveProfile.Invoke(profileService, new object[] { qaProfileId, "Test", qaVariables });
-        setActiveProfile.Invoke(profileService, new object?[] { qaProfileId });
-        using (var profileRegistry = Registry.CurrentUser.OpenSubKey(profileRegistryPath))
-            Check((string)profileRegistry!.GetValue("WF_PROFILE_MODE", "")! == "qa",
-                "Switching environment profiles replaces the active profile values");
-        var restartedProfileService = profileServiceConstructor.Invoke(new object[]
-        {
-            profileRegistryPath, profileFile, new Action(() => profileNotifications++)
-        });
-        Check((string)profileServiceType.GetProperty("ActiveProfileId")!.GetValue(restartedProfileService)! == qaProfileId,
-            "Environment profile selection persists across application restarts");
-        profileServiceType.GetMethod("ReapplyActiveProfile")!.Invoke(restartedProfileService, null);
-        setActiveProfile.Invoke(restartedProfileService, new object?[] { null });
-        using (var profileRegistry = Registry.CurrentUser.OpenSubKey(profileRegistryPath))
-            Check((string)profileRegistry!.GetValue("WF_PROFILE_MODE", "")! == "base",
-                "Disabling an environment profile restores the original user value");
-        Check(profileNotifications >= 4, "Environment profile changes notify Windows about updated user variables");
-        var profilesWindowType = environmentModule.GetType().Assembly.GetType("WinForge.Modules.Extras.EnvironmentProfilesWindow")!;
-        var profilesWindow = (Window)Activator.CreateInstance(profilesWindowType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new[] { restartedProfileService }, culture: null)!;
-        profilesWindow.Show();
-        Pump(profilesWindow);
-        Check(Descendants<ComboBox>(profilesWindow).Any() && Descendants<DataGrid>(profilesWindow).Single().Columns.Count == 3,
-            "Environment profile editor renders profile selection and variable editing controls");
-        profilesWindow.Close();
-        Registry.CurrentUser.DeleteSubKeyTree(profileRegistryPath, throwOnMissingSubKey: false);
         var mouseSpotlight = host.Modules.Single(module => module.Id == "mouse");
         var crosshairSettings = mouseSpotlight.Settings.Where(setting => setting.Key.StartsWith("crosshairs-", StringComparison.Ordinal)).ToArray();
         Check(crosshairSettings.Length == 7 &&
@@ -1336,113 +984,6 @@ internal static class Program
         crosshairType.GetMethod("Stop")!.Invoke(crosshairOverlay, null);
         crosshairOverlay.Close();
         Check(!host.Modules.Any(module => module.Id == "mouse-jump"), "Removed mouse jump is not discoverable");
-        var advancedPaste = host.Modules.Single(module => module.Id == "advanced-paste");
-        host.SetEnabled(advancedPaste, true);
-        Check(advancedPaste.IsActive, "Advanced Paste registers its shortcut through the module lifecycle");
-        host.SetEnabled(advancedPaste, false);
-        Check(!advancedPaste.IsActive, "Advanced Paste releases its shortcut when disabled");
-        var transformType = advancedPaste.GetType().Assembly.GetType("WinForge.Modules.Extras.AdvancedPasteTransforms")!;
-        var htmlToMarkdown = transformType.GetMethod("HtmlToMarkdown")!;
-        var markdown = (string)htmlToMarkdown.Invoke(null,
-            new object[] { "<h1>Title</h1><p>Hello <strong>world</strong> &amp; more.</p><ul><li>first</li><li>second</li></ul><a href=\"https://example.com\">link</a>" })!;
-        Check(markdown.Contains("# Title", StringComparison.Ordinal) && markdown.Contains("**world**", StringComparison.Ordinal) &&
-              markdown.Contains("- first", StringComparison.Ordinal) && markdown.Contains("[link](https://example.com)", StringComparison.Ordinal),
-            "Advanced Paste converts HTML clipboard markup to Markdown with headings, links and lists");
-        var toJson = transformType.GetMethod("ToJson")!;
-        using (var csvJson = System.Text.Json.JsonDocument.Parse((string)toJson.Invoke(null,
-                   new object[] { "Name,City\r\n\"Ada, L.\",London\r\nGrace,New York" })!))
-            Check(csvJson.RootElement.GetArrayLength() == 2 && csvJson.RootElement[0].GetProperty("Name").GetString() == "Ada, L.",
-                "Advanced Paste converts quoted CSV rows to JSON objects");
-        using (var textJson = System.Text.Json.JsonDocument.Parse((string)toJson.Invoke(null,
-                   new object[] { "Hello, world\nsecond line" })!))
-            Check(textJson.RootElement.GetArrayLength() == 2 && textJson.RootElement[0].GetString() == "Hello, world",
-                "Advanced Paste keeps ordinary comma-containing prose as a JSON line array");
-        using (var xmlJson = System.Text.Json.JsonDocument.Parse((string)toJson.Invoke(null,
-                   new object[] { "<root><item id=\"1\">one</item><item>two</item></root>" })!))
-            Check(xmlJson.RootElement.GetProperty("root").GetProperty("item").GetArrayLength() == 2,
-                "Advanced Paste preserves repeated XML elements and attributes in JSON conversion");
-        using (var iniJson = System.Text.Json.JsonDocument.Parse((string)toJson.Invoke(null,
-                   new object[] { "[server]\nname=forge\nport=42" })!))
-            Check(iniJson.RootElement.GetProperty("server").GetProperty("port").GetString() == "42",
-                "Advanced Paste converts INI sections to JSON objects");
-        var advancedPasteAssembly = advancedPaste.GetType().Assembly;
-        var actionType = advancedPasteAssembly.GetType("WinForge.Modules.Extras.AdvancedPasteAction")!;
-        var snapshotType = advancedPasteAssembly.GetType("WinForge.Modules.Extras.ClipboardTextSnapshot")!;
-        var snapshot = Activator.CreateInstance(snapshotType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new object?[] { "plain clipboard text", "<p><strong>rich clipboard</strong></p>", new WriteableBitmap(2, 2, 96, 96, PixelFormats.Bgra32, null), 90 }, culture: null)!;
-        var callbackType = typeof(Action<,,>).MakeGenericType(actionType, snapshotType, typeof(string));
-        var actionParameter = System.Linq.Expressions.Expression.Parameter(actionType);
-        var snapshotParameter = System.Linq.Expressions.Expression.Parameter(snapshotType);
-        var textParameter = System.Linq.Expressions.Expression.Parameter(typeof(string));
-        var noOpCallback = System.Linq.Expressions.Expression.Lambda(callbackType,
-            System.Linq.Expressions.Expression.Empty(), actionParameter, snapshotParameter, textParameter).Compile();
-        var recognizeType = typeof(Func<,>).MakeGenericType(typeof(BitmapSource), typeof(Task<string>));
-        var imageParameter = System.Linq.Expressions.Expression.Parameter(typeof(BitmapSource));
-        var recognizeCallback = System.Linq.Expressions.Expression.Lambda(recognizeType,
-            System.Linq.Expressions.Expression.Constant(Task.FromResult("recognized text")), imageParameter).Compile();
-        var advancedPasteWindowType = advancedPasteAssembly.GetType("WinForge.Modules.Extras.AdvancedPasteWindow")!;
-        var advancedPasteWindow = (Window)Activator.CreateInstance(advancedPasteWindowType,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, binder: null,
-            args: new object[] { snapshot, recognizeCallback, noOpCallback, noOpCallback }, culture: null)!;
-        advancedPasteWindow.Show();
-        Pump(advancedPasteWindow);
-        Check(Descendants<ComboBox>(advancedPasteWindow).Single().Items.Count == 10 &&
-              Descendants<TextBox>(advancedPasteWindow).Single().Text == "plain clipboard text",
-            "Advanced Paste preview window offers text, OCR, image formats and file outputs and displays clipboard text");
-        var advancedPasteActions = Descendants<ComboBox>(advancedPasteWindow).Single();
-        advancedPasteActions.SelectedIndex = 3;
-        Pump(advancedPasteWindow);
-        Check(Descendants<TextBox>(advancedPasteWindow).Single().Text == "recognized text",
-            "Advanced Paste preview window asynchronously displays locally recognized image text");
-        var imageConversionPreviews = new[] { (Index: 7, Format: "JPEG"), (Index: 8, Format: "BMP"), (Index: 9, Format: "GIF") };
-        foreach (var (index, format) in imageConversionPreviews)
-        {
-            advancedPasteActions.SelectedIndex = index;
-            Pump(advancedPasteWindow);
-            Check(Descendants<TextBox>(advancedPasteWindow).Single().Text.Contains($"{format} görseli · 2 × 2 piksel", StringComparison.Ordinal),
-                $"Advanced Paste previews local {format} image conversion");
-        }
-        advancedPasteActions.SelectedIndex = 7;
-        var jpegQualitySlider = Descendants<Slider>(advancedPasteWindow).Single();
-        jpegQualitySlider.Value = 55;
-        Pump(advancedPasteWindow);
-        var currentSnapshot = advancedPasteWindowType.GetMethod("CurrentSnapshot", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(advancedPasteWindow, null)!;
-        Check(Descendants<TextBox>(advancedPasteWindow).Single().Text.Contains("kalite 55%", StringComparison.Ordinal) &&
-              (int)snapshotType.GetProperty("JpegQuality")!.GetValue(currentSnapshot)! == 55,
-            "Advanced Paste exposes JPEG quality and carries the selected value into conversion");
-        advancedPasteWindow.Close();
-        var artifactsType = advancedPasteAssembly.GetType("WinForge.Modules.Extras.AdvancedPasteArtifacts")!;
-        var createArtifact = artifactsType.GetMethod("CreateFile")!;
-        var textArtifact = (string)createArtifact.Invoke(null, new object?[] { Enum.Parse(actionType, "PasteAsTextFile"), snapshot, "artifact text", TestDirectory })!;
-        Check(File.ReadAllText(textArtifact) == "artifact text", "Advanced Paste creates a UTF-8 text file in the selected output folder");
-        var htmlArtifact = (string)createArtifact.Invoke(null, new object?[] { Enum.Parse(actionType, "PasteAsHtmlFile"), snapshot, "artifact text", TestDirectory })!;
-        Check(File.ReadAllText(htmlArtifact).Contains("<strong>rich clipboard</strong>", StringComparison.Ordinal),
-            "Advanced Paste creates a standalone HTML file from rich clipboard content");
-        var pngArtifact = (string)createArtifact.Invoke(null, new object?[] { Enum.Parse(actionType, "PasteAsPngFile"), snapshot, "", TestDirectory })!;
-        using (var pngStream = File.OpenRead(pngArtifact))
-        {
-            var pngDecoder = BitmapDecoder.Create(pngStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            var pngFrame = pngDecoder.Frames[0];
-            pngFrame.Freeze();
-            Check(pngFrame.PixelWidth == 2 && pngFrame.PixelHeight == 2, "Advanced Paste converts a clipboard image into a valid PNG artifact");
-        }
-        foreach (var (actionName, extension, format) in new[]
-                 {
-                     ("ConvertImageToJpeg", ".jpg", "JPEG"),
-                     ("ConvertImageToBmp", ".bmp", "BMP"),
-                     ("ConvertImageToGif", ".gif", "GIF")
-                 })
-        {
-            var convertedPath = (string)createArtifact.Invoke(null,
-                new object?[] { Enum.Parse(actionType, actionName), snapshot, "", TestDirectory })!;
-            using var convertedStream = File.OpenRead(convertedPath);
-            var decoder = BitmapDecoder.Create(convertedStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            Check(Path.GetExtension(convertedPath) == extension && decoder.Frames[0].PixelWidth == 2 &&
-                  decoder.Frames[0].PixelHeight == 2 && decoder.Frames[0].Format.BitsPerPixel > 0,
-                $"Advanced Paste encodes clipboard images as a valid {format} artifact");
-        }
         Check(host.Modules.All(module => module.Id != "peek-preview"), "Removed file preview module is absent from discovery");
         var commandModules = host.Modules.OfType<IAppCommandModule>().Select(module => module.GetType().Name).ToHashSet(StringComparer.Ordinal);
         Check(commandModules.SetEquals(new[] { "PowerRenameModule", "FileLocksmithModule" }),
@@ -1452,144 +993,6 @@ internal static class Program
               !(bool)commandRequest.Invoke(null, new object[] { new[] { "--peek", "sample.txt" } })! &&
               !(bool)commandRequest.Invoke(null, new object[] { new[] { "--run", "anything" } })!,
             "Single-instance broker accepts only the registered file command verbs");
-        var launcher = host.Modules.Single(module => module.Id == "launcher");
-        Check(launcher.Settings.Single(setting => setting.Key == "index-roots").Kind == SettingKind.Text &&
-              launcher.Settings.Single(setting => setting.Key == "index-extensions").Kind == SettingKind.Text &&
-              launcher.Settings.Single(setting => setting.Key == "content-search-enabled").Default is false &&
-              launcher.Settings.Single(setting => setting.Key == "recent-items-enabled").Default is false,
-            "Quick launcher exposes editable custom-root and extension-filter settings");
-        var calculatorType = launcher.GetType().Assembly.GetType("WinForge.Modules.Launcher.LauncherWindow+CalculatorParser")!;
-        var evaluate = calculatorType.GetMethod("TryEvaluate", BindingFlags.Public | BindingFlags.Static)!;
-        object?[] calculation = { "2 * (3 + 4)", null };
-        var calculationSucceeded = (bool)evaluate.Invoke(null, calculation)!;
-        Check(calculationSucceeded && Equals(calculation[1], "14"), "Launcher calculator respects arithmetic precedence");
-        object?[] invalidCalculation = { "1 / 0", null };
-        Check(!(bool)evaluate.Invoke(null, invalidCalculation)!, "Launcher calculator rejects division by zero");
-        var launcherWindowType = launcher.GetType().Assembly.GetType("WinForge.Modules.Launcher.LauncherWindow")!;
-        var indexRoots = launcherWindowType.GetMethod("IndexRoots", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var buildRecentItems = launcherWindowType.GetMethod("BuildRecentItems", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var builtInCommands = (System.Collections.IEnumerable)launcherWindowType.GetField("BuiltInCommands", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
-        var commandEntries = builtInCommands.Cast<object>().ToArray();
-        var commandScore = launcherWindowType.GetMethod("Score", BindingFlags.NonPublic | BindingFlags.Static)!;
-        Check(commandEntries.Length >= 10 && commandEntries.All(entry =>
-                  ((string)entry.GetType().GetProperty("Path")!.GetValue(entry)!).StartsWith("ms-settings:", StringComparison.Ordinal) &&
-                  ((string)entry.GetType().GetProperty("Path")!.GetValue(entry)!).Contains(':')) &&
-              commandEntries.Any(entry => (int)commandScore.Invoke(null, new object[]
-                  { entry.GetType().GetProperty("SearchText")!.GetValue(entry)!, "ekran" })! >= 0),
-            "Quick launcher exposes searchable built-in Windows settings commands through documented URI targets");
-        var parseIndexRoots = launcher.GetType().GetMethod("ParseIndexRoots", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var parseIndexExtensions = launcher.GetType().GetMethod("ParseIndexExtensions", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var launcherFiles = Path.Combine(TestDirectory, "launcher-index");
-        var launcherNested = Path.Combine(launcherFiles, "Reports 2026");
-        Directory.CreateDirectory(launcherNested);
-        var budgetPath = Path.Combine(launcherNested, "Quarterly Budget.txt");
-        File.WriteAllText(budgetPath, "index fixture");
-        var indexedEntries = ((System.Collections.IEnumerable)indexRoots.Invoke(null,
-            new object[] { new[] { launcherFiles }, 100, Array.Empty<string>(), null! })!).Cast<object>().ToArray();
-        Check(indexedEntries.Any(entry => (string)entry.GetType().GetProperty("Path")!.GetValue(entry)! == budgetPath) &&
-              indexedEntries.Any(entry => (string)entry.GetType().GetProperty("Path")!.GetValue(entry)! == launcherNested),
-            "Quick launcher indexes files and folders recursively from configured roots");
-        var recentFolder = Path.Combine(TestDirectory, "launcher-recent");
-        Directory.CreateDirectory(recentFolder);
-        var olderRecentShortcut = Path.Combine(recentFolder, "Older report.lnk");
-        var newerRecentShortcut = Path.Combine(recentFolder, "Newer notes.lnk");
-        var ignoredRecentFile = Path.Combine(recentFolder, "Not a shortcut.txt");
-        File.WriteAllText(olderRecentShortcut, "shortcut-placeholder");
-        File.WriteAllText(newerRecentShortcut, "shortcut-placeholder");
-        File.WriteAllText(ignoredRecentFile, "ignored");
-        File.SetLastWriteTimeUtc(olderRecentShortcut, DateTime.UtcNow.AddMinutes(-10));
-        File.SetLastWriteTimeUtc(newerRecentShortcut, DateTime.UtcNow.AddMinutes(-1));
-        var recentEntries = ((System.Collections.IEnumerable)buildRecentItems.Invoke(null,
-            new object[] { 10, recentFolder })!).Cast<object>().ToArray();
-        Check(recentEntries.Length == 2 &&
-              (string)recentEntries[0].GetType().GetProperty("Path")!.GetValue(recentEntries[0])! == newerRecentShortcut &&
-              (bool)recentEntries[0].GetType().GetProperty("IsRecent")!.GetValue(recentEntries[0])! &&
-              ((string)recentEntries[0].GetType().GetProperty("Name")!.GetValue(recentEntries[0])!).StartsWith("Son kullanılan", StringComparison.Ordinal),
-            "Quick launcher ranks recent Windows file shortcuts newest-first and ignores unrelated files");
-        Check(!((System.Collections.IEnumerable)buildRecentItems.Invoke(null,
-                  new object[] { 0, recentFolder })!).Cast<object>().Any(),
-            "Quick launcher respects the recent-items result bound");
-        var indexedBudget = indexedEntries.Single(entry => (string)entry.GetType().GetProperty("Path")!.GetValue(entry)! == budgetPath);
-        File.WriteAllText(budgetPath, "Quarterly result includes the phrase violet comet in the summary.");
-        var contentEntryType = indexedBudget.GetType();
-        var contentCandidates = Array.CreateInstance(contentEntryType, indexedEntries.Length);
-        for (var index = 0; index < indexedEntries.Length; index++) contentCandidates.SetValue(indexedEntries[index], index);
-        var searchContents = launcherWindowType.GetMethod("SearchFileContents", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var contentMatches = ((System.Collections.IEnumerable)searchContents.Invoke(null,
-            new object[] { contentCandidates, "violet comet", 8, 2000, 128 * 1024, CancellationToken.None })!).Cast<object>().ToArray();
-        Check(contentMatches.Length == 1 &&
-              (string)contentMatches[0].GetType().GetProperty("Path")!.GetValue(contentMatches[0])! == budgetPath &&
-              ((string)contentMatches[0].GetType().GetProperty("Name")!.GetValue(contentMatches[0])!).Contains("violet comet", StringComparison.OrdinalIgnoreCase),
-            "Quick launcher searches bounded local text-file contents and returns a useful matching snippet");
-        Check(!((System.Collections.IEnumerable)searchContents.Invoke(null,
-                  new object[] { contentCandidates, "vi", 8, 2000, 128 * 1024, CancellationToken.None })!).Cast<object>().Any(),
-            "Quick launcher skips content scans for short queries");
-        var contentScanLimit = ((System.Collections.IEnumerable)searchContents.Invoke(null,
-            new object[] { contentCandidates, "violet comet", 8, 0, 128 * 1024, CancellationToken.None })!).Cast<object>().Count();
-        Check(contentScanLimit == 0, "Quick launcher respects the content-file scan limit");
-        var scoreEntry = launcherWindowType.GetMethod("Score", BindingFlags.NonPublic | BindingFlags.Static)!;
-        Check((int)scoreEntry.Invoke(null, new object[] { indexedBudget.GetType().GetProperty("SearchText")!.GetValue(indexedBudget)!, "budget" })! >= 0,
-            "Quick launcher matches indexed filenames while retaining their full paths");
-        var boundedEntries = ((System.Collections.IEnumerable)indexRoots.Invoke(null,
-            new object[] { new[] { launcherFiles }, 1, Array.Empty<string>(), null! })!).Cast<object>().ToArray();
-        Check(boundedEntries.Length <= 1, "Quick launcher respects the configured index size bound");
-        var customRoots = (string[])parseIndexRoots.Invoke(launcher, new object[] { $"\"{launcherFiles}\";{launcherFiles};%TEMP%" })!;
-        Check(customRoots.Length == 2 && customRoots[0] == launcherFiles &&
-              customRoots[1].Equals(Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase),
-            "Quick launcher parses quoted, duplicate and environment-expanded custom index roots");
-        var extensionFilter = (IReadOnlySet<string>)parseIndexExtensions.Invoke(launcher, new object[] { "*.pdf, docx;tar.gz;invalid*" })!;
-        Check(extensionFilter.SetEquals(new[] { ".pdf", ".docx", ".tar.gz" }) &&
-              ((IReadOnlySet<string>)parseIndexExtensions.Invoke(launcher, new object[] { "*" })!).Count == 0,
-            "Quick launcher normalizes allowed file extensions and supports an explicit all-files filter");
-        var pdfPath = Path.Combine(launcherNested, "manual.pdf");
-        var documentPath = Path.Combine(launcherNested, "notes.docx");
-        var imagePath = Path.Combine(launcherNested, "cover.png");
-        var archivePath = Path.Combine(launcherNested, "bundle.tar.gz");
-        File.WriteAllText(pdfPath, "pdf fixture");
-        File.WriteAllText(documentPath, "doc fixture");
-        File.WriteAllText(imagePath, "image fixture");
-        File.WriteAllText(archivePath, "archive fixture");
-        var filteredEntries = ((System.Collections.IEnumerable)indexRoots.Invoke(null,
-            new object[] { new[] { launcherFiles }, 100, Array.Empty<string>(), extensionFilter })!).Cast<object>().ToArray();
-        var filteredPaths = filteredEntries.Select(entry => (string)entry.GetType().GetProperty("Path")!.GetValue(entry)!).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Check(filteredPaths.Contains(pdfPath) && filteredPaths.Contains(documentPath) && filteredPaths.Contains(archivePath) && !filteredPaths.Contains(imagePath) &&
-              filteredPaths.Contains(launcherNested),
-            "Quick launcher file-type filter keeps matching files and folders while skipping other file types");
-        var shortcutRoot = Path.Combine(TestDirectory, "launcher-start-menu");
-        Directory.CreateDirectory(shortcutRoot);
-        var shortcutPath = Path.Combine(shortcutRoot, "Example app.lnk");
-        File.WriteAllText(shortcutPath, "shortcut fixture");
-        var filteredWithShortcuts = ((System.Collections.IEnumerable)indexRoots.Invoke(null,
-            new object[] { new[] { launcherFiles, shortcutRoot }, 100, new[] { shortcutRoot }, extensionFilter })!).Cast<object>().ToArray();
-        Check(filteredWithShortcuts.Any(entry => (string)entry.GetType().GetProperty("Path")!.GetValue(entry)! == shortcutPath),
-            "Quick launcher keeps Start Menu app shortcuts available when a file-type filter is active");
-        var targetResolver = launcher.GetType().Assembly.GetType("WinForge.Modules.Launcher.LauncherTargetResolver")!;
-        var tryResolveTarget = targetResolver.GetMethod("TryResolve", BindingFlags.Public | BindingFlags.Static)!;
-        object?[] websiteTarget = { "https://example.com/path", null, null };
-        Check((bool)tryResolveTarget.Invoke(null, websiteTarget)! &&
-              Equals(websiteTarget[1], "Aç: https://example.com/path") &&
-              Equals(websiteTarget[2], "https://example.com/path"),
-            "Quick launcher resolves supported web URIs as direct open results");
-        object?[] windowsSettingsTarget = { "ms-settings:display", null, null };
-        Check((bool)tryResolveTarget.Invoke(null, windowsSettingsTarget)!,
-            "Quick launcher resolves Windows Settings URIs");
-        object?[] shellTarget = { "shell:Downloads", null, null };
-        Check((bool)tryResolveTarget.Invoke(null, shellTarget)!,
-            "Quick launcher resolves Windows shell namespace targets");
-        object?[] folderTarget = { $"\"{Path.GetTempPath()}\"", null, null };
-        Check((bool)tryResolveTarget.Invoke(null, folderTarget)! &&
-              Equals(folderTarget[2], Path.GetTempPath()),
-            "Quick launcher resolves quoted existing folder paths");
-        object?[] unknownSchemeTarget = { "javascript:alert(1)", null, null };
-        Check(!(bool)tryResolveTarget.Invoke(null, unknownSchemeTarget)!,
-            "Quick launcher rejects unsupported URI schemes");
-        object?[] missingPathTarget = { Path.Combine(Path.GetTempPath(), "winforge-missing-target"), null, null };
-        Check(!(bool)tryResolveTarget.Invoke(null, missingPathTarget)!,
-            "Quick launcher ignores paths that do not exist");
-        host.SetEnabled(launcher, true);
-        Check(launcher.IsActive, "Quick launcher activates with the module lifecycle");
-        host.SetEnabled(launcher, false);
-        Check(!launcher.IsActive, "Quick launcher releases its window and hotkey on disable");
         var keyboardManager = host.Modules.Single(module => module.Id == "keyboard-manager");
         var editorType = keyboardManager.GetType().Assembly.GetType("WinForge.Modules.Extras.KeyboardMappingEditor")!;
         var parseShortcuts = editorType.GetMethod("ParseShortcutMappings", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -1993,46 +1396,8 @@ internal static class Program
             && selectedContainer.TranslatePoint(new Point(), list).Y + selectedContainer.ActualHeight <= list.ActualHeight,
             "Selected module remains in view after clearing search");
         Capture(window, "main.png");
-        TestAwakeExpiry(host, window);
         TestToggleUi(app);
     }
-
-    private static void TestAwakeExpiry(ModuleHost host, Window window)
-    {
-        const uint continuous = 0x80000000;
-        const uint systemRequired = 0x00000001;
-        var module = host.Modules.Single(module => module.Id == "awake");
-        host.SettingsOf(module).Set("duration", "30 dakika");
-        var timerField = module.GetType().GetField("_timer", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        try
-        {
-            host.SetEnabled(module, true);
-            Check((SetThreadExecutionState(continuous) & systemRequired) != 0, "Awake prevents sleep on the activation thread");
-            host.Apply(module);
-            var timer = (DispatcherTimer)timerField.GetValue(module)!;
-            timer.Interval = TimeSpan.FromMilliseconds(20);
-            var elapsed = Stopwatch.StartNew();
-            while (timerField.GetValue(module) is not null && elapsed.Elapsed < TimeSpan.FromSeconds(2))
-            {
-                Thread.Sleep(10);
-                Pump(window);
-            }
-            Check(timerField.GetValue(module) is null, "Awake duration expires and stops its timer");
-            Check((SetThreadExecutionState(continuous) & systemRequired) == 0, "Awake expiry clears the original thread's sleep prevention");
-            Check(module.IsActive, "Awake module remains enabled after timed expiry");
-            host.Apply(module);
-            host.SetEnabled(module, false);
-            Check(timerField.GetValue(module) is null, "Disabling Awake cancels its pending timer");
-        }
-        finally
-        {
-            if (module.IsActive) host.SetEnabled(module, false);
-            SetThreadExecutionState(continuous);
-        }
-    }
-
-    [DllImport("kernel32.dll")]
-    private static extern uint SetThreadExecutionState(uint flags);
 
     private static void TestToggleUi(ForgeApplication app)
     {
