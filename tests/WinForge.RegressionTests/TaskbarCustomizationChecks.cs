@@ -106,6 +106,14 @@ internal static class TaskbarCustomizationChecks
             styles.Single(rule => rule.Selector == "Taskbar.TaskListButton" && rule.Properties.ContainsKey("MinHeight")).Properties["MinHeight"] == "0" &&
             styles.Single(rule => rule.Selector == "Image#Icon").Properties["Height"] == "24",
             "Compact taskbar height shrinks the frame and button minimums with fitting default icons");
+        check(new[] { "SystemTray.IconView", "SystemTray.TextIconContent", "SystemTray.BatteryIconContent", "SystemTray.DateTimeIconContent" }
+            .All(selector => styles.Any(rule => rule.Selector == selector && rule.Properties.GetValueOrDefault("MinHeight") == "0" &&
+                rule.Properties.GetValueOrDefault("Height") == "32" && rule.Properties.GetValueOrDefault("VerticalContentAlignment") == "Center")),
+            "Compact taskbars resize and center tray glyphs and clock content instead of retaining native 48-DIP areas");
+        settings.Set("taskbar-height", 0);
+        styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
+        check(styles.All(rule => !rule.Properties.ContainsKey("VerticalContentAlignment") && !rule.Properties.ContainsKey("VerticalAlignment")),
+            "Default taskbar height releases the alignment overrides for native restoration");
     }
 
     internal static void RunLive(Action<bool, string> check)

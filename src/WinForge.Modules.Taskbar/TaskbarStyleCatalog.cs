@@ -42,8 +42,12 @@ internal static class TaskbarStyleCatalog
         {
             var value = Math.Clamp(height, 24, 96).ToString(CultureInfo.InvariantCulture);
             Add("Taskbar.TaskbarFrame", ("Height", value), ("MinHeight", value), ("MaxHeight", value));
-            Add("Taskbar.TaskListButton", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("Padding", "0"));
+            Add("Taskbar.TaskListButton", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("Padding", "0"), ("VerticalContentAlignment", "Center"));
             Add("SystemTray.SystemTrayFrame", ("MinHeight", "0"), ("Height", value), ("MaxHeight", value));
+            // Tray content can retain its native 48-DIP minimum even after the
+            // frame shrinks, leaving glyphs centered below the visible bar.
+            foreach (var selector in new[] { "SystemTray.IconView", "SystemTray.TextIconContent", "SystemTray.BatteryIconContent", "SystemTray.DateTimeIconContent" })
+                Add(selector, ("MinHeight", "0"), ("Height", value), ("MaxHeight", value), ("VerticalAlignment", "Center"), ("VerticalContentAlignment", "Center"));
         }
         if (iconSize != 0)
         {

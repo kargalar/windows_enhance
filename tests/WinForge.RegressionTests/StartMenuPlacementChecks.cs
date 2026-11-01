@@ -93,6 +93,50 @@ internal static class StartMenuPlacementChecks
         }
         finally { module.Deactivate(); module.Deactivate(); }
         check(!module.IsActive, "Start placement deactivation is idempotent after a move");
+
+        using var search = new NativeWindowFixture("WinForge.SearchPlacementFixture", "",
+            new() { Left = other.WorkArea.Left + 40, Top = other.WorkArea.Top + 40,
+                Right = other.WorkArea.Left + 440, Bottom = other.WorkArea.Top + 340 }, 0x80000000, 0x08000080);
+        var sessionConstructor = type.GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null,
+            [typeof(Func<IntPtr, bool>), typeof(Func<IntPtr, bool>)], null)!;
+        var session = (ITweakModule)sessionConstructor.Invoke([
+            new Func<IntPtr, bool>(window => window == moving.Handle),
+            new Func<IntPtr, bool>(window => window == search.Handle)]);
+        session.Initialize(context);
+        void Event(uint kind, IntPtr window) => onEvent.Invoke(session, [new WindowEventObserver.WindowEvent(kind, window)]);
+        try
+        {
+            session.Activate();
+            Event(WindowEventObserver.ObjectShow, moving.Handle);
+            Native.SetCursorPos(other.WorkArea.Left + 100, other.WorkArea.Top + 100);
+            Event(0x8017, moving.Handle);
+            search.Show();
+            Event(WindowEventObserver.ObjectShow, search.Handle);
+            check(DesktopDisplays.ForWindow(search.Handle).Handle == target.Handle,
+                "Search inherits Start's display after Start hides, even when the cursor changes displays");
+            Event(WindowEventObserver.ObjectShow, moving.Handle);
+            check(DesktopDisplays.ForWindow(moving.Handle).Handle == target.Handle,
+                "Returning from Search to Start retains the session display");
+            Event(0x8017, search.Handle);
+            Native.SetWindowPos(search.Handle, IntPtr.Zero, other.WorkArea.Left + 40, other.WorkArea.Top + 40,
+                400, 300, 0x0004 | Native.SWP_NOACTIVATE);
+            Event(0x8018, search.Handle);
+            check(DesktopDisplays.ForWindow(search.Handle).Handle == target.Handle,
+                "Search also inherits Start's display when Search appears before Start hides");
+            Native.SetWindowPos(search.Handle, IntPtr.Zero, other.WorkArea.Left + 40, other.WorkArea.Top + 40,
+                400, 300, 0x0004 | Native.SWP_NOACTIVATE);
+            var clock = Stopwatch.StartNew();
+            while (DesktopDisplays.ForWindow(search.Handle).Handle != target.Handle && clock.ElapsedMilliseconds < 1500) Pump();
+            check(DesktopDisplays.ForWindow(search.Handle).Handle == target.Handle,
+                "Search layout resets remain on the original session display");
+            Event(0x8017, moving.Handle);
+            Event(0x8017, search.Handle);
+            type.GetField("_handoffUntil", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(session, Environment.TickCount64 - 1);
+            Event(0x8018, search.Handle);
+            check(DesktopDisplays.ForWindow(search.Handle).Handle == other.Handle,
+                "An independent Search opening uses the current cursor display after the handoff expires");
+        }
+        finally { session.Deactivate(); Native.SetCursorPos(cursor.X, cursor.Y); }
     }
 
     private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(DispatcherPriority.ApplicationIdle, new Action(() => { }));

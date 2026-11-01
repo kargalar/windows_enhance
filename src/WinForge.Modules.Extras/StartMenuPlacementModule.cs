@@ -13,14 +13,23 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     private const uint ObjectCloaked = 0x8017;
     private const uint ObjectUncloaked = 0x8018;
     private readonly Func<IntPtr, bool> _isStart;
+    private readonly Func<IntPtr, bool> _isSearch;
     private readonly Dictionary<IntPtr, Opening> _openings = [];
+    private DesktopDisplay? _sessionDisplay;
+    private long _handoffUntil;
+    private bool _lastWasSearch;
     private WindowEventObserver? _objects;
     private WindowEventObserver? _foreground;
     private WindowEventObserver? _cloaking;
     private DispatcherTimer? _timer;
     private IModuleContext? _context;
-    public StartMenuPlacementModule() : this(IsStartWindow) { }
-    internal StartMenuPlacementModule(Func<IntPtr, bool> isStart) => _isStart = isStart;
+    public StartMenuPlacementModule() : this(IsStartWindow, IsSearchWindow) { }
+    internal StartMenuPlacementModule(Func<IntPtr, bool> isStart) : this(isStart, IsSearchWindow) { }
+    internal StartMenuPlacementModule(Func<IntPtr, bool> isStart, Func<IntPtr, bool> isSearch)
+    {
+        _isStart = isStart;
+        _isSearch = isSearch;
+    }
     public string Id => "start-menu-placement";
     public string Name => "Başlat Menüsü Konumu";
     public string Category => "Başlat";
@@ -62,7 +71,7 @@ public sealed class StartMenuPlacementModule : IModuleComponent
             {
                 _foreground = null;
                 try { _cloaking?.Dispose(); }
-                finally { _cloaking = null; _openings.Clear(); Warning = null; }
+                finally { _cloaking = null; _openings.Clear(); _sessionDisplay = null; _handoffUntil = 0; Warning = null; }
             }
         }
     }
@@ -72,7 +81,7 @@ public sealed class StartMenuPlacementModule : IModuleComponent
         if (!IsActive) return;
         if (change.Kind is WindowEventObserver.ObjectDestroy or ObjectHide or ObjectCloaked)
         {
-            _openings.Remove(change.Window);
+            EndOpening(change.Window);
             return;
         }
         if (change.Kind is not (WindowEventObserver.ObjectShow or WindowEventObserver.Foreground or ObjectUncloaked)) return;
@@ -81,10 +90,27 @@ public sealed class StartMenuPlacementModule : IModuleComponent
 
     private void TrackOpening(IntPtr window)
     {
-        if (window == IntPtr.Zero || _openings.ContainsKey(window) || !IsPresented(window) || !_isStart(window)) return;
-        if (!Native.GetCursorPos(out var cursor)) return;
-        _openings[window] = new(DesktopDisplays.ForPoint(cursor));
+        if (window == IntPtr.Zero || _openings.ContainsKey(window) || !IsPresented(window)) return;
+        var isSearch = _isSearch(window);
+        if (!isSearch && !_isStart(window)) return;
+        // Search runs in a separate process. Preserve the opening display across
+        // either ordering of Start hiding and Search becoming visible.
+        var continuing = _sessionDisplay is not null && (isSearch || _lastWasSearch) &&
+            (_openings.Count > 0 || Environment.TickCount64 <= _handoffUntil);
+        if (!continuing)
+        {
+            if (!Native.GetCursorPos(out var cursor)) return;
+            _sessionDisplay = DesktopDisplays.ForPoint(cursor);
+        }
+        _lastWasSearch = isSearch;
+        _openings[window] = new(_sessionDisplay!);
         Move(window, _openings[window]);
+    }
+
+    private void EndOpening(IntPtr window)
+    {
+        if (_openings.Remove(window) && _openings.Count == 0)
+            _handoffUntil = Environment.TickCount64 + 1500;
     }
 
     private void OnTick(object? sender, EventArgs args)
@@ -92,7 +118,7 @@ public sealed class StartMenuPlacementModule : IModuleComponent
         if (!IsActive) return;
         foreach (var (window, opening) in _openings.ToArray())
         {
-            if (!Native.IsWindow(window) || !IsPresented(window)) { _openings.Remove(window); continue; }
+            if (!Native.IsWindow(window) || !IsPresented(window)) { EndOpening(window); continue; }
             if (opening.Blocked) continue;
             try { Move(window, opening); }
             catch (Exception error) { opening.Blocked = true; Report(error); }
@@ -133,13 +159,19 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     }
 
     private static bool IsStartWindow(IntPtr window)
+        => IsShellWindow(window, "StartMenuExperienceHost");
+
+    private static bool IsSearchWindow(IntPtr window)
+        => IsShellWindow(window, "SearchHost", "SearchApp", "SearchUI");
+
+    private static bool IsShellWindow(IntPtr window, params string[] processNames)
     {
         if (Native.GetAncestor(window, Native.GA_ROOT) != window || Native.ClassNameOf(window) != "Windows.UI.Core.CoreWindow") return false;
         Native.GetWindowThreadProcessId(window, out var pid);
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            return process.ProcessName.Equals("StartMenuExperienceHost", StringComparison.OrdinalIgnoreCase);
+            return processNames.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase);
         }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
     }

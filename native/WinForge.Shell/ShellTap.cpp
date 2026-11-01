@@ -291,6 +291,16 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
             value = box_value(text == L"Collapsed" ? Visibility::Collapsed : Visibility::Visible);
         } else if (name == L"Margin") {
             property = FrameworkElement::MarginProperty(); value = box_value(ThicknessValue(text));
+        } else if (name == L"VerticalAlignment" || name == L"VerticalContentAlignment") {
+            VerticalAlignment alignment;
+            if (text == L"Top") alignment = VerticalAlignment::Top;
+            else if (text == L"Center") alignment = VerticalAlignment::Center;
+            else if (text == L"Bottom") alignment = VerticalAlignment::Bottom;
+            else if (text == L"Stretch") alignment = VerticalAlignment::Stretch;
+            else throw hresult_invalid_argument();
+            if (name == L"VerticalAlignment") property = FrameworkElement::VerticalAlignmentProperty();
+            else if (element.try_as<Control>()) property = Control::VerticalContentAlignmentProperty();
+            value = box_value(alignment);
         } else if (name == L"Background") {
             if (element.try_as<Border>()) property = Border::BackgroundProperty();
             else if (element.try_as<Panel>()) property = Panel::BackgroundProperty();

@@ -40,6 +40,14 @@ internal static class ShellEngineChecks
             session.Apply(false, []);
             WaitUntil(() => ReadWidth(window) == 160, "XAML property restoration");
             check(session.Status.Restored > 0, "Disabling shell styles restores the original local property value");
+            session.Apply(true, [
+                new ShellStyleRule("#WinForgeVerificationTarget", new Dictionary<string, string> { ["VerticalAlignment"] = "Center" }),
+                new ShellStyleRule("#WinForgeAlignmentTarget", new Dictionary<string, string> { ["VerticalContentAlignment"] = "Center" })]);
+            WaitUntil(() => SendMessageTimeout(window, 0x0404, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Vertical alignment application");
+            check(session.Status.Errors == 0, "Native bridge centers both framework elements and control content");
+            session.Apply(false, []);
+            WaitUntil(() => SendMessageTimeout(window, 0x0405, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Vertical alignment restoration");
+            check(true, "Disabling height alignment restores the original stretch and bottom alignments");
             var targetHandle = session.ReadVisualTree().Single(node => node.Name == "WinForgeVerificationTarget").Handle;
             session.Apply(true, [new ShellStyleRule("@" + targetHandle.ToString(CultureInfo.InvariantCulture), new Dictionary<string, string> { ["Width"] = "280", ["DockAnimation"] = "125,160" })]);
             WaitUntil(() => ReadWidth(window) == 280, "Repeated XAML style application");

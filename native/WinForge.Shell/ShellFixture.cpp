@@ -19,10 +19,15 @@ using namespace Windows::UI::Xaml::Hosting;
 
 static Border fixture{nullptr};
 static Slider bindingSource{nullptr};
+static Button alignmentTarget{nullptr};
 static HWND parentWindow{};
 static LRESULT CALLBACK FixtureProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_USER + 1) return static_cast<LRESULT>(fixture.Width());
     if (message == WM_USER + 2) { bindingSource.Value(static_cast<double>(wParam)); return 1; }
+    if (message == WM_USER + 4) return fixture.VerticalAlignment() == VerticalAlignment::Center &&
+        alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Center;
+    if (message == WM_USER + 5) return fixture.VerticalAlignment() == VerticalAlignment::Stretch &&
+        alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Bottom;
     if (message == WM_USER + 3) {
         auto transform = fixture.RenderTransform().try_as<Media::TranslateTransform>();
         auto origin = fixture.RenderTransformOrigin();
@@ -68,7 +73,11 @@ int wmain() {
         fixture.RenderTransformOrigin({0.2f, 0.3f});
         TextBlock label;
         label.Text(L"WinForge native XAML verification");
-        fixture.Child(label);
+        alignmentTarget = Button();
+        alignmentTarget.Name(L"WinForgeAlignmentTarget");
+        alignmentTarget.VerticalContentAlignment(VerticalAlignment::Bottom);
+        alignmentTarget.Content(label);
+        fixture.Child(alignmentTarget);
         source.Content(fixture);
         ShowWindow(parentWindow, SW_SHOWNOACTIVATE);
         std::wprintf(L"%lu %llu\n", GetCurrentProcessId(), static_cast<unsigned long long>(reinterpret_cast<ULONG_PTR>(parentWindow)));
