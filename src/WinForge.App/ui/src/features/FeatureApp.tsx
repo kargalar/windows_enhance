@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import './features.css';
 import { DefaultAppsPanel, DefaultPathsPanel } from './DefaultSettingsPanels';
+import { DynamicIsland, previewIsland, type IslandState } from './DynamicIsland';
+
+const islandToolViews = new Set(['nashi', 'nashi-settings', 'nashi-setup', 'nashi-metadata-editor', 'nashi-pdf-organizer', 'clipboard-shelf', 'clipboard-settings', 'clipboard-prompt', 'clipboard-preview', 'nashi-tool-editor', 'nashi-progress', 'nashi-qr-results', 'clipboard-recording-trim']);
 
 type NetSpeedState = {
   download: string;
@@ -877,6 +880,11 @@ function ScreenColorPickerView() {
 
 export function FeatureApp({ view }: { view: string }) {
   const [state, setState] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    document.body.classList.toggle('island-tool-theme', islandToolViews.has(view));
+    document.body.dataset.toolAppearance = typeof state?.appearance === 'string' ? state.appearance : 'dark';
+    return () => { document.body.classList.remove('island-tool-theme'); delete document.body.dataset.toolAppearance; };
+  }, [view, state?.appearance]);
   const [seekPosition, setSeekPosition] = useState<number | null>(null);
   const mediaCardRef = useRef<HTMLElement>(null);
   const mediaReady = view === 'media-flyout' && state !== null;
@@ -921,7 +929,7 @@ export function FeatureApp({ view }: { view: string }) {
     if (!bridge) {
       if (view === 'default-paths' || view === 'default-apps') return;
       if (import.meta.env.DEV) {
-        const preview = view === 'net-speed-overlay'
+        const preview = view === 'dynamic-island' ? previewIsland : view === 'net-speed-overlay'
           ? previewNetSpeed
           : view === 'taskbar-audio-visualizer'
             ? previewSpectrum
@@ -957,6 +965,7 @@ export function FeatureApp({ view }: { view: string }) {
   const send = (command: string, payload: Record<string, unknown> = {}) =>
     window.chrome?.webview?.postMessage({ command, payload });
 
+  if (view === 'dynamic-island') return <DynamicIsland state={state as unknown as IslandState | null} />;
   if (view === 'default-paths') return <DefaultPathsPanel state={state} />;
   if (view === 'default-apps') return <DefaultAppsPanel state={state} />;
 

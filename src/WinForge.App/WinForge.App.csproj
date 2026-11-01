@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\WinForge.Modules.DynamicIsland\WinForge.Modules.DynamicIsland.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\WinForge.Modules.Capture\WinForge.Modules.Capture.csproj" />
     <ProjectReference Include="..\WinForge.Core\WinForge.Core.csproj" />
     <ProjectReference Include="..\WinForge.Modules.FileTools\WinForge.Modules.FileTools.csproj" />

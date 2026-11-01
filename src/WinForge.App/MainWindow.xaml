@@ -23,7 +23,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="surface" Background="{TemplateBinding Background}">
+                        <Border x:Name="surface" Background="{TemplateBinding Background}" CornerRadius="18" Margin="3">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -68,6 +68,6 @@
                 </StackPanel>
             </Grid>
         </Border>
-        <wv2:WebView2 Grid.Row="1" x:Name="UiWebView" DefaultBackgroundColor="#101010" />
+        <wv2:WebView2 Grid.Row="1" x:Name="UiWebView" DefaultBackgroundColor="#090A0C" />
     </Grid>
 </Window>

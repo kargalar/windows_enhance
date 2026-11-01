@@ -29,10 +29,10 @@ public static class Appearance
 
     public static IReadOnlyList<Tone> Tones { get; } = new[]
     {
-        new Tone("Siyah", "#101010", "#171719", "#303033", "#242426",
-                 "#F5F5F5", "#9A9A9F", "#1D1D1F", "#FFFFFF", "#242426"),
-        new Tone("Grafit", "#141416", "#1D1D20", "#39393D", "#29292D",
-                 "#F5F5F5", "#A5A5AA", "#242427", "#FFFFFF", "#303034")
+        new Tone("Siyah", "#090A0C", "#101114", "#292A30", "#1D1E24",
+                 "#F5F5F5", "#A0A1AA", "#191A1F", "#191A1F", "#202128"),
+        new Tone("Grafit", "#15161A", "#1B1C21", "#35363E", "#2B2C33",
+                 "#F5F5F5", "#A5A5AE", "#25262D", "#25262D", "#2B2C33")
     };
 
     public static string AccentName { get; private set; } = "Mavi";
@@ -148,7 +148,7 @@ public static class Appearance
         SetColor("MutedBrush", Parse(tone.Muted));
         SetColor("PanelBrush", Parse(tone.Panel));
         SetColor("InputBrush", Parse(tone.Input));
-        SetColor("InputTextBrush", Parse("#141414"));
+        SetColor("InputTextBrush", Parse(tone.Text));
         SetColor("SelectedCardBrush", Parse(tone.Selected));
         SetColor("AccentBrush", accent);
         SetColor("AccentSoftBrush", Blend(accent, card, 0.16));
@@ -162,7 +162,7 @@ public static class Appearance
         SetColor("SwitchTrackBorderBrush", Blend(text, border, 0.09));
         SetColor("SwitchThumbBrush", Blend(text, border, 0.9));
         SetColor("SwitchTrackOnBorderBrush", Blend(accent, Colors.White, 0.45));
-        SetColor("SwitchThumbOnBrush", input);
+        SetColor("SwitchThumbOnBrush", Parse(tone.Bg));
         SetColor("PillBrush", Blend(card, Parse(tone.Bg), 0.5));
         SetColor("RingBrush", Blend(text, border, 0.06));
         SetColor("RingHoverBrush", Blend(text, border, 0.2));

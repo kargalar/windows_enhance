@@ -152,7 +152,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             ShowActivated = options.ActivateOnShow;
             Topmost = options.Topmost;
             AllowsTransparency = options.Transparent;
-            Background = options.Transparent ? Brushes.Transparent : new SolidColorBrush(Color.FromRgb(16, 16, 16));
+            Background = options.Transparent ? Brushes.Transparent : (Brush)Application.Current.FindResource("BgBrush");
             WindowStartupLocation = options.Transparent ? WindowStartupLocation.Manual : WindowStartupLocation.CenterScreen;
             if (options.Left is not null || options.Top is not null)
             {
@@ -166,7 +166,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             {
                 DefaultBackgroundColor = options.Transparent
                     ? System.Drawing.Color.FromArgb(0, 0, 0, 0)
-                    : System.Drawing.Color.FromArgb(255, 16, 16, 16)
+                    : System.Drawing.Color.FromArgb(255, 9, 10, 12)
             };
             Content = _webView;
             SourceInitialized += (_, _) => ApplyWindowStyles(options);

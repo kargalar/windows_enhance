@@ -32,6 +32,8 @@ public partial class MainWindow : Window
         var darkMode = 1;
         DwmSetWindowAttribute(handle, 20, ref darkMode, sizeof(int));
         DwmSetWindowAttribute(handle, 19, ref darkMode, sizeof(int));
+        var roundCorners = 2;
+        DwmSetWindowAttribute(handle, 33, ref roundCorners, sizeof(int));
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)

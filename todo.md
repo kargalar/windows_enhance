@@ -27,4 +27,6 @@ ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin ses ve pa
 
 şu başlat menüs detaylıca ayarlanabilsin genişliğ uzunluğu dahil her şey idüzenlenebilmelidüzgünce detaylıca ekle test et
 
-file explorer daki şu soldaki menüyü özelleştirmek için modül ekle. paddingignden tut da font rengine kadar her şeyi ayarlanabilsin. yukarıdak home ve galeri öğeleri de gizlenebilsin vesayre 
+file explorer daki şu soldaki menüyü özelleştirmek için modül ekle. paddingignden tut da font rengine kadar her şeyi ayarlanabilsin. yukarıdak home ve galeri öğeleri de gizlenebilsin vesayre ,,
+
+Dynamic Island for Windows diye bir modül vardı windhawk da onu çok beğendim onu ayrı bir modül olarak aynı onun gibi ekle. ayrıca o tasarım dili ve animasyonları fallan aşırı beğendim tüm ui ı tüm ssitemi de bu mantıkta güncelle.

@@ -67,6 +67,18 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--island-ui-only"))
+            {
+                DynamicIslandChecks.RunUi(Check);
+                Console.WriteLine($"PASS: {_passed} Dynamic Island WebView2 checks.");
+                return 0;
+            }
+            if (args.Contains("--island-only"))
+            {
+                DynamicIslandChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} Dynamic Island checks.");
+                return 0;
+            }
             if (args.Contains("--volume-overlay-only"))
             {
                 VolumeOverlayChecks.Run(Check);

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import { FeatureApp } from './features/FeatureApp';
 import './styles.css';
+import './island-design.css';
 
 type Setting = {
   key: string;
@@ -47,6 +48,11 @@ type AppState = {
 
 const previewState: AppState = {
   modules: [
+    { id: 'dynamic-island', name: 'Dynamic Island', category: 'Sistem', description: 'Medya, odak ve sistem olayları. Masaüstünün üzerinde yaşayan küçük bir ada.', isActive: false, settings: [
+      { key: 'preview', label: 'Adayı göster', kind: 'action', min: 0, max: 0, options: [], optionLabels: {} },
+      { key: 'hover', label: 'Üzerine gelince genişlet', kind: 'toggle', value: true, min: 0, max: 1, options: [], optionLabels: {} },
+      { key: 'theme', label: 'Kapsül teması', kind: 'choice', value: 'obsidian', min: 0, max: 0, options: ['obsidian', 'graphite', 'evergreen'], optionLabels: { obsidian: 'Obsidyen', graphite: 'Grafit', evergreen: 'Orman' } },
+    ] },
     { id: 'taskbar-tools', name: 'Görev çubuğu araçları', category: 'Görev çubuğu', description: 'Windows görev çubuğuna küçük, kullanışlı ayarlar ekler.', isActive: true, settings: [
       { key: 'seconds', label: 'Saatte saniyeleri göster', description: 'Görev çubuğu saatine saniye ekler.', kind: 'toggle', value: true, min: 0, max: 1, options: [], optionLabels: {} },
       { key: 'opacity', label: 'Saydamlık düzeyi', description: 'Görev çubuğunun arka plan opaklığını ayarlar.', kind: 'number', value: 72, min: 0, max: 100, options: [], optionLabels: {} },
@@ -62,7 +68,7 @@ const previewState: AppState = {
       { key: 'brightness-hotkey', label: 'Parlaklık kısayolu', kind: 'text', value: 'Ctrl+Alt+F12', min: 0, max: 0, options: [], optionLabels: {} },
     ] },
   ],
-  categories: ['Görev çubuğu', 'Sistem'], activeCount: 2, totalCount: 3, version: '1.0.0',
+  categories: ['Görev çubuğu', 'Sistem'], activeCount: 2, totalCount: 4, version: '1.0.0',
   appearance: { tone: 'Siyah', accent: 'Mavi', glow: false, tones: ['Siyah', 'Grafit'], accents: [{ name: 'Mavi', hex: '#75A7FF' }, { name: 'Yeşil', hex: '#4CD97B' }, { name: 'Kırmızı', hex: '#FF6B6B' }] },
 };
 
@@ -144,6 +150,7 @@ function App() {
   if (!state) return <div className="loading"><span className="loader" />WinForge hazırlanıyor</div>;
 
   const accentHex = state.appearance.accents.find(accent => accent.name === state.appearance.accent)?.hex ?? '#75A7FF';
+  const island = state.modules.find(module => module.id === 'dynamic-island');
   return <div className={`app-shell tone-${state.appearance.tone.toLowerCase()} ${state.appearance.glow ? 'glow' : ''}`} style={{ '--accent': accentHex } as React.CSSProperties}>
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Icon name="layers" size={21} /></div><div><strong>WinForge</strong><span>WINDOWS ARAÇ KUTUSU</span></div></div>
@@ -163,13 +170,19 @@ function App() {
 
     <main className="main-area">
       <header className="topbar">
-        <div className="page-intro"><div className="eyebrow">KONTROL MERKEZİ</div><h1>{category === 'Tümü' ? 'Modüller' : category}</h1><p>Windows deneyimini kendi çalışma biçimine göre düzenle.</p></div>
+        <div className="page-intro"><div className="eyebrow">SENİN ALANIN. SENİN AKIŞIN.</div><h1>{category === 'Tümü' ? 'Her şey, bir arada.' : category}</h1><p>Windows deneyimini kendi ritmine göre düzenle.</p></div>
         <div className="top-actions">
           <label className="search-box"><Icon name="search" /><input id="module-search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Modül ara" /><kbd>Ctrl F</kbd></label>
           <button className="icon-button" title="Görünüm ayarları" aria-label="Görünüm ayarları" onClick={() => setShowAppearance(true)}><Icon name="settings" /></button>
           <button className="icon-button" title="WinForge'dan çık" aria-label="WinForge'dan çık" onClick={() => send('app.exit')}><Icon name="power" /></button>
         </div>
       </header>
+
+      {island && <button className={`island-entry ${island.isActive ? 'is-live' : ''}`} onClick={() => { setCategory('Tümü'); setQuery(''); setActiveOnly(false); setSelectedId(island.id); }}>
+        <span className="island-entry-preview" aria-hidden="true"><span className="island-entry-orbit" /><span className="island-entry-line" /><span className="island-entry-bars"><i /><i /><i /><i /></span></span>
+        <span className="island-entry-copy"><strong>Dynamic Island</strong><small>{island.isActive ? 'Masaüstünde, akışınla birlikte.' : 'Küçük bir ada. Daha akıcı bir masaüstü.'}</small></span>
+        <span className={`island-entry-status ${island.isActive ? 'enabled' : ''}`}><span />{island.isActive ? 'Etkin' : 'Keşfet'}<Icon name="arrow" size={14} /></span>
+      </button>}
 
       <section className="content-toolbar">
         <div className="result-count"><strong>{filtered.length}</strong><span>modül</span><span className="toolbar-divider" />
@@ -191,7 +204,7 @@ function App() {
           </div>
         </div>
         <div className="details-column">
-          {selected ? <ModuleDetails module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /> : <div className="details-empty">Görüntülenecek modül yok.</div>}
+          {selected ? <ModuleDetails key={selected.id} module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /> : <div className="details-empty">Görüntülenecek modül yok.</div>}
         </div>
       </section>
     </main>
