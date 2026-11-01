@@ -60,8 +60,8 @@ export function ShortcutField({ value, label, onChange, onCommit, onCapture, all
       }
       finish(next);
     };
-    bridge?.addEventListener('message', receive);
-    return () => bridge?.removeEventListener('message', receive);
+    bridge?.addEventListener?.('message', receive);
+    return () => bridge?.removeEventListener?.('message', receive);
   }, [allowMouse, allowWheel]);
   useEffect(() => () => {
     if (!editingRef.current) return;

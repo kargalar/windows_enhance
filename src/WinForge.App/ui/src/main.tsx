@@ -7,6 +7,7 @@ import { ShortcutField } from './ShortcutField';
 import { useAutoSaveDraft } from './useAutoSaveDraft';
 import { ContextMenuPanel, type ContextMenuState } from './ContextMenuPanel';
 import { DefaultPathsPanel, DefaultAppsPanel } from './features/DefaultSettingsPanels';
+import { groupModules } from './moduleGroups';
 import './styles.css';
 import './island-design.css';
 import './management.css';
@@ -34,7 +35,7 @@ type Module = {
   isActive: boolean;
   error?: string;
   settings: Setting[];
-  panel?: AutomationState | ShortcutActionsState | ContextMenuState | { kind: 'default-paths' | 'default-apps'; state: Record<string, unknown> | null };
+  panel?: AutomationState | ShortcutActionsState | ContextMenuState | { kind: 'start-sections'; buttons: { id: string; name: string; visible: boolean }[] } | { kind: 'default-paths' | 'default-apps'; state: Record<string, unknown> | null };
 };
 
 type Appearance = {
@@ -52,6 +53,7 @@ type AppState = {
   totalCount: number;
   version: string;
   appearance: Appearance;
+  dataDirectory?: string;
 };
 
 const previewState: AppState = {
@@ -222,11 +224,11 @@ function App() {
         <div className="module-column">
           <div className="section-heading"><div><h2>{category === 'Tümü' ? 'Tüm modüller' : `${category} modülleri`}</h2><p>Bir aracı seçerek ayarlarını görüntüle.</p></div><span className="count-badge">{filtered.length}</span></div>
           <div className="module-list">
-            {filtered.map(module => <div className="module-entry" key={module.id}><button aria-pressed={selected?.id === module.id} aria-controls="module-details" className={`module-card ${selected?.id === module.id ? 'active' : ''}`} onClick={() => setSelectedId(module.id)}>
+            {groupModules(filtered).map(group => <details className="module-family" key={group.name} open><summary>{group.name}<span>{group.modules.length} modül</span></summary><div className="module-family-children">{group.modules.map(module => <div className="module-entry" key={module.id}><button aria-pressed={selected?.id === module.id} aria-controls="module-details" className={`module-card ${selected?.id === module.id ? 'active' : ''}`} onClick={() => setSelectedId(module.id)}>
               <span className={`module-icon ${module.isActive ? 'enabled' : ''}`}><Icon name={module.category === 'Fare' ? 'grid' : module.category === 'Sistem' ? 'settings' : 'layers'} size={18} /></span>
               <span className="module-copy"><strong>{module.name}</strong><small>{module.description}</small><span className="module-category">{module.category}</span></span>
               <span className={`module-status ${module.error ? 'has-error' : module.isActive ? 'enabled' : ''}`}>{module.error ? 'Hata' : module.isActive ? 'Etkin' : 'Kapalı'}</span>
-            </button><button className={`favorite-button ${favorites.includes(module.id) ? 'is-favorite' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}>★</button></div>)}
+            </button><button className={`favorite-button ${favorites.includes(module.id) ? 'is-favorite' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}>★</button></div>)}</div></details>)}
             {filtered.length === 0 && <div className="empty-state"><div className="empty-icon"><Icon name="search" size={22} /></div><strong>{favoritesOnly ? 'Bu filtrelerde favori araç yok' : 'Sonuç bulunamadı'}</strong><p>{favoritesOnly ? 'Araçların yanındaki yıldızla favorilerini belirle veya filtreleri temizle.' : 'Arama veya kategori filtresini değiştirmeyi dene.'}</p><button className="secondary-button" onClick={clearFilters}>Filtreleri temizle</button></div>}
           </div>
         </div>
@@ -236,7 +238,7 @@ function App() {
       </section>
     </main>
 
-    {showAppearance && <AppearanceDialog appearance={state.appearance} onClose={() => setShowAppearance(false)} onChange={value => send('appearance.update', value)} onOpenLogs={() => send('system.openLogs')} />}
+    {showAppearance && <AppearanceDialog dataDirectory={state.dataDirectory} onOpenData={() => send('system.openData')} appearance={state.appearance} onClose={() => setShowAppearance(false)} onChange={value => send('appearance.update', value)} onOpenLogs={() => send('system.openLogs')} />}
     {error && <div className="toast-error" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Bildirimi kapat"><Icon name="close" size={15} /></button></div>}
   </div>;
 }
@@ -261,6 +263,7 @@ function ModuleDetails({ module, onToggle, onUpdate, onExecute }: { module: Modu
     {sections.length > 1 && <nav className="settings-jumps" aria-label="Ayar bölümleri">{sections.map(([section], index) => <a key={section} href={`#settings-${module.id}-${index}`}>{section || 'Genel'}</a>)}</nav>}
     {module.panel && 'kind' in module.panel && module.panel.kind === 'default-paths' && <DefaultPathsPanel inline state={module.panel.state} sendCommand={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
     {module.panel && 'kind' in module.panel && module.panel.kind === 'default-apps' && <DefaultAppsPanel inline state={module.panel.state} sendCommand={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
+    {module.panel && 'kind' in module.panel && module.panel.kind === 'start-sections' && <section className="settings-section"><h3>Alt düğmeler</h3><p>Başlat menüsünü açtığınızda mevcut klasör ve ayar düğmeleri burada listelenir. Her birini ayrı ayrı gösterebilir veya gizleyebilirsiniz.</p>{module.panel.buttons.map(button => <div className="setting-row" key={button.id}><strong>{button.name}</strong><Toggle checked={button.visible} label={`${button.name} göster`} onChange={visible => send('module.command', { moduleId: module.id, action: 'place-visibility', data: { id: button.id, visible } })} /></div>)}</section>}
     {module.id === 'automation' && module.panel && <AutomationPanel state={module.panel as AutomationState} active={module.isActive} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
     {module.panel && 'kind' in module.panel && module.panel.kind === 'context-menu' && <ContextMenuPanel state={module.panel} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
     {module.panel && 'kind' in module.panel && module.panel.kind === 'shortcut-actions' && <ShortcutActionsPanel state={module.panel} moduleId={module.id} active={module.isActive} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
@@ -301,7 +304,7 @@ function SettingControl({ setting, onUpdate, onExecute }: { setting: Setting; on
   return <div className="setting-row vertical"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p>{setting.description}</p>}</div><div className="input-action-row"><input className="white-control" value={text} onChange={event => setText(event.target.value)} onBlur={saveText} onKeyDown={event => { if (event.key === 'Enter') { saveText(); (event.currentTarget as HTMLInputElement).blur(); } }} aria-label={setting.label} /></div></div>;
 }
 
-function AppearanceDialog({ appearance, onClose, onChange, onOpenLogs }: { appearance: Appearance; onClose: () => void; onChange: (value: Record<string, unknown>) => void; onOpenLogs: () => void }) {
+function AppearanceDialog({ appearance, onClose, onChange, onOpenLogs, dataDirectory, onOpenData }: { dataDirectory?: string; onOpenData: () => void; appearance: Appearance; onClose: () => void; onChange: (value: Record<string, unknown>) => void; onOpenLogs: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -322,6 +325,7 @@ function AppearanceDialog({ appearance, onClose, onChange, onOpenLogs }: { appea
     <div className="appearance-section"><h3>Yüzey tonu</h3><div className="tone-options">{appearance.tones.map(tone => <button key={tone} className={`tone-option ${appearance.tone === tone ? 'selected' : ''}`} onClick={() => onChange({ tone })}><span className={`tone-preview ${tone.toLowerCase()}`}><i /><i /><i /></span><span>{tone}</span>{appearance.tone === tone && <Icon name="check" size={15} />}</button>)}</div></div>
     <div className="appearance-section"><h3>Vurgu rengi</h3><div className="accent-options">{appearance.accents.map(accent => <button key={accent.name} className={`accent-option ${appearance.accent === accent.name ? 'selected' : ''}`} title={accent.name} aria-label={accent.name} style={{ '--swatch': accent.hex } as React.CSSProperties} onClick={() => onChange({ accent: accent.name })}>{appearance.accent === accent.name && <Icon name="check" size={14} />}</button>)}</div></div>
     <div className="setting-row"><div className="setting-copy"><strong>Arka plan parlaması</strong><p>Başlık alanında hafif vurgu ışığı göster.</p></div><Toggle checked={appearance.glow} label="Arka plan parlaması" onChange={glow => onChange({ glow })} /></div>
+    {dataDirectory && <div className="appearance-section"><h3>Kayıt konumu</h3><p style={{ overflowWrap: 'anywhere' }}>{dataDirectory}</p><button className="secondary-button" onClick={onOpenData}>Veri klasörünü aç</button></div>}
     <footer><button className="secondary-button" onClick={onOpenLogs}>Uygulama günlükleri</button><button className="primary-button" onClick={onClose}>Tamam</button></footer>
   </section></div>;
 }

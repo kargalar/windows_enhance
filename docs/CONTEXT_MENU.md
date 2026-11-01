@@ -21,3 +21,13 @@ dotnet run --project tests/WinForge.ShortcutActionTests -c Release -p:Platform=x
 ```
 
 UI klasöründe `npm run test:shortcuts`; derlenmiş regresyon testinde `WinForge.RegressionTests.exe --context-menu-ui-only` çalıştırılabilir. Yerel fixture, gerçek Windows dosya/arka plan menülerindeki Özellikler ve Yeni Klasör komutlarını geçici gruba taşır ve geri alır. Kullanıcının menü tercihlerini değiştirmez veya komutları çalıştırmaz.
+
+## Hazır eylemler
+
+Tür filtresindeki **Hazır eylemler** altında **Masaüstü kısayolu oluştur** ve **Dosyayı / kısayolu gizle veya göster** bulunur. Başlangıçta kapalıdır. Göster anahtarıyla etkinleştirin; adını, simgesini ve grubunu diğer öğeler gibi düzenleyin. Dosya veya klasör seçiminde çalışırlar. Kısayol oluşturma mevcut masaüstü dosyalarını ezmez; aynı ad için numara ekler. Gizle/göster yalnızca seçilen öğenin Hidden özniteliğini değiştirir. Gizlenmiş öğeyi yeniden seçmek için Gezgin’in gizli öğeleri göster ayarı açık olmalıdır.
+
+Girdi göndermeden yerel yakalama ve eylem kontrolleri:
+
+```powershell
+dotnet run --project tests/WinForge.ShortcutActionTests -c Release -- --capture-context-only
+```

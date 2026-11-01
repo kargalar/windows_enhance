@@ -50,6 +50,8 @@ internal static class ContextMenuCatalog
             ("cut", "Kes", "shell32.dll,133"), ("paste", "Yapıştır", "shell32.dll,135"),
             ("delete", "Sil", "shell32.dll,131"), ("rename", "Yeniden adlandır", ""), ("refresh", "Yenile", "")
         }) entries["builtin:" + id] = new("builtin:" + id, name, "Windows komutu", "builtin:" + id, icon);
+        entries["prepared:desktop-shortcut"] = new("prepared:desktop-shortcut", "Masaüstü kısayolu oluştur", "Hazır eylem", Normalize("Masaüstü kısayolu oluştur"), "shell32.dll,167");
+        entries["prepared:toggle-hidden"] = new("prepared:toggle-hidden", "Dosyayı / kısayolu gizle veya göster", "Hazır eylem", Normalize("Dosyayı / kısayolu gizle veya göster"), "shell32.dll,3");
         foreach (var root in Roots)
         {
             ReadVerbs(root, entries);
@@ -96,7 +98,7 @@ internal static class ContextMenuCatalog
             var match = Normalize(name);
             // Native canonical IDs unify Windows items with their live names and icons.
             var canonical = row?.GetValue("canonical") as string;
-            if (string.IsNullOrEmpty(canonical)) canonical = null;
+            if (string.IsNullOrEmpty(canonical)) canonical = entries.Values.FirstOrDefault(entry => entry.Id.StartsWith("prepared:") && entry.Match == match)?.Id;
             var key = !string.IsNullOrEmpty(canonical) ? canonical : "menu:" + match;
             entries[key] = new(key, name, "Gerçek menü öğesi", canonical ?? match, row?.GetValue("icon") as string ?? "");
         }
@@ -111,7 +113,26 @@ internal static class ContextMenuCatalog
             if (keyName.StartsWith("WinForge.", StringComparison.OrdinalIgnoreCase)) continue;
             using var verb = shell.OpenSubKey(keyName);
             if (verb is null) continue;
-            var name = BestName(verb.GetValue("") as string ?? keyName, verb.GetValue("MUIVerb") as string, null, "Menü komutu");
+            var knownName = keyName.ToLowerInvariant() switch
+            {
+                ".spotlightnextimage" => "Sonraki masaüstü arka planı",
+                "editstickers" => "Masaüstü çıkartmalarını düzenle",
+                ".spotlightlearnmore" => "Bu resim hakkında bilgi edinin",
+                "pintohome" => "Hızlı erişime sabitle",
+                "pintostartscreen" => "Başlangıç ekranına sabitle",
+                "opennewwindow" => "Yeni pencerede aç",
+                "runas" => "Yönetici olarak çalıştır",
+                "runasuser" => "Farklı kullanıcı olarak çalıştır",
+                _ => null
+            };
+            string? description = null;
+            var handler = verb.GetValue("ExplorerCommandHandler") as string;
+            if (Guid.TryParse(handler, out var handlerId))
+            {
+                using var registration = Registry.ClassesRoot.OpenSubKey(@"CLSID\" + handlerId.ToString("B"));
+                description = DisplayName(registration?.GetValue("LocalizedString") as string ?? registration?.GetValue("") as string ?? "");
+            }
+            var name = knownName ?? BestName(verb.GetValue("") as string ?? keyName, verb.GetValue("MUIVerb") as string, description, "Menü komutu");
             var id = "verb:" + root + ":" + keyName;
             entries[id] = new(id, name, root + " · komut", Normalize(name), verb.GetValue("Icon") as string ?? "");
         }

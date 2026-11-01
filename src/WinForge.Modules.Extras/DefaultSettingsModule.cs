@@ -7,7 +7,6 @@ namespace WinForge.Modules.Extras;
 public abstract class DefaultSettingsModule : ITweakModule, IModulePanel
 {
     protected IModuleContext Context { get; private set; } = null!;
-    protected IFeatureUiWindow? Window { get; private set; }
     protected string Status { get; set; } = "Hazır";
     public abstract string Id { get; }
     public abstract string Name { get; }
@@ -19,7 +18,6 @@ public abstract class DefaultSettingsModule : ITweakModule, IModulePanel
 
     private object? _panelState;
     public event Action? PanelStateChanged;
-    public IReadOnlyList<SettingDescriptor> InlineSettings => [];
     protected DefaultSettingsModule() { Settings = []; }
     public void Initialize(IModuleContext context) { Context = context; Refresh(); PushState(); }
     public object GetPanelState() => new { kind = Id, state = _panelState };
@@ -27,46 +25,19 @@ public abstract class DefaultSettingsModule : ITweakModule, IModulePanel
     protected void PublishState(object state)
     {
         _panelState = state;
-        Window?.SetState(state);
         PanelStateChanged?.Invoke();
     }
     public void Activate() => IsActive = true;
     public void Deactivate()
     {
         IsActive = false;
-        Window?.Close();
-        Window = null;
     }
     public void Apply() { }
-
-    private void Open()
-    {
-        try
-        {
-            if (Window is null)
-            {
-                var ui = (Context as IFeatureUiContext)?.FeatureUi
-                    ?? throw new InvalidOperationException("React arayüzü kullanılamıyor.");
-                Window = ui.Open(Id, Id, Name, new FeatureUiWindowOptions(980, 700, ShowInTaskbar: true, Resizable: true));
-                Window.MessageReceived += HandleMessage;
-                Window.ClosedByHost += () => Window = null;
-            }
-            Refresh();
-            PushState();
-            Window.Show();
-        }
-        catch (Exception exception)
-        {
-            Context.Log.Error(Name + " açılamadı.", exception);
-            Context.Notify(Name + ": " + exception.Message);
-        }
-    }
 
     private void HandleMessage(string command, JsonElement payload)
     {
         try
         {
-            if (command == "defaults.close") { Window?.Close(); Window = null; return; }
             if (command == "defaults.reload") { Refresh(); Status = "Güncel Windows ayarları okundu."; }
             else OnMessage(command, payload);
         }

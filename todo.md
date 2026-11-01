@@ -1,9 +1,7 @@
 .\scripts\build.ps1 -Configuration Release -Run
 <!--  -->
 
-modüller ayrı alt programlar olarakı çalışıyor. galiba öyle olanlar var. ben böyle olamsını istememiştim alsında. galiba böyle olmasını sebebi ben şuanki sistemle en iyi şekilde yapılmayacaksa gibi bir şeysöylediğim için oldu. bunu düzeltebilirmiyi.z best practices ne ise en iyi ve optimize ve düzgün yöntem ne ise öyle olacak şekilde güncelle.
-
-xbutton2 indililenler klasörünü açsın
+modüller ayrı alt programlar olarak çalışıyor. galiba öyle olanlar var. ben böyle olamsını istememiştim alsında. galiba böyle olmasını sebebi ben şuanki sistemle en iyi şekilde yapılmayacaksa gibi bir şeysöylediğim için oldu. bunu düzeltebilirmiyiz. best practices ne ise en iyi ve optimize ve düzgün yöntem ne ise öyle olacak şekilde güncelle.
 
 <!-- Check -->
 
@@ -13,7 +11,8 @@ Fluent Medya Flyout da bir sıkıntı var düzgünce gösterilmiyor
 
 internet kulanım değerleri gtaşlarda österilirken arkaplan olamasın ayrıca sadece text olarak göster. yan yana ve alat alta gösterim için seçenek koy
 
-fluent fallout medya paneli sol altta sadece 1mm bir çizgi gibisinden çaılıyor. buun düzelt. test et ve düzeldğini onayla   .
+fluent fallout medya paneli sol altta sadece 1mm bir çizgi gibisinden çaılıyor. buun düzelt. test et ve düzeldğini 
+nayla   .
 
 ektan parlaklığı değişince görünen gösterge ses göstergesiyle aynı olsun ve ikisini de şuanki ses göstergesi boyutunun yarısı kadar yap
 ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin ses ve paralkalık

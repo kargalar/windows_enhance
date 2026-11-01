@@ -133,3 +133,16 @@
   .input-action-row { flex-wrap: wrap; }
   .input-action-row .white-control { flex: 1; min-width: 100px; }
 }
+
+.module-family { border: 1px solid var(--border, #ffffff16); border-radius: 14px; overflow: hidden; margin-bottom: 10px; }
+.module-family > summary { display: flex; justify-content: space-between; padding: 14px 16px; cursor: pointer; font-weight: 600; }
+.module-family > summary::before { content: '\25b8'; margin-right: 8px; }
+.module-family[open] > summary::before { content: '\25be'; }
+.module-family > summary span { margin-left: auto; opacity: .6; font-size: 12px; }
+.module-family-children { padding: 0 8px 8px 18px; display: grid; gap: 6px; }
+.details-scroll .defaults-panel { height: auto; min-height: 0; padding: 0; background: transparent; color: inherit; }
+.details-scroll .defaults-panel header h1 { font-size: 18px; }
+.details-scroll .defaults-path-edit { flex-wrap: wrap; }
+.details-scroll .defaults-path-edit input { min-width: 180px; flex: 1; }
+
+.details-scroll .defaults-list { overflow: visible; flex: initial; }

@@ -9,15 +9,23 @@ internal static class Program
     private static int _checks;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
+            if (args.Contains("--capture-context-only"))
+            {
+                NativeRecordingChecks(); ContextMenuChecks(); PreparedActionsChecks();
+                Check(ActionShortcut.Parse("Alt+XButton1") == new ActionShortcut(1, 0, "mousex1"), "Alt+XButton1 manual alias matches recorded side button");
+                Console.WriteLine($"PASS: {_checks} native recording, context menu and prepared action checks.");
+                return 0;
+            }
             Check(ActionShortcut.Parse("ctrl+alt+MouseLeft") == new ActionShortcut(3, 0, "mouseleft"), "Mouse shortcut normalization");
             Check(ActionShortcut.Parse("Ctrl+Space") == new ActionShortcut(2, 32, ""), "Keyboard shortcut parsing");
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
             Check(ActionShortcut.Parse("MouseX2") == new ActionShortcut(0, 0, "mousex2"), "Bare XButton2 accepted");
             TranslationChecks();
+            NativeRecordingChecks();
             TextExpansionChecks();
             ContextMenuChecks();
             Check(ExplorerMouseNavigationModule.ShouldNavigate("CabinetWClass", new(1), new(1), 0), "Middle click navigates the focused Explorer window");
@@ -149,6 +157,71 @@ internal static class Program
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void Save(ShortcutActionModule m, ShortcutActionRule rule) => Command(m, "save", new { rule });
+    private static void PreparedActionsChecks()
+    {
+        var context = new Context(); var module = new ContextMenuModule(); module.Initialize(context);
+        var panel = (IModulePanel)module;
+        var entries = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries");
+        Check(entries.EnumerateArray().Count(e => e.GetProperty("id").GetString()!.StartsWith("prepared:") && !e.GetProperty("visible").GetBoolean()) == 2, "Prepared actions are available and disabled by default");
+        foreach (var id in new[] { "prepared:desktop-shortcut", "prepared:toggle-hidden" })
+            panel.HandlePanelCommand("save", JsonSerializer.SerializeToElement(new { id, rule = new ContextMenuRule(id, Group: "Other") }, Json));
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinForge.PreparedActions", Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(root);
+        var source = System.IO.Path.Combine(root, "sample.txt"); System.IO.File.WriteAllText(source, "test");
+        try
+        {
+            typeof(ContextMenuModule).GetProperty(nameof(ContextMenuModule.IsActive))!.SetValue(module, true);
+            module.HandleCommand("--context-toggle-hidden", [source]);
+            Check(System.IO.File.GetAttributes(source).HasFlag(System.IO.FileAttributes.Hidden), "Hide action changes the selected file attribute");
+            module.HandleCommand("--context-toggle-hidden", [source]);
+            Check(!System.IO.File.GetAttributes(source).HasFlag(System.IO.FileAttributes.Hidden), "Show action restores visibility");
+            var desktop = System.IO.Path.Combine(root, "desktop"); System.IO.Directory.CreateDirectory(desktop);
+            ContextMenuModule.CreateDesktopShortcut(source, desktop);
+            ContextMenuModule.CreateDesktopShortcut(source, desktop);
+            Check(System.IO.File.Exists(System.IO.Path.Combine(desktop, "sample.lnk")) && System.IO.File.Exists(System.IO.Path.Combine(desktop, "sample (2).lnk")), "Desktop action creates real shell links without overwriting existing shortcuts");
+        }
+        finally
+        {
+            typeof(ContextMenuModule).GetProperty(nameof(ContextMenuModule.IsActive))!.SetValue(module, false);
+            var expected = System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinForge.PreparedActions"));
+            if (System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(root)) == expected) System.IO.Directory.Delete(root, true);
+        }
+    }
+
+    private static void NativeRecordingChecks()
+    {
+        var keyboard = typeof(ShortcutRecorder).GetMethod("Keyboard", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var mouse = typeof(ShortcutRecorder).GetMethod("Mouse", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        foreach (var expected in new[] { "Win+D", "Alt+MouseX1" })
+        {
+            var recorded = new List<string>();
+            using var recorder = new ShortcutRecorder(recorded.Add, false);
+            var pointer = Marshal.AllocHGlobal(128);
+            try
+            {
+                IntPtr Key(uint key, int message)
+                {
+                    Marshal.StructureToPtr(new KBDLLHOOKSTRUCT { vkCode = key }, pointer, false);
+                    return (IntPtr)keyboard.Invoke(recorder, [0, new IntPtr(message), pointer])!;
+                }
+                Check(Key(expected.StartsWith("Win") ? 0x5Bu : 0xA4u, 0x100) == new IntPtr(1), "Recorder consumes modifier before Windows sees it");
+                if (expected.StartsWith("Win"))
+                {
+                    Check(Key(0x44, 0x100) == new IntPtr(1), "Win+D is consumed instead of reaching desktop");
+                    Key(0x44, 0x100);
+                    Check(Key(0x44, 0x101) == new IntPtr(1), "Recorded key release is consumed");
+                }
+                else
+                {
+                    Marshal.StructureToPtr(new MSLLHOOKSTRUCT { mouseData = 1u << 16 }, pointer, false);
+                    Check((IntPtr)mouse.Invoke(recorder, [0, new IntPtr(0x20B), pointer])! == new IntPtr(1), "Side mouse input is consumed before Explorer navigation");
+                }
+                Check(recorded.SequenceEqual([expected]), "Native recording produces one complete chord: " + expected);
+            }
+            finally { Marshal.FreeHGlobal(pointer); }
+        }
+    }
+
     private static void ContextMenuChecks()
     {
         Check(ContextMenuCatalog.Normalize("&Properties\tAlt+Enter") == "properties", "Menu labels normalize accelerators");
@@ -218,7 +291,7 @@ internal static class Program
                 Check(Input(0x44, false) == new IntPtr(1), "Original Ctrl+D is consumed");
                 Check(Input(0x44, true) == new IntPtr(1), "Original D release is consumed");
                 Input(0xA2, true); Pump();
-                Check(events.SequenceEqual(new (uint, bool)[] { (0xA2, true), (0xA4, false), (0x57, false), (0x57, true), (0xA4, true), (0xA2, false) }), "Native SendInput releases source Ctrl, sends Alt+W and restores source modifier");
+                Check(events.SequenceEqual(new (uint, bool)[] { (0xA2, true), (0xA4, false), (0x57, false), (0x57, true), (0xA4, true), (0xA2, false) }), "Native SendInput releases source Ctrl, sends Alt+W and restores source modifier: " + string.Join(",", events));
                 events.Clear();
                 using (var hotkeys = new HotkeyService())
                 using (hotkeys.Suspend()) { Input(0xA2, false); Input(0x44, false); Input(0x44, true); Input(0xA2, true); Pump(); }
@@ -226,7 +299,7 @@ internal static class Program
             }
             finally { Marshal.FreeHGlobal(pointer); }
         }
-        finally { Native.UnhookWindowsHookEx(hook); module.Deactivate(); GC.KeepAlive(observer); }
+        finally { ActionInput.Send([ActionInput.Key(0xA2, 2)]); Native.UnhookWindowsHookEx(hook); module.Deactivate(); GC.KeepAlive(observer); }
         var reload = new CombinationTranslatorModule(); reload.Initialize(context);
         Check(Panel(reload).GetProperty("rules")[0].GetProperty("value").GetString() == "Alt+W", "Translator rule survives reload");
         Reject(() => Save(reload, new("example", "Example", true, "Ctrl+D", "translate", "Win+L")));
@@ -261,7 +334,7 @@ internal static class Program
             Save(module, new("play", "Native playback test", true, "F23", "play"));
             ActionInput.Chord(0x86);
             Pump();
-            Check(hits == 1, "Real WM_HOTKEY dispatch executes configured media action exactly once");
+            Check(hits == 1, "Real WM_HOTKEY dispatch executes configured media action exactly once: " + hits);
             Save(module, new("play", "Native playback test", true, "F24", "play"));
             ActionInput.Chord(0x86); Pump();
             Check(hits == 1, "Saving a new shortcut unregisters old native binding immediately");

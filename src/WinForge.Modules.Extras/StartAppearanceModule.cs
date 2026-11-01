@@ -8,7 +8,7 @@ using WinForge.Core;
 namespace WinForge.Modules.Extras;
 
 /// <summary>Customizes the actual Windows Start XAML tree using the shared shell diagnostics engine.</summary>
-public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
+public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule, IModulePanel
 {
     private const int MinimumIconSize = 16;
     private const int MaximumIconSize = 48;
@@ -21,6 +21,22 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
     private string _lastRules = "";
     private string? _warning;
     private int _errors;
+    private readonly Dictionary<string, string> _footerButtons = new();
+    public event Action? PanelStateChanged;
+    public object GetPanelState()
+    {
+        lock (_footerButtons)
+            return new { kind = "start-sections", buttons = _footerButtons.Select(pair => new { id = pair.Key, name = pair.Value, visible = !_context!.Settings.GetBool("hide-place-" + pair.Key) }).ToArray() };
+    }
+    public void HandlePanelCommand(string action, JsonElement payload)
+    {
+        if (action != "place-visibility") throw new ArgumentException("Bilinmeyen Başlat eylemi.");
+        var id = payload.GetProperty("id").GetString() ?? "";
+        lock (_footerButtons)
+            if (!_footerButtons.ContainsKey(id)) throw new ArgumentException("Başlat düğmesi bulunamadı. Menüyü açıp tekrar deneyin.");
+        _context!.Settings.Set("hide-place-" + id, !payload.GetProperty("visible").GetBoolean());
+        Apply(); PanelStateChanged?.Invoke();
+    }
 
     public string Id => "start-appearance";
     public string Name => "Başlat Menüsü Tasarımı";
@@ -37,6 +53,10 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
         new() { Key = "hide-labels", Label = "Simge altındaki adları gizle", Default = false, Section = "Görünüm", Description = "Yeni Windows 11 Başlat menüsünde sabitlenmiş uygulama ve klasörlerin adlarını gizleyerek yalnızca simgelerini gösterir." },
         new() { Key = "hide-search", Label = "Arama alanını gizle", Default = false, Section = "Bölümler" },
         new() { Key = "pinned-only", Label = "Yalnızca sabitlenmiş uygulamaları göster", Default = false, Section = "Bölümler", Description = "Yeni Windows 11 Başlat menüsünde Tüm uygulamalar başlığını, görünüm seçicisini, uygulama listesini/kategorilerini ve önerileri gizler." },
+        new() { Key = "hide-recent", Label = "Recent / önerilenler bölümünü gizle", Default = false, Section = "Bölümler" },
+        new() { Key = "hide-categories", Label = "Categories / uygulama kategorilerini gizle", Default = false, Section = "Bölümler" },
+        new() { Key = "hide-all-apps-heading", Label = "Tüm uygulamalar başlığı ve görünüm seçicisini gizle", Default = false, Section = "Bölümler" },
+        new() { Key = "hide-places", Label = "Alt klasör ve ayar düğmelerinin tamamını gizle", Default = false, Section = "Bölümler" },
         new() { Key = "hide-user", Label = "Kullanıcı alanını gizle", Default = false, Section = "Bölümler" },
         new() { Key = "hide-power", Label = "Güç düğmesini gizle", Default = false, Section = "Bölümler" },
         new() { Key = "custom-rules", Label = "Özel XAML kuralları (JSON)", Kind = SettingKind.Text, Default = "", Section = "Gelişmiş", Description = "Örnek: [{\"selector\":\"#MainMenu\",\"properties\":{\"Opacity\":\"0.8\"}}]. Özellik desteği Windows sürümüne ve öğe türüne bağlıdır." }
@@ -127,13 +147,17 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
     {
         var settings = _context!.Settings;
         return new(settings.GetInt("width"), settings.GetInt("height"), settings.GetInt("icon-size"), settings.GetInt("opacity", 100),
-            settings.GetBool("hide-search"), settings.GetBool("pinned-only"), settings.GetBool("hide-labels"), settings.GetBool("hide-user"), settings.GetBool("hide-power"), settings.GetString("custom-rules"));
+            settings.GetBool("hide-search"), settings.GetBool("pinned-only"), settings.GetBool("hide-labels"), settings.GetBool("hide-user"), settings.GetBool("hide-power"), settings.GetString("custom-rules"), settings.GetBool("hide-recent"), settings.GetBool("hide-categories"), settings.GetBool("hide-all-apps-heading"), settings.GetBool("hide-places"));
     }
 
     private void Update(AppearanceSettings settings, bool force)
     {
-        using var process = Process.GetProcessesByName("StartMenuExperienceHost").FirstOrDefault()
-            ?? throw new InvalidOperationException("Windows Başlat menüsü işlemi bulunamadı. Başlat menüsünü açıp tekrar deneyin.");
+        using var process = Process.GetProcessesByName("StartMenuExperienceHost").FirstOrDefault();
+        if (process is null)
+        {
+            WaitForStartMenu();
+            return;
+        }
         if (_lease is null || !_lease.Session.IsConnected || _processId != (uint)process.Id)
         {
             _lease?.Dispose();
@@ -149,11 +173,35 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
         {
             tree = session.ReadVisualTree();
             if (tree.Any(node => node.Type is "StartMenu.StartBlendedFlexFrame" or "StartDocked.StartSizingFrame")) break;
-            if (clock.Elapsed >= Timeout) throw new InvalidOperationException("Başlat menüsünün desteklenen görsel ağacı bulunamadı. Menüyü açıp tekrar deneyin.");
+            if (clock.Elapsed >= Timeout) { WaitForStartMenu(); return; }
             Thread.Sleep(50);
         } while (true);
         var redesigned = tree.Any(node => node.Type == "StartMenu.StartBlendedFlexFrame");
-        var rules = BuildRules(settings, redesigned);
+        var rules = BuildRules(settings, redesigned).ToList();
+        var nodes = tree.ToDictionary(node => node.Handle);
+        var buttonsChanged = false;
+        lock (_footerButtons)
+        {
+            var previousButtons = JsonSerializer.Serialize(_footerButtons);
+            foreach (var node in tree.Where(node => node.Type.EndsWith("NavigationPaneButton")))
+            {
+                var parent = node.Parent;
+                var isPlace = false;
+                for (var depth = 0; parent != 0 && depth < 32 && nodes.TryGetValue(parent, out var ancestor); depth++)
+                {
+                    if (ancestor.Name == "NavigationPanePlacesListView") { isPlace = true; break; }
+                    parent = ancestor.Parent;
+                }
+                if (!isPlace || string.IsNullOrWhiteSpace(node.AccessibleName)) continue;
+                var identity = string.IsNullOrEmpty(node.AutomationId) ? node.AccessibleName : node.AutomationId;
+                var id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity)))[..24];
+                _footerButtons[id] = node.AccessibleName;
+                if (_context!.Settings.GetBool("hide-place-" + id))
+                    rules.Add(new ShellStyleRule("@" + node.Handle, new Dictionary<string, string> { ["Visibility"] = "Collapsed" }));
+            }
+            buttonsChanged = previousButtons != JsonSerializer.Serialize(_footerButtons);
+        }
+        if (buttonsChanged) PanelStateChanged?.Invoke();
         var serialized = JsonSerializer.Serialize(rules);
         if (!force && session.Status.Errors != _errors)
         {
@@ -180,7 +228,15 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
         }
         _lastRules = serialized;
         _errors = session.Status.Errors;
-        _warning = null;
+        if (_warning is not null) { _warning = null; PanelStateChanged?.Invoke(); }
+    }
+
+    private void WaitForStartMenu()
+    {
+        const string message = "Başlat menüsü açıldığında kayıtlı görünüm ayarlarınız otomatik uygulanacak.";
+        if (_warning == message) return;
+        _warning = message;
+        PanelStateChanged?.Invoke();
     }
 
     private static IReadOnlyList<ShellStyleRule> BuildRules(AppearanceSettings settings, bool redesigned)
@@ -226,6 +282,19 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
             // The pinned section is the grid's header: hide only its items panel, preserving the header.
             Add("ItemsWrapGrid[ItemsControl=AllAppsGrid]", ("Visibility", "Collapsed"));
         }
+        if (settings.HideRecent)
+        {
+            Add("StartMenu.StartHome #TopLevelSuggestionsRoot", ("Visibility", "Collapsed"));
+            Add("StartMenu.StartHome #MoreSuggestionsRoot", ("Visibility", "Collapsed"));
+            Add("StartDocked.RecommendedList", ("Visibility", "Collapsed"));
+        }
+        if (settings.HideCategories)
+        {
+            Add("StartMenu.CategoryControl", ("Visibility", "Collapsed"));
+            Add("ItemsWrapGrid[ItemsControl=AllAppsGrid]", ("Visibility", "Collapsed"));
+        }
+        if (settings.HideAllAppsHeading) Add("StartMenu.StartHome #AllListHeading", ("Visibility", "Collapsed"));
+        if (settings.HidePlaces) Add("StartDocked.AppListView#NavigationPanePlacesListView", ("Visibility", "Collapsed"));
         if (settings.HideUser) Add("StartDocked.UserTileView", ("Visibility", "Collapsed"));
         if (settings.HidePower) Add("StartDocked.PowerOptionsView", ("Visibility", "Collapsed"));
         if (!string.IsNullOrWhiteSpace(settings.CustomRules))
@@ -251,5 +320,5 @@ public sealed class StartAppearanceModule : ITweakModule, IAsyncTweakModule
         finally { _lease = null; _processId = 0; _lastRules = ""; IsActive = false; }
     }
 
-    private sealed record AppearanceSettings(int Width, int Height, int IconSize, int Opacity, bool HideSearch, bool PinnedOnly, bool HideLabels, bool HideUser, bool HidePower, string CustomRules);
+    private sealed record AppearanceSettings(int Width, int Height, int IconSize, int Opacity, bool HideSearch, bool PinnedOnly, bool HideLabels, bool HideUser, bool HidePower, string CustomRules, bool HideRecent, bool HideCategories, bool HideAllAppsHeading, bool HidePlaces);
 }

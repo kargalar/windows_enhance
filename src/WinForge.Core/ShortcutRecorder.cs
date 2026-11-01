@@ -12,16 +12,18 @@ public sealed class ShortcutRecorder : IDisposable
     private readonly HashSet<uint> _down = [];
     private IntPtr _keyboard, _mouse;
     private bool _completed;
-    public ShortcutRecorder(Action<string> recorded)
+    public ShortcutRecorder(Action<string> recorded) : this(recorded, true) { }
+    internal ShortcutRecorder(Action<string> recorded, bool installHooks)
     {
         _recorded = recorded;
-        foreach (var key in new uint[] { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C })
+        if (installHooks) foreach (var key in new uint[] { 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0x5B, 0x5C })
             if ((Native.GetAsyncKeyState((int)key) & 0x8000) != 0) _down.Add(key);
         _keyboardCallback = Keyboard;
         _mouseCallback = Mouse;
+        if (!installHooks) return;
         _keyboard = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _keyboardCallback, Native.GetModuleHandle(null), 0);
         _mouse = Native.SetWindowsHookEx(Native.WH_MOUSE_LL, _mouseCallback, Native.GetModuleHandle(null), 0);
-        if (_keyboard == IntPtr.Zero || _mouse == IntPtr.Zero) { Dispose(); throw new InvalidOperationException("K?sayol yakalama ba?lat?lamad?."); }
+        if (_keyboard == IntPtr.Zero || _mouse == IntPtr.Zero) { Dispose(); throw new InvalidOperationException("Kısayol yakalama başlatılamadı."); }
     }
     private IntPtr Keyboard(int code, IntPtr message, IntPtr data)
     {
@@ -39,7 +41,6 @@ public sealed class ShortcutRecorder : IDisposable
         var info = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(data);
         var key = message.ToInt32() switch
         {
-            0x201 => "MouseLeft", 0x204 => "MouseRight", 0x207 => "MouseMiddle",
             0x20B => ((info.mouseData >> 16) & 0xffff) == 1 ? "MouseX1" : "MouseX2",
             0x20A => (short)(info.mouseData >> 16) > 0 ? "WheelUp" : "WheelDown", _ => null
         };

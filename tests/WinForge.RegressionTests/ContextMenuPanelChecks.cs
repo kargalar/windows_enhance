@@ -41,8 +41,32 @@ internal static class ContextMenuPanelChecks
             Script("document.querySelector('.context-preview summary').click()");
             check(Script("document.querySelector('.context-preview').textContent.includes('Diğer')") == "true", "Menu preview reflects group");
             check(Script("![...document.querySelectorAll('.context-menu-panel button')].some(b => b.textContent === 'Kaydet')") == "true", "No Save button required");
+            foreach (var id in new[] { "default-paths", "default-apps" })
+            {
+                Script("[...document.querySelectorAll('.module-card')].find(x => x.querySelector('strong')?.textContent === " + JsonSerializer.Serialize(host.Modules.Single(m => m.Id == id).Name) + ").click()");
+                Wait(() => Script("!!document.querySelector('.defaults-panel')") == "true", "Inline default panel");
+                check(Script("document.querySelectorAll('.defaults-list article').length > 0") == "true", id + " renders populated settings inside main window");
+                check(Script("![...document.querySelectorAll('.defaults-panel button')].some(b => b.textContent === 'Kapat')") == "true", id + " has no separate-window close action");
+                var artifact = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", id + "-inline.png");
+                Directory.CreateDirectory(Path.GetDirectoryName(artifact)!);
+                using var capture = File.Create(artifact);
+                Complete(web.CoreWebView2!.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, capture));
+            }
+            var start = host.Modules.Single(m => m.Id == "start-appearance");
+            foreach (var key in new[] { "hide-recent", "hide-categories", "hide-all-apps-heading", "hide-places", "hide-user", "hide-power" })
+                check(start.Settings.Any(setting => setting.Key == key && setting.Kind == SettingKind.Toggle), "Start section has independent toggle: " + key);
+            var startType = start.GetType();
+            host.SettingsOf(start).Set("hide-recent", true);
+            host.SettingsOf(start).Set("hide-categories", true);
+            var startSettings = startType.GetMethod("ReadSettings", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(start, null);
+            var rules = (IReadOnlyList<ShellStyleRule>)startType.GetMethod("BuildRules", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [startSettings, true])!;
+            check(rules.Any(rule => rule.Selector.Contains("CategoryControl")) && rules.Any(rule => rule.Selector.Contains("TopLevelSuggestionsRoot")), "Recent and Categories toggles generate independent native shell rules");
+            check(Script("document.querySelectorAll('.module-family').length > 1") == "true", "Related modules appear in nested families");
+            Script("[...document.querySelectorAll('.module-card')].find(x => x.querySelector('strong')?.textContent === 'Sağ Tık Menüsü').click()");
+            Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Return to context menu editor");
+            check(Script("[...document.querySelectorAll('[data-entry-id]')].filter(e => e.dataset.entryId.startsWith('prepared:')).length === 2") == "true", "Prepared desktop shortcut and visibility actions are available in real UI");
             check(!module.IsActive, "UI test does not change real Explorer menu");
-            Script("document.querySelector('.context-preview summary').click(); document.querySelector('.context-menu-panel').scrollIntoView()");
+            Script("document.querySelector('.context-preview').open = false; document.querySelector('.context-menu-panel').scrollIntoView()");
             var screenshot = Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "context-menu-panel.png"); Directory.CreateDirectory(Path.GetDirectoryName(screenshot)!);
             using var output = File.Create(screenshot); Complete(web.CoreWebView2!.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, output));
             bool SavedGroup(string id)

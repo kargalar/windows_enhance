@@ -28,7 +28,7 @@ public partial class MainWindow : Window
         ApplyAppearance();
         _shortcutCaptureTimer.Tick += (_, _) =>
         {
-            try { EndShortcutCapture(); }
+            try { PostMessage(new { type = "shortcut-recorded", shortcut = "" }); EndShortcutCapture(); }
             catch (Exception ex) { App.Instance.Logger.Error("Kısayollar geri açılamadı.", ex); }
         };
         Loaded += OnLoaded;
@@ -107,6 +107,7 @@ public partial class MainWindow : Window
                 "shortcut.record-begin" => BeginShortcutRecording(),
                 "appearance.update" => UpdateAppearance(payload),
                 "system.openLogs" => OpenLogs(),
+                "system.openData" => OpenData(),
                 "app.exit" => ExitApp(),
                 _ => throw new InvalidOperationException("Bilinmeyen arayüz komutu.")
             };
@@ -118,6 +119,13 @@ public partial class MainWindow : Window
             App.Instance.Logger.Error("Arayüz komutu işlenemedi.", exception);
             PostMessage(new { type = "error", message = exception.Message, payload = BuildState() });
         }
+    }
+
+    private object OpenData()
+    {
+        Directory.CreateDirectory(AppData.DirectoryPath);
+        Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { AppData.DirectoryPath }, UseShellExecute = true });
+        return BuildState();
     }
 
     private object BeginShortcutCapture()
@@ -183,6 +191,7 @@ public partial class MainWindow : Window
                 .OrderBy(category => category, StringComparer.CurrentCultureIgnoreCase).ToArray(),
             activeCount = modules.Count(module => module.isActive),
             totalCount = modules.Length,
+            dataDirectory = AppData.DirectoryPath,
             version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
             appearance = new
             {
@@ -338,6 +347,17 @@ public partial class MainWindow : Window
             UiWebView.CoreWebView2?.ExecuteScriptAsync("window.dispatchEvent(new Event('winforge-search'))");
             e.Handled = true;
         }
+    }
+
+    protected override void OnDeactivated(EventArgs e)
+    {
+        if (_shortcutCapture is not null)
+        {
+            PostMessage(new { type = "shortcut-recorded", shortcut = "" });
+            try { EndShortcutCapture(); }
+            catch (Exception error) { App.Instance.Logger.Error("Kısayollar geri açılamadı.", error); }
+        }
+        base.OnDeactivated(e);
     }
 
     protected override void OnClosing(CancelEventArgs e)

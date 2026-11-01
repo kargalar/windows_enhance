@@ -238,3 +238,38 @@ test('context menu entries show icons, autosave groups and names, and preserve i
     assert.ok(![...view.container.querySelectorAll('button')].some(button => button.textContent === 'Kaydet'));
   } finally { await view.close(); }
 });
+
+test('native recorder commits Windows and side mouse chords without a browser key event', async () => {
+  for (const shortcut of ['Win+D', 'Alt+MouseX1']) {
+    const saved = [], messages = [];
+    const listeners = new Set();
+    window.chrome = { webview: {
+      postMessage(message) { messages.push(message.command); },
+      addEventListener(type, handler) { listeners.add(handler); },
+      removeEventListener(type, handler) { listeners.delete(handler); },
+    } };
+    function Harness() {
+      const [value, setValue] = useState('Ctrl+Space');
+      return h(ShortcutField, { value, onChange: setValue, onCommit: next => saved.push(next), label: 'Native capture', allowMouse: true });
+    }
+    const view = await mount(h(Harness));
+    try {
+      await click(view.container.querySelector('button'));
+      assert.ok(messages.includes('shortcut.record-begin'));
+      await act(async () => { for (const listener of listeners) listener({ data: { type: 'shortcut-recorded', shortcut } }); });
+      assert.deepEqual(saved, [shortcut]);
+      assert.equal(view.container.querySelector('input').value, shortcut);
+      assert.equal(messages.at(-1), 'shortcut.capture-end');
+    } finally { await view.close(); }
+    assert.equal(listeners.size, 0);
+  }
+});
+
+test('module families preserve all modules and their independent identities', async () => {
+  const { groupModules } = await server.ssrLoadModule('/src/moduleGroups.ts');
+  const modules = [{id:'taskbar',category:'Taskbar'}, {id:'net-speed',category:'System'}, {id:'default-paths',category:'System'}, {id:'default-apps',category:'System'}];
+  const groups = groupModules(modules);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups[0].modules.map(m => m.id), ['taskbar', 'net-speed']);
+  assert.deepEqual(groups.flatMap(g => g.modules), modules);
+});

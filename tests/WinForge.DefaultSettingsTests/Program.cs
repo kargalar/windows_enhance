@@ -79,24 +79,26 @@ internal static class Program
         {
             module.Initialize(context);
             module.Activate();
-            module.Settings.Single(setting => setting.Key == "open").Execute!();
-            var window = context.Ui.Last!;
-            Check(window.IsVisible && window.State is not null, module.Id + " opens populated React panel.");
+            Check(module.Settings.Count == 0 && context.Ui.Last is null, module.Id + " uses inline settings without a separate window.");
+            var panel = (IModulePanel)module;
+            JsonElement State() => JsonSerializer.SerializeToElement(panel.GetPanelState(), new JsonSerializerOptions(JsonSerializerDefaults.Web)).GetProperty("state");
+            void Send(string action, object data) => panel.HandlePanelCommand(action, JsonSerializer.SerializeToElement(data));
+            Check(State().GetProperty("rows").GetArrayLength() > 0, module.Id + " exposes populated inline panel.");
             if (module.Id == "default-paths")
             {
-                window.Send("paths.edit", new { key = "documents", path = root });
-                window.Send("paths.apply", new { key = "documents" });
-                Check(window.State!.Value.GetProperty("pending").ValueKind == JsonValueKind.Object, "Path edit requires explicit confirmation before Windows write.");
-                window.Send("paths.cancel", new { });
-                Check(window.State!.Value.GetProperty("pending").ValueKind == JsonValueKind.Null, "Cancel clears pending change.");
+                Send("paths.edit", new { key = "documents", path = root });
+                Send("paths.apply", new { key = "documents" });
+                Check(State().GetProperty("pending").ValueKind == JsonValueKind.Object, "Path edit requires explicit confirmation before Windows write.");
+                Send("paths.cancel", new { });
+                Check(State().GetProperty("pending").ValueKind == JsonValueKind.Null, "Cancel clears pending change.");
             }
             else
             {
-                window.Send("apps.filter", new { query = "winforgetestextension" });
-                Check(window.State!.Value.GetProperty("rows")[0].GetProperty("extension").GetString() == ".winforgetestextension", "Unregistered extension can be searched.");
+                Send("apps.filter", new { query = "winforgetestextension" });
+                Check(State().GetProperty("rows")[0].GetProperty("extension").GetString() == ".winforgetestextension", "Unregistered extension can be searched.");
             }
             module.Deactivate();
-            Check(!window.IsVisible && !module.IsActive, module.Id + " closes on disable.");
+            Check(!module.IsActive && context.Ui.Last is null, module.Id + " closes without opening a window.");
         }
     }
 

@@ -21,9 +21,9 @@ export function DefaultPathsPanel({ state, sendCommand = send, inline = false }:
   useEffect(() => {
     if (paths?.pending && confirmation.current && !confirmation.current.open) confirmation.current.showModal();
   }, [paths?.pending]);
-  return <main className="defaults-panel">
-    <header><div><h1>Varsayılan Yollar</h1><p>Kullanıcı klasörlerinizin yeni kayıt konumlarını belirleyin.</p></div>{!inline && <button onClick={() => send('defaults.close')}>Kapat</button>}</header>
-    <p className="defaults-note">Mevcut dosyalar taşınmaz. Değişiklikler kalıcıdır; modülü kapatmak geri almaz. OneDrive veya kurum yönlendirmesi kullanıyorsanız önce ilgili ayarları kontrol edin.</p>
+  return <section className="defaults-panel">
+    {!inline && <header><div><h1>Varsayılan Yollar</h1><p>Kullanıcı klasörlerinizin yeni kayıt konumlarını belirleyin.</p></div>{!inline && <button onClick={() => send('defaults.close')}>Kapat</button>}</header>}
+    {!inline && <p className="defaults-note">Mevcut dosyalar taşınmaz. Değişiklikler kalıcıdır; modülü kapatmak geri almaz. OneDrive veya kurum yönlendirmesi kullanıyorsanız önce ilgili ayarları kontrol edin.</p>}
     <section className="defaults-list" aria-label="Kullanıcı klasörleri">
       {!paths && <p>Konumlar okunuyor…</p>}
       {paths?.rows.map(row => <article className="defaults-folder" key={row.key}>
@@ -37,14 +37,14 @@ export function DefaultPathsPanel({ state, sendCommand = send, inline = false }:
     </section>
     <footer><span role="status">{paths?.status}</span><button onClick={() => send('defaults.reload')}>Yenile</button></footer>
     {paths?.pending && <dialog ref={confirmation} className="defaults-confirm" aria-labelledby="paths-confirm-title" onCancel={event => { event.preventDefault(); send('paths.cancel'); }}><h2 id="paths-confirm-title">{paths.pending.name} konumu değişsin mi?</h2><p>Önceki: {paths.pending.from}</p><p>Yeni: {paths.pending.target}</p><p>Mevcut dosyalar eski konumda kalacak. Hedef klasörün mevcut olması gerekir. Açık uygulamaları yeniden başlatmanız gerekebilir.</p><div><button autoFocus onClick={() => send('paths.cancel')}>Vazgeç</button><button className="primary" onClick={() => send('paths.confirm')}>Konumu değiştir</button></div></dialog>}
-  </main>;
+  </section>;
 }
 
 export function DefaultAppsPanel({ state, sendCommand = send, inline = false }: { state: Record<string, unknown> | null; sendCommand?: Send; inline?: boolean }) {
   const send = sendCommand;
   const apps = state as AppsState | null;
-  return <main className="defaults-panel">
-    <header><div><h1>Varsayılan Programlar</h1><p>Dosya türlerinin hangi uygulamayla açıldığını yönetin.</p></div>{!inline && <button onClick={() => send('defaults.close')}>Kapat</button>}</header>
+  return <section className="defaults-panel">
+    {!inline && <header><div><h1>Varsayılan Programlar</h1><p>Dosya türlerinin hangi uygulamayla açıldığını yönetin.</p></div>{!inline && <button onClick={() => send('defaults.close')}>Kapat</button>}</header>}
     <p className="defaults-note">Program seçimi Windows Ayarları’nda tamamlanır. “Kopyala ve program seç” uzantıyı panoya kopyalar ve bu ekranı açar. Uzantıyı dosya türü aramasına yapıştırın, uygulamayı seçip varsayılan olarak ayarlayın; ardından buradan Yenile’ye basın.</p>
     <div className="defaults-toolbar"><input type="search" aria-label="Dosya uzantısı ara" placeholder="Uzantı ara veya ekle: .pdf, .txt, .jpg…" value={apps?.query ?? ''} onChange={event => send('apps.filter', { query: event.target.value })} /><button onClick={() => send('apps.settings')}>Windows varsayılan uygulamaları</button></div>
     <small>{apps ? `${apps.count} dosya türü · İlk ${apps.rows.length} sonuç gösteriliyor. Listeyi aramayla daraltın.` : 'Eşleştirmeler okunuyor…'}</small>
@@ -53,5 +53,5 @@ export function DefaultAppsPanel({ state, sendCommand = send, inline = false }: 
       {apps?.rows.length === 0 && <p>Sonuç bulunamadı. .pdf gibi bir dosya uzantısı girin.</p>}
     </section>
     <footer><span role="status">{apps?.status}</span><button onClick={() => send('defaults.reload')}>Yenile</button></footer>
-  </main>;
+  </section>;
 }

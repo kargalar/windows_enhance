@@ -23,6 +23,7 @@
     <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuCatalog.cs" Link="ContextMenuCatalog.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuModule.cs" Link="ContextMenuModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuModule.Panel.cs" Link="ContextMenuModule.Panel.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuModule.Actions.cs" Link="ContextMenuModule.Actions.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuRuntime.cs" Link="ContextMenuRuntime.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/Reg.cs" Link="Reg.cs" />
   </ItemGroup>

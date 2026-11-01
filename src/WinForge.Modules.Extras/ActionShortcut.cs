@@ -10,7 +10,7 @@ internal sealed record ActionShortcut(uint Modifiers, int Key, string Mouse)
     internal static ActionShortcut Parse(string text)
     {
         var parts = text.Trim().Split('+', StringSplitOptions.TrimEntries);
-        var mouse = parts[^1].ToLowerInvariant() switch { "mousexbutton1" => "mousex1", "mousexbutton2" => "mousex2", var name => name };
+        var mouse = parts[^1].ToLowerInvariant() switch { "xbutton1" or "mousexbutton1" => "mousex1", "xbutton2" or "mousexbutton2" => "mousex2", var name => name };
         if (mouse is not ("mouseleft" or "mouseright" or "mousemiddle" or "mousex1" or "mousex2" or "wheelup" or "wheeldown"))
         {
             var key = AutomationCommands.ParseShortcut(text);

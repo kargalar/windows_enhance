@@ -3,7 +3,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public sealed partial class ContextMenuModule : ITweakModule
+public sealed partial class ContextMenuModule : ITweakModule, IAppCommandModule
 {
     private const string CustomPrefix = "WinForge.";
     private const string BlockedKey = @"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Blocked";
@@ -83,6 +83,7 @@ public sealed partial class ContextMenuModule : ITweakModule
         foreach (var extension in _extensions)
             SetBlocked(extension.Clsid, settings.GetBool(extension.Key, extension.Blocked));
 
+        ApplyPreparedActions(_rules);
         _runtime?.Apply(_entries, _rules);
 
         Reg.Broadcast("ShellState");
