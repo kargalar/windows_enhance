@@ -12,6 +12,7 @@
     <ProjectReference Include="../../src/WinForge.Core/WinForge.Core.csproj" />
     <Compile Include="../../src/WinForge.Modules.Extras/ActionShortcut.cs" Link="ActionShortcut.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ShortcutActionModule.cs" Link="ShortcutActionModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/TextExpansionBinding.cs" Link="TextExpansionBinding.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/MonitorLayouts.cs" Link="MonitorLayouts.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ShortcutSecret.cs" Link="ShortcutSecret.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/AutomationCommands.cs" Link="AutomationCommands.cs" />
@@ -19,5 +20,10 @@
     <Compile Include="../../src/WinForge.Modules.Extras/KeyboardManagerModule.cs" Link="KeyboardManagerModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/CombinationTranslatorModule.cs" Link="CombinationTranslatorModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ExplorerMouseNavigationModule.cs" Link="ExplorerMouseNavigationModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuCatalog.cs" Link="ContextMenuCatalog.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuModule.cs" Link="ContextMenuModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuModule.Panel.cs" Link="ContextMenuModule.Panel.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ContextMenuRuntime.cs" Link="ContextMenuRuntime.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/Reg.cs" Link="Reg.cs" />
   </ItemGroup>
 </Project>

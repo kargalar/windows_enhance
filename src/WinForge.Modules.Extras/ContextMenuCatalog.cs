@@ -96,6 +96,7 @@ internal static class ContextMenuCatalog
             var match = Normalize(name);
             // Native canonical IDs unify Windows items with their live names and icons.
             var canonical = row?.GetValue("canonical") as string;
+            if (string.IsNullOrEmpty(canonical)) canonical = null;
             var key = !string.IsNullOrEmpty(canonical) ? canonical : "menu:" + match;
             entries[key] = new(key, name, "Gerçek menü öğesi", canonical ?? match, row?.GetValue("icon") as string ?? "");
         }
@@ -150,7 +151,7 @@ internal static class ContextMenuCatalog
     private static BitmapSource? LoadIcon(string spec)
     {
         if (string.IsNullOrWhiteSpace(spec)) return null;
-        var path = Environment.ExpandEnvironmentVariables(spec.Trim());
+        var path = Environment.ExpandEnvironmentVariables(spec.Trim().TrimStart('@'));
         var index = 0;
         var comma = path.LastIndexOf(',');
         if (comma > 0 && int.TryParse(path[(comma + 1)..], out var parsed)) { index = parsed; path = path[..comma]; }

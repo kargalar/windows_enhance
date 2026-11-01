@@ -15,6 +15,7 @@ const { ShortcutField } = await server.ssrLoadModule('/src/ShortcutField.tsx');
 const { ShortcutActionsPanel } = await server.ssrLoadModule('/src/ShortcutActionsPanel.tsx');
 const { AutomationPanel } = await server.ssrLoadModule('/src/AutomationPanel.tsx');
 const { useAutoSaveDraft } = await server.ssrLoadModule('/src/useAutoSaveDraft.ts');
+const { ContextMenuPanel } = await server.ssrLoadModule('/src/ContextMenuPanel.tsx');
 after(async () => { await server.close(); await window.happyDOM.close(); });
 
 async function mount(component) {
@@ -108,6 +109,28 @@ test('every shortcut action panel automatically saves recorded and manually edit
   }
 });
 
+test('text expansion mode autosaves an abbreviation without shortcut capture', async () => {
+  const sent = [];
+  const rule = { id: 'mail', name: 'Mail', enabled: true, shortcut: 'Ctrl+P', action: 'text', value: '', arguments: '', hasSecret: true };
+  const view = await mount(h(ShortcutActionsPanel, {
+    moduleId: 'text-shortcuts', active: true,
+    state: { capturing: false, actions: [{ id: 'text', name: 'Shortcut' }, { id: 'text-expand', name: 'Expansion' }], rules: [rule] },
+    command: (action, data) => sent.push({ action, data }),
+  }));
+  try {
+    const select = view.container.querySelector('select');
+    await act(async () => { select.value = 'text-expand'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+    const input = view.container.querySelector('input[aria-label="Kısaltma"]');
+    assert.ok(input);
+    await type(input, '.mail');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 1000)));
+    const saved = sent.findLast(c => c.action === 'save').data.rule;
+    assert.equal(saved.action, 'text-expand'); assert.equal(saved.shortcut, '.mail'); assert.equal(saved.value, '');
+    assert.equal(sent.some(c => c.action === 'capture-begin'), false);
+    assert.equal([...view.container.querySelectorAll('button')].some(b => b.textContent === 'Tuş / fare ata'), false);
+  } finally { await view.close(); }
+});
+
 test('automation shortcut automatically persists across status refreshes', async () => {
   const sent = [];
   const rule = { id: 'test', name: 'Test', enabled: true, shortcut: 'F1', repeat: true, interval: 100, steps: [{ kind: 'click', value: 'left', delay: 0 }], running: false };
@@ -187,4 +210,31 @@ test('translator target and automation exe scope save automatically', async () =
     await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
     assert.equal(sent.findLast(item => item.action === 'save').data.rule.value, 'Alt+Q');
   } finally { await translation.close(); }
+});
+
+test('context menu entries show icons, autosave groups and names, and preserve icon controls', async () => {
+  const sent = [];
+  const entry = { id: 'builtin:properties', originalName: 'Özellikler', name: 'Özellikler', visible: true, group: '', icon: '', source: 'Windows komutu', iconPreview: 'data:image/png;base64,AA==', hasOriginalIcon: true };
+  function Harness() {
+    const [state, setState] = useState({ kind: 'context-menu', groups: [], entries: [entry] });
+    return h(ContextMenuPanel, { state, command(action, data) {
+      sent.push({ action, data });
+      if (action === 'save') setState(current => ({ ...current, groups: data.rule.group ? [data.rule.group] : [], entries: [{ ...entry, ...data.rule }] }));
+    } });
+  }
+  const view = await mount(h(Harness));
+  try {
+    assert.equal(view.container.querySelector('.context-entry-icon img').src, entry.iconPreview);
+    await type(view.container.querySelector('input[aria-label="Özellikler grubu"]'), 'Diğer');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
+    assert.equal(sent.findLast(item => item.action === 'save').data.rule.group, 'Diğer');
+    await type(view.container.querySelector('input[aria-label="Özellikler görünen adı"]'), 'Dosya özellikleri');
+    await act(async () => new Promise(resolve => setTimeout(resolve, 500)));
+    assert.equal(sent.findLast(item => item.action === 'save').data.rule.name, 'Dosya özellikleri');
+    await click(view.container.querySelector('input[type="checkbox"]'));
+    assert.equal(sent.findLast(item => item.action === 'save').data.rule.visible, false);
+    await click([...view.container.querySelectorAll('button')].find(button => button.textContent === 'Simgeyi değiştir'));
+    assert.equal(sent.at(-1).action, 'pick-icon');
+    assert.ok(![...view.container.querySelectorAll('button')].some(button => button.textContent === 'Kaydet'));
+  } finally { await view.close(); }
 });

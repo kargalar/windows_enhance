@@ -5,6 +5,8 @@ import { AutomationPanel, type AutomationState } from './AutomationPanel';
 import { ShortcutActionsPanel, type ShortcutActionsState } from './ShortcutActionsPanel';
 import { ShortcutField } from './ShortcutField';
 import { useAutoSaveDraft } from './useAutoSaveDraft';
+import { ContextMenuPanel, type ContextMenuState } from './ContextMenuPanel';
+import { DefaultPathsPanel, DefaultAppsPanel } from './features/DefaultSettingsPanels';
 import './styles.css';
 import './island-design.css';
 import './management.css';
@@ -32,7 +34,7 @@ type Module = {
   isActive: boolean;
   error?: string;
   settings: Setting[];
-  panel?: AutomationState | ShortcutActionsState;
+  panel?: AutomationState | ShortcutActionsState | ContextMenuState | { kind: 'default-paths' | 'default-apps'; state: Record<string, unknown> | null };
 };
 
 type Appearance = {
@@ -257,7 +259,10 @@ function ModuleDetails({ module, onToggle, onUpdate, onExecute }: { module: Modu
     {module.error && <div className="error-box"><strong>Bir hata oluştu</strong><p>{module.error}</p></div>}
     {!module.isActive && <p className="inactive-hint">Ayarları düzenleyebilirsin. Kullanmak için üstteki anahtardan modülü etkinleştir.</p>}
     {sections.length > 1 && <nav className="settings-jumps" aria-label="Ayar bölümleri">{sections.map(([section], index) => <a key={section} href={`#settings-${module.id}-${index}`}>{section || 'Genel'}</a>)}</nav>}
+    {module.panel && 'kind' in module.panel && module.panel.kind === 'default-paths' && <DefaultPathsPanel inline state={module.panel.state} sendCommand={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
+    {module.panel && 'kind' in module.panel && module.panel.kind === 'default-apps' && <DefaultAppsPanel inline state={module.panel.state} sendCommand={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
     {module.id === 'automation' && module.panel && <AutomationPanel state={module.panel as AutomationState} active={module.isActive} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
+    {module.panel && 'kind' in module.panel && module.panel.kind === 'context-menu' && <ContextMenuPanel state={module.panel} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
     {module.panel && 'kind' in module.panel && module.panel.kind === 'shortcut-actions' && <ShortcutActionsPanel state={module.panel} moduleId={module.id} active={module.isActive} command={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
     {sections.map(([section, settings], index) => <section className="settings-section" id={`settings-${module.id}-${index}`} key={section || 'general'}>
       <h3>{section || 'Genel ayarlar'}</h3>

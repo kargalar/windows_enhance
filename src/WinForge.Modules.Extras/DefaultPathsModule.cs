@@ -64,7 +64,7 @@ public sealed class DefaultPathsModule : DefaultSettingsModule
         }
     }
 
-    protected override void PushState() => Window?.SetState(new
+    protected override void PushState() => PublishState(new
     {
         status = Status,
         rows = _rows.Select(row => new { row.Key, row.Name, row.Current, row.Original, row.Error, draft = _drafts.GetValueOrDefault(row.Key, row.Current) }),

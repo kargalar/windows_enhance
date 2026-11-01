@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text.Json;
 using System.Windows.Threading;
 using WinForge.Core;
@@ -31,7 +31,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         "media-shortcuts" => "Oynat/duraklat, parça geçişi ve ses için klavye veya fare kısayolları atayın.",
         "window-shortcuts" => "Etkin pencereyi kapatma, küçültme ve büyütme kısayollarını belirleyin.",
         "desktop-shortcuts" => "Sanal masaüstleri arasında klavye veya fare kısayollarıyla geçin.",
-        "text-shortcuts" => "Kısayolla metin yazdırın. Metinler bu Windows hesabına bağlı şifreleme ile saklanır; panoya kopyalanmaz.",
+        "text-shortcuts" => "Kısayolla metin yazdırın veya kısaltmaları boşlukla genişletin. Metinler bu Windows hesabına bağlı şifreleme ile saklanır; panoya kopyalanmaz.",
         "combination-translator" => "Sabit atanmış bir kombinasyonu başka kombinasyona çevirin: örneğin Ctrl+D → Alt+W.",
         _ => "İstediğiniz programı kendi kısayolunuzla açın; isteğe bağlı argüman ekleyin."
     };
@@ -79,7 +79,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         kind = "shortcut-actions", capturing = _capturing, saveErrors = _saveErrors,
         actions = Actions.Select(a => new { id = a.Key, name = a.Value }),
         rules = _rules.Select(r => new { r.Id, r.Name, r.Enabled, r.Shortcut, r.Action,
-            value = Id == "text-shortcuts" || Id == "monitor-shortcuts" ? "" : r.Value,
+            value = Id == "monitor-shortcuts" ? "" : Id == "text-shortcuts" && r.Value.Length > 0 ? ShortcutSecret.Unprotect(r.Value) : r.Value,
             r.Arguments, hasSecret = Id == "text-shortcuts" && r.Value.Length > 0 }),
         pendingDisplay = Id == "monitor-shortcuts" && MonitorLayouts.Pending
     };
@@ -93,7 +93,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         if (!IsActive || _capturing) return;
         try
         {
-            foreach (var r in _rules.Where(r => r.Enabled))
+            foreach (var r in _rules.Where(r => r.Enabled && r.Action != "text-expand"))
             {
                 var shortcut = ActionShortcut.Parse(r.Shortcut);
                 Action callback = () => Trigger(r);
@@ -261,12 +261,21 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
     {
         if (rules.Count > 64 || rules.Select(r => r.Id).Distinct().Count() != rules.Count) throw new FormatException("En fazla 64 farklı kısayol eklenebilir.");
         var used = new HashSet<ActionShortcut>();
+        var abbreviations = new HashSet<string>(StringComparer.Ordinal);
         foreach (var r in rules)
         {
             if (string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 100 || !Actions.ContainsKey(r.Action) || r.Value.Length > 65536 || r.Arguments.Length > 4096) throw new FormatException("Geçersiz kısayol alanı.");
-            var key = ActionShortcut.Parse(r.Shortcut);
-            if (r.Enabled && !used.Add(key)) throw new FormatException("Aynı kısayol iki kez kullanılamaz.");
-            if (r.Enabled && r.Action is "text" or "launch" or "explorer" && string.IsNullOrWhiteSpace(r.Value)) throw new FormatException("Metin veya program yolu gerekli.");
+            if (r.Action == "text-expand")
+            {
+                TextExpansionBinding.Validate(r.Shortcut);
+                if (r.Enabled && !abbreviations.Add(r.Shortcut)) throw new FormatException("Aynı kısaltma iki kez kullanılamaz.");
+            }
+            else
+            {
+                var key = ActionShortcut.Parse(r.Shortcut);
+                if (r.Enabled && !used.Add(key)) throw new FormatException("Aynı kısayol iki kez kullanılamaz.");
+            }
+            if (r.Enabled && r.Action is "text" or "text-expand" or "launch" or "explorer" && string.IsNullOrWhiteSpace(r.Value)) throw new FormatException("Metin veya program yolu gerekli.");
             if (r.Enabled && r.Action == "explorer") _ = CreateLaunchInfo(r);
             if (r.Action == "translate") ValidateTranslation(r);
             if (r.Action == "profile") MonitorLayouts.Validate(r.Value);
@@ -300,9 +309,18 @@ public sealed class DesktopShortcutsModule : ShortcutActionModule
 }
 public sealed class TextShortcutsModule : ShortcutActionModule
 {
+    private TextExpansionBinding? _expansion;
+    protected override void Clear() { _expansion?.Dispose(); _expansion = null; base.Clear(); }
+    protected override void Bind()
+    {
+        base.Bind();
+        if (!IsActive || IsCapturing) return;
+        var rules = Rules.Where(r => r.Enabled && r.Action == "text-expand").ToArray();
+        if (rules.Length > 0) _expansion = new TextExpansionBinding(rules, Context.Notify);
+    }
     public override string Id => "text-shortcuts";
     public override string Name => "Metin Yazma Kısayolları";
-    protected override IReadOnlyDictionary<string, string> Actions => new Dictionary<string, string> { ["text"] = "Metni yaz" };
+    protected override IReadOnlyDictionary<string, string> Actions => new Dictionary<string, string> { ["text"] = "Kısayolla metni yaz", ["text-expand"] = "Kısaltmayı boşlukla genişlet" };
     protected override IEnumerable<ShortcutActionRule> Defaults => [new("text", "Metin / şifre yaz", false, "Ctrl+P", "text")];
 }
 public sealed class ProgramShortcutsModule : ShortcutActionModule

@@ -67,6 +67,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--context-menu-ui-only"))
+            {
+                ContextMenuPanelChecks.Run(app, TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} context menu WebView2 checks.");
+                return 0;
+            }
             if (args.Contains("--panel-placement-only"))
             {
                 PanelPlacementChecks.Run(Check);

@@ -53,5 +53,5 @@ public sealed class DefaultAppsModule : DefaultSettingsModule
         }
     }
 
-    protected override void PushState() => Window?.SetState(new { status = Status, query = _query, count = _count, rows = _rows });
+    protected override void PushState() => PublishState(new { status = Status, query = _query, count = _count, rows = _rows });
 }

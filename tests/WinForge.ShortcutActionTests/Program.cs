@@ -18,6 +18,8 @@ internal static class Program
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
             Check(ActionShortcut.Parse("MouseX2") == new ActionShortcut(0, 0, "mousex2"), "Bare XButton2 accepted");
             TranslationChecks();
+            TextExpansionChecks();
+            ContextMenuChecks();
             Check(ExplorerMouseNavigationModule.ShouldNavigate("CabinetWClass", new(1), new(1), 0), "Middle click navigates the focused Explorer window");
             Check(ExplorerMouseNavigationModule.ShouldNavigate("ExploreWClass", new(1), new(1), 0), "Legacy Explorer window class supported");
             Check(!ExplorerMouseNavigationModule.ShouldNavigate("Progman", new(1), new(1), 0), "Desktop middle click remains unchanged");
@@ -61,7 +63,7 @@ internal static class Program
             var c = new Context(); var text = new TextShortcutsModule(); text.Initialize(c); text.Activate();
             Save(text, new("text", "Test", true, "Ctrl+P", "text", secret));
             Check(c.HotkeyItems.Count == 1, "Enabled text shortcut registered");
-            Check(!c.Values["rules"].Contains("Türkçe") && !Panel(text).GetRawText().Contains("Türkçe"), "Secret absent from settings and panel state");
+            Check(!c.Values["rules"].Contains("Türkçe") && Panel(text).GetProperty("rules")[0].GetProperty("value").GetString() == secret, "Text remains encrypted in settings and is readable in panel");
             var stored = JsonSerializer.Deserialize<List<ShortcutActionRule>>(c.Values["rules"], Json)![0];
             Check(ShortcutSecret.Unprotect(stored.Value) == secret, "Persisted text decrypts");
             Save(text, stored with { Name = "Renamed", Value = "" });
@@ -147,6 +149,35 @@ internal static class Program
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void Save(ShortcutActionModule m, ShortcutActionRule rule) => Command(m, "save", new { rule });
+    private static void ContextMenuChecks()
+    {
+        Check(ContextMenuCatalog.Normalize("&Properties\tAlt+Enter") == "properties", "Menu labels normalize accelerators");
+        Check(ContextMenuCatalog.BestName("as18w0fw0q8", null, "Readable extension", "Unknown") == "Readable extension", "Opaque handler keys use descriptive names");
+        Check(ContextMenuCatalog.BestName("ignored", "@shell32.dll,-21770", null, "Unknown").Length > 0, "Indirect shell resources resolve to display names");
+        Check(ContextMenuCatalog.IsOpaque("{00000000-0000-0000-0000-000000000000}"), "CLSID values are not presented as friendly names");
+        Check(ContextMenuCatalog.IconPreview("shell32.dll,3")?.StartsWith("data:image/png;base64,") == true, "Existing shell resource icons render as PNG previews");
+        Reject(() => ContextMenuCatalog.ValidateRules([new("x", Group: "invalid\nname")]));
+        Reject(() => ContextMenuCatalog.ValidateRules([new("x"), new("x")]));
+        var context = new Context(); var module = new ContextMenuModule(); module.Initialize(context);
+        var panel = (IModulePanel)module;
+        void Update(ContextMenuRule rule) => panel.HandlePanelCommand("save", JsonSerializer.SerializeToElement(new { id = rule.Id, rule }, Json));
+        Update(new("builtin:properties", "Özellikler", Group: "Diğer"));
+        Update(new("builtin:new-folder", "Yeni klasör", Group: "Diğer", Icon: "shell32.dll,3"));
+        var state = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json);
+        Check(state.GetProperty("groups").EnumerateArray().Single().GetString() == "Diğer", "Properties and New Folder can share one group");
+        Check(state.GetProperty("entries").EnumerateArray().Count(row => row.GetProperty("group").GetString() == "Diğer") == 2, "Both built-in entries appear in the panel group");
+        Check(state.GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:new-folder").GetProperty("iconPreview").GetString()!.StartsWith("data:image/png"), "Custom icon is visible on existing entry");
+        var reload = new ContextMenuModule(); reload.Initialize(context);
+        Check(JsonSerializer.SerializeToElement(reload.GetPanelState(), Json).GetProperty("groups")[0].GetString() == "Diğer", "Menu groups persist across reload");
+        Update(new("builtin:properties", "Dosya özellikleri", Visible: false, Group: "Diğer"));
+        state = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json);
+        var properties = state.GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:properties");
+        Check(!properties.GetProperty("visible").GetBoolean() && properties.GetProperty("name").GetString() == "Dosya özellikleri", "Visibility and readable title update automatically");
+        panel.HandlePanelCommand("reset", JsonSerializer.SerializeToElement(new { id = "builtin:properties" }, Json));
+        properties = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:properties");
+        Check(properties.GetProperty("visible").GetBoolean() && properties.GetProperty("group").GetString() == "", "Entry can return to original menu");
+        Check(!module.IsActive, "Menu tests leave real Explorer configuration untouched");
+    }
     private static void TranslationChecks()
     {
         var context = new Context();
@@ -275,6 +306,36 @@ internal static class Program
             GC.KeepAlive(callback);
         }
     }
+    private static void TextExpansionChecks()
+    {
+        var buffer = new TextExpansionBuffer();
+        foreach (var c in ".gk") Check(buffer.Push(c) is null, "Expansion waits for space");
+        Check(buffer.Push(' ') == ".gk", "Space completes exact abbreviation");
+        foreach (var c in "x.gk") buffer.Push(c);
+        Check(buffer.Push(' ') == "x.gk", "Abbreviations do not match inside another token");
+        foreach (var c in ".gk") buffer.Push(c);
+        buffer.Reset(); Check(buffer.Push(' ') == "", "Focus/navigation reset discards pending abbreviation");
+        foreach (var c in new string('a', 65) + ".gk") buffer.Push(c);
+        Check(buffer.Push(' ') is null, "Overlong input cannot match a suffix");
+        foreach (var invalid in new[] { "", ".g k", ".gk\n", new string('x', 65) }) Reject(() => TextExpansionBinding.Validate(invalid));
+        TextExpansionBinding.Validate(".gk"); TextExpansionBinding.Validate(".iş");
+        var context = new Context(); var module = new TextShortcutsModule(); module.Initialize(context); module.Activate();
+        try
+        {
+            Save(module, new("text", "Mail", true, ".gk", "text-expand", "mail@example.com"));
+            Check(context.HotkeyItems.Count == 0, "Expansion installs hook without registering a keyboard shortcut");
+            Check(!context.Values["rules"].Contains("mail@example.com") && Panel(module).GetProperty("rules")[0].GetProperty("value").GetString() == "mail@example.com", "Expansion text remains encrypted in settings and visible in panel");
+            Command(module, "add", new { });
+            var second = Panel(module).GetProperty("rules")[1].Deserialize<ShortcutActionRule>(Json)!;
+            Reject(() => Save(module, second with { Enabled = true, Action = "text-expand", Shortcut = ".gk", Value = "duplicate" }));
+            Save(module, second with { Enabled = true, Action = "text-expand", Shortcut = ".iş", Value = "Turkish" });
+            Command(module, "capture-begin", new { }); Command(module, "capture-end", new { });
+            var reload = new TextShortcutsModule(); module.Deactivate(); reload.Initialize(context); reload.Activate(); reload.Deactivate();
+            Check(Panel(reload).GetProperty("rules")[0].GetProperty("action").GetString() == "text-expand", "Expansion configuration survives reload and capture lifecycle");
+        }
+        finally { module.Deactivate(); }
+    }
+
     private sealed class Context : IModuleContext, IModuleSettings, IHotkeyService, ILogger
     {
         internal readonly Dictionary<string, string> Values = new();

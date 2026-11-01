@@ -203,4 +203,4 @@ select.white-control { cursor: pointer; }
   .details-scroll { padding: 19px; }
 }
 
-.secret-shortcut-text { -webkit-text-security: disc; min-height: 76px; resize: vertical; }
+.shortcut-text { min-height: 76px; resize: vertical; }

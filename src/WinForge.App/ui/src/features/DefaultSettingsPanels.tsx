@@ -14,14 +14,15 @@ type AppsState = {
 
 const send: Send = (command, payload = {}) => window.chrome?.webview?.postMessage({ command, payload });
 
-export function DefaultPathsPanel({ state }: { state: Record<string, unknown> | null }) {
+export function DefaultPathsPanel({ state, sendCommand = send, inline = false }: { state: Record<string, unknown> | null; sendCommand?: Send; inline?: boolean }) {
+  const send = sendCommand;
   const paths = state as PathsState | null;
   const confirmation = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (paths?.pending && confirmation.current && !confirmation.current.open) confirmation.current.showModal();
   }, [paths?.pending]);
   return <main className="defaults-panel">
-    <header><div><h1>Varsayılan Yollar</h1><p>Kullanıcı klasörlerinizin yeni kayıt konumlarını belirleyin.</p></div><button onClick={() => send('defaults.close')}>Kapat</button></header>
+    <header><div><h1>Varsayılan Yollar</h1><p>Kullanıcı klasörlerinizin yeni kayıt konumlarını belirleyin.</p></div>{!inline && <button onClick={() => send('defaults.close')}>Kapat</button>}</header>
     <p className="defaults-note">Mevcut dosyalar taşınmaz. Değişiklikler kalıcıdır; modülü kapatmak geri almaz. OneDrive veya kurum yönlendirmesi kullanıyorsanız önce ilgili ayarları kontrol edin.</p>
     <section className="defaults-list" aria-label="Kullanıcı klasörleri">
       {!paths && <p>Konumlar okunuyor…</p>}
@@ -39,10 +40,11 @@ export function DefaultPathsPanel({ state }: { state: Record<string, unknown> | 
   </main>;
 }
 
-export function DefaultAppsPanel({ state }: { state: Record<string, unknown> | null }) {
+export function DefaultAppsPanel({ state, sendCommand = send, inline = false }: { state: Record<string, unknown> | null; sendCommand?: Send; inline?: boolean }) {
+  const send = sendCommand;
   const apps = state as AppsState | null;
   return <main className="defaults-panel">
-    <header><div><h1>Varsayılan Programlar</h1><p>Dosya türlerinin hangi uygulamayla açıldığını yönetin.</p></div><button onClick={() => send('defaults.close')}>Kapat</button></header>
+    <header><div><h1>Varsayılan Programlar</h1><p>Dosya türlerinin hangi uygulamayla açıldığını yönetin.</p></div>{!inline && <button onClick={() => send('defaults.close')}>Kapat</button>}</header>
     <p className="defaults-note">Program seçimi Windows Ayarları’nda tamamlanır. “Kopyala ve program seç” uzantıyı panoya kopyalar ve bu ekranı açar. Uzantıyı dosya türü aramasına yapıştırın, uygulamayı seçip varsayılan olarak ayarlayın; ardından buradan Yenile’ye basın.</p>
     <div className="defaults-toolbar"><input type="search" aria-label="Dosya uzantısı ara" placeholder="Uzantı ara veya ekle: .pdf, .txt, .jpg…" value={apps?.query ?? ''} onChange={event => send('apps.filter', { query: event.target.value })} /><button onClick={() => send('apps.settings')}>Windows varsayılan uygulamaları</button></div>
     <small>{apps ? `${apps.count} dosya türü · İlk ${apps.rows.length} sonuç gösteriliyor. Listeyi aramayla daraltın.` : 'Eşleştirmeler okunuyor…'}</small>

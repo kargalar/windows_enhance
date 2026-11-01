@@ -48,7 +48,9 @@ inline std::vector<Item> ReadItems(HWND owner, HMENU menu, bool populate, std::w
         if (!GetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE, &item.info)) continue;
         item.text = label; item.info.dwTypeData = nullptr; result.push_back(item);
         if (item.info.hSubMenu) {
-            if (populate && owner) SendMessageW(owner, WM_INITMENUPOPUP, reinterpret_cast<WPARAM>(item.info.hSubMenu), MAKELPARAM(i, FALSE));
+            // Only New needs early initialization to promote its Folder command.
+            // Opening unrelated extension submenus can be expensive or contact remote locations.
+            if (populate && owner && Canonical(item.text) == L"builtin:new") SendMessageW(owner, WM_INITMENUPOPUP, reinterpret_cast<WPARAM>(item.info.hSubMenu), MAKELPARAM(i, FALSE));
             auto children = ReadItems(owner, item.info.hSubMenu, populate, item.text, depth + 1);
             result.insert(result.end(), children.begin(), children.end());
         }
@@ -61,10 +63,13 @@ class Transaction {
     std::vector<Changed> changes;
     std::map<std::wstring, HMENU> groups;
     std::vector<HBITMAP> bitmaps;
+    std::vector<HMENU> menus;
 public:
-    bool IsGroup(HMENU menu) const { for (auto const& entry : groups) if (entry.second == menu) return true; return false; }
+    ~Transaction() { Restore(); }
+    bool IsGroup(HMENU menu) const { if (std::find(menus.begin(), menus.end(), menu) != menus.end()) return true; for (auto const& entry : groups) if (entry.second == menu) return true; return false; }
     void Apply(HMENU menu, std::vector<Item> const& items, std::vector<Rule> const& rules) {
         root = menu;
+        for (auto const& item : items) { menus.push_back(item.menu); if (item.info.hSubMenu) menus.push_back(item.info.hSubMenu); }
         for (auto cursor = items.rbegin(); cursor != items.rend(); ++cursor) {
             auto const& item = *cursor; if (item.text.empty() || (item.info.fType & MFT_SEPARATOR)) continue;
             auto canonical = Canonical(item.text, item.parent), normalized = Normalize(item.text);
@@ -100,7 +105,7 @@ public:
         for (auto const& change : changes) if (change.removed && IsMenu(change.original.menu)) { auto original = change.original.Data(); InsertMenuItemW(change.original.menu, change.original.position, TRUE, &original); }
         for (auto const& change : changes) if (!change.removed && IsMenu(change.original.menu)) { auto original = change.original.Data(); SetMenuItemInfoW(change.original.menu, change.original.position, TRUE, &original); }
         for (auto bitmap : bitmaps) DeleteObject(bitmap);
-        changes.clear(); groups.clear(); bitmaps.clear(); root = nullptr;
+        changes.clear(); groups.clear(); bitmaps.clear(); menus.clear(); root = nullptr;
     }
 };
 }

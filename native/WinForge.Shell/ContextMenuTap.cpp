@@ -35,8 +35,19 @@ bool ReadRules(std::vector<WinForgeMenu::Rule>& rules, std::wstring& directory) 
 }
 void WriteText(HKEY key, wchar_t const* name, std::wstring const& value) { RegSetValueExW(key, name, 0, REG_SZ, reinterpret_cast<BYTE const*>(value.c_str()), static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t))); }
 std::wstring SaveBitmap(HBITMAP bitmap, std::wstring const& path) {
-    if (reinterpret_cast<UINT_PTR>(bitmap) <= 12 || directory_separator == 0) return {}; 
-    return path;
+    if (reinterpret_cast<UINT_PTR>(bitmap) <= 12) return {};
+    BITMAP source{}; if (!GetObjectW(bitmap, sizeof(source), &source) || source.bmWidth < 1 || source.bmHeight < 1 || source.bmWidth > 128 || source.bmHeight > 128) return {};
+    BITMAPINFO info{}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER); info.bmiHeader.biWidth = source.bmWidth;
+    info.bmiHeader.biHeight = -source.bmHeight; info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
+    auto bytes = static_cast<DWORD>(source.bmWidth * source.bmHeight * 4); std::vector<BYTE> pixels(bytes);
+    auto dc = GetDC(nullptr); auto read = GetDIBits(dc, bitmap, 0, static_cast<UINT>(source.bmHeight), pixels.data(), &info, DIB_RGB_COLORS); ReleaseDC(nullptr, dc);
+    if (!read) return {};
+    bool alpha = false; for (size_t i = 3; i < pixels.size(); i += 4) if (pixels[i]) { alpha = true; break; }
+    if (!alpha) for (size_t i = 3; i < pixels.size(); i += 4) pixels[i] = 255;
+    BITMAPFILEHEADER header{}; header.bfType = 0x4D42; header.bfOffBits = sizeof(header) + sizeof(BITMAPINFOHEADER); header.bfSize = header.bfOffBits + bytes;
+    auto file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr); if (file == INVALID_HANDLE_VALUE) return {};
+    DWORD written{}; bool saved = WriteFile(file, &header, sizeof(header), &written, nullptr) && WriteFile(file, &info.bmiHeader, sizeof(info.bmiHeader), &written, nullptr) && WriteFile(file, pixels.data(), bytes, &written, nullptr);
+    CloseHandle(file); return saved ? path : L"";
 }
 void Capture(std::vector<WinForgeMenu::Item> const& items, std::wstring const& directory) {
     for (auto const& item : items) {
@@ -68,6 +79,8 @@ LRESULT CALLBACK Hook(int code, WPARAM wparam, LPARAM lparam) {
                     auto items = WinForgeMenu::ReadItems(message->hwnd, menu, true);
                     Capture(items, directory);
                     auto transaction = std::make_unique<WinForgeMenu::Transaction>(); transaction->Apply(menu, items, rules); Transactions[menu] = std::move(transaction);
+                } else if (nested && ReadRules(rules, directory)) {
+                    Capture(WinForgeMenu::ReadItems(message->hwnd, menu, false), directory);
                 }
             } catch (...) { /* No exception may escape into Explorer. */ }
             Processing = false;

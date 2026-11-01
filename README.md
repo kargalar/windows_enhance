@@ -2,6 +2,8 @@
 
 # WinForge
 
+**Gezgin → Sağ Tık Menüsü** artık mevcut simgeleri, okunabilir adları, özel simge atamasını ve otomatik kaydedilen alt menü gruplarını içerir. Özellikler ve Yeni klasör gibi yerleşik komutlar da gruplandırılabilir. [Kapsam ve kullanım](docs/CONTEXT_MENU.md).
+
 **Verimlilik → Yerel kısayol modülleri:** monitör düzenleri, medya/ses, pencere, sanal masaüstü, şifreli metin yazma ve program açma için ayrı kartlar eklendi. Klavye, fare düğmeleri ve tekerlek kombinasyonları atanabilir. Monitör düzenleri doğrudan Windows üzerinden kaydedilip uygulanır; harici program veya cfg dosyası gerekmez. [Kullanım ve doğrulama](docs/SHORTCUT_ACTIONS.md).
 
 ## Kısayol komutları ve otomatik tıklama

@@ -4,7 +4,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-public abstract class DefaultSettingsModule : ITweakModule
+public abstract class DefaultSettingsModule : ITweakModule, IModulePanel
 {
     protected IModuleContext Context { get; private set; } = null!;
     protected IFeatureUiWindow? Window { get; private set; }
@@ -17,15 +17,19 @@ public abstract class DefaultSettingsModule : ITweakModule
     public bool IsActive { get; private set; }
     public IReadOnlyList<SettingDescriptor> Settings { get; }
 
-    protected DefaultSettingsModule()
+    private object? _panelState;
+    public event Action? PanelStateChanged;
+    public IReadOnlyList<SettingDescriptor> InlineSettings => [];
+    protected DefaultSettingsModule() { Settings = []; }
+    public void Initialize(IModuleContext context) { Context = context; Refresh(); PushState(); }
+    public object GetPanelState() => new { kind = Id, state = _panelState };
+    public void HandlePanelCommand(string action, JsonElement payload) => HandleMessage(action, payload);
+    protected void PublishState(object state)
     {
-        Settings = [new SettingDescriptor
-        {
-            Key = "open", Label = "Yönetim panelini aç", Kind = SettingKind.Action, Execute = Open
-        }];
+        _panelState = state;
+        Window?.SetState(state);
+        PanelStateChanged?.Invoke();
     }
-
-    public void Initialize(IModuleContext context) => Context = context;
     public void Activate() => IsActive = true;
     public void Deactivate()
     {

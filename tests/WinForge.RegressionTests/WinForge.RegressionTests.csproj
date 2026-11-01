@@ -19,9 +19,12 @@
     <ItemGroup>
       <RetiredTestFiles Include="$(OutDir)modules\WinForge.Modules.AltSnap.dll;$(OutDir)NAudio*.dll;$(OutDir)System.Management.dll;$(OutDir)System.CodeDom.dll" />
       <NativeShellTestFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellHost.exe;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellTap.dll;$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ShellFixture.exe" />
+      <NativeShellTestFiles Include="$(MSBuildProjectDirectory)\..\..\native\WinForge.Shell\bin\x64\$(Configuration)\WinForge.ContextMenuTap.dll" />
+      <ReactTestFiles Include="$(MSBuildProjectDirectory)\..\..\src\WinForge.App\wwwroot\**\*" />
     </ItemGroup>
     <Delete Files="@(RetiredTestFiles)" />
     <Copy SourceFiles="@(TestModules)" DestinationFolder="$(OutDir)modules" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(NativeShellTestFiles)" DestinationFolder="$(OutDir)native" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ReactTestFiles)" DestinationFiles="@(ReactTestFiles->'$(OutDir)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>

@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly Task<CoreWebView2Environment> _webViewEnvironment;
     private bool _backgroundNoticeShown;
     private IDisposable? _shortcutCapture;
+    private ShortcutRecorder? _shortcutRecorder;
     private readonly System.Windows.Threading.DispatcherTimer _shortcutCaptureTimer = new() { Interval = TimeSpan.FromSeconds(30) };
 
     public MainWindow(Task<CoreWebView2Environment> webViewEnvironment)
@@ -103,6 +104,7 @@ public partial class MainWindow : Window
                 "module.command" => ExecutePanelCommand(payload),
                 "shortcut.capture-begin" => BeginShortcutCapture(),
                 "shortcut.capture-end" => EndShortcutCapture(),
+                "shortcut.record-begin" => BeginShortcutRecording(),
                 "appearance.update" => UpdateAppearance(payload),
                 "system.openLogs" => OpenLogs(),
                 "app.exit" => ExitApp(),
@@ -126,8 +128,19 @@ public partial class MainWindow : Window
         return BuildState();
     }
 
+    private object BeginShortcutRecording()
+    {
+        BeginShortcutCapture();
+        _shortcutRecorder?.Dispose();
+        _shortcutRecorder = new ShortcutRecorder(chord => Dispatcher.BeginInvoke(new Action(() =>
+            PostMessage(new { type = "shortcut-recorded", shortcut = chord }))));
+        return BuildState();
+    }
+
     private object EndShortcutCapture()
     {
+        _shortcutRecorder?.Dispose();
+        _shortcutRecorder = null;
         _shortcutCaptureTimer.Stop();
         var capture = _shortcutCapture;
         _shortcutCapture = null;

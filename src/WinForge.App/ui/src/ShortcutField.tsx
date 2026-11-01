@@ -49,6 +49,20 @@ export function ShortcutField({ value, label, onChange, onCommit, onCapture, all
     end();
     callbacks.current.onCommit?.(next);
   };
+  useEffect(() => {
+    const bridge = window.chrome?.webview;
+    const receive = (event: MessageEvent) => {
+      if (!recordingRef.current || event.data?.type !== 'shortcut-recorded') return;
+      const next = String(event.data.shortcut ?? '');
+      if (!next) { end(); return; }
+      if (/Mouse/.test(next) && !allowMouse || /Wheel/.test(next) && !(allowMouse || allowWheel)) {
+        bridge?.postMessage({ command: 'shortcut.record-begin', payload: {} }); return;
+      }
+      finish(next);
+    };
+    bridge?.addEventListener('message', receive);
+    return () => bridge?.removeEventListener('message', receive);
+  }, [allowMouse, allowWheel]);
   useEffect(() => () => {
     if (!editingRef.current) return;
     editingRef.current = false;
@@ -89,6 +103,7 @@ export function ShortcutField({ value, label, onChange, onCommit, onCapture, all
     <button type="button" className="secondary-button" onClick={() => {
       if (recordingRef.current) { end(); return; }
       begin(); recordingRef.current = true; setRecording(true); input.current?.focus();
+      window.chrome?.webview?.postMessage({ command: 'shortcut.record-begin', payload: {} });
     }}>{recording ? 'İptal' : allowMouse ? 'Tuş / fare ata' : 'Tuş ata'}</button>
   </div>;
 }
