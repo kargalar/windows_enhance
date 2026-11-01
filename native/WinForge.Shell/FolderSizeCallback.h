@@ -39,6 +39,13 @@ public:
     CallbackTablePatch() = default;
     CallbackTablePatch(CallbackTablePatch const&) = delete;
     ~CallbackTablePatch() { Restore(); }
+    void InstallSlot(void** slot, void* replacement) {
+        original_ = *slot;
+        replacement_ = replacement;
+        slots_.reserve(1);
+        if (!Exchange(slot, original_, replacement_)) throw std::runtime_error("Explorer formatting callback is already in use.");
+        slots_.push_back(slot);
+    }
     void Install(HMODULE module, StorageSymbols const& symbols, DWORD targetRva, void* replacement) {
         auto base = reinterpret_cast<BYTE*>(module);
         auto nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + reinterpret_cast<IMAGE_DOS_HEADER*>(base)->e_lfanew);

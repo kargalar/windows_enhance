@@ -1,23 +1,8 @@
 .\scripts\build.ps1 -Configuration Release -Run
-<!--  -->
-
-2 monit açık olmasın rağmen parlaklık 1 monitörde değişiyor. ayrıca 1 monitör varsa 1 monitöre uyuglandı diye yazmasın
-
-docker animasyonunu iyileştir.
-
-Görev çubuğu yüksekliğini düşürmeme rağmenküçülmüyor amam yükseltince yükseliyor
-
-İnternet Hızı modülü aktif olmasına rağmen gösterilmiyor.
-
-ekran yakalayınca sağ altta çaıaln yakalan görüntüye basarsam yakaklalankonumda yönlendirsin beni.
-yakalan görüntülerin pathini seçebileyiim.
-ekran geçmişi için de path seçemme izin ver görseller için.
-
 
 ekran geçmişinde benim userdatada saveler yyüklenmemişti askı kontrlol et
 
-
-sesle yazma modülünde mikrofon seçimlerinde mikofonların ismi düzgün gösterilmiyor. düzelt.
+<!--  -->
 <!-- Check -->
 
 medya kontrolleri için kısayol atmama modülü ekle. mesela ctrl++sapce durdur/oynat olsun. ctrl+n sonraki parça olsun ctrl+shift+n önceki olsun gibi.mesela alt+mousescroll ile ses seviyesini de ayaralyabileyim.
@@ -49,7 +34,32 @@ context menü ayarlarında seçenekler de ekleyebilelim yani menüde hazır olsu
 
 varsayılan yollar seçenekler ayrı pencerede düzenlemesin normal kendi ppanelinde lsun ayarları
 
-ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin
+
+
+
+klasör boyutlarını kb değilde max ne ile gösterilebiliyorsa o şekilde dinamik göster mesle 10 kb ise 10 kb yazsın amam 2.2 gb ise 2.2 gb yazmalı 220000000kb falaln değil
+
+
+
+Klavye Yöneticisi modülünü kaldır.
+
+ekrandan metin ala arcını etkinleştiridim ancak taıkdı kaldı esc ile de çıamadım. alaln da seçemedim.
+
+2 monit açık olmasın rağmen parlaklık 1 monitörde değişiyor. ayrıca 1 monitör varsa 1 monitöre uyuglandı diye yazmasın
+
+docker animasyonunu iyileştir.
+
+Görev çubuğu yüksekliğini düşürmeme rağmenküçülmüyor amam yükseltince yükseliyor
+
+İnternet Hızı modülü aktif olmasına rağmen gösterilmiyor.
+
+ekran yakalayınca sağ altta çaıaln yakalan görüntüye basarsam yakaklalankonumda yönlendirsin beni.
+yakalan görüntülerin pathini seçebileyiim.
+ekran geçmişi için de path seçemme izin ver görseller için.
+
+sesle yazma modülünde mikrofon seçimlerinde mikofonların ismi düzgün gösterilmiyor. düzelt.
+
+ses veya paralklık değiştiğinde kanda ortada altta açılanpaneldeki ses ve parlaklık göstergelerinde slider kaydırılarak yarlanabilsin
 veya mesela ses iconun basınca mute on/off olsun
 
-Ekran yakalama modülü için bir güncelleme yapalım. Ekran görüntüsü alındıktan sonra birkaç saniye fade in fade out şeklinde sağ altta gösterilsin mouse'un bulunduğu monitörde.
+medya kısayollarında sesi arttır seçilince ne kadar arttırılacağı ayrıca ayarlansın ayı şekilde azaltırken de

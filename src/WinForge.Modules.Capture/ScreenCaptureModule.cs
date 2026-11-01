@@ -32,7 +32,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         new() { Key = "capture", Label = "Yakalama araçlarını aç", Kind = SettingKind.Action, Execute = ShowTools },
         new() { Key = "hotkey", Label = "Bölge yakalama kısayolu", Kind = SettingKind.Text, Default = "Win+Alt+S" },
         new() { Key = "edit", Label = "Yakalama sonrası düzenle", Default = true },
-        new() { Key = "copy", Label = "Yakalama sonrası panoya kopyala", Default = false },
+        new() { Key = "copy", Label = "Yakalama sonrası panoya kopyala", Default = true },
         new() { Key = "save-history", Label = "Yakalama sonrası geçmişe kaydet", Default = true },
         new() { Key = "upload", Label = "Yakalama sonrası özel adrese yükle", Default = false,
             Description = "Yükleme varsayılan olarak kapalıdır; yalnızca aşağıdaki http/https adresi ve işlem sırasında yükle adımı seçilirse çalışır." },
@@ -195,8 +195,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                     var media = await Task.Run(() => CaptureServices.Save(store, image), token);
                     token.ThrowIfCancellationRequested(); store.Add("capture", DateTimeOffset.UtcNow, app, title, media: media);
                     break;
-                case "copy" when Context.Settings.GetBool("copy"):
-                    Clipboard.SetImage(image);
+                case "copy" when Context.Settings.GetBool("copy", true):
+                    await CaptureClipboard.CopyAsync(image, token);
                     break;
                 case "edit" when Context.Settings.GetBool("edit", true):
                     var editor = new CaptureEditor(store, image, workflowCompletion: true,

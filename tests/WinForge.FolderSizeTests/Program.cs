@@ -211,6 +211,26 @@ internal static class Program
             WaitUntil(() => SizeIs(handle, "A large", "8") && SizeIs(handle, "M medium", "4") &&
                 !string.IsNullOrWhiteSpace(ReadFolderSize(handle, "Z small")), "all sortable folder sizes");
             WaitUntil(() => session.Status.Pending == 0, "all queued folder scans complete", () => session.Status.ToString());
+            Console.WriteLine($"Formatted sizes: empty=[{ReadFolderSize(handle, "Empty fixture folder")}] small=[{ReadFolderSize(handle, "Z small")}] large=[{ReadFolderSize(handle, "sparse")}]");
+            Check(ReadFolderSize(handle, "Empty fixture folder").Trim() == "0 B", "Empty folders display 0 B");
+            Check(ReadFolderSize(handle, "Z small").Trim() == "512 B", "Sub-KB folders display bytes");
+            var sparseFile = Path.Combine(root, "sparse", "large.bin");
+            if (File.Exists(sparseFile))
+            {
+                WaitUntil(() => ReadFolderSize(handle, "sparse").Trim() == "4 GB", "automatic GB display");
+                foreach (var (bytes, expected) in new (long, string)[] {
+                    (1023, "1023 B"), (1024, "1 KB"), (10 * 1024, "10 KB"),
+                    ((long)(2.2 * 1024 * 1024), "2.2 MB"),
+                    ((long)(2.2 * 1024 * 1024 * 1024), "2.2 GB"),
+                    (4L * 1024 * 1024 * 1024 + 5, "4 GB") })
+                {
+                    using (var file = new FileStream(sparseFile, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+                        file.SetLength(bytes);
+                    WaitUntil(() => ReadFolderSize(handle, "sparse").Trim() == expected,
+                        $"dynamic size changes to {expected}", () => ReadFolderSize(handle, "sparse"));
+                    Check(true, $"Folder size automatically displays {expected} after a file changes");
+                }
+            }
             var completedScansBeforeDescendant = session.Status.Completed;
             var subtreeHitsBeforeDescendant = session.Status.SubtreeCacheHits;
             // Cross the fallback TTL before querying both an existing entry and a new descendant.

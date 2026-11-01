@@ -4,18 +4,23 @@
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <propkey.h>
+#include <propsys.h>
 #include <winrt/base.h>
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <cstdio>
+#include <cmath>
 #include "FolderSizeCallback.h"
 #include "FolderSizeEngine.h"
 
 namespace winforge::folders {
 using SizeGetter = HRESULT(WINAPI*)(IUnknown*, ITEMID_CHILD const*, void const*, PROPVARIANT*);
 using FolderCompare = HRESULT(WINAPI*)(IUnknown*, LPARAM, ITEMIDLIST_RELATIVE const*, ITEMIDLIST_RELATIVE const*);
+using SizeFormatter = HRESULT(STDMETHODCALLTYPE*)(IPropertyDescription*, REFPROPVARIANT, PROPDESC_FORMAT_FLAGS, LPWSTR*);
 inline std::atomic<SizeGetter> Original;
 inline std::atomic<FolderCompare> OriginalCompare;
+inline std::atomic<SizeFormatter> OriginalFormat;
 struct State {
     Session session;
     std::unique_ptr<FolderSizeEngine> engine;
@@ -24,9 +29,48 @@ struct State {
     bool otherSizeHook{};
     CallbackTablePatch sizeTablePatch;
     CallbackTablePatch sortTablePatch;
+    winrt::com_ptr<IPropertyDescription> sizeDescription;
+    CallbackTablePatch formatTablePatch;
 };
 inline std::atomic<std::shared_ptr<State>> Current;
 inline std::mutex ConnectionGate;
+
+std::wstring FormatFolderSize(ULONGLONG bytes) {
+    constexpr wchar_t const* units[] = {L"B", L"KB", L"MB", L"GB", L"TB", L"PB", L"EB"};
+    double size = static_cast<double>(bytes);
+    std::size_t unit{};
+    while (size >= 1024.0 && unit + 1 < std::size(units)) {
+        size /= 1024.0;
+        ++unit;
+    }
+    // Promote a rounded boundary too, so 1023.99 MB is displayed as 1 GB.
+    size = std::round(size * 10.0) / 10.0;
+    if (size >= 1024.0 && unit + 1 < std::size(units)) { size /= 1024.0; ++unit; }
+    wchar_t number[32]{};
+    swprintf_s(number, L"%.1f", size);
+    std::wstring text(number);
+    if (text.back() == L'0') text.resize(text.size() - 2);
+    return text + L" " + units[unit];
+}
+
+HRESULT STDMETHODCALLTYPE FormatSize(IPropertyDescription* description, REFPROPVARIANT value,
+    PROPDESC_FORMAT_FLAGS flags, LPWSTR* display) noexcept {
+    auto state = Current.load();
+    if (state && state->session.Alive() && value.vt == VT_UI8 && display) {
+        PROPERTYKEY key{};
+        if (SUCCEEDED(description->GetPropertyKey(&key)) && IsEqualPropertyKey(key, PKEY_Size)) {
+            try {
+                auto text = FormatFolderSize(value.uhVal.QuadPart);
+                auto buffer = static_cast<wchar_t*>(CoTaskMemAlloc((text.size() + 1) * sizeof(wchar_t)));
+                if (!buffer) return E_OUTOFMEMORY;
+                memcpy(buffer, text.c_str(), (text.size() + 1) * sizeof(wchar_t));
+                *display = buffer;
+                return S_OK;
+            } catch (...) { }
+        }
+    }
+    return OriginalFormat.load()(description, value, flags, display);
+}
 
 std::optional<std::wstring> FolderPath(IShellFolder* folder, ITEMID_CHILD const* child) {
     STRRET display{};
@@ -134,6 +178,11 @@ struct Tap : winrt::implements<Tap, IObjectWithSite> {
                 state->otherSizeHook = entry[0] == 0xe9 || entry[0] == 0xeb || entry[0] == 0xff ||
                     entry[0] == 0xcc || (entry[0] == 0x48 && entry[1] == 0xb8);
                 state->engine = std::make_unique<FolderSizeEngine>(state->session);
+                winrt::check_hresult(PSGetPropertyDescription(PKEY_Size, IID_PPV_ARGS(state->sizeDescription.put())));
+                // IPropertyDescription::FormatForDisplay is slot 22 of the public COM interface.
+                auto formatSlot = *reinterpret_cast<void***>(state->sizeDescription.get()) + 22;
+                OriginalFormat.store(reinterpret_cast<SizeFormatter>(*formatSlot));
+                state->formatTablePatch.InstallSlot(formatSlot, reinterpret_cast<void*>(&FormatSize));
                 state->sizeTablePatch.Install(state->storage, header->symbols, header->symbols.size.rva, reinterpret_cast<void*>(&GetSize));
                 state->sortTablePatch.Install(state->storage, header->symbols, header->symbols.compare.rva, reinterpret_cast<void*>(&CompareFolders));
                 Current.store(state);
@@ -152,6 +201,7 @@ struct Tap : winrt::implements<Tap, IObjectWithSite> {
                         std::lock_guard guard(ConnectionGate);
                         Current.store(nullptr);
                         bool restored = state->sortTablePatch.Restore();
+                        restored = state->formatTablePatch.Restore() && restored;
                         restored = state->sizeTablePatch.Restore() && restored;
                         if (!restored) InterlockedExchange(&state->session.Get()->error, E_FAIL);
                         InterlockedExchange(&state->session.Get()->closed, 1);
@@ -169,6 +219,7 @@ struct Tap : winrt::implements<Tap, IObjectWithSite> {
                 InterlockedExchange(&header->active, 0);
                 Current.store(nullptr);
                 state->sortTablePatch.Restore();
+                state->formatTablePatch.Restore();
                 state->sizeTablePatch.Restore();
                 return E_FAIL;
             }

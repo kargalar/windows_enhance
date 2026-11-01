@@ -34,7 +34,7 @@ internal static class Program
             if (args.Length == 1 && args[0] == "--audit") { Audit(); return 0; }
             if (args.Length == 1 && args[0] == "--scrolling") return Scrolling();
             var root = Path.Combine(Path.GetTempPath(), "WinForge-CaptureTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-            try { CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); }
+            try { CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
             Console.WriteLine($"PASS: {checks} capture/history checks."); return 0;
         }
