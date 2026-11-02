@@ -161,7 +161,7 @@ public partial class MainWindow
 
     private static object BuildAppearance() => new
     {
-        tone = Appearance.ToneName, accent = Appearance.AccentName, glow = Appearance.Glow,
+        tone = Appearance.ToneName, accent = Appearance.AccentName, glow = Appearance.Glow, language = Appearance.Language,
         tones = Appearance.Tones.Select(tone => tone.Name).ToArray(), accents = Appearance.Accents
     };
 

@@ -36,7 +36,7 @@ Aynı modüldeki **Boyut → Uygulama simgesi boyutu (0: Windows)** ayarı, sabi
 
 ## Arayüz
 
-Ana panel, ayarlar, araç yüzeyleri, dosya araçları, diyaloglar ve OSD’ler ortak yuvarlak Island tasarımına geçirildi. İşletim sisteminin hareket azaltma tercihi animasyonları kapatır. Değişiklik WinForge arayüzlerini kapsar; diğer Windows uygulamalarının arayüzünü değiştirmez.
+47 modülün detayları seçenek yapısına göre 79 ayrı sayfa ve iki kullanım paneliyle tasarlanmıştır. Fare eylemleri karşılaştırmalı tablo; konumlar ekran haritası; günlük planlar saat seçici; kelime, komut ve ekran profilleri düzenlenebilir listeler kullanır. Kısayol ve otomasyonda kayıt listesiyle seçili düzenleyici ayrıdır. Modül içinde **Ctrl+F** ile ayar ve yönetim kaydı aranır. Kayıt durumu disk yazma onayına göre gösterilir. Açık, koyu ve grafit temalar ortak renk değişkenlerini kullanır. Araç pencereleri ve OSD’ler kendi Island yüzeylerini korur. [Arayüz mimarisi, modül tasarımları ve doğrulama](docs/UI_DESIGN.md).
 
 Windows 11 için kendi motorlarını kullanan modüler kişiselleştirme kutusu. Her özellik ayrı bir modüldür,
 uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düzenlenir.

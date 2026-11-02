@@ -183,6 +183,12 @@ public interface ITweakModule
     void Apply();
 }
 
+/// <summary>Prepares durable data before a setting value is changed.</summary>
+public interface ISettingChangePreparation
+{
+    void PrepareSettingChange(string key, object previous, object next);
+}
+
 /// <summary>Provides an interactive panel inside the main module settings surface.</summary>
 public interface IModulePanel
 {

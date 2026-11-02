@@ -40,6 +40,18 @@ internal static class TaskbarCustomizationChecks
         var appRule = Build().Single();
         check(appRule.Selector == "SystemTray.NotificationAreaIcons SystemTray.NotifyIconView" && appRule.Properties["Margin"] == "2.5,0,2.5,0",
             "Application spacing is shared between both sides and excludes overflow icons");
+        settings.Set("tray-icon-size", 24);
+        settings.Set("tray-icon-padding", 3);
+        var sizeRule = Build().Single(rule => rule.Properties.ContainsKey("Width"));
+        check(sizeRule.Properties["Width"] == "24" && sizeRule.Properties["Height"] == "24" && sizeRule.Properties["Padding"] == "3" &&
+              Build().Single(rule => rule.Properties.ContainsKey("Margin")).Properties["Margin"] == "2.5,0,2.5,0",
+            "Tray size, padding and spacing apply independently");
+        settings.Set("tray-two-rows", true);
+        check(Build().Single(rule => rule.Selector == "SystemTray.NotificationAreaIcons").Properties["Height"] == "48",
+            "Two tray rows accommodate the selected icon size");
+        settings.Set("tray-two-rows", false);
+        settings.Set("tray-icon-size", 0);
+        settings.Set("tray-icon-padding", -1);
         settings.Set("system-icon-gap", 0);
         check(Build().Where(rule => rule.Selector.EndsWith(" SystemTray.IconView")).Count(rule => rule.Properties["Margin"] == "0,0,0,0") == 3 &&
               Build().All(rule => !rule.Selector.Contains("NotificationCenterButton")),

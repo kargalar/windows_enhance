@@ -1,25 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
-import { createServer } from 'vite';
+import { createTestServer } from './testServer.mjs';
 
-test('dashboard keeps navigation, theme selection and module details available without a sidebar', async () => {
+test('dashboard provides persistent navigation, a dedicated details page and theme selection', async () => {
   const window = new Window({ url: 'http://localhost/' });
   for (const name of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'Node', 'Event', 'KeyboardEvent', 'MouseEvent', 'localStorage']) {
     globalThis[name] = name === 'window' ? window : window[name];
   }
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const { act } = await import('react');
-  const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
+  const { createRoot } = await import('react-dom/client');
+  const server = await createTestServer();
   document.body.innerHTML = '<div id="root"></div>';
+  const root = createRoot(document.getElementById('root'));
   try {
-    await act(async () => { await server.ssrLoadModule('/src/main.tsx'); });
+    const { App } = await server.ssrLoadModule('/src/App.tsx');
+    await act(async () => root.render((await import('react')).createElement(App)));
     const click = async selector => {
       const button = document.querySelector(selector);
       assert.ok(button, selector);
       await act(async () => button.click());
     };
-    assert.equal(document.querySelector('.dashboard-sidebar'), null);
+    assert.ok(document.querySelector('.dashboard-sidebar'));
     assert.equal(document.querySelectorAll('.dashboard-navigation button').length, 9);
     assert.ok(document.querySelector('.light-dashboard'));
     await click('.dashboard-actions .secondary-button');
@@ -34,6 +37,8 @@ test('dashboard keeps navigation, theme selection and module details available w
     await click('.tool-favorite');
     await click('.tool-card-open');
     assert.ok(document.querySelector('.dashboard-workspace.with-details'));
+    assert.equal(document.querySelector('.dashboard-catalog').hidden, true);
+    assert.ok(document.querySelector('.details-body.single-design-page'));
     assert.ok(document.querySelector('#module-details .setting-copy strong'));
     await click('.dashboard-back');
     assert.equal(document.querySelector('#module-details'), null);
@@ -47,6 +52,7 @@ test('dashboard keeps navigation, theme selection and module details available w
     await click('.dashboard-navigation button:first-child');
     assert.equal(document.querySelectorAll('.tool-card').length, 3);
   } finally {
+    await act(async () => root.unmount());
     await server.close();
     await window.happyDOM.close();
   }
@@ -64,8 +70,10 @@ test('dashboard shows a persistence failure and uses the durable acknowledgement
     postMessage() {},
   } };
   const { act } = await import('react');
-  const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
+  const { createRoot } = await import('react-dom/client');
+  const server = await createTestServer();
   document.body.innerHTML = '<div id="root"></div>';
+  const root = createRoot(document.getElementById('root'));
   const payload = {
     modules: [
       { id: 'window-shortcuts', name: 'Window Shortcuts', category: 'Verimlilik', description: '', isActive: false, settings: [] },
@@ -76,7 +84,8 @@ test('dashboard shows a persistence failure and uses the durable acknowledgement
     persistence: { pending: true, error: 'Disk full' },
   };
   try {
-    await act(async () => { await server.ssrLoadModule('/src/main.tsx'); });
+    const { App } = await server.ssrLoadModule('/src/App.tsx');
+    await act(async () => root.render((await import('react')).createElement(App)));
     await act(async () => receive({ data: { type: 'state', payload } }));
     assert.match(document.querySelector('[role="alert"]').textContent, /(?:Ayarlar kaydedilemedi|Settings could not be saved): Disk full/);
     await act(async () => receive({ data: { type: 'state', payload, persistence: { pending: false, error: null } } }));
@@ -89,6 +98,7 @@ test('dashboard shows a persistence failure and uses the durable acknowledgement
     assert.equal(document.querySelectorAll('.tool-card').length, 1);
     assert.match(document.querySelector('.dashboard-workspace').textContent, /Automation/);
   } finally {
+    await act(async () => root.unmount());
     await server.close();
     await window.happyDOM.close();
   }

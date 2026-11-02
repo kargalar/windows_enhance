@@ -89,10 +89,22 @@ internal static class TaskbarStyleCatalog
             Add("Taskbar.TaskListButton Image#Icon", ("Margin", "0"), ("HorizontalAlignment", "Center"));
             Add("Taskbar.TaskListButton Border", ("MinWidth", "0"), ("Width", backgroundWidth), ("MaxWidth", backgroundWidth));
         }
-        if (settings.GetBool("tray-two-rows"))
+        var twoRows = settings.GetBool("tray-two-rows");
+        var traySize = settings.GetInt("tray-icon-size", 0);
+        if (twoRows)
+            Add("SystemTray.NotificationAreaIcons", ("ItemsPanel", TrayPanel), ("Height", (2 * (traySize > 0 ? Math.Clamp(traySize, 12, 48) : 20)).ToString(CultureInfo.InvariantCulture)));
+        var trayPadding = settings.GetInt("tray-icon-padding", -1);
+        if (traySize > 0 || trayPadding >= 0 || twoRows)
         {
-            Add("SystemTray.NotificationAreaIcons", ("ItemsPanel", TrayPanel), ("Height", "40"));
-            Add("SystemTray.NotificationAreaIcons SystemTray.NotifyIconView", ("MinWidth", "0"), ("MinHeight", "0"), ("Width", "20"), ("Height", "20"), ("Padding", "0"));
+            var properties = new List<(string Name, string Value)>();
+            if (traySize > 0 || twoRows)
+            {
+                var size = (traySize > 0 ? Math.Clamp(traySize, 12, 48) : 20).ToString(CultureInfo.InvariantCulture);
+                properties.AddRange([("MinWidth", "0"), ("MinHeight", "0"), ("Width", size), ("Height", size)]);
+            }
+            if (trayPadding >= 0 || twoRows)
+                properties.Add(("Padding", (trayPadding >= 0 ? Math.Clamp(trayPadding, 0, 16) : 0).ToString(CultureInfo.InvariantCulture)));
+            Add("SystemTray.NotificationAreaIcons SystemTray.NotifyIconView", properties.ToArray());
         }
         var time = settings.GetString("time-format").Trim();
         AddGap("tray-icon-gap", "SystemTray.NotificationAreaIcons SystemTray.NotifyIconView");
@@ -128,7 +140,8 @@ internal static class TaskbarStyleCatalog
             var gap = settings.GetInt(key, -1);
             if (gap < 0) return;
             var half = (Math.Clamp(gap, 0, 24) / 2.0).ToString(CultureInfo.InvariantCulture);
-            Add(selector, ("Margin", $"{half},0,{half},0"), ("Padding", "0"));
+            if (key == "tray-icon-gap") Add(selector, ("Margin", $"{half},0,{half},0"));
+            else Add(selector, ("Margin", $"{half},0,{half},0"), ("Padding", "0"));
         }
     }
 

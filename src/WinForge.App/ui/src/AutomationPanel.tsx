@@ -1,6 +1,8 @@
 import { useAutoSaveDraft } from './useAutoSaveDraft';
 import { ShortcutField as SharedShortcutField } from './ShortcutField';
 import { t } from './localization';
+import { RuleWorkbench } from './RuleWorkbench';
+import { copy } from './moduleDesigns';
 
 type Step = { kind: string; value: string; delay: number };
 type Rule = { id: string; name: string; enabled: boolean; shortcut: string; repeat: boolean; interval: number; steps: Step[]; running: boolean; processName?: string };
@@ -37,7 +39,7 @@ function AutomationCard({ rule, command, capturing, active, paused }: { rule: Ru
 
   return <article className={`automation-card ${rule.enabled ? '' : 'is-off'}`}>
     <header><div><strong>{rule.name}</strong><small>{statusLabel}</small></div><Switch checked={rule.enabled} label={`${rule.name}: ${t('shortcuts.enabled')}`} change={enabled => persist({ ...draft, enabled })} /></header>
-    <label>{t('auto.name')}<input className="white-control" value={draft.name} maxLength={100} onChange={event => setDraft({ ...draft, name: event.target.value })} onBlur={() => { if (draft.name !== rule.name) persist(draft); }} /></label>
+    <div className="rule-fields"><label>{t('auto.name')}<input className="white-control" value={draft.name} maxLength={100} onChange={event => setDraft({ ...draft, name: event.target.value })} onBlur={() => { if (draft.name !== rule.name) persist(draft); }} /></label>
     <label>{t('auto.shortcut')}<ShortcutField value={draft.shortcut} label={`${rule.name} ${t('auto.shortcut')}`} capturing={capturing} command={command} save={shortcut => persist({ ...draft, shortcut })} /></label>
     <label>{t('auto.process')}<input className="white-control" aria-label={`${rule.name} process`} value={draft.processName ?? ''} placeholder={t('auto.processPlaceholder')} onChange={event => setDraft({ ...draft, processName: event.target.value })} /><small>{t('auto.processHint')}</small></label>
     <label>{t('auto.mode')}<select className="white-control" value={draft.repeat ? 'toggle' : 'once'} onChange={event => persist({ ...draft, repeat: event.target.value === 'toggle' })}><option value="toggle">{t('auto.modeToggle')}</option><option value="once">{t('auto.modeOnce')}</option></select></label>
@@ -45,7 +47,7 @@ function AutomationCard({ rule, command, capturing, active, paused }: { rule: Ru
       <input className="range-input" type="range" min={10} max={Math.max(2000, draft.interval)} step={10} value={draft.interval} aria-label={`${rule.name} interval slider`} onChange={event => setDraft({ ...draft, interval: Number(event.target.value) })} onPointerUp={() => persist(draft)} onKeyUp={() => persist(draft)} />
       <small>{draft.repeat ? t('auto.intervalRepeatHint') : t('auto.intervalOnceHint')}</small>
     </div>
-    <div className="automation-steps"><strong>{t('auto.steps')}</strong>{draft.steps.map((step, index) => <div className="automation-step" key={index}>
+    </div><div className="automation-steps"><strong>{t('auto.steps')}</strong>{draft.steps.map((step, index) => <div className="automation-step" key={index}>
       <span className="automation-step-number">{index + 1}</span><div className="automation-step-fields"><select className="white-control" value={step.kind} aria-label={`${index + 1}. step kind`} onChange={event => {
         const kind = event.target.value;
         const next = { ...draft, repeat: kind === 'search' ? false : draft.repeat, steps: draft.steps.map((item, position) => position === index ? { kind, value: ({ click: 'left', key: 'Enter', text: 'Hello', search: 'google', wait: '' } as Record<string, string>)[kind], delay: kind === 'wait' ? 500 : 0 } : item) };
@@ -61,15 +63,15 @@ function AutomationCard({ rule, command, capturing, active, paused }: { rule: Ru
   </article>;
 }
 
-export function AutomationPanel({ state, active, command }: { state: AutomationState; active: boolean; command: Command }) {
+export function AutomationPanel({ state, active, command, filterQuery='',onClearFilter }: { state: AutomationState; active: boolean; command: Command; filterQuery?:string;onClearFilter?:()=>void }) {
   return <section className="automation-panel">
     <div className="automation-master"><div className="setting-row"><div className="setting-copy"><strong>{t('auto.masterTitle')}</strong><p>{state.paused ? t('auto.masterPaused') : t('auto.masterActive')}</p></div><Switch checked={!state.paused} label={t('auto.enableAll')} change={enabled => command('pause', { paused: !enabled })} /></div>
       <label>{t('auto.masterShortcut')}<ShortcutField value={state.masterShortcut} label={t('auto.masterShortcut')} command={command} capturing={state.capturing} save={shortcut => command('master', { shortcut })} /></label>
       <button className="secondary-button" onClick={() => command('stop-all')}>{t('auto.stopAll')}</button>
     </div>
-    <p className="automation-hint">{t('auto.hint')}</p>
+    <details className="workspace-help"><summary>{copy(['Otomasyonların çalışma kuralları','Automation behavior'])}</summary><p className="automation-hint">{t('auto.hint')}</p></details>
     {state.capturing && <p className="automation-hint" role="status">{t('auto.capturing')}</p>}
-    {state.rules.map(rule => <AutomationCard key={rule.id} rule={rule} command={command} capturing={state.capturing} active={active} paused={state.paused} />)}
-    <button className="primary-button automation-add" disabled={state.rules.length >= 64} onClick={() => command('add')}>{t('auto.add')}</button>
+    <RuleWorkbench rules={state.rules} filterQuery={filterQuery} kind="automation" render={rule=><AutomationCard key={rule.id} rule={rule} command={command} capturing={state.capturing} active={active} paused={state.paused}/>}/>
+    <button className="primary-button automation-add" disabled={state.rules.length >= 64} onClick={() => {onClearFilter?.();command('add');}}>{t('auto.add')}</button>
   </section>;
 }

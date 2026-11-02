@@ -1,6 +1,7 @@
-import { useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { useAutoSaveDraft } from './useAutoSaveDraft';
 import { t, getLanguage } from './localization';
+import { copy } from './moduleDesigns';
 
 type Rule = { id: string; name: string; visible: boolean; group: string; icon: string; contexts?: Record<string, boolean>; separatorBefore?: boolean; separatorAfter?: boolean; extensions?: string };
 type Entry = Rule & { originalName: string; source: string; identity?: string; scope?: string; configured?: boolean; iconPreview?: string; hasOriginalIcon: boolean; isSeparator?: boolean };
@@ -72,9 +73,11 @@ function GroupEditor({ name, initialIcon, items, command, close }: { name: strin
   </form>;
 }
 
-export function ContextMenuPanel({ state, command }: { state: ContextMenuState; command: Command }) {
+export function ContextMenuPanel({ state, command, filterQuery='' }: { state: ContextMenuState; command: Command;filterQuery?:string }) {
+  const [view,setView]=useState('items');
   const [options, updateOptions] = useAutoSaveDraft({ cleanSeparators: state.cleanSeparators ?? true, showSeparators: state.showSeparators ?? true, unquotedCopyPath: state.unquotedCopyPath ?? true }, next => command('save-options', next));
   const [query, setQuery] = useState('');
+  useEffect(()=>{setQuery(filterQuery);if(filterQuery)setView('items');},[filterQuery]);
   const [source, setSource] = useState('all');
   const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const controls = useRef(new Map<string, VisibilityControl>());
@@ -95,21 +98,24 @@ export function ContextMenuPanel({ state, command }: { state: ContextMenuState; 
   const entries = search ? items.filter(entry => `${entry.name} ${entry.originalName} ${entry.sources.join(' ')}`.toLocaleLowerCase().includes(search) && (source === 'all' || source === 'separators' && entry.isSeparator || source === 'prepared' && entry.ids.some(id => id.startsWith('prepared:')) || source === 'live' && entry.sources.includes('Gerçek menü öğesi') || source === 'windows' && entry.ids.some(id => id.startsWith('builtin:')) || source === 'extensions' && entry.sources.includes('Kabuk uzantısı'))) : [];
   const visible = items.filter(entry => entry.visible && !entry.isSeparator);
   return <section className="context-menu-panel">
-    <section className="context-options" aria-label="Separators">{([
+    <nav className="workspace-tabs" aria-label={copy(['Menü çalışma alanı','Menu workspace'])}>{[['items',copy(['Öğeler','Items'])],['groups',t('context.groups')],['options',copy(['Menü davranışı','Menu behavior'])],['preview',t('context.preview')]].map(([key,name])=><button type="button" key={key} aria-current={view===key?'true':undefined} onClick={()=>setView(key)}>{name}</button>)}</nav>
+    <section hidden={view!=='options'} className="context-options" aria-label="Separators">{([
       ['cleanSeparators', t('context.cleanSeparators')],
       ['showSeparators', t('context.showSeparators')],
       ['unquotedCopyPath', t('context.unquotedCopyPath')],
     ] as const).map(([key, label]) => <label key={key}><span>{label}</span><button type="button" role="switch" aria-label={label} aria-checked={options[key]} className={`toggle ${options[key] ? 'on' : ''}`} onClick={() => updateOptions({ ...options, [key]: !options[key] }, true)}><span /></button></label>)}<p className="automation-hint">{t('context.optionsHint')}</p></section>
     <details className="context-help"><summary>{t('context.helpTitle')}</summary><p>{t('context.help1')}</p><p>{t('context.help2')}</p></details>
-    <section className="context-groups" aria-label="Groups"><header><strong>{t('context.groups')}</strong><button className="secondary-button" onClick={() => setEditingGroup('')}>{t('context.createGroup')}</button></header>
+    <section hidden={view!=='groups'} className="context-groups" aria-label="Groups"><header><strong>{t('context.groups')}</strong><button className="secondary-button" onClick={() => setEditingGroup('')}>{t('context.createGroup')}</button></header>
       {state.groups.length === 0 && <p className="automation-hint">{t('context.noGroups')}</p>}
       {state.groups.map(group => <div className="context-group-row" key={group}><span className="context-group-title">{state.groupIcons?.[group]?.iconPreview && <img src={state.groupIcons[group].iconPreview} alt="" />}<strong>{group}</strong><small> · {items.filter(item => item.group === group).length}</small></span><button className="secondary-button" onClick={() => setEditingGroup(group)}>{t('context.editItems')}</button><button className="secondary-button" onClick={() => command('pick-group-icon', { name: group })}>{state.groupIcons?.[group]?.icon ? t('context.changeIcon') : t('context.addIcon')}</button>{state.groupIcons?.[group]?.icon && <button className="secondary-button" onClick={() => command('clear-group-icon', { name: group })}>{t('context.removeIcon')}</button>}<button className="secondary-button" onClick={() => command('delete-group', { name: group })}>{t('context.removeGroup')}</button></div>)}
       {editingGroup !== null && <GroupEditor key={editingGroup} name={editingGroup} initialIcon={state.groupIcons?.[editingGroup]?.icon || ''} items={items.filter(item => !item.isSeparator)} command={command} close={() => setEditingGroup(null)} />}
     </section>
-    <div className="context-toolbar"><input className="white-control" type="search" aria-label={t('context.searchAria')} placeholder={t('context.searchPlaceholder')} value={query} onChange={event => setQuery(event.target.value)} /><select className="white-control" aria-label={t('context.filterAria')} value={source} onChange={event => setSource(event.target.value)}><option value="separators">{t('context.filterSeparators')}</option><option value="all">{t('context.filterAll')}</option><option value="live">{t('context.filterLive')}</option><option value="windows">{t('context.filterWindows')}</option><option value="prepared">{t('context.filterPrepared')}</option><option value="extensions">{t('context.filterExtensions')}</option></select><button className="secondary-button" onClick={() => command('refresh')}>{t('context.refresh')}</button></div>
-    <details className="context-preview"><summary>{t('context.preview')}</summary><ul>{visible.filter(entry => !entry.group).map(entry => <li key={entry.id}>{entry.name}</li>)}{state.groups.map(group => <li key={group}>{state.groupIcons?.[group]?.iconPreview && <img src={state.groupIcons[group].iconPreview} alt="" />}<strong>{group} ▸</strong><ul>{visible.filter(entry => entry.group === group).map(entry => <li key={entry.id}>{entry.name}</li>)}</ul></li>)}</ul></details>
+    <div hidden={view!=='items'} className="context-toolbar"><input className="white-control" type="search" aria-label={t('context.searchAria')} placeholder={t('context.searchPlaceholder')} value={query} onChange={event => setQuery(event.target.value)} /><select className="white-control" aria-label={t('context.filterAria')} value={source} onChange={event => setSource(event.target.value)}><option value="separators">{t('context.filterSeparators')}</option><option value="all">{t('context.filterAll')}</option><option value="live">{t('context.filterLive')}</option><option value="windows">{t('context.filterWindows')}</option><option value="prepared">{t('context.filterPrepared')}</option><option value="extensions">{t('context.filterExtensions')}</option></select><button className="secondary-button" onClick={() => command('refresh')}>{t('context.refresh')}</button></div>
+    <details hidden={view!=='preview'} open={view==='preview'} className="context-preview"><summary>{t('context.preview')}</summary><ul>{visible.filter(entry => !entry.group).map(entry => <li key={entry.id}>{entry.name}</li>)}{state.groups.map(group => <li key={group}>{state.groupIcons?.[group]?.iconPreview && <img src={state.groupIcons[group].iconPreview} alt="" />}<strong>{group} ▸</strong><ul>{visible.filter(entry => entry.group === group).map(entry => <li key={entry.id}>{entry.name}</li>)}</ul></li>)}</ul></details>
+    <div hidden={view!=='items'} className="context-items-workspace">
     <div className="context-toolbar" aria-label={t('context.batchVisibility')}><span>{query || source !== 'all' ? t('context.filteredItems') : t('context.allItems')} · {entries.length}</span><button className="secondary-button" disabled={!entries.length} onClick={() => setAllVisibility(true)}>{t('context.openAll')}</button><button className="secondary-button" disabled={!entries.length} onClick={() => setAllVisibility(false)}>{t('context.closeAll')}</button></div>
     {entries.map(entry => <MenuEntry key={entry.ids.join('|')} entry={entry} command={itemCommand} ref={control => { if (control) controls.current.set(entry.id, control); else controls.current.delete(entry.id); }} />)}
-    {!search ? <p className="automation-hint">{t('context.searchPrompt')}</p> : entries.length === 0 && <p>{t('context.noMatching')}</p>}
+    {!search ? <div className="workbench-empty"><strong>{copy(['Düzenlenecek öğeyi bul','Find the item to edit'])}</strong><p>{t('context.searchPrompt')}</p></div> : entries.length === 0 && <p>{t('context.noMatching')}</p>}
+    </div>
   </section>;
 }

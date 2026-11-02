@@ -1,0 +1,31 @@
+import { useId } from 'react';
+import type { Setting } from './types';
+import { useAutoSaveDraft } from './useAutoSaveDraft';
+import { ShortcutField } from './ShortcutField';
+import { Icon } from './Icon';
+import { Toggle } from './Toggle';
+import { NumericSettingControl } from './NumericSettingControl';
+import { t } from './localization';
+
+export function SettingControl({ setting, onUpdate, onExecute }: { setting: Setting; onUpdate: (key: string, value: unknown) => void; onExecute: (key: string) => void }) {
+  const [text, setText] = useAutoSaveDraft(String(setting.value ?? setting.defaultValue ?? ''), value => {
+    if (setting.kind === 'text' && (!/^#[0-9a-f]{6}$/i.test(String(setting.defaultValue)) || /^#[0-9a-f]{6}$/i.test(value))) onUpdate(setting.key, value.trim());
+  });
+  const id = useId();
+  const descriptionId = setting.description ? `${id}-description` : undefined;
+  const isHotkey = setting.kind === 'text' && /hotkey|shortcut|kısayol/i.test(setting.key + setting.label);
+  const saveText = () => setText(text.trim(), true);
+
+  if (setting.kind === 'action') return <div className="setting-row action-row"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><button className="primary-button" onClick={() => onExecute(setting.key)}>{setting.label}<Icon name="arrow" size={15} /></button></div>;
+  if (setting.kind === 'toggle') return <div className="setting-row"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><Toggle checked={Boolean(setting.value ?? setting.defaultValue)} label={setting.label} describedBy={descriptionId} onChange={value => onUpdate(setting.key, value)} /></div>;
+  if (setting.kind === 'number') return <div className="setting-row vertical setting-number"><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><NumericSettingControl setting={setting} describedBy={descriptionId} onUpdate={onUpdate} /></div>;
+  if (setting.kind === 'choice') return <div className={`setting-row vertical setting-${setting.kind}`}><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><select className="white-control" value={String(setting.value ?? setting.defaultValue ?? '')} onChange={event => onUpdate(setting.key, event.target.value)} aria-label={setting.label}>{setting.options.map(option => <option value={option} key={option}>{setting.optionLabels[option] ?? option}</option>)}</select></div>;
+  if (setting.kind === 'palette') return <div className={`setting-row vertical setting-${setting.kind}`}><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><div className="palette-options">{setting.options.map(option => <button className={`palette-option ${setting.value === option ? 'selected' : ''}`} key={option} title={setting.optionLabels[option] ?? option} aria-pressed={setting.value === option} style={{ backgroundColor: option }} onClick={() => onUpdate(setting.key, option)} aria-label={setting.optionLabels[option] ?? option} />)}</div></div>;
+  if (setting.kind === 'text' && /^#[0-9a-f]{6}$/i.test(String(setting.defaultValue))) return <div className={`setting-row vertical setting-${setting.kind}`}><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><div className="input-action-row"><input type="color" value={/^#[0-9a-f]{6}$/i.test(text) ? text : String(setting.defaultValue)} onChange={event => setText(event.target.value, true)} aria-label={`${setting.label} ${t('control.colorPicker')}`} /><input className="white-control" value={text} maxLength={7} onChange={event => setText(event.target.value)} onBlur={() => { if (/^#[0-9a-f]{6}$/i.test(text)) saveText(); }} onKeyDown={event => { if (event.key === 'Enter' && /^#[0-9a-f]{6}$/i.test(text)) saveText(); }} aria-label={setting.label} aria-invalid={!/^#[0-9a-f]{6}$/i.test(text)} /></div></div>;
+  if (isHotkey) return <div className={`setting-row vertical setting-${setting.kind}`}><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div>
+    <ShortcutField value={text} label={setting.label} onChange={setText} allowMouse={/bölge|area/i.test(setting.label)} allowWheel={/brightness.*hotkey/.test(setting.key)}
+      onCommit={value => { if (value !== String(setting.value ?? setting.defaultValue ?? '')) setText(value, true); }} /></div>;
+  if (setting.kind === 'text' && setting.options.length > 0) return <div className={`setting-row vertical setting-${setting.kind}`}><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><select className="white-control" value={setting.options.includes(text) ? text : '__custom'} onChange={event => { if (event.target.value !== '__custom') setText(event.target.value, true); }} aria-label={`${setting.label} options`}><option value="__custom">{t('control.custom')}</option>{setting.options.map(option => <option value={option} key={option}>{setting.optionLabels[option] ?? option}</option>)}</select><input className="white-control" value={text} onChange={event => setText(event.target.value)} onBlur={saveText} onKeyDown={event => { if (event.key === 'Enter') { saveText(); event.currentTarget.blur(); } }} aria-label={setting.label} placeholder={t('control.defaultPlaceholder')} /></div>;
+  return <div className={`setting-row vertical setting-${setting.kind}`}><div className="setting-copy"><strong>{setting.label}</strong>{setting.description && <p id={descriptionId}>{setting.description}</p>}</div><div className="input-action-row"><input className="white-control" value={text} onChange={event => setText(event.target.value)} onBlur={saveText} onKeyDown={event => { if (event.key === 'Enter') { saveText(); (event.currentTarget as HTMLInputElement).blur(); } }} aria-label={setting.label} /></div></div>;
+}
+

@@ -10,6 +10,7 @@
     [switch]$LiveNotifications,
     [switch]$ExplorerNavigationLive,
     [switch]$Performance,
+    [switch]$BrowserUi,
     [switch]$InteractiveInput,
     [switch]$List
 )
@@ -32,6 +33,7 @@ foreach ($name in $known) {
 }
 $results.Add([pscustomobject]@{ name = 'UI'; status = 'pending'; reason = ''; seconds = 0 })
 $results.Add([pscustomobject]@{ name = 'UI build'; status = 'pending'; reason = ''; seconds = 0 })
+$results.Add([pscustomobject]@{ name = 'UI browser'; status = $(if ($BrowserUi) { 'pending' } else { 'skipped' }); reason = $(if (!$BrowserUi) { 'Select -BrowserUi for production-bundle browser and accessibility tests.' } else { '' }); seconds = 0 })
 foreach ($entry in $manifest.interactive) {
     $results.Add([pscustomobject]@{ name = $entry.name; status = $(if ($interactive) { 'pending' } else { 'skipped' }); reason = $(if (!$interactive) { 'Requires -InteractiveInput or Integration. ' + $entry.requires } else { '' }); seconds = 0 })
 }
@@ -71,6 +73,7 @@ try {
         if ($LASTEXITCODE -ne 0) { $script:failureExitCode = $LASTEXITCODE; throw 'npm ci failed.' }
         Invoke-Check 'UI' { npm test }
         Invoke-Check 'UI build' { npm run build }
+        if ($BrowserUi) { Invoke-Check 'UI browser' { npx playwright test } }
     } finally { Pop-Location }
     if ($interactive) {
         foreach ($entry in $manifest.interactive) {
@@ -131,3 +134,4 @@ finally {
     Write-Host ('Report: ' + $report)
 }
 if ($failure) { exit $script:failureExitCode }
+exit 0

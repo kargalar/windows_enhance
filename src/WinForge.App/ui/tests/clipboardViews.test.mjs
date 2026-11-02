@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { Window } from 'happy-dom';
-import { createServer } from 'vite';
+import { createTestServer } from './testServer.mjs';
 
 const window = new Window({ url: 'https://appassets.winforge/' });
 for (const name of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement', 'HTMLButtonElement', 'Node', 'Element', 'Event', 'KeyboardEvent', 'MouseEvent'])
@@ -9,7 +9,7 @@ for (const name of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HT
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { act, createElement: h } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
+const server = await createTestServer();
 const { FeatureApp } = await server.ssrLoadModule('/src/features/FeatureApp.tsx');
 after(async () => { await server.close(); await window.happyDOM.close(); });
 

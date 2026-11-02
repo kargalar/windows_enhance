@@ -200,6 +200,8 @@ public sealed class ModuleHost
             IDisposable? batch = _store.BatchWrites();
             try
             {
+                if (module is ISettingChangePreparation preparation)
+                    preparation.PrepareSettingChange(descriptor.Key, previous, value);
                 settings.Set(descriptor.Key, value);
                 await ApplyCurrent();
                 batch.Dispose();

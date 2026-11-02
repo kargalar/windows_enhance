@@ -7,7 +7,7 @@ using WinForge.History;
 
 namespace WinForge.Modules.Capture;
 
-public sealed class ScreenCaptureModule : CaptureModuleBase
+public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePreparation
 {
     private static readonly string[] WorkflowActions = ["save", "copy", "edit", "upload"];
     private static readonly string[] WorkflowOptions = BuildWorkflowOptions();
@@ -34,7 +34,13 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         new() { Key = "choose-image-directory", Label = "Yakalanan görseller için klasör seç", Kind = SettingKind.Action, Execute = () =>
         {
             var picker = new Microsoft.Win32.OpenFolderDialog { Title = "Yakalama klasörünü seç" };
-            if (picker.ShowDialog() == true) Context.Settings.Set("image-directory", picker.FolderName);
+            if (picker.ShowDialog() != true) return;
+            try
+            {
+                PrepareSettingChange("image-directory", Context.Settings.GetString("image-directory"), picker.FolderName);
+                Context.Settings.Set("image-directory", picker.FolderName);
+            }
+            catch (Exception error) { Report(error); }
         } },
         new() { Key = "capture", Label = "Yakalama araçlarını aç", Kind = SettingKind.Action, Execute = ShowTools },
         new() { Key = "hotkey", Label = "Bölge yakalama kısayolu", Kind = SettingKind.Text, Default = "Win+Alt+S" },
@@ -59,6 +65,12 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         } },
         new() { Key = "cancel", Label = "Yakalamayı / kaydı iptal et", Kind = SettingKind.Action, Execute = Cancel }
     ];
+    public void PrepareSettingChange(string key, object previous, object next)
+    {
+        if (key != "image-directory") return;
+        if (busy || recording is not null) throw new InvalidOperationException("Klas?r? de?i?tirmeden ?nce devam eden yakalamay? bitirin.");
+        CaptureStorageMigration.Images(Store, previous?.ToString() ?? "", next?.ToString() ?? "");
+    }
     public override void Activate()
     {
         if (IsActive) return;

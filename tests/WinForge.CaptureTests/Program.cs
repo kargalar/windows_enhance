@@ -50,6 +50,13 @@ internal static class Program
                 finally { if (Directory.Exists(archiveRoot)) Directory.Delete(archiveRoot, true); }
                 return 0;
             }
+            if (args.Length == 1 && args[0] == "--storage-migration")
+            {
+                var migrationRoot = Path.Combine(Path.GetTempPath(), "WinForge-MigrationTests", Guid.NewGuid().ToString("N"));
+                try { StorageMigration(migrationRoot); }
+                finally { SqliteConnection.ClearAllPools(); if (Directory.Exists(migrationRoot)) Directory.Delete(migrationRoot, true); }
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--capture-shortcuts") { CaptureShortcutChecks.Run(Check); return 0; }
             if (args.Length == 1 && args[0] == "--pre-capture")
             {
@@ -81,6 +88,30 @@ internal static class Program
     }
     private static void Check(bool condition, string message)
     { if (!condition) throw new InvalidOperationException(message); checks++; Console.WriteLine("PASS " + message); }
+    private static void StorageMigration(string root)
+    {
+        var store = new HistoryStore(Path.Combine(root, "old-history"));
+        File.WriteAllText(Path.Combine(store.MediaDirectory, "sample.png"), "image");
+        store.Add("recall", DateTimeOffset.UtcNow, title: "saved", media: "sample.png");
+        var target = Path.Combine(root, "new-history");
+        CaptureStorageMigration.History(store, target);
+        var migrated = new HistoryStore(target);
+        Check(migrated.Search(new HistoryFilter("recall")).Count == 1 && File.Exists(Path.Combine(migrated.MediaDirectory, "sample.png")), "History database and media are copied together");
+        Check(store.Search(new HistoryFilter("recall")).Count == 1, "Shared source history is preserved");
+        try { CaptureStorageMigration.History(store, target); Check(false, "Existing target must be rejected"); }
+        catch (IOException) { Check(true, "Existing target is protected"); }
+        var oldImages = Path.Combine(root, "old-images"); Directory.CreateDirectory(oldImages);
+        var name = new string('A', 64) + ".png"; File.WriteAllText(Path.Combine(oldImages, name), "capture");
+        File.WriteAllText(Path.Combine(oldImages, "unrelated.png"), "unrelated");
+        var newImages = Path.Combine(root, "new-images");
+        CaptureStorageMigration.Images(store, oldImages, newImages);
+        Check(File.Exists(Path.Combine(newImages, name)) && !File.Exists(Path.Combine(newImages, "unrelated.png")), "Only exported capture files are copied");
+        CaptureStorageMigration.Images(store, oldImages, "");
+        Check(store.Search(new HistoryFilter("capture")).Any(item => item.Media == name), "Exports moved to default media stay referenced by capture history");
+        File.WriteAllText(Path.Combine(newImages, name), "different");
+        try { CaptureStorageMigration.Images(store, oldImages, newImages); Check(false, "Conflicting files must be rejected"); }
+        catch (IOException) { Check(File.ReadAllText(Path.Combine(newImages, name)) == "different", "Conflicting destination is preserved"); }
+    }
     private static async Task Storage(string root)
     {
         var store = new HistoryStore(Path.Combine(root, "history")); var now = DateTimeOffset.UtcNow;

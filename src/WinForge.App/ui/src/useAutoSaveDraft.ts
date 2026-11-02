@@ -20,7 +20,9 @@ export function useAutoSaveDraft<T>(value: T, save: (value: T) => void) {
   callback.current = save;
   const commit = () => {
     clearTimeout(timer.current); timer.current = undefined;
-    submitted.current = JSON.stringify(current.current);
+    const snapshot = JSON.stringify(current.current);
+    if (snapshot === submitted.current) return;
+    submitted.current = snapshot;
     waiting.current = true;
     callback.current(current.current);
   };

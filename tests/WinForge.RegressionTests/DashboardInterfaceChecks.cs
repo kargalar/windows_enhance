@@ -41,8 +41,14 @@ internal static class DashboardInterfaceChecks
             var core = web.CoreWebView2;
             browser = Process.GetProcessById((int)core.BrowserProcessId);
             Wait(() => Script("document.querySelectorAll('.tool-card').length") == host.Modules.Count.ToString(), "Full rendered catalog");
+            var catalogDirectory = Path.GetFullPath(Path.Combine("artifacts", "ui-review"));
+            Directory.CreateDirectory(catalogDirectory);
+            File.WriteAllText(Path.Combine(catalogDirectory, "module-catalog.json"), JsonSerializer.Serialize(
+                typeof(MainWindow).GetMethod("BuildState", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null),
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
             check(Script("document.querySelector('#module-details') === null") == "true", "Catalog initially keeps details closed without a stale selection");
-            check(Script("document.querySelectorAll('.dashboard-navigation button').length") == "8", "All current navigation routes render");
+            check(Script("document.querySelectorAll('.dashboard-navigation button').length") == "9", "All current navigation routes render");
+            Capture("catalog.png");
             Input("#module-search", "   TASKBAR   ");
             Wait(() => Script("document.querySelectorAll('.tool-card').length > 0") == "true", "Trimmed category search");
             var taskbarNames = host.Modules.Where(module => module.Category == "Taskbar").Select(module => module.Name).ToArray();
@@ -58,19 +64,73 @@ internal static class DashboardInterfaceChecks
             {
                 Open(module);
                 Wait(() => Text("document.querySelector('#module-details h2')?.textContent") == module.Name, "Module details " + module.Id);
+                Wait(() => Script("document.querySelectorAll('#module-details .panel-loading').length") == "0", "Management data loaded " + module.Id);
                 check(Script("!!document.querySelector('.details-description') && !!document.querySelector('.details-header [role=switch]')") == "true", "Settings render: " + module.Name);
                 foreach (var setting in module.Settings)
                     check(Script("[...document.querySelectorAll('#module-details .setting-copy strong')].some(item=>item.textContent===" + JsonSerializer.Serialize(setting.Label) + ")") == "true", "Setting label renders: " + module.Id + "/" + setting.Key);
+                check(Script("document.querySelector('.dashboard-catalog').hidden && document.querySelector('.details-body').getBoundingClientRect().height > 100") == "true", "Dedicated detail layout: " + module.Id);
+                if (module.Id != "fixture")
+                {
+                    check(Text("document.querySelector('[data-module-design]').dataset.moduleDesign") == module.Id,
+                        "Reviewed module-specific design: " + module.Id);
+                    check(Script("!!document.querySelector('.page-additional')") == "false",
+                        "No native settings left outside the reviewed design: " + module.Id);
+                }
+                var pageCount = int.Parse(Script("document.querySelectorAll('.design-page').length"));
+                for (var pageIndex = 0; pageIndex < pageCount; pageIndex++)
+                {
+                    if (pageCount > 1) Script($"document.querySelectorAll('.settings-navigation button')[{pageIndex}].click()");
+                    Pump();
+                    check(Script($"!document.querySelectorAll('.design-page')[{pageIndex}].hidden") == "true",
+                        "Designed page is reachable: " + module.Id + "/" + pageIndex);
+                    check(Script($"(()=>{{const p=document.querySelectorAll('.design-page')[{pageIndex}];return [...p.querySelectorAll('[data-setting-key]')].every(el=>el.getBoundingClientRect().width>0)}})()") == "true",
+                        "Every control on the designed page is laid out: " + module.Id + "/" + pageIndex);
+                }
             }
+            File.WriteAllText(Path.Combine(catalogDirectory, "populated-module-catalog.json"), JsonSerializer.Serialize(
+                typeof(MainWindow).GetMethod("BuildState", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null),
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
             var windowControl = host.Modules.Single(module => module.Id == "window-control");
+            Open(host.Modules.Single(module => module.Id == "taskbar"));
+            Capture("taskbar-components.png");
+            Script("document.querySelectorAll('.settings-navigation button')[1]?.click()");
+            Capture("taskbar-design.png");
             Open(windowControl);
             var leftAction = windowControl.Settings.Single(setting => setting.Key == "LMB");
-            Select(leftAction.Label, "Ortala", leftAction.Section);
+            SelectKey("LMB", "Ortala");
             Wait(() => host.SettingsOf(windowControl).GetString("LMB") == "Ortala", "Window action persistence");
             check(!windowControl.IsActive, "Editing the native window action persists without activating the real engine");
+            var notifications = host.Modules.Single(module => module.Id == "notifications-placement");
+            Open(notifications); RevealKey("position");
+            Script("[...document.querySelector('[data-setting-key=position]').querySelectorAll('button')].find(button=>button.textContent.includes('Sol üst')).click()");
+            Wait(() => host.SettingsOf(notifications).GetString("position") == "Sol üst", "Visual position persistence");
+            check(!notifications.IsActive, "Position map stores the native option without enabling real notifications");
+            var themeSwitch = host.Modules.Single(module => module.Id == "theme-switch");
+            Open(themeSwitch); RevealKey("light-time");
+            Input("[data-setting-key=light-time] input", "08:15");
+            Wait(() => host.SettingsOf(themeSwitch).GetString("light-time") == "08:15", "Time field persistence");
+            check(!themeSwitch.IsActive, "Time picker stores HH:mm without switching the Windows theme");
+            var correction = host.Modules.Single(module => module.Id == "auto-correct");
+            Open(correction); RevealKey("excluded-apps");
+            Input("[data-setting-key=excluded-apps] input", "example.exe");
+            Script("document.querySelector('[data-setting-key=excluded-apps] .entry-add button').click()");
+            Wait(() => host.SettingsOf(correction).GetString("excluded-apps") == "example.exe", "Structured list persistence");
+            check(!correction.IsActive, "Structured application list stores the native delimiter without starting input hooks");
+            var zones = host.Modules.Single(module => module.Id == "fancy-zones");
+            Open(zones); RevealKey("zone-monitor-grid-profiles");
+            Script("document.querySelector('[data-setting-key=zone-monitor-grid-profiles] .mapping-editor>button').click()"); Pump();
+            Input("[data-setting-key=zone-monitor-grid-profiles] .mapping-row input:first-child", "DISPLAY99");
+            Input("[data-setting-key=zone-monitor-grid-profiles] .mapping-row input:nth-child(2)", "3x2");
+            Wait(() => host.SettingsOf(zones).GetString("zone-monitor-grid-profiles") == "DISPLAY99=3x2", "Grid profile persistence");
+            check(!zones.IsActive, "Grid profile editor stores the native profile format without moving windows");
+            var capture = host.Modules.Single(module => module.Id == "screen-capture");
+            Open(capture); RevealKey("workflow");
+            Script("document.querySelector('[data-setting-key=workflow] .workflow-editor li:first-child button:last-child').click()");
+            Wait(() => host.SettingsOf(capture).GetString("workflow") == "copy-save-edit-upload", "Workflow order persistence");
+            check(!capture.IsActive, "Workflow editor stores a supported native sequence without taking a screenshot");
             Open(host.Modules.Single(module => module.Id == "net-speed"));
             Script("document.querySelector('.details-scroll').scrollTop=100000");
-            check(Script("document.querySelector('.details-scroll').scrollTop > 0") == "true", "Long settings scroll to their final options");
+            check(Script("(()=>{const el=document.querySelector('.details-scroll');return el.scrollHeight<=el.clientHeight||el.scrollTop>0})()") == "true", "Settings remain accessible within the scrolling content area");
             Open(fixture);
             check(Script("document.querySelector('.details-scroll').scrollTop") == "0", "Changing the selected module resets detail scrolling");
             var settings = host.SettingsOf(fixture);
@@ -95,7 +155,7 @@ internal static class DashboardInterfaceChecks
             Pump();
             check(Script("document.documentElement.scrollWidth <= window.innerWidth && document.querySelector('.dashboard-settings').getBoundingClientRect().width > 300") == "true", "Minimum window size keeps settings usable without page overflow");
             check(Script("[...document.querySelectorAll('.tool-card .toggle')].every(button=>button.getBoundingClientRect().right <= window.innerWidth)") == "true", "Catalog switches remain within the minimum-width viewport");
-            Script("document.querySelector('[aria-label=\"Uygulama ayarları\"]').click()");
+            Script("document.querySelector('.dashboard-actions .icon-button').click()");
             Wait(() => Script("!!document.querySelector('[role=dialog]')") == "true", "Appearance dialog");
             check(true, "Appearance opens from the toolbar as a modal dialog");
             foreach (var tone in Appearance.Tones)
@@ -103,25 +163,36 @@ internal static class DashboardInterfaceChecks
             {
                 Script("window.chrome.webview.postMessage(" + JsonSerializer.Serialize(new { command = "appearance.update", payload = new { tone = tone.Name, accent = accent.Name } }) + ")");
                 Wait(() => Appearance.ToneName == tone.Name && Appearance.AccentName == accent.Name &&
-                    Text("document.querySelector('.tone-option.selected').textContent") == (tone.Name == "Siyah" ? "Karanlık" : tone.Name), "Theme acknowledgement");
-                var colorTask = core.ExecuteScriptAsync("(() => {const root=document.querySelector('.dashboard'),panel=document.querySelector('.details-scroll'),category=panel.querySelector('.details-category'),toggle=panel.querySelector('.details-header .toggle');const rgb=color=>{const e=document.createElement('i');e.style.color=color;document.body.append(e);const a=getComputedStyle(e).color.match(/[0-9.]+/g).slice(0,3).map(Number);e.remove();return a.map(v=>{v/=255;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4)}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0)};const contrast=(a,b)=>{a=rgb(a);b=rgb(b);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};return{muted:contrast(getComputedStyle(category).color,getComputedStyle(panel).backgroundColor),accent:contrast(getComputedStyle(root).getPropertyValue('--accent'),getComputedStyle(panel).backgroundColor),switchRatio:contrast(getComputedStyle(toggle.firstElementChild).backgroundColor,getComputedStyle(toggle).backgroundColor)}})()");
+                    Script("document.querySelectorAll('.tone-option.selected').length") == "1", "Theme acknowledgement");
+                var colorTask = core.ExecuteScriptAsync("(() => {const root=document.querySelector('.dashboard'),panel=document.querySelector('.details-scroll'),category=document.querySelector('.details-category'),toggle=document.querySelector('.details-header .toggle');const rgb=color=>{const e=document.createElement('i');e.style.color=color;document.body.append(e);const a=getComputedStyle(e).color.match(/[0-9.]+/g).slice(0,3).map(Number);e.remove();return a.map(v=>{v/=255;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4)}).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0)};const contrast=(a,b)=>{a=rgb(a);b=rgb(b);return(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};return{muted:contrast(getComputedStyle(category).color,getComputedStyle(panel).backgroundColor),accent:contrast(getComputedStyle(root).getPropertyValue('--accent'),getComputedStyle(panel).backgroundColor),switchRatio:contrast(getComputedStyle(toggle.firstElementChild).backgroundColor,getComputedStyle(toggle).backgroundColor)}})()");
                 Complete(colorTask);
                 using var colors = JsonDocument.Parse(colorTask.Result);
                 check(colors.RootElement.GetProperty("muted").GetDouble() >= 4.5 && colors.RootElement.GetProperty("accent").GetDouble() >= 4.5,
                     "Rendered text contrast: " + tone.Name + "/" + accent.Name);
                 check(colors.RootElement.GetProperty("switchRatio").GetDouble() >= 3, "Rendered switch contrast: " + tone.Name + "/" + accent.Name);
             }
-            Script("document.querySelector('.appearance-dialog [aria-label=\"Kapat\"]').click()");
+            Script("document.querySelector('.appearance-dialog header .icon-button').click()");
+            Capture("settings-dark-minimum.png");
             Script(Card(fixture) + ".querySelector('.toggle').click()");
             Wait(() => !fixture.IsActive && Script(Card(fixture) + ".classList.contains('is-disabled')") == "true", "Catalog deactivation acknowledgement");
             check(!((FixtureModule)fixture).ResourceAllocated, "Catalog switch releases the fixture module resources");
 
             string Script(string code) { var task = core.ExecuteScriptAsync(code); Complete(task); return task.Result; }
+            void Capture(string name)
+            {
+                var reviewDirectory = Path.GetFullPath(Path.Combine("artifacts", "ui-review"));
+                Directory.CreateDirectory(reviewDirectory);
+                Pump();
+                using var stream = File.Create(Path.Combine(reviewDirectory, name));
+                Complete(core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream));
+            }
             string? Text(string code) => JsonSerializer.Deserialize<string>(Script(code));
             void Input(string selector, string value) => Script("(()=>{const input=document.querySelector(" + JsonSerializer.Serialize(selector) + ");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input," + JsonSerializer.Serialize(value) + ");input.dispatchEvent(new Event('input',{bubbles:true}));})()");
-            void Select(string label, string value, string? section = null) => Script("(()=>{const input=[...document.querySelectorAll('select[aria-label='+JSON.stringify(" + JsonSerializer.Serialize(label) + ")+']')].find(input=>!" + JsonSerializer.Serialize(section) + "||input.closest('.settings-section').querySelector('h3').textContent===" + JsonSerializer.Serialize(section) + ");input.value=" + JsonSerializer.Serialize(value) + ";input.dispatchEvent(new Event('change',{bubbles:true}));})()");
+            void SelectKey(string key, string value) => Script("(()=>{const input=document.querySelector('[data-setting-key='+JSON.stringify(" + JsonSerializer.Serialize(key) + ")+'] select');const page=input.closest('.design-page');const pages=[...document.querySelectorAll('.design-page')];document.querySelectorAll('.settings-navigation button')[pages.indexOf(page)]?.click();input.value=" + JsonSerializer.Serialize(value) + ";input.dispatchEvent(new Event('change',{bubbles:true}));})()");
+            void RevealKey(string key) { Script("(()=>{const el=document.querySelector('[data-setting-key='+JSON.stringify(" + JsonSerializer.Serialize(key) + ")+']');const page=el.closest('.design-page');const pages=[...document.querySelectorAll('.design-page')];document.querySelectorAll('.settings-navigation button')[pages.indexOf(page)]?.click();el.scrollIntoView({block:'center'});})()"); Pump(); }
+            void Select(string label, string value, string? section = null) => Script("(()=>{const input=[...document.querySelectorAll('select[aria-label='+JSON.stringify(" + JsonSerializer.Serialize(label) + ")+']')].find(input=>!" + JsonSerializer.Serialize(section) + "||input.closest('.settings-section').querySelector('h3').textContent===" + JsonSerializer.Serialize(section) + ");const heading=input.closest('.settings-section').querySelector('h3').textContent;[...document.querySelectorAll('.settings-navigation button')].find(button=>button.querySelector('span').textContent===heading)?.click();input.value=" + JsonSerializer.Serialize(value) + ";input.dispatchEvent(new Event('change',{bubbles:true}));})()");
             string Card(ITweakModule module) => "[...document.querySelectorAll('.tool-card')].find(card=>card.querySelector('h2')?.textContent===" + JsonSerializer.Serialize(module.Name) + ")";
-            void Open(ITweakModule module) { Script(Card(module) + ".querySelector('.tool-card-open').click()"); Wait(() => Text("document.querySelector('#module-details h2')?.textContent") == module.Name, "Open " + module.Id); }
+            void Open(ITweakModule module) { Script("document.querySelector('.dashboard-back')?.click()"); Pump(); Script(Card(module) + ".querySelector('.tool-card-open').click()"); Wait(() => Text("document.querySelector('#module-details h2')?.textContent") == module.Name, "Open " + module.Id); }
         }
         finally
         {

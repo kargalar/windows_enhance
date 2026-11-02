@@ -43,6 +43,8 @@ internal static class DashboardBridgeChecks
             var full = Send("ui.resync", new { }, "full");
             check(full.GetProperty("protocolVersion").GetInt32() == 1 && full.GetProperty("payload").GetProperty("modules").GetArrayLength() == host.Modules.Count,
                 "Dashboard resync returns a versioned full catalog with a correlated request ID");
+            check(full.GetProperty("payload").GetProperty("appearance").GetProperty("language").GetString() == Appearance.Language,
+                "Native appearance snapshots include the persisted interface language");
             var fullBytes = Bytes(full);
             check(panelProbe.Reads == 0 && full.GetProperty("payload").GetProperty("modules").EnumerateArray()
                 .All(item => item.GetProperty("panel").ValueKind == JsonValueKind.Null && !item.GetProperty("panelLoaded").GetBoolean()),
@@ -51,16 +53,16 @@ internal static class DashboardBridgeChecks
             var defaultsInitialized = defaults.GetType().BaseType!.GetField("_panelInitialized", BindingFlags.Instance | BindingFlags.NonPublic)!;
             check(!(bool)defaultsInitialized.GetValue(defaults)!, "Catalog rendering does not read Windows file associations");
             Script("[...document.querySelectorAll('.tool-card')].find(card=>card.querySelector('h2')?.textContent==='Deferred panel probe').querySelector('.tool-card-open').click()");
-            Wait(() => panelProbe.Reads == 1 && Script("!!document.querySelector('#module-details [role=status]')") == "false", "Lazy panel acknowledgement");
+            Wait(() => panelProbe.Reads == 1 && Script("!!document.querySelector('#module-details .panel-loading')") == "false", "Lazy panel acknowledgement");
             check(!(bool)defaultsInitialized.GetValue(defaults)!, "Opening one panel leaves unrelated Windows data unprepared");
             panelProbe.FailRead = true;
             Send("module.inspect", new { moduleId = panelProbe.Id }, "probe-failure");
-            Wait(() => Script("[...document.querySelectorAll('#module-details button')].some(button=>button.textContent==='Ayarları yeniden yükle')") == "true", "Panel retry action");
+            Wait(() => Script("!!document.querySelector('#module-details .management-section .error-box button')") == "true", "Panel retry action");
             var failedReads = panelProbe.Reads;
             Pump(TimeSpan.FromMilliseconds(200));
             check(panelProbe.Reads == failedReads, "A failed panel read exposes retry without an automatic request loop");
             panelProbe.FailRead = false;
-            Script("[...document.querySelectorAll('#module-details button')].find(button=>button.textContent==='Ayarları yeniden yükle').click()");
+            Script("document.querySelector('#module-details .management-section .error-box button').click()");
             Wait(() => panelProbe.Reads > failedReads && Script("!!document.querySelector('#module-details .error-box')") == "false", "Panel retry recovery");
             var inspected = Send("ui.resync", new { }, "inspected-resync");
             check(inspected.GetProperty("payload").GetProperty("modules").EnumerateArray().Single(item => item.GetProperty("id").GetString() == panelProbe.Id)

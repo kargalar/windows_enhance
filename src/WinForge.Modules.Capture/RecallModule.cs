@@ -5,7 +5,7 @@ using WinForge.History;
 
 namespace WinForge.Modules.Capture;
 
-public sealed class RecallModule : CaptureModuleBase
+public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
 {
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly object recordingGate = new();
@@ -36,9 +36,13 @@ public sealed class RecallModule : CaptureModuleBase
         {
             var picker = new OpenFolderDialog { Title = "Ekran geçmişi klasörünü seç", InitialDirectory = Store.DirectoryPath };
             if (picker.ShowDialog() != true) return;
-            _ = new HistoryStore(picker.FolderName);
-            Context.Settings.Set("storage-directory", picker.FolderName);
-            Apply();
+            try
+            {
+                PrepareSettingChange("storage-directory", Context.Settings.GetString("storage-directory"), picker.FolderName);
+                Context.Settings.Set("storage-directory", picker.FolderName);
+                Apply();
+            }
+            catch (Exception error) { Report(error); }
         } },
         new() { Key = "interval", Label = "Kayıt aralığı (saniye)", Kind = SettingKind.Number, Min = 1, Max = 3600, Default = 60 },
         new() { Key = "idle-seconds", Label = "Boşta kalınca dur (saniye)", Kind = SettingKind.Number, Min = 10, Max = 3600, Default = 60 },
@@ -53,6 +57,14 @@ public sealed class RecallModule : CaptureModuleBase
             Description = "Dolu olduğunda bu kısayol ekran geçmişi kaydını duraklatır veya sürdürür. Boş bırakarak devre dışı bırakın." },
         new() { Key = "pause", Label = "Kaydı duraklat / sürdür", Kind = SettingKind.Action, Execute = TogglePause }
     ];
+    public void PrepareSettingChange(string key, object previous, object next)
+    {
+        if (key != "storage-directory") return;
+        var destination = next?.ToString()?.Trim() ?? "";
+        if (destination.Length == 0)
+            destination = PortableHistoryMigration.DirectoryFor(AppData.DirectoryPath, Context.Settings.GetString(PortableHistoryMigration.StorageIdKey, ""));
+        lock (recordingGate) CaptureStorageMigration.History(Store, destination);
+    }
     public override void Activate()
     {
         if (IsActive) return;

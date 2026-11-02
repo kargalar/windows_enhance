@@ -2,6 +2,36 @@ export type Language = 'en' | 'tr';
 
 export const translations = {
   en: {
+    'nav.label': 'Main navigation',
+    'catalog.description': 'Make Windows work your way. Manage your tools in one place.',
+    'catalog.modules': '{count} modules',
+    'catalog.status': 'Module status',
+    'catalog.allStatus': 'All statuses',
+    'catalog.enabled': 'Enabled',
+    'catalog.disabled': 'Off',
+    'catalog.errors': 'Needs attention',
+    'details.search': 'Search in this module…',
+    'details.searchLabel': 'Search module settings',
+    'details.clearSearch': 'Clear settings search',
+    'details.management': 'Management',
+    'details.settingCount': '{count} settings',
+    'details.searchResults': '{count} matching settings',
+    'details.noSettings': 'This module has no additional settings. Use the switch above to manage it.',
+    'details.panelError': 'Management panel could not be loaded.',
+    'details.preview': 'Preview',
+    'details.previewHint': 'Illustration of selected appearance settings. Windows rendering may vary.',
+    'details.previewUnavailable': 'Turn on the design component to apply these appearance settings.',
+    'details.savePending': 'Saving changes…',
+    'details.saved': 'Changes saved',
+    'details.autoSave': 'Settings are saved automatically',
+    'details.numberInput': '{label}: exact value',
+    'details.valueRange': 'From {min} to {max}',
+    'recovery.title': 'This view could not be displayed',
+    'recovery.description': 'Try opening the view again. You can also reload the interface.',
+    'recovery.retry': 'Try again',
+    'recovery.reload': 'Reload interface',
+    'loading.connection': 'The app is taking longer than expected to respond.',
+    'loading.retry': 'Reconnect',
     // Topbar & Header
     'brand.name': 'WinForge',
     'search.placeholder': 'Search tools or settings…',
@@ -245,6 +275,36 @@ export const translations = {
     'defaults.noResultsExt': 'No results found. Enter a file extension like .pdf.',
   },
   tr: {
+    'nav.label': 'Ana menü',
+    'catalog.description': 'Windows’u kendine göre düzenle. Araçlarını tek bir yerden yönet.',
+    'catalog.modules': '{count} modül',
+    'catalog.status': 'Modül durumu',
+    'catalog.allStatus': 'Tüm durumlar',
+    'catalog.enabled': 'Etkin',
+    'catalog.disabled': 'Kapalı',
+    'catalog.errors': 'İlgilenilmesi gerekiyor',
+    'details.search': 'Bu modülde ayar ara…',
+    'details.searchLabel': 'Modül ayarlarında ara',
+    'details.clearSearch': 'Ayar aramasını temizle',
+    'details.management': 'Yönetim',
+    'details.settingCount': '{count} ayar',
+    'details.searchResults': '{count} ayar bulundu',
+    'details.noSettings': 'Bu modülün ek ayarı bulunmuyor. Yukarıdaki anahtarla yönetebilirsin.',
+    'details.panelError': 'Yönetim paneli yüklenemedi.',
+    'details.preview': 'Önizleme',
+    'details.previewHint': 'Seçili görünüm ayarlarının temsili gösterimi. Windows’taki görünüm farklılık gösterebilir.',
+    'details.previewUnavailable': 'Görünüm ayarlarını uygulamak için tasarım bileşenini etkinleştir.',
+    'details.savePending': 'Değişiklikler kaydediliyor…',
+    'details.saved': 'Değişiklikler kaydedildi',
+    'details.autoSave': 'Ayarlar otomatik kaydedilir',
+    'details.numberInput': '{label}: tam değer',
+    'details.valueRange': '{min} ile {max} arası',
+    'recovery.title': 'Bu görünüm gösterilemedi',
+    'recovery.description': 'Görünümü yeniden açmayı deneyebilir veya arayüzü yeniden yükleyebilirsin.',
+    'recovery.retry': 'Tekrar dene',
+    'recovery.reload': 'Arayüzü yeniden yükle',
+    'loading.connection': 'Uygulamanın yanıt vermesi beklenenden uzun sürüyor.',
+    'loading.retry': 'Yeniden bağlan',
     // Topbar & Header
     'brand.name': 'WinForge',
     'search.placeholder': 'Araç veya ayar ara…',
@@ -267,7 +327,7 @@ export const translations = {
     'nav.windows': 'Pencereler',
     'nav.explorer': 'Gezgin',
     'nav.productivity': 'Verimlilik',
-    'nav.shortcuts': 'K?sayollar',
+    'nav.shortcuts': 'Kısayollar',
     'nav.system': 'Sistem',
 
     // Catalog & Cards
@@ -495,6 +555,7 @@ let activeLang: Language = 'en';
 
 export function setLanguage(lang: string) {
   activeLang = lang.toLowerCase() === 'tr' ? 'tr' : 'en';
+  if (typeof document !== 'undefined') document.documentElement.lang = activeLang;
 }
 
 export function getLanguage(): Language {
