@@ -26,16 +26,15 @@ public sealed partial class ContextMenuModule
                 : ContextMenuCatalog.VisibleIn(rule, scope))) continue;
             var entry = _entries.First(e => e.Id == rule.Id);
             using var key = Registry.CurrentUser.CreateSubKey(path);
-            key.SetValue("", entry.Name);
+            if (action != "power-mode") key.SetValue("", entry.Name);
             key.SetValue("Icon", rule.Icon.Length > 0 ? rule.Icon : entry.Icon);
             key.SetValue("MultiSelectModel", "Single");
             if (action == "power-mode")
             {
                 key.SetValue("MUIVerb", entry.Name);
-                key.SetValue("SubCommands", "");
                 foreach (var (mode, label) in ContextMenuQuickSettings.PowerModes)
                 {
-                    using var child = key.CreateSubKey(@"shell\" + mode);
+                    using var child = key.CreateSubKey(@"ExtendedSubCommandsKey\shell\" + mode);
                     child.SetValue("MUIVerb", label);
                     using var modeCommand = child.CreateSubKey("command");
                     modeCommand.SetValue("", "\"" + executable + "\" --context-power-mode " + mode);

@@ -38,7 +38,24 @@ inline std::wstring Canonical(std::wstring const& text, std::wstring const& pare
     if (name == L"refresh" || name == L"yenile") return L"builtin:refresh";
     return {};
 }
-struct Rule { std::wstring match, name, group, icon; bool visible{true}; unsigned contexts{255}; std::wstring groupIcon; bool separatorBefore{}, separatorAfter{}; };
+struct Rule { std::wstring match, name, group, icon; bool visible{true}; unsigned contexts{255}; std::wstring groupIcon; bool separatorBefore{}, separatorAfter{}; std::wstring extensions; };
+inline bool MatchesExtensions(std::wstring const& filter, std::vector<std::wstring> const& paths) {
+    if (filter.find_first_not_of(L" ,;\t") == std::wstring::npos) return true;
+    if (paths.empty()) return false;
+    std::vector<std::wstring> allowed;
+    size_t start = 0;
+    while (start < filter.size()) {
+        auto end = filter.find_first_of(L",; \t", start);
+        auto ext = Normalize(filter.substr(start, end == std::wstring::npos ? end : end - start));
+        if (!ext.empty()) { if (ext[0] != L'.') ext.insert(0, 1, L'.'); allowed.push_back(ext); }
+        if (end == std::wstring::npos) break; start = end + 1;
+    }
+    return std::all_of(paths.begin(), paths.end(), [&](auto const& path) {
+        auto dot = path.find_last_of(L'.'), slash = path.find_last_of(L"\\/");
+        return dot != std::wstring::npos && (slash == std::wstring::npos || dot > slash) &&
+            std::find(allowed.begin(), allowed.end(), Normalize(path.substr(dot))) != allowed.end();
+    });
+}
 struct Options { bool cleanSeparators{true}, showSeparators{true}, unquotedCopyPath{true}; };
 inline unsigned SelectionScope(std::wstring const& path, bool folder, bool link, bool filesystem) {
     if (!filesystem) return 128u;
@@ -168,7 +185,7 @@ public:
     }
     bool IsCopyPath(UINT command) const { return std::find(copyPathCommands.begin(), copyPathCommands.end(), command) != copyPathCommands.end(); }
     std::vector<UINT> copyPathCommands;
-    void Apply(HMENU menu, std::vector<Item> const& items, std::vector<Rule> const& rules, unsigned context = 0, Options options = {}) {
+    void Apply(HMENU menu, std::vector<Item> const& items, std::vector<Rule> const& rules, unsigned context = 0, Options options = {}, std::vector<std::wstring> const& paths = {}) {
         root = menu;
         for (auto const& item : items) if (Canonical(item.text, item.parent) == L"builtin:copy-path") copyPathCommands.push_back(item.info.wID);
         for (auto const& item : items) { menus.push_back(item.menu); if (item.info.hSubMenu) menus.push_back(item.info.hSubMenu); }
@@ -181,6 +198,7 @@ public:
             if (found == rules.end()) continue;
             auto data = item.Data();
             bool visible = context ? (found->contexts & context) == context : found->visible;
+            if (context & (1u | 32u | 64u)) visible = visible && MatchesExtensions(found->extensions, paths);
             bool remove = !visible || (!separator && !found->group.empty());
             if (remove && !RemoveMenu(item.menu, item.position, MF_BYPOSITION)) continue;
             changes.push_back({item, remove});

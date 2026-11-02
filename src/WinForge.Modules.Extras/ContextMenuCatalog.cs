@@ -14,7 +14,7 @@ using WinForge.Core;
 namespace WinForge.Modules.Extras;
 
 internal sealed record ContextMenuEntry(string Id, string Name, string Source, string Match, string Icon, string? Clsid = null);
-internal sealed record ContextMenuRule(string Id, string Name = "", bool Visible = true, string Group = "", string Icon = "", Dictionary<string, bool>? Contexts = null, bool SeparatorBefore = false, bool SeparatorAfter = false);
+internal sealed record ContextMenuRule(string Id, string Name = "", bool Visible = true, string Group = "", string Icon = "", Dictionary<string, bool>? Contexts = null, bool SeparatorBefore = false, bool SeparatorAfter = false, string Extensions = "");
 
 internal static class ContextMenuCatalog
 {
@@ -157,7 +157,7 @@ internal static class ContextMenuCatalog
         foreach (var rule in rules)
         {
             if (rule.Contexts is not null && rule.Contexts.Keys.Any(key => !Contexts.Contains(key))) throw new FormatException("Geçersiz menü konumu.");
-            if (!ids.Add(rule.Id) || rule.Id.Length > 1024 || rule.Name.Length > 120 || rule.Group.Length > 80 || rule.Icon.Length > 2048 ||
+            if (!ids.Add(rule.Id) || rule.Id.Length > 1024 || rule.Name.Length > 120 || rule.Group.Length > 80 || rule.Icon.Length > 2048 || rule.Extensions.Length > 512 || rule.Extensions.IndexOfAny(['\r', '\n']) >= 0 ||
                 rule.Name.Contains('\n') || rule.Group.IndexOfAny(['\r', '\n', '\t', ';']) >= 0)
                 throw new FormatException("Geçersiz menü adı, grup veya simge.");
         }

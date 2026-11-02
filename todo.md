@@ -3,7 +3,6 @@
 <!--  -->
 
 
-
 <!-- Check -->
 tarih ve saat kısmında varsayıalndan çıkarsam tarih ve saatin solunda kocamam br boşluk oluyor
 

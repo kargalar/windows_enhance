@@ -1,6 +1,6 @@
 import { useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { useAutoSaveDraft } from './useAutoSaveDraft';
-type Rule = { id: string; name: string; visible: boolean; group: string; icon: string; contexts?: Record<string, boolean>; separatorBefore?: boolean; separatorAfter?: boolean };
+type Rule = { id: string; name: string; visible: boolean; group: string; icon: string; contexts?: Record<string, boolean>; separatorBefore?: boolean; separatorAfter?: boolean; extensions?: string };
 type Entry = Rule & { originalName: string; source: string; identity?: string; scope?: string; configured?: boolean; iconPreview?: string; hasOriginalIcon: boolean; isSeparator?: boolean };
 type Item = Entry & { ids: string[]; sources: string[]; contexts: Record<string, boolean> };
 export type ContextMenuState = { kind: 'context-menu'; groups: string[]; groupIcons?: Record<string, { icon: string; iconPreview?: string }>; entries: Entry[]; cleanSeparators?: boolean; showSeparators?: boolean; unquotedCopyPath?: boolean };
@@ -23,7 +23,7 @@ export function combineEntries(entries: Entry[]): Item[] {
   });
 }
 function MenuEntry({ entry, command, ref }: { entry: Item; command: Command; ref?: Ref<VisibilityControl> }) {
-  const rule: Omit<Rule, 'group'> = { id: entry.id, name: entry.isSeparator ? '' : entry.name, visible: entry.visible, icon: entry.isSeparator ? '' : entry.icon, contexts: entry.contexts, separatorBefore: entry.separatorBefore ?? false, separatorAfter: entry.separatorAfter ?? false };
+  const rule: Omit<Rule, 'group'> = { id: entry.id, name: entry.isSeparator ? '' : entry.name, visible: entry.visible, icon: entry.isSeparator ? '' : entry.icon, contexts: entry.contexts, separatorBefore: entry.separatorBefore ?? false, separatorAfter: entry.separatorAfter ?? false, extensions: entry.extensions ?? '' };
   const [draft, update, cancel] = useAutoSaveDraft(rule, next => command('save-item', { ids: entry.ids, rule: next }));
   const setVisibility = (visible: boolean) => update(previous => ({ ...previous, visible, contexts: Object.fromEntries(locations.map(([scope]) => [scope, visible])) }), true);
   useImperativeHandle(ref, () => ({ setVisibility }));
@@ -38,6 +38,7 @@ function MenuEntry({ entry, command, ref }: { entry: Item; command: Command; ref
     }} /></label>)}</div>
     <div className="context-icon-controls" aria-label={`${entry.originalName} tüm konumlar`}><button className="secondary-button" onClick={() => setVisibility(true)}>Tüm konumları aç</button><button className="secondary-button" onClick={() => setVisibility(false)}>Tüm konumları kapat</button></div>
     {!entry.isSeparator && <details className="context-entry-details"><summary>Diğer ayarlar</summary>
+      <label>Dosya uzantıları (boşsa tümü)<input className="white-control" aria-label={`${entry.originalName} dosya uzantıları`} value={draft.extensions ?? ''} maxLength={512} placeholder=".zip, .7z" onChange={event => update({ ...draft, extensions: event.target.value })} /></label>
       <label><input type="checkbox" aria-label={`${entry.originalName}: Önüne ayırıcı ekle`} checked={draft.separatorBefore ?? false} onChange={event => update({ ...draft, separatorBefore: event.target.checked }, true)} /> Önüne ayırıcı çizgi ekle</label>
       <label><input type="checkbox" aria-label={`${entry.originalName}: Arkasına ayırıcı ekle`} checked={draft.separatorAfter ?? false} onChange={event => update({ ...draft, separatorAfter: event.target.checked }, true)} /> Arkasına ayırıcı çizgi ekle</label>
       <label>Simge kaynağı<input className="white-control" aria-label={`${entry.originalName} simge kaynağı`} value={draft.icon} placeholder="shell32.dll,3" onChange={event => update({ ...draft, icon: event.target.value })} /></label><div className="context-icon-controls"><button className="secondary-button" onClick={() => { update(draft, true); command('pick-icon', { id: entry.id, ids: entry.ids }); }}>{entry.iconPreview ? 'Simgeyi değiştir' : 'Simge ekle'}</button><button className="secondary-button" disabled={!draft.icon} onClick={() => update({ ...draft, icon: '' }, true)}>Özgün simge</button><button className="secondary-button" onClick={() => { cancel(); command('reset-item', { ids: entry.ids }); }}>Varsayılana döndür</button></div></details>}

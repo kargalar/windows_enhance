@@ -139,7 +139,7 @@ bool ReadRules(std::vector<WinForgeMenu::Rule>& rules, std::wstring& directory, 
                     if (Number(key, (std::wstring(L"visible-") + scope).c_str(), fallback)) rule.contexts |= bit;
                     bit <<= 1;
                 }
-                rule.separatorBefore = Number(key, L"separator-before", 0) != 0; rule.separatorAfter = Number(key, L"separator-after", 0) != 0;
+                rule.separatorBefore = Number(key, L"separator-before", 0) != 0; rule.separatorAfter = Number(key, L"separator-after", 0) != 0; rule.extensions = Text(key, L"extensions");
                 rules.push_back(rule); RegCloseKey(key);
             }
             RegCloseKey(root);
@@ -209,7 +209,7 @@ LRESULT CALLBACK Hook(int code, WPARAM wparam, LPARAM lparam) {
                     CopySelection = {options.unquotedCopyPath ? paths : std::vector<std::wstring>{}, GetClipboardSequenceNumber(), 0};
                     SelectedCopyPath = false;
                     SetWindowSubclass(message->hwnd, GroupOwner, reinterpret_cast<UINT_PTR>(GroupOwner), 0);
-                    auto transaction = std::make_unique<WinForgeMenu::Transaction>(); transaction->Apply(menu, items, rules, context, options); Transactions[menu] = std::move(transaction);
+                    auto transaction = std::make_unique<WinForgeMenu::Transaction>(); transaction->Apply(menu, items, rules, context, options, paths); Transactions[menu] = std::move(transaction);
                 } else if (nested && ReadRules(rules, directory, options)) {
                     Capture(WinForgeMenu::ReadItems(message->hwnd, menu, false), directory);
                 }

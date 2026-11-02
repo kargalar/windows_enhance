@@ -47,10 +47,6 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
             Description = "PNG dosyasını multipart form alanı 'file' ile gönderir. Yanıt URL metni, Location başlığı veya url/link/direct_url JSON alanı olmalıdır." },
         new() { Key = "workflow", Label = "Yakalama sonrası işlem sırası", Kind = SettingKind.Choice, Default = "save-copy-edit-upload",
             Options = WorkflowOptions, OptionLabels = WorkflowLabels },
-        new() { Key = "region-confirm", Label = "Bölge seçimini taşıyıp boyutlandır, Enter ile yakala", Default = false,
-            Description = "Açıkken bölgeyi sürükleyerek yeniden konumlandırın, sağ alt köşeden boyutlandırın ve Enter ile onaylayın." },
-        new() { Key = "annotate-before-capture", Label = "Bölge yakalamada çekim öncesi çizim ve işaretleme", Default = true,
-            Description = "Alan seçiminden önce veya sonra kalem, ok, şekil ve vurgulama kullanın; Yakala veya Enter ile işaretlerle birlikte alın. Kapalıyken hızlı bölge seçimi kullanılır." },
         new() { Key = "delay", Label = "Yakalama gecikmesi (saniye)", Kind = SettingKind.Number, Min = 0, Max = 30, Default = 0 },
         new() { Key = "microphone", Label = "Video kaydında mikrofon", Default = false },
         new() { Key = "system-audio", Label = "Video kaydında sistem sesi", Default = false },
@@ -129,22 +125,16 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 "annotate-freehand" => DrawingTool.Freehand,
                 _ => (DrawingTool?)null
             };
-            CaptureAnnotations? annotations = null;
             FrozenDesktop? snapshot = null;
-            CaptureArea? SelectRegion()
-            {
-                if (!Context.Settings.GetBool("annotate-before-capture", true)) return CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"), out snapshot);
-                var selection = CaptureServices.SelectAnnotatedArea(); annotations = selection.Annotations; snapshot = selection.Snapshot; return selection.Area;
-            }
             CaptureArea? area = annotationTool is not null ? DesktopArea() : mode switch
             {
-                "region" => SelectRegion(),
+                "region" => CaptureServices.SelectArea(true, out snapshot),
                 "last" => lastArea,
                 "monitor" => CaptureServices.Monitor(),
                 "window" => CaptureServices.SelectWindow(out snapshot),
                 "active-window" => CaptureServices.WindowArea(foreground.Window),
                 "desktop" => DesktopArea(),
-                _ => CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"), out snapshot)
+                _ => CaptureServices.SelectArea(true, out snapshot)
             };
             if (area is not { IsValid: true } selected)
             {
@@ -161,7 +151,6 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 ShowRecordingControls(mode == "gif", store); return;
             }
             var image = mode == "scroll" ? null : snapshot?.Crop(selected) ?? CaptureServices.Capture(selected);
-            if (image is not null && annotations is not null) image = annotations.Apply(image, selected);
             var title = "Ekran görüntüsü";
             if (mode == "scroll")
             {

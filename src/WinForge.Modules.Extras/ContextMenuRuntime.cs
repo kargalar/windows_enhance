@@ -49,6 +49,7 @@ internal sealed class ContextMenuRuntime(ILogger log)
             key.SetValue("match", row.Entry!.Match); key.SetValue("name", row.Rule.Name);
             key.SetValue("visible", row.Rule.Visible ? 1 : 0); key.SetValue("group", row.Rule.Group); key.SetValue("icon", row.Icon);
             key.SetValue("separator-before", row.Rule.SeparatorBefore ? 1 : 0); key.SetValue("separator-after", row.Rule.SeparatorAfter ? 1 : 0);
+            key.SetValue("extensions", row.Rule.Extensions);
             key.SetValue("group-icon", exportedGroups.GetValueOrDefault(row.Rule.Group, ""));
             foreach (var scope in row.Contexts) key.SetValue("visible-" + scope.Key, scope.Value ? 1 : 0);
         }

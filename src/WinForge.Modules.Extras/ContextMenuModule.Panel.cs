@@ -39,7 +39,7 @@ public sealed partial class ContextMenuModule : IModulePanel
             var icon = rule?.Icon is { Length: > 0 } custom ? custom : entry.Icon;
             return new { entry.Id, originalName = entry.Name, name = rule?.Name is { Length: > 0 } name ? name : entry.Name,
                 entry.Source, identity = entry.Match, isSeparator = entry.Match.StartsWith("separator:"), scope = ContextMenuCatalog.Scope(entry), contexts = rule?.Contexts, configured = rule is not null,
-                separatorBefore = rule?.SeparatorBefore ?? false, separatorAfter = rule?.SeparatorAfter ?? false,
+                separatorBefore = rule?.SeparatorBefore ?? false, separatorAfter = rule?.SeparatorAfter ?? false, extensions = rule?.Extensions ?? "",
                 visible = rule?.Visible ?? (!entry.Id.StartsWith("prepared:") && (entry.Clsid is null || !_context!.Settings.GetBool("hide-" + entry.Clsid.Trim('{', '}').ToLowerInvariant(), IsBlocked(entry.Clsid)))),
                 group = rule?.Group ?? "", icon = rule?.Icon ?? "", iconPreview = Preview(icon), hasOriginalIcon = entry.Icon.Length > 0 };
         }).ToArray()

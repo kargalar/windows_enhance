@@ -249,10 +249,10 @@ internal static class Program
                 using var hidden = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.hidden-items\command");
                 Check((hidden?.GetValue("") as string)?.EndsWith("--context-hidden-items toggle") == true, "Hidden items action works without a selected file: " + location);
                 using var power = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.power-mode");
-                Check(power?.GetValue("SubCommands") as string == "", "Power modes form an Explorer submenu: " + location);
+                Check(power?.GetValue("") is null && power?.GetValue("MUIVerb") is string, "Power submenu uses the documented inline cascade registration: " + location);
                 foreach (var mode in ContextMenuQuickSettings.PowerModes)
                 {
-                    using var child = power?.OpenSubKey(@"shell\" + mode.Id + @"\command");
+                    using var child = power?.OpenSubKey(@"ExtendedSubCommandsKey\shell\" + mode.Id + @"\command");
                     Check((child?.GetValue("") as string)?.EndsWith("--context-power-mode " + mode.Id) == true, "Power mode command is correctly routed: " + mode.Label);
                 }
                 using var unrelated = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.desktop-shortcut");

@@ -163,6 +163,10 @@ int wmain(int argc, wchar_t** argv) {
         Check(WinForgeMenu::Canonical(L"Klas\u00f6r simgesini de\u011fi\u015ftir") == L"prepared:folder-icon", "Prepared folder icon catalog identity remains stable");
         Check(WinForgeMenu::Canonical(L"Gizli \u00f6\u011feleri g\u00f6ster / gizle") == L"prepared:hidden-items", "Hidden items catalog identity remains stable");
         Check(WinForgeMenu::Canonical(L"G\u00fc\u00e7 modu") == L"prepared:power-mode", "Power submenu catalog identity remains stable");
+        Check(WinForgeMenu::MatchesExtensions(L"zip, .7z", {L"C:\\test.ZIP", L"C:\\test.7z"}), "Extension filter accepts all matching selected files");
+        Check(!WinForgeMenu::MatchesExtensions(L".zip", {L"C:\\test.zip", L"C:\\test.txt"}), "Extension filter rejects mixed selections");
+        Check(!WinForgeMenu::MatchesExtensions(L".zip", {}), "Extension filter rejects an unknown selection");
+        Check(WinForgeMenu::MatchesExtensions(L"", {}), "Empty extension filter accepts all selections");
 
         AppendMenuW(root, MF_STRING | MF_CHECKED, 101, L"&Properties");
         AppendMenuW(create, MF_STRING, 201, L"&Folder"); AppendMenuW(create, MF_STRING, 202, L"Shortcut");

@@ -47,9 +47,6 @@ internal static class CaptureAnnotationChecks
         var saved = CaptureServices.Load(artifact);
         check(Pixel(saved, 40, 20).G < 20, "PNG encoding preserves the pre-capture annotations");
         marks.Clear(); check(!marks.HasMarks, "Clear removes every annotation");
-        var module = new ScreenCaptureModule();
-        check(module.Settings.Single(setting => setting.Key == "annotate-before-capture").Default is true,
-            "Pre-capture drawing is enabled by default for region capture");
         CheckPicker(check);
 
         void Mark(Point start, Point end) { marks.Begin(start); marks.Move(end); marks.Complete(); }
@@ -63,6 +60,11 @@ internal static class CaptureAnnotationChecks
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/WinForge.CaptureTests;component/TestTheme.xaml", UriKind.Relative) });
         }
         CheckFrozenDesktop(check);
+        var quickPicker = new RegionPicker(quickCapture: true);
+        quickPicker.Show(); Pump();
+        var quickSelection = new CaptureArea(10, 10, 100, 100);
+        typeof(RegionPicker).GetMethod("Select", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(quickPicker, [quickSelection]);
+        check(quickPicker.Result == quickSelection && !quickPicker.IsVisible, "Quick capture finishes as soon as an area is selected");
         var picker = new RegionPicker(quickCapture: false, allowDrawing: true);
         picker.Show(); Pump();
         try
