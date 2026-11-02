@@ -10,6 +10,7 @@ public sealed class SpeechBuffer
     private readonly object gate = new();
     private readonly List<float> samples = [];
     private double position;
+    private float previousSample;
     public bool Full { get { lock (gate) return samples.Count >= DictationAudio.SampleRate * DictationAudio.MaximumSeconds; } }
     public void Append(ReadOnlySpan<float> packet, int sampleRate)
     {
@@ -21,10 +22,17 @@ public sealed class SpeechBuffer
             var step = (double)sampleRate / DictationAudio.SampleRate;
             while (position < packet.Length && samples.Count < limit)
             {
-                var left = (int)position; var right = Math.Min(left + 1, packet.Length - 1);
-                var value = (float)(packet[left] + (packet[right] - packet[left]) * (position - left));
+                var left = (int)Math.Floor(position);
+                var fraction = position - left;
+                // A fractional sample at the packet boundary needs the first sample
+                // of the next packet; repeating the last sample introduces clicks.
+                if (left == packet.Length - 1 && fraction > 0) break;
+                var first = left < 0 ? previousSample : packet[left];
+                var second = fraction == 0 ? first : packet[left + 1];
+                var value = (float)(first + (second - first) * fraction);
                 samples.Add(float.IsFinite(value) ? Math.Clamp(value, -1, 1) : 0); position += step;
             }
+            previousSample = packet[^1];
             position -= packet.Length;
         }
     }
@@ -61,7 +69,7 @@ public sealed class SpeechBuffer
     }
     public void Clear()
     {
-        lock (gate) { CollectionsMarshal.AsSpan(samples).Clear(); samples.Clear(); position = 0; }
+        lock (gate) { CollectionsMarshal.AsSpan(samples).Clear(); samples.Clear(); position = 0; previousSample = 0; }
     }
     public static bool ContainsSpeech(float[] audio)
     {

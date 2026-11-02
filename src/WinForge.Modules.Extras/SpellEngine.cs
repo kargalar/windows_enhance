@@ -319,7 +319,7 @@ internal sealed class SpellEngine
         }
 
         var isKnownWord = IsKnownWord(word, languageTag, allowLearning);
-        if (isTurkish && (isKnownWord || CountTurkishDiacriticVariants(lowerWord) <= MaximumExhaustiveTurkishDiacriticPositions))
+        if (isTurkish && allowDeasciify && (isKnownWord || CountTurkishDiacriticVariants(lowerWord) <= MaximumExhaustiveTurkishDiacriticPositions))
         {
             var highConfidenceDiacriticCorrection = FindHighConfidenceTurkishKnownWordCorrection(
                 lowerWord, lowerPrevWord, allowContext, allowLearning, languageTag);

@@ -219,6 +219,8 @@ internal static class AutoCorrectQualityChecks
         check(Correct("calistigi") == "çalıştığı",
             "Six missing Turkish diacritics remain eligible when their weighted distance is low");
         check(Correct("benım") == "benim", "A high-confidence Turkish diacritic typo is corrected despite morphology acceptance");
+        check(Correct("benım", deasciify: false) is null,
+            "Disabling Turkish character completion also prevents known-word diacritic replacements");
         check(Correct("gundur") == "gündür", "Two unambiguous Turkish diacritic omissions are corrected in a known word");
         var affectionateSuggestions = (IReadOnlyList<string>)getSuggestions.Invoke(engine,
             ["askim", "tr-TR", null, true, true, false, false, null, 3])!;

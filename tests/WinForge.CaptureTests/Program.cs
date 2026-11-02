@@ -251,6 +251,17 @@ internal static class Program
     {
         Check(typeof(WasapiLoopbackCapture).GetConstructor(Type.EmptyTypes) is not null, "Existing loopback capture constructor remains binary compatible");
         var audio = new SpeechBuffer();
+        foreach (var rate in new[] { 8000, 44100, 48000 })
+        {
+            var input = Enumerable.Range(0, 10000).Select(i => (float)Math.Sin(i * 0.17)).ToArray();
+            var whole = new SpeechBuffer(); whole.Append(input, rate);
+            var fragmented = new SpeechBuffer();
+            for (var offset = 0; offset < input.Length; offset += 137)
+                fragmented.Append(input.AsSpan(offset, Math.Min(137, input.Length - offset)), rate);
+            var expected = whole.Take(); var actual = fragmented.Take();
+            Check(expected.Length == actual.Length && expected.Zip(actual).All(pair => Math.Abs(pair.First - pair.Second) < 0.0001f),
+                $"Resampling at {rate} Hz is independent of packet boundaries");
+        }
         for (var i = 0; i < 100; i++) audio.Append(Enumerable.Repeat(0.1f, 441).ToArray(), 44100);
         var samples = audio.Take(); Check(Math.Abs(samples.Length - 16000) <= 1 && SpeechBuffer.ContainsSpeech(samples), "Packet resampling preserves one second at 44.1 kHz");
         Check(audio.Take().Length == 0, "Consumed audio is cleared");
