@@ -41,6 +41,7 @@ public static class Appearance
     public static string ToneName { get; private set; } = "Siyah";
     public static bool Glow { get; private set; }
     public static double DetailWidth { get; private set; } = 460;
+    public static string Language { get; private set; } = "en";
 
     private static string FilePath => Path.Combine(WinForge.Core.AppData.DirectoryPath, "appearance.json");
 
@@ -71,6 +72,15 @@ public static class Appearance
                 detailWidth.TryGetDouble(out var dw) &&
                 dw >= 280 && dw <= 900)
                 DetailWidth = dw;
+
+            if (root.TryGetProperty("language", out var lang) &&
+                lang.GetString() is { } langCode &&
+                (langCode == "tr" || langCode == "en"))
+                Language = langCode;
+            else
+                Language = "en";
+
+            WinForge.Core.Localization.CurrentLanguage = Language;
         }
         catch
         {
@@ -87,7 +97,8 @@ public static class Appearance
                 accent = AccentName,
                 tone = ToneName,
                 glow = Glow,
-                detailWidth = Math.Round(DetailWidth, 1)
+                detailWidth = Math.Round(DetailWidth, 1),
+                language = Language
             }));
         }
         catch
@@ -112,6 +123,14 @@ public static class Appearance
     public static void SetGlow(bool enabled)
     {
         Glow = enabled;
+        Save();
+    }
+
+    public static void SetLanguage(string language)
+    {
+        var normalized = WinForge.Core.Localization.Normalize(language);
+        Language = normalized;
+        WinForge.Core.Localization.CurrentLanguage = normalized;
         Save();
     }
 

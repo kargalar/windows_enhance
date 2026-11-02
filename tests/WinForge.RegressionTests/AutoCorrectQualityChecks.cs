@@ -290,9 +290,22 @@ internal static class AutoCorrectQualityChecks
             $"Keyboard transposition bonuses do not bury a stronger Turkish diacritic candidate ({string.Join(", ", rankedTurkishDiacritics.Select(candidate => $"{candidate.GetType().GetProperty("Word")!.GetValue(candidate)}:{candidate.GetType().GetProperty("Score")!.GetValue(candidate)}"))})");
 
         VerifyHistory(extras, check);
+        VerifySkippedToken(extras, check);
         VerifyLearning(extras, check);
         VerifyUndo(extras, check);
         VerifyBackgroundAnalysis(extras, check);
+    }
+
+    private static void VerifySkippedToken(Assembly extras, Action<bool, string> check)
+    {
+        var type = extras.GetType("WinForge.Modules.Extras.AutoCorrectModule")!;
+        var module = Activator.CreateInstance(type)!;
+        var skipped = type.GetField("_isWordSkipped", PrivateInstance)!;
+        type.GetMethod("MarkWordSkipped", PrivateInstance)!.Invoke(module, null);
+        type.GetMethod("RemoveLastCharacter", PrivateInstance)!.Invoke(module, null);
+        check((bool)skipped.GetValue(module)!, "Backspace does not make a partially edited identifier eligible for correction");
+        type.GetMethod("ResetWord", PrivateInstance)!.Invoke(module, null);
+        check(!(bool)skipped.GetValue(module)!, "A delimiter resets the skipped-token protection");
     }
 
     private static void VerifyBackgroundAnalysis(Assembly extras, Action<bool, string> check)

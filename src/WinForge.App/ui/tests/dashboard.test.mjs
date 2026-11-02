@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Window } from 'happy-dom';
 import { createServer } from 'vite';
@@ -20,7 +20,7 @@ test('dashboard keeps navigation, theme selection and module details available w
       await act(async () => button.click());
     };
     assert.equal(document.querySelector('.dashboard-sidebar'), null);
-    assert.equal(document.querySelectorAll('.dashboard-navigation button').length, 8);
+    assert.equal(document.querySelectorAll('.dashboard-navigation button').length, 9);
     assert.ok(document.querySelector('.light-dashboard'));
     await click('.dashboard-actions .secondary-button');
     assert.ok(document.querySelector('.dark-dashboard'));
@@ -67,16 +67,27 @@ test('dashboard shows a persistence failure and uses the durable acknowledgement
   const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
   document.body.innerHTML = '<div id="root"></div>';
   const payload = {
-    modules: [], categories: [], activeCount: 0, totalCount: 0, version: 'test',
+    modules: [
+      { id: 'window-shortcuts', name: 'Window Shortcuts', category: 'Verimlilik', description: '', isActive: false, settings: [] },
+      { id: 'keyboard-manager', name: 'Keyboard Manager', category: 'Verimlilik', description: '', isActive: false, settings: [] },
+      { id: 'automation', name: 'Automation', category: 'Verimlilik', description: '', isActive: false, settings: [] },
+    ], categories: [], activeCount: 0, totalCount: 3, version: 'test',
     appearance: { tone: 'Açık', accent: 'Mavi', glow: false, tones: ['Açık'], accents: [{ name: 'Mavi', hex: '#75A7FF' }] },
     persistence: { pending: true, error: 'Disk full' },
   };
   try {
     await act(async () => { await server.ssrLoadModule('/src/main.tsx'); });
     await act(async () => receive({ data: { type: 'state', payload } }));
-    assert.match(document.querySelector('[role="alert"]').textContent, /Ayarlar kaydedilemedi: Disk full/);
+    assert.match(document.querySelector('[role="alert"]').textContent, /(?:Ayarlar kaydedilemedi|Settings could not be saved): Disk full/);
     await act(async () => receive({ data: { type: 'state', payload, persistence: { pending: false, error: null } } }));
     assert.equal(document.querySelector('[role="alert"]'), null);
+    const nav = [...document.querySelectorAll('.dashboard-navigation button')];
+    await act(async () => nav.find(button => /K?sayollar|Shortcuts/.test(button.textContent)).click());
+    assert.equal(document.querySelectorAll('.tool-card').length, 2);
+    assert.match(document.querySelector('.dashboard-workspace').textContent, /Keyboard Manager/);
+    await act(async () => nav.find(button => /Verimlilik|Productivity/.test(button.textContent)).click());
+    assert.equal(document.querySelectorAll('.tool-card').length, 1);
+    assert.match(document.querySelector('.dashboard-workspace').textContent, /Automation/);
   } finally {
     await server.close();
     await window.happyDOM.close();

@@ -178,7 +178,7 @@ public partial class MainWindow
                 _moduleSnapshots[module.Id] = snapshot;
                 return snapshot;
             }).ToArray(),
-            categories = modules.Select(module => module.Category).Distinct(StringComparer.CurrentCultureIgnoreCase)
+            categories = modules.Select(module => WinForge.Core.Localization.Get(module.Category, Appearance.Language)).Distinct(StringComparer.CurrentCultureIgnoreCase)
                 .OrderBy(category => category, StringComparer.CurrentCultureIgnoreCase).ToArray(),
             activeCount = modules.Count(module => module.IsActive), totalCount = modules.Count,
             dataDirectory = AppData.DirectoryPath, persistence = App.Instance.Store.Persistence,

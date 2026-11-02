@@ -462,7 +462,8 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     private void RemoveLastCharacter()
     {
         if (_word.Length > 0) _word.Length--;
-        if (_word.Length == 0) _isWordSkipped = false;
+        // Once an identifier or other unsupported token is encountered, its
+        // remaining prefix is unknown. Backspace cannot safely reconstruct it.
         if (_word.Length > 0) QueueCurrentWordSuggestions(_wordWindow);
         else _suggestionWindow?.Hide();
     }

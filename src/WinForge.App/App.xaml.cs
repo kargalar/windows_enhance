@@ -26,6 +26,7 @@ public partial class App : Application
     public IFeatureUiService FeatureUi { get; private set; } = null!;
     public MainWindow? MainView { get; private set; }
     private TrayIcon? _tray;
+    public void UpdateTrayLanguage() => _tray?.UpdateLanguage();
 
     public bool IsExiting { get; private set; }
 

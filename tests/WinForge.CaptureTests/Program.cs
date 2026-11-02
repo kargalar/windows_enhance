@@ -224,6 +224,10 @@ internal static class Program
         var samples = audio.Take(); Check(Math.Abs(samples.Length - 16000) <= 1 && SpeechBuffer.ContainsSpeech(samples), "Packet resampling preserves one second at 44.1 kHz");
         Check(audio.Take().Length == 0, "Consumed audio is cleared");
         Check(!SpeechBuffer.ContainsSpeech(new float[16000]) && !SpeechBuffer.ContainsSpeech([0.5f]), "Silence and short recordings do not invoke Whisper");
+        var quietWithPause = new float[16000 * 10];
+        Array.Fill(quietWithPause, 0.003f, 0, 1600);
+        Array.Fill(quietWithPause, 0.003f, quietWithPause.Length - 1600, 1600);
+        Check(SpeechBuffer.ContainsSpeech(quietWithPause), "Quiet speech separated by a long pause is not rejected by whole-recording average energy");
         audio.Append([float.NaN, float.PositiveInfinity], 16000); Check(audio.Take().All(float.IsFinite), "Invalid audio samples sanitized");
         audio.Append(new float[32000], 16000);
         audio.Append(Enumerable.Repeat(0.01f, 16000).ToArray(), 16000);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t } from './localization';
 
 const keys: Record<string, string> = {
   Minus: 'OemMinus', Equal: 'OemPlus', Comma: 'OemComma', Period: 'OemPeriod',
@@ -76,7 +77,7 @@ export function ShortcutField({ value, label, onChange, onCommit, onCapture, all
     end();
     if (!wasRecording) callbacks.current.onCommit?.(latest.current.trim());
   }}>
-    <input ref={input} className="white-control" aria-label={label} value={recording ? 'Tuş veya fare kombinasyonuna basın…' : value} readOnly={recording}
+    <input ref={input} className="white-control" aria-label={label} value={recording ? t('shortcut.recording') : value} readOnly={recording}
       onFocus={begin} onChange={event => change(event.target.value)}
       onKeyDown={event => {
         if (!recordingRef.current) {
@@ -104,6 +105,6 @@ export function ShortcutField({ value, label, onChange, onCommit, onCapture, all
       if (recordingRef.current) { end(); return; }
       begin(); recordingRef.current = true; setRecording(true); input.current?.focus();
       window.chrome?.webview?.postMessage({ command: 'shortcut.record-begin', payload: {} });
-    }}>{recording ? 'İptal' : allowMouse ? 'Tuş / fare ata' : 'Tuş ata'}</button>
+    }}>{recording ? t('shortcut.cancel') : allowMouse ? t('shortcut.assignKeyMouse') : t('shortcut.assignKey')}</button>
   </div>;
 }

@@ -63,8 +63,21 @@ public sealed class SpeechBuffer
     {
         lock (gate) { CollectionsMarshal.AsSpan(samples).Clear(); samples.Clear(); position = 0; }
     }
-    public static bool ContainsSpeech(float[] audio) => audio.Length >= DictationAudio.SampleRate / 4 &&
-        Math.Sqrt(audio.Sum(sample => (double)sample * sample) / audio.Length) >= SilenceThreshold;
+    public static bool ContainsSpeech(float[] audio)
+    {
+        if (audio.Length < DictationAudio.SampleRate / 4) return false;
+        // Match the trimming detector: long pauses between quiet utterances must not
+        // dilute their energy below the threshold for the entire recording.
+        const int frame = DictationAudio.SampleRate / 50;
+        for (var offset = 0; offset < audio.Length; offset += frame)
+        {
+            var length = Math.Min(frame, audio.Length - offset);
+            double energy = 0;
+            for (var i = offset; i < offset + length; i++) energy += (double)audio[i] * audio[i];
+            if (energy / length >= SilenceThreshold * SilenceThreshold) return true;
+        }
+        return false;
+    }
 }
 
 public enum DictationKeyAction { None, Start, Stop }

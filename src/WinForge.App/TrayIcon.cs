@@ -22,10 +22,11 @@ public sealed class TrayIcon : IDisposable
             new Uri("pack://application:,,,/WinForge;component/Assets/WinForge.ico")).Stream;
         _icon = new Icon(resource, SystemInformation.SmallIconSize);
 
+        var isTr = WinForge.Core.Localization.IsTurkish(Appearance.Language);
         var menu = new ContextMenuStrip { ShowImageMargin = false };
-        menu.Items.Add("WinForge'u aç", null, (_, _) => _show());
+        menu.Items.Add(isTr ? "WinForge'u aç" : "Open WinForge", null, (_, _) => _show());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Çıkış", null, (_, _) => _exit());
+        menu.Items.Add(isTr ? "Çıkış" : "Exit", null, (_, _) => _exit());
 
         _notifyIcon = new NotifyIcon
         {
@@ -36,6 +37,16 @@ public sealed class TrayIcon : IDisposable
         };
 
         _notifyIcon.DoubleClick += (_, _) => _show();
+    }
+
+    public void UpdateLanguage()
+    {
+        if (_notifyIcon?.ContextMenuStrip is { } menu)
+        {
+            var isTr = WinForge.Core.Localization.IsTurkish(Appearance.Language);
+            if (menu.Items.Count > 0) menu.Items[0].Text = isTr ? "WinForge'u aç" : "Open WinForge";
+            if (menu.Items.Count > 2) menu.Items[2].Text = isTr ? "Çıkış" : "Exit";
+        }
     }
 
     public void Dispose()

@@ -11,6 +11,8 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act, useState, StrictMode } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
+const { setLanguage } = await server.ssrLoadModule('/src/localization.ts');
+setLanguage('tr');
 const { ShortcutField } = await server.ssrLoadModule('/src/ShortcutField.tsx');
 const { ShortcutActionsPanel } = await server.ssrLoadModule('/src/ShortcutActionsPanel.tsx');
 const { AutomationPanel } = await server.ssrLoadModule('/src/AutomationPanel.tsx');

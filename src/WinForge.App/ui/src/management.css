@@ -90,7 +90,7 @@
 .warning-box strong, .error-box strong, .empty-state strong { font-size: 13px; }
 .warning-box p, .error-box p, .empty-state p { font-size: 12px; }
 .appearance-dialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
-.tone-option { min-height: 60px; font-size: 13px; }
+.tone-option, .lang-option { min-height: 60px; font-size: 13px; }
 .appearance-section h3 { font-size: 13px; }
 .accent-options { flex-wrap: wrap; }
 .skip-link { position: fixed; top: -100px; left: 20px; z-index: 30; padding: 14px; border-radius: 10px; color: #101114; background: #dce4ff; }

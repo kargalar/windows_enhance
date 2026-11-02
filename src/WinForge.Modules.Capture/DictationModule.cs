@@ -45,7 +45,6 @@ public sealed class DictationModule : CaptureModuleBase
                 new() { Key = "output", Label = "İngilizceye çevir (Large kullanır)", Default = false },
                 new() { Key = "cpu", Label = "Yalnız CPU kullan", Default = false },
                 new() { Key = "microphone", Label = "Mikrofon", Kind = SettingKind.Choice, Default = "", Options = devices.Select(d => d.Id).ToArray(), OptionLabels = devices.ToDictionary(d => d.Id, d => d.Name) },
-                new() { Key = "start-with-windows", Label = "Windows açıldığında WinForge'u başlat", Default = false },
                 new() { Key = "mute-playback", Label = "Dikte sırasında etkin ses çıkışlarını sessize al", Default = true },
                 new() { Key = "result-duration", Label = "Sonuç bildirimi süresi (saniye; 0 = sürekli)", Kind = SettingKind.Number, Min = 0, Max = 120, Default = 5 },
                 new() { Key = "overlay-position", Label = "Dikte bildiriminin konumu", Kind = SettingKind.Choice, Default = "bottom-center",
@@ -60,7 +59,7 @@ public sealed class DictationModule : CaptureModuleBase
     {
         if (IsActive) return;
         activeStore = Store;
-        try { ApplyStartupSetting(); Register(); base.Activate(); PrepareSelectedModel(); }
+        try { Register(); base.Activate(); PrepareSelectedModel(); }
         catch { Deactivate(); throw; }
     }
     private void Register()
@@ -98,8 +97,7 @@ public sealed class DictationModule : CaptureModuleBase
     }
     public override void Apply()
     {
-        ApplyStartupSetting();
-        if (IsActive) { Cancel(); Register(); activeStore = Store; PrepareSelectedModel(); }
+                if (IsActive) { Cancel(); Register(); activeStore = Store; PrepareSelectedModel(); }
     }
     private void PrepareSelectedModel()
     {
@@ -110,21 +108,6 @@ public sealed class DictationModule : CaptureModuleBase
         if (File.Exists(path))
             _ = PrepareModelAsync(new DictationConfiguration(path,
                 Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu")), default);
-    }
-    private void ApplyStartupSetting()
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            if (Context.Settings.GetBool("start-with-windows"))
-            {
-                var executable = Environment.ProcessPath;
-                if (string.IsNullOrWhiteSpace(executable)) throw new InvalidOperationException("WinForge çalıştırılabilir dosya yolu bulunamadı.");
-                key?.SetValue("WinForgeVoiceDictation", $"\"{executable}\" --startup");
-            }
-            else key?.DeleteValue("WinForgeVoiceDictation", false);
-        }
-        catch (Exception error) { Report(new InvalidOperationException("Windows başlangıç ayarı uygulanamadı.", error)); }
     }
     public override void Deactivate()
     {
@@ -218,7 +201,16 @@ public sealed class DictationModule : CaptureModuleBase
             var text = await client.TranscribeAsync(samples, config, token); token.ThrowIfCancellationRequested();
             Context.Log.Info($"Dictation transcription: {client.Engine}; audio={(double)samples.Length / DictationAudio.SampleRate:F2} s; elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
             if (text.Length == 0) { ShowStatus("Metin bulunamadı."); return; }
-            await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
+            try
+            {
+                await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error)
+            {
+                Context.Log.Error("Dikte geçmişe kaydedilemedi.", error);
+                Context.Notify("Dikte geçmişe kaydedilemedi; metin yine de sunulacak.");
+            }
             token.ThrowIfCancellationRequested();
             var copied = TryCopyResult(text);
             var result = await FocusedTextOutput.InsertAsync(target, text, token);

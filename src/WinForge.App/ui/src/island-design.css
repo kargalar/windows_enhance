@@ -98,8 +98,8 @@ html { background: var(--island-base); }
 .warning-box, .error-box { border-radius: 19px; }
 .appearance-dialog { border-color: #ffffff1a; border-radius: 32px; padding: 26px; background: #111216; box-shadow: 0 28px 100px #000b, inset 0 1px #ffffff0c; animation: surface-arrive 350ms var(--ease-island); }
 .appearance-dialog .icon-button { border-radius: 50%; }
-.tone-option { border-radius: 20px; background: #ffffff05; border-color: #ffffff12; }
-.tone-option.selected { background: #ffffff0b; border-color: #a5baff70; }
+.tone-option, .lang-option { border-radius: 20px; background: #ffffff05; border-color: #ffffff12; }
+.tone-option.selected, .lang-option.selected { background: #ffffff0b; border-color: #a5baff70; }
 .toast-error { border-radius: 999px; animation: surface-arrive 300ms var(--ease-island); }
 
 /* Tool surfaces share the same material while preserving each tool's layout. */

@@ -25,6 +25,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         Appearance.Load();
         ApplyAppearance();
+        ApplyLanguage();
         _shortcutCaptureTimer.Tick += (_, _) =>
         {
             try { PostMessage(new { type = "shortcut-recorded", shortcut = "" }); EndShortcutCapture(); }
@@ -87,9 +88,10 @@ public partial class MainWindow : Window
         catch (Exception exception)
         {
             App.Instance.Logger.Error("Web arayüzü başlatılamadı.", exception);
+            var isTr = WinForge.Core.Localization.IsTurkish(Appearance.Language);
             var runtimeMessage = exception is WebView2RuntimeNotFoundException
-                ? "Microsoft Edge WebView2 Runtime bulunamadı. Runtime'ı yükleyip WinForge'u yeniden başlatın."
-                : "WebView2 arayüzü başlatılamadı. WebView2 Runtime'ın yüklü olduğunu ve WinForge userdata klasörünün erişilebilir olduğunu kontrol edin.";
+                ? (isTr ? "Microsoft Edge WebView2 Runtime bulunamadı. Runtime'ı yükleyip WinForge'u yeniden başlatın." : "Microsoft Edge WebView2 Runtime could not be found. Please install the runtime and restart WinForge.")
+                : (isTr ? "WebView2 arayüzü başlatılamadı. WebView2 Runtime'ın yüklü olduğunu ve WinForge userdata klasörünün erişilebilir olduğunu kontrol edin." : "Could not initialize WebView2 interface. Ensure WebView2 Runtime is installed and WinForge userdata directory is accessible.");
             MessageBox.Show(this,
                 runtimeMessage + "\n\n" + exception.Message,
                 "WinForge", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -192,8 +194,39 @@ public partial class MainWindow : Window
         if (payload.TryGetProperty("tone", out var tone)) Appearance.SetTone(tone.GetString() ?? "Varsayılan");
         if (payload.TryGetProperty("accent", out var accent)) Appearance.SetAccent(accent.GetString() ?? "Mavi");
         if (payload.TryGetProperty("glow", out var glow)) Appearance.SetGlow(glow.GetBoolean());
+        if (payload.TryGetProperty("language", out var lang))
+        {
+            Appearance.SetLanguage(lang.GetString() ?? "en");
+            ApplyLanguage();
+            _fullRefreshNeeded = true;
+        }
         ApplyAppearance();
         _appearanceChanged = true;
+    }
+
+    private void ApplyLanguage()
+    {
+        var lang = Appearance.Language;
+        var minText = WinForge.Core.Localization.Get("Simge durumuna küçült", lang);
+        var maxText = WinForge.Core.Localization.Get("Ekranı kapla", lang);
+        var closeText = WinForge.Core.Localization.Get("Kapat", lang);
+
+        if (MinimizeButton != null)
+        {
+            MinimizeButton.ToolTip = minText;
+            System.Windows.Automation.AutomationProperties.SetName(MinimizeButton, minText);
+        }
+        if (MaximizeButton != null)
+        {
+            MaximizeButton.ToolTip = maxText;
+            System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, maxText);
+        }
+        if (CloseButton != null)
+        {
+            CloseButton.ToolTip = closeText;
+            System.Windows.Automation.AutomationProperties.SetName(CloseButton, closeText);
+        }
+        App.Instance.UpdateTrayLanguage();
     }
 
     private static ITweakModule FindModule(string? id) =>
