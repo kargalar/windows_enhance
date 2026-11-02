@@ -30,6 +30,13 @@ internal static class CaptureAnnotationChecks
             marks.Clear(); marks.Tool = tool; Mark(new(-280, 220), new(-220, 260));
             check(Pixel(marks.Apply(image, area), x, y).G < 100, tool + " is included in the exported screenshot");
         }
+        marks.Clear(); marks.Tool = DrawingTool.Line; Mark(new(-280, 220), new(-220, 220));
+        check(Pixel(marks.Apply(image, area), 40, 20).G < 20, "Geometry lines are included in exported screenshots");
+        marks.Clear(); marks.Text = "Test"; marks.AddText(new(-280, 220));
+        var textImage = marks.Apply(image, area);
+        check(Enumerable.Range(20, 40).Any(y => Enumerable.Range(20, 80).Any(x => Pixel(textImage, x, y).G < 200)), "Text annotations render into the captured image");
+        marks.Undo(); check(!marks.HasMarks, "Text annotations can be undone");
+        marks.Text = " "; marks.AddText(new(-280, 220)); check(!marks.HasMarks, "Empty text does not create an annotation");
         marks.Clear(); marks.Tool = DrawingTool.Highlight; Mark(new(-280, 250), new(-180, 250));
         var highlighted = Pixel(marks.Apply(image, area), 50, 50);
         check(highlighted.R > 240 && highlighted.G is > 100 and < 230, "Highlight stays translucent over the captured content");
@@ -55,6 +62,7 @@ internal static class CaptureAnnotationChecks
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/WinForge.CaptureTests;component/TestTheme.xaml", UriKind.Relative) });
         }
+        CheckFrozenDesktop(check);
         var picker = new RegionPicker(quickCapture: false, allowDrawing: true);
         picker.Show(); Pump();
         try
@@ -62,10 +70,26 @@ internal static class CaptureAnnotationChecks
             var surface = Application.Current!.Windows.Cast<Window>().First(window => window.GetType().Name == "RegionSurface");
             var canvas = (Canvas)surface.Content;
             var buttons = Descendants(canvas).OfType<Button>().ToArray();
-            check(new[] { "Alan seç", "Kalem", "Ok", "Dikdörtgen", "Elips", "Vurgula", "Geri al", "Temizle", "Yakala ↵", "İptal" }.All(label => buttons.Any(button => Equals(button.Content, label))),
-                "The selection overlay exposes drawing tools before taking the screenshot");
-            buttons.Single(button => Equals(button.Content, "Kalem")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(picker.Annotations!.Tool == DrawingTool.Freehand, "The overlay switches from region selection to drawing");
+            Button Tool(string name) => buttons.Single(button => System.Windows.Automation.AutomationProperties.GetName(button) == name);
+            var primaryTools = buttons.Where(button => button.Content is System.Windows.Shapes.Path).ToArray();
+            check(primaryTools.Length == 4, "The toolbar starts with exactly four icon tools");
+            check(picker.Annotations!.Tool == DrawingTool.Select && primaryTools.Skip(1).All(button => System.Windows.Automation.AutomationProperties.GetItemStatus(button) == ""),
+                "A capture starts in area selection with every drawing tool inactive");
+            var options = Descendants(canvas).OfType<TextBox>().Single();
+            check(!options.IsVisible, "Drawing options stay hidden until a drawing tool is chosen");
+            Tool("Metin").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(options.IsVisible && picker.Annotations.Tool == DrawingTool.Text, "Text tool opens its text entry options");
+            options.Text = "Screenshot note";
+            check(picker.Annotations.Text == "Screenshot note", "Text entry updates the annotation text");
+            Tool("Geometri").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var shapes = Descendants(canvas).OfType<ComboBox>().Single(box => box.SelectedValuePath == "Tag");
+            shapes.SelectedValue = DrawingTool.Ellipse;
+            check(picker.Annotations.Tool == DrawingTool.Ellipse && !options.IsVisible, "Geometry chooses a shape and hides text options");
+            Tool("Kalem").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(picker.Annotations.Tool == DrawingTool.Freehand, "The overlay switches from region selection to drawing");
+            primaryTools[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(picker.Annotations.Tool == DrawingTool.Select && !shapes.IsVisible, "The first icon returns to area selection and hides drawing options");
+            Tool("Kalem").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var display = DesktopDisplays.ForWindow(new System.Windows.Interop.WindowInteropHelper(surface).Handle);
             var x = display.Bounds.Left; var y = display.Bounds.Top;
             picker.Annotations.Begin(new(x + 130, y + 230)); picker.Annotations.Move(new(x + 450, y + 340)); picker.Annotations.Complete();
@@ -90,6 +114,45 @@ internal static class CaptureAnnotationChecks
         var cancelSurface = Application.Current.Windows.Cast<Window>().First(window => window.GetType().Name == "RegionSurface");
         Descendants((DependencyObject)cancelSurface.Content).OfType<Button>().Single(button => Equals(button.Content, "İptal")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(picker.Result is null && !picker.Annotations!.HasMarks, "Cancelling discards the capture and a new session starts without previous marks");
+    }
+
+    private static void CheckFrozenDesktop(Action<bool, string> check)
+    {
+        BitmapSource Solid(Color color)
+        {
+            var pixels = new byte[80 * 60 * 4];
+            for (var i = 0; i < pixels.Length; i += 4) { pixels[i] = color.B; pixels[i + 1] = color.G; pixels[i + 2] = color.R; pixels[i + 3] = 255; }
+            var source = BitmapSource.Create(80, 60, 144, 144, PixelFormats.Bgra32, null, pixels, 80 * 4); source.Freeze(); return source;
+        }
+        var snapshot = new FrozenDesktop(new[] { (new CaptureArea(-80, 0, 80, 60), Solid(Colors.Red)), (new CaptureArea(0, 0, 80, 60), Solid(Colors.Blue)) });
+        var crop = snapshot.Crop(new(-20, 10, 40, 30));
+        check(crop.PixelWidth == 40 && crop.PixelHeight == 30 && Pixel(crop, 5, 5) == Colors.Red && Pixel(crop, 35, 5) == Colors.Blue,
+            "Frozen crops span monitors at negative origins using physical pixels at mixed DPI");
+        var display = DesktopDisplays.Enumerate().First();
+        var fixture = new Window { WindowStyle = WindowStyle.None, ShowInTaskbar = false, ShowActivated = false,
+            ResizeMode = ResizeMode.NoResize, Background = Brushes.Magenta, Topmost = true, Width = 180, Height = 160 };
+        var picker = new RegionPicker(quickCapture: false, allowDrawing: true);
+        try
+        {
+            fixture.Show();
+            Native.SetWindowPos(new System.Windows.Interop.WindowInteropHelper(fixture).Handle, Native.HWND_TOPMOST,
+                display.Bounds.Left + 100, display.Bounds.Top + 150, 180, 160, 0x0040);
+            fixture.UpdateLayout(); Pump();
+            picker.Show(); Pump();
+            var area = new CaptureArea(display.Bounds.Left + 130, display.Bounds.Top + 180, 80, 60);
+            fixture.Background = Brushes.Lime; fixture.UpdateLayout(); Pump();
+            var surface = Application.Current!.Windows.Cast<Window>().First(window => window.GetType().Name == "RegionSurface");
+            check(((Canvas)surface.Content).Background is DrawingBrush,
+                "The selection overlay displays an opaque frozen desktop backdrop");
+            check(Pixel(picker.Snapshot!.Crop(area), 40, 30) == Colors.Magenta,
+                "Changing the underlying window during selection preserves the opening frame");
+            picker.Close(); Pump();
+            check(Pixel(CaptureServices.Capture(area), 40, 30) == Colors.Lime,
+                "The live desktop changed while the saved screenshot kept the original frame");
+            check(Pixel(picker.Snapshot.Crop(area), 40, 30) == Colors.Magenta,
+                "The opening frame remains available after closing the selection overlays");
+        }
+        finally { picker.Close(); fixture.Close(); }
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)

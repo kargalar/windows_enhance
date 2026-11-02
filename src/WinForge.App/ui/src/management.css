@@ -149,9 +149,9 @@
 .details-scroll .defaults-path-edit input { min-width: 180px; flex: 1; }
 
 .details-scroll .defaults-list { overflow: visible; flex: initial; }
-.context-locations { display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 2px; }
+.context-locations { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 2px; }
 .context-locations > label { display: flex; align-items: center; gap: 6px; font-size: 11px; }
-.context-locations .toggle { position: relative; flex-shrink: 0; }
+.context-locations input[type="checkbox"] { width: 16px; height: 16px; margin: 0; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
 .context-groups { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 7px 10px; font-size: 12px; }
 .context-groups > header, .context-group-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .context-groups > header > strong, .context-group-row > span { flex: 1; }
@@ -170,10 +170,6 @@
 .context-help { color: var(--muted); font-size: 11px; }
 .context-help summary { cursor: pointer; padding: 3px 0; }
 .context-help p { margin: 5px 0; line-height: 1.5; }
-.context-menu-panel .context-locations .toggle { width: 30px; height: 26px; padding: 0; }
-.context-menu-panel .context-locations .toggle::before { inset: 5px 0; }
-.context-menu-panel .context-locations .toggle span { width: 10px; height: 10px; left: 4px; top: 8px; }
-.context-menu-panel .context-locations .toggle.on span { transform: translateX(12px); }
 @media (max-width: 640px) {
   .context-group-editor { grid-template-columns: minmax(0, 1fr); }
   .context-locations { column-gap: 12px; }

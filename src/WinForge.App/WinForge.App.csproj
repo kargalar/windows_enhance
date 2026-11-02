@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\WinForge.ico</ApplicationIcon>
     <AssemblyName>WinForge</AssemblyName>
     <Version>1.0.0</Version>
     <RootNamespace>WinForge.App</RootNamespace>
@@ -16,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\WinForge.ico" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
@@ -33,7 +35,7 @@
   </ItemGroup>
 
   <Target Name="BuildReactUi" BeforeTargets="PrepareForBuild"
-          Inputs="$(MSBuildProjectDirectory)\ui\package.json;$(MSBuildProjectDirectory)\ui\package-lock.json;$(MSBuildProjectDirectory)\ui\index.html;$(MSBuildProjectDirectory)\ui\vite.config.ts;$(MSBuildProjectDirectory)\ui\tsconfig*.json;$(MSBuildProjectDirectory)\ui\src\**\*"
+          Inputs="$(MSBuildProjectDirectory)\ui\package.json;$(MSBuildProjectDirectory)\ui\package-lock.json;$(MSBuildProjectDirectory)\ui\index.html;$(MSBuildProjectDirectory)\ui\vite.config.ts;$(MSBuildProjectDirectory)\ui\tsconfig*.json;$(MSBuildProjectDirectory)\ui\public\**\*;$(MSBuildProjectDirectory)\ui\src\**\*"
           Outputs="$(MSBuildProjectDirectory)\wwwroot\index.html">
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\build-ui.ps1&quot; -UiDirectory &quot;$(MSBuildProjectDirectory)\ui&quot;" />
   </Target>

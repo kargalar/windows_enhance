@@ -62,6 +62,8 @@ internal static class ContextMenuCatalog
         entries["prepared:desktop-shortcut"] = new("prepared:desktop-shortcut", "Masaüstü kısayolu oluştur", "Hazır eylem", Normalize("Masaüstü kısayolu oluştur"), "shell32.dll,167");
         entries["prepared:toggle-hidden"] = new("prepared:toggle-hidden", "Dosyayı / kısayolu gizle veya göster", "Hazır eylem", Normalize("Dosyayı / kısayolu gizle veya göster"), "shell32.dll,3");
         entries["prepared:folder-icon"] = new("prepared:folder-icon", "Klasör simgesini değiştir", "Hazır eylem", Normalize("Klasör simgesini değiştir"), "shell32.dll,3");
+        entries["prepared:hidden-items"] = new("prepared:hidden-items", "Gizli öğeleri göster / gizle", "Hazır eylem", Normalize("Gizli öğeleri göster / gizle"), "shell32.dll,3");
+        entries["prepared:power-mode"] = new("prepared:power-mode", "Güç modu", "Hazır eylem", Normalize("Güç modu"), "powercpl.dll,0");
         foreach (var root in Roots)
         {
             ReadVerbs(root, entries);

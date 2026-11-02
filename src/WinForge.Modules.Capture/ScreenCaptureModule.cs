@@ -118,7 +118,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
             var foreground = CaptureServices.Foreground();
             if (mode == "multi-region")
             {
-                await CaptureMultipleAreasAsync(CaptureServices.SelectMultipleAreas(), foreground, token);
+                var areas = CaptureServices.SelectMultipleAreas(out var multiSnapshot);
+                await CaptureMultipleAreasAsync(areas, multiSnapshot, foreground, token);
                 return;
             }
             var annotationTool = mode switch
@@ -129,20 +130,21 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 _ => (DrawingTool?)null
             };
             CaptureAnnotations? annotations = null;
+            FrozenDesktop? snapshot = null;
             CaptureArea? SelectRegion()
             {
-                if (!Context.Settings.GetBool("annotate-before-capture", true)) return CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"));
-                var selection = CaptureServices.SelectAnnotatedArea(); annotations = selection.Annotations; return selection.Area;
+                if (!Context.Settings.GetBool("annotate-before-capture", true)) return CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"), out snapshot);
+                var selection = CaptureServices.SelectAnnotatedArea(); annotations = selection.Annotations; snapshot = selection.Snapshot; return selection.Area;
             }
             CaptureArea? area = annotationTool is not null ? DesktopArea() : mode switch
             {
                 "region" => SelectRegion(),
                 "last" => lastArea,
                 "monitor" => CaptureServices.Monitor(),
-                "window" => CaptureServices.SelectWindow(),
+                "window" => CaptureServices.SelectWindow(out snapshot),
                 "active-window" => CaptureServices.WindowArea(foreground.Window),
                 "desktop" => DesktopArea(),
-                _ => CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"))
+                _ => CaptureServices.SelectArea(!Context.Settings.GetBool("region-confirm"), out snapshot)
             };
             if (area is not { IsValid: true } selected)
             {
@@ -158,7 +160,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
                 recording = new(store.DirectoryPath, selected, Context.Settings.GetBool("microphone"), Context.Settings.GetBool("system-audio"), Context.Settings.GetBool("cursor", true), Math.Clamp(Context.Settings.GetInt("fps", 15), 5, 120));
                 ShowRecordingControls(mode == "gif", store); return;
             }
-            var image = mode == "scroll" ? null : CaptureServices.Capture(selected);
+            var image = mode == "scroll" ? null : snapshot?.Crop(selected) ?? CaptureServices.Capture(selected);
             if (image is not null && annotations is not null) image = annotations.Apply(image, selected);
             var title = "Ekran görüntüsü";
             if (mode == "scroll")
@@ -175,7 +177,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         catch (Exception error) { Report(error); }
         finally { if (recording is null) busy = false; }
     }
-    private async Task CaptureMultipleAreasAsync(IReadOnlyList<CaptureArea> areas, ForegroundInfo foreground, CancellationToken token)
+    private async Task CaptureMultipleAreasAsync(IReadOnlyList<CaptureArea> areas, FrozenDesktop? snapshot, ForegroundInfo foreground, CancellationToken token)
     {
         if (areas.Count == 0) return;
         var store = Store;
@@ -184,7 +186,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase
         {
             token.ThrowIfCancellationRequested();
             preview?.Close();
-            var image = CaptureServices.Capture(areas[index]); lastArea = areas[index];
+            var image = snapshot?.Crop(areas[index]) ?? CaptureServices.Capture(areas[index]); lastArea = areas[index];
             ShowPreview(image);
             await ProcessAfterCaptureAsync(image, store, foreground.App, $"Çoklu bölge {index + 1}/{areas.Count}", token);
         }

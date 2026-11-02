@@ -7,12 +7,17 @@ namespace WinForge.Modules.Capture;
 /// <summary>Marks use physical desktop pixels so overlays and exported crops agree at any DPI.</summary>
 internal sealed class CaptureAnnotations
 {
-    private sealed record Mark(DrawingTool Tool, Color Color, double Width, List<Point> Points);
+    private sealed record Mark(DrawingTool Tool, Color Color, double Width, List<Point> Points, string? Text = null);
     private readonly List<Mark> marks = [];
     private Mark? active;
     public DrawingTool Tool { get; set; } = DrawingTool.Select;
     public Color Color { get; set; } = Colors.Crimson;
     public double Width { get; set; } = 4;
+    public string Text { get; set; } = "Metin";
+    public void AddText(Point point)
+    {
+        if (!string.IsNullOrWhiteSpace(Text)) marks.Add(new(DrawingTool.Text, Color, Width, [point], Text));
+    }
     public bool IsDrawing => active is not null;
     public bool HasMarks => marks.Count > 0 || active is not null;
 
@@ -74,12 +79,19 @@ internal sealed class CaptureAnnotations
                     drawing.DrawGeometry(null, pen, path);
                 }
             }
+            else if (mark.Tool == DrawingTool.Text)
+            {
+                var text = new FormattedText(mark.Text ?? "", System.Globalization.CultureInfo.CurrentUICulture,
+                    FlowDirection.LeftToRight, new Typeface("Segoe UI"), Math.Max(18, mark.Width * 5), brush, 1);
+                drawing.DrawText(text, start);
+            }
             else if (mark.Tool is DrawingTool.Rectangle or DrawingTool.Ellipse)
             {
                 var rect = new Rect(start, end);
                 if (mark.Tool == DrawingTool.Rectangle) drawing.DrawRectangle(null, pen, rect);
                 else drawing.DrawEllipse(null, pen, new Point(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2), rect.Width / 2, rect.Height / 2);
             }
+            else if (mark.Tool == DrawingTool.Line) drawing.DrawLine(pen, start, end);
             else if (mark.Tool == DrawingTool.Arrow)
             {
                 drawing.DrawLine(pen, start, end);

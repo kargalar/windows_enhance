@@ -10,6 +10,39 @@ void Check(bool condition, char const* label) { if (!condition) throw std::runti
 std::wstring Label(HMENU menu, UINT pos) { wchar_t text[256]{}; GetMenuStringW(menu, pos, text, static_cast<int>(std::size(text)), MF_BYPOSITION); return text; }
 Microsoft::WRL::ComPtr<IContextMenu3> Active3;
 Microsoft::WRL::ComPtr<IContextMenu2> Active2;
+LRESULT CALLBACK PowerOwner(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (message == WM_INITMENUPOPUP && LOWORD(lparam) == 1) {
+        auto menu = reinterpret_cast<HMENU>(wparam);
+        if (GetMenuItemCount(menu) == 0) {
+            AppendMenuW(menu, MF_STRING, 301, L"Performance");
+            AppendMenuW(menu, MF_STRING, 302, L"Balanced");
+            AppendMenuW(menu, MF_STRING, 303, L"Power saver");
+        }
+        return 0;
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+void PowerCascadeChecks() {
+    WNDCLASSW type{}; type.hInstance = GetModuleHandleW(nullptr); type.lpszClassName = L"WinForgePowerFixture"; type.lpfnWndProc = PowerOwner;
+    RegisterClassW(&type);
+    auto owner = CreateWindowW(type.lpszClassName, L"", 0, 0, 0, 0, 0, nullptr, nullptr, type.hInstance, nullptr);
+    auto menu = CreatePopupMenu(), power = CreatePopupMenu(), unrelated = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, 10, L"Copy");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(power), L"G\u00fc\u00e7 modu");
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(unrelated), L"Extension");
+    auto items = WinForgeMenu::ReadItems(owner, menu, true);
+    Check(GetMenuItemCount(power) == 3, "Lazy power cascade initializes at its original position");
+    Check(GetMenuItemCount(unrelated) == 0, "Unrelated extension cascades stay lazy");
+    {
+        WinForgeMenu::Transaction transaction;
+        transaction.Apply(menu, items, {{L"prepared:power-mode", L"", L"Settings", L"", true, 8}}, 8);
+        auto group = GetSubMenu(menu, GetMenuItemCount(menu) - 1);
+        Check(GetSubMenu(group, 0) == power && GetMenuItemCount(power) == 3, "Desktop power cascade retains all modes when grouped");
+        Check(GetMenuItemID(power, 0) == 301 && GetMenuItemID(power, 2) == 303, "Grouped power commands retain their invocation IDs");
+    }
+    Check(GetSubMenu(menu, 1) == power && GetMenuItemCount(power) == 3, "Power cascade restores to its original position");
+    DestroyMenu(menu); DestroyWindow(owner); UnregisterClassW(type.lpszClassName, type.hInstance);
+}
 void SeparatorAndPathChecks() {
     auto menu = CreatePopupMenu();
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -124,9 +157,12 @@ int wmain(int argc, wchar_t** argv) {
     HMENU root = CreatePopupMenu(), create = CreatePopupMenu();
     try {
         SeparatorAndPathChecks();
+        PowerCascadeChecks();
         Check(WinForgeMenu::Canonical(L"Masa\u00fcst\u00fc k\u0131sayolu olu\u015ftur") == L"prepared:desktop-shortcut", "Prepared shortcut catalog identity remains stable");
         Check(WinForgeMenu::Canonical(L"Dosyay\u0131 / k\u0131sayolu gizle veya g\u00f6ster") == L"prepared:toggle-hidden", "Prepared visibility catalog identity remains stable");
         Check(WinForgeMenu::Canonical(L"Klas\u00f6r simgesini de\u011fi\u015ftir") == L"prepared:folder-icon", "Prepared folder icon catalog identity remains stable");
+        Check(WinForgeMenu::Canonical(L"Gizli \u00f6\u011feleri g\u00f6ster / gizle") == L"prepared:hidden-items", "Hidden items catalog identity remains stable");
+        Check(WinForgeMenu::Canonical(L"G\u00fc\u00e7 modu") == L"prepared:power-mode", "Power submenu catalog identity remains stable");
 
         AppendMenuW(root, MF_STRING | MF_CHECKED, 101, L"&Properties");
         AppendMenuW(create, MF_STRING, 201, L"&Folder"); AppendMenuW(create, MF_STRING, 202, L"Shortcut");

@@ -15,7 +15,7 @@ internal static class Program
         {
             if (args.Contains("--capture-context-only"))
             {
-                NativeRecordingChecks(); ContextMenuChecks(); PreparedActionsChecks();
+                NativeRecordingChecks(); ContextMenuChecks(); PreparedActionsChecks(); QuickSettingsChecks();
                 Check(ActionShortcut.Parse("Alt+XButton1") == new ActionShortcut(1, 0, "mousex1"), "Alt+XButton1 manual alias matches recorded side button");
                 Console.WriteLine($"PASS: {_checks} native recording, context menu and prepared action checks.");
                 return 0;
@@ -188,7 +188,7 @@ internal static class Program
         var copyPath = JsonSerializer.SerializeToElement(lineReload.GetPanelState(), Json).GetProperty("entries").EnumerateArray().Single(row => row.GetProperty("id").GetString() == "builtin:copy-path");
         Check(copyPath.GetProperty("separatorBefore").GetBoolean() && copyPath.GetProperty("separatorAfter").GetBoolean() && copyPath.GetProperty("contexts").GetProperty("shortcut").GetBoolean(), "Custom separator placement and shortcut overrides survive reload");
         var entries = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries");
-        Check(entries.EnumerateArray().Count(e => e.GetProperty("id").GetString()!.StartsWith("prepared:") && !e.GetProperty("visible").GetBoolean()) == 2, "Prepared actions are available and disabled by default");
+        Check(entries.EnumerateArray().Count(e => e.GetProperty("id").GetString()!.StartsWith("prepared:") && !e.GetProperty("visible").GetBoolean()) == 4, "Optional prepared actions are available and disabled by default");
         var folderIcon = entries.EnumerateArray().Single(e => e.GetProperty("id").GetString() == "prepared:folder-icon");
         Check(folderIcon.GetProperty("visible").GetBoolean() && folderIcon.GetProperty("contexts").EnumerateObject().All(p => p.Value.GetBoolean() == (p.Name == "folder")), "Folder icon action defaults to folders only");
         var shellLibrary = NativeLibrary.Load("shell32.dll");
@@ -232,6 +232,54 @@ internal static class Program
                 System.IO.Directory.Delete(root, true);
             }
         }
+    }
+
+    private static void QuickSettingsChecks()
+    {
+        var context = new Context();
+        var module = new ContextMenuModule(); module.Initialize(context);
+        var registryRoot = @"Software\WinForge.Tests\QuickSettings\" + Guid.NewGuid().ToString("N");
+        var rules = new[] { "prepared:hidden-items", "prepared:power-mode" }.Select(id => new ContextMenuRule(id,
+            Contexts: ContextMenuCatalog.Contexts.ToDictionary(scope => scope, scope => scope is "desktop" or "background"))).ToList();
+        try
+        {
+            module.ApplyPreparedActions(rules, registryRoot);
+            foreach (var location in new[] { @"DesktopBackground\Shell", @"Directory\Background\shell" })
+            {
+                using var hidden = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.hidden-items\command");
+                Check((hidden?.GetValue("") as string)?.EndsWith("--context-hidden-items toggle") == true, "Hidden items action works without a selected file: " + location);
+                using var power = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.power-mode");
+                Check(power?.GetValue("SubCommands") as string == "", "Power modes form an Explorer submenu: " + location);
+                foreach (var mode in ContextMenuQuickSettings.PowerModes)
+                {
+                    using var child = power?.OpenSubKey(@"shell\" + mode.Id + @"\command");
+                    Check((child?.GetValue("") as string)?.EndsWith("--context-power-mode " + mode.Id) == true, "Power mode command is correctly routed: " + mode.Label);
+                }
+                using var unrelated = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.desktop-shortcut");
+                Check(unrelated is null, "File actions are not registered on empty backgrounds");
+            }
+            using (var file = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\*\shell\WinForge.Prepared.power-mode"))
+                Check(file is null, "Power menu respects per-location visibility");
+            module.ApplyPreparedActions([], registryRoot);
+            using var removed = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\DesktopBackground\Shell\WinForge.Prepared.power-mode");
+            Check(removed is null, "Disabling the module removes the power submenu");
+            typeof(ContextMenuModule).GetProperty(nameof(ContextMenuModule.IsActive))!.SetValue(module, true);
+            Reject(() => module.HandleCommand("--context-hidden-items", ["toggle"]));
+            Reject(() => module.HandleCommand("--context-power-mode", ["01-performance"]));
+        }
+        finally { Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(registryRoot, false); }
+
+        foreach (var (mode, expectedOverlay, expectedPlan) in new[] {
+            ("01-performance", "ded574b5-45a0-4f42-8737-46345c09c238", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
+            ("02-balanced", "00000000-0000-0000-0000-000000000000", "381b4222-f694-41f0-9685-ff5bb260df2e"),
+            ("03-efficiency", "961cc777-2547-4f9d-8174-7d86181b8a7a", "a1841308-3541-4fab-bc81-f71556f20b4a") })
+        {
+            ContextMenuQuickSettings.SetPowerMode(mode, guid => { Check(guid == new Guid(expectedOverlay), "Correct Windows overlay for " + mode); return 0; }, _ => throw new Exception("Unexpected fallback"));
+            ContextMenuQuickSettings.SetPowerMode(mode, _ => 50, guid => { Check(guid == new Guid(expectedPlan), "Legacy plan fallback for " + mode); return 0; });
+        }
+        Reject(() => ContextMenuQuickSettings.SetPowerMode("invalid", _ => throw new Exception("Must not call native API")));
+        Reject(() => ContextMenuQuickSettings.SetPowerMode("01-performance", _ => 50, _ => 5));
+        ContextMenuQuickSettings.SetPowerMode("02-balanced", _ => throw new EntryPointNotFoundException(), _ => 0);
     }
 
     private static void NativeRecordingChecks()

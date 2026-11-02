@@ -74,7 +74,7 @@ const previewState: AppState = {
     ] },
   ],
   categories: ['Görev çubuğu', 'Sistem'], activeCount: 2, totalCount: 3, version: '1.0.0',
-  appearance: { tone: 'Siyah', accent: 'Mavi', glow: false, tones: ['Siyah', 'Grafit'], accents: [{ name: 'Mavi', hex: '#75A7FF' }, { name: 'Yeşil', hex: '#4CD97B' }, { name: 'Kırmızı', hex: '#FF6B6B' }] },
+  appearance: { tone: 'Açık', accent: 'Mavi', glow: false, tones: ['Açık', 'Siyah', 'Grafit'], accents: [{ name: 'Mavi', hex: '#75A7FF' }, { name: 'Yeşil', hex: '#4CD97B' }, { name: 'Kırmızı', hex: '#FF6B6B' }] },
 };
 
 function send(command: string, payload: Record<string, unknown> = {}) {
@@ -198,7 +198,6 @@ function App() {
     return !needle || `${module.name} ${module.description} ${module.category} ${module.settings.map(setting => `${setting.label} ${setting.description ?? ''} ${setting.section ?? ''}`).join(' ')}`.toLocaleLowerCase('tr').includes(needle);
   }), [status, favoritesOnly, favorites, category, query, state]);
   const selected = filtered.find(module => module.id === selectedId) ?? filtered[0];
-  const categories = ['Tümü', 'Görünüm', 'Verimlilik', 'Sistem'];
   const navigate = (item: string) => { clearFilters(); setNavigation(item); setDetailsOpen(false); if (item === 'Favoriler') setFavoritesOnly(true); else if (!['Genel bakış', 'Tüm modüller'].includes(item)) setCategory(item); };
 
   useEffect(() => {
@@ -207,38 +206,47 @@ function App() {
 
   if (!state) return <div className="loading"><span className="loader" />WinForge hazırlanıyor</div>;
 
-  return <div className="app-shell light-dashboard">
+  const dark = state.appearance.tone !== 'Açık';
+  const accent = ({ Mavi: dark ? '#8bb6ff' : '#1556c0', 'Yeşil': dark ? '#70dda2' : '#14743f', 'Kırmızı': dark ? '#ff9696' : '#b52e3e' } as Record<string, string>)[state.appearance.accent] ?? (dark ? '#8bb6ff' : '#1556c0');
+  const updateAppearance = (value: Record<string, unknown>) => {
+    if (!window.chrome?.webview) setState(current => current ? { ...current, appearance: { ...current.appearance, ...value } } : current);
+    send('appearance.update', value);
+  };
+
+  return <div className={`app-shell dashboard ${dark ? 'dark-dashboard' : 'light-dashboard'} ${state.appearance.tone === 'Grafit' ? 'tone-grafit' : ''} ${state.appearance.glow ? 'glow' : ''}`} style={{ '--accent': accent } as React.CSSProperties}>
     <a className="skip-link" href="#dashboard-content">İçeriğe geç</a>
-    <aside className="dashboard-sidebar" aria-label="Ana menü">
-      <div className="dashboard-brand"><span className="windows-mark" aria-hidden="true"><i /><i /><i /><i /></span><div><strong>WinForge</strong><span>Daha iyi bir Windows.</span></div></div>
+    <main className={`dashboard-main ${detailsOpen && selected ? 'details-open' : ''}`} id="dashboard-content" tabIndex={-1}>
+      <header className="dashboard-topbar">
+        <div className="dashboard-brand"><img className="app-logo" src="./favicon.svg" alt="" aria-hidden="true" /><div><strong>WinForge</strong><span>Daha iyi bir Windows.</span></div></div>
+        <label className="dashboard-search"><Icon name="search" size={21} /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => { setQuery(event.target.value); setDetailsOpen(false); }} placeholder="Araç veya ayar ara..." /><kbd>Ctrl + F</kbd></label>
+        <div className="dashboard-actions">
+          <button className="secondary-button" onClick={() => updateAppearance({ tone: dark ? 'Açık' : 'Siyah' })} aria-label={dark ? 'Açık temaya geç' : 'Karanlık temaya geç'}><Icon name="monitor" />{dark ? 'Açık tema' : 'Karanlık tema'}</button>
+          <button className="icon-button" onClick={() => setShowAppearance(true)} aria-label="Uygulama ayarları" title="Uygulama ayarları"><Icon name="settings" /></button>
+        </div>
+      </header>
       <nav className="dashboard-navigation" aria-label="Modül gezintisi">
-        {['Genel bakış', 'Favoriler', 'Tüm modüller', 'Görünüm', 'Pencereler', 'Gezgin', 'Verimlilik', 'Sistem'].map((item, index) => <React.Fragment key={item}>
-          {index === 3 && <hr />}
-          <button className={`dashboard-nav-item ${navigation === item ? 'selected' : ''}`} aria-current={navigation === item ? 'page' : undefined} onClick={() => navigate(item)}><Icon name={['home', 'star', 'grid', 'monitor', 'window', 'folder', 'bolt', 'settings'][index]} size={25} /><span>{item}</span></button>
-        </React.Fragment>)}
+        {['Genel bakış', 'Favoriler', 'Tüm modüller', 'Görünüm', 'Pencereler', 'Gezgin', 'Verimlilik', 'Sistem'].map((item, index) => <button key={item} className={`dashboard-nav-item ${navigation === item ? 'selected' : ''}`} aria-current={navigation === item ? 'page' : undefined} onClick={() => navigate(item)}><Icon name={['home', 'star', 'grid', 'monitor', 'window', 'folder', 'bolt', 'settings'][index]} size={18} /><span>{item}</span></button>)}
       </nav>
-      <div className="dashboard-sidebar-bottom"><button className="dashboard-nav-item" onClick={() => setShowAppearance(true)}><Icon name="settings" size={25} /><span>Uygulama ayarları</span></button></div>
-    </aside>
-    <main className="dashboard-main" id="dashboard-content" tabIndex={-1}>
-      <label className="dashboard-search"><Icon name="search" size={23} /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => { setQuery(event.target.value); setDetailsOpen(false); }} placeholder="Araç veya ayar ara..." /><kbd>Ctrl + F</kbd></label>
-      {detailsOpen && selected ? <section className="dashboard-settings" aria-label="Seçili modülün ayarları">
-        <button className="dashboard-back" onClick={() => setDetailsOpen(false)}><Icon name="back" />Modüllere dön</button>
-        <div id="module-details"><ModuleDetails key={selected.id} module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /></div>
-      </section> : <>
+      <div className={`dashboard-workspace ${detailsOpen && selected ? 'with-details' : ''}`}>
+      <section className="dashboard-catalog" aria-label="Modül kataloğu">
         <header className="dashboard-heading"><div><h1>{navigation === 'Genel bakış' || navigation === 'Tüm modüller' ? 'Araçların, tek bir yerde' : navigation}</h1><p>Windows deneyimini kendine göre düzenle.</p></div><span className="dashboard-active-count"><i />{state.activeCount} modül etkin</span></header>
-        <nav className="dashboard-tabs" aria-label="Modül kategorileri">{categories.map(item => <button key={item} className={category === item ? 'selected' : ''} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}</nav>
         <section className="dashboard-grid" aria-label="Modüller">
-          {filtered.map(module => <article className={`tool-card ${module.error ? 'has-error' : ''}`} key={module.id}>
+          {filtered.map(module => <article className={`tool-card ${detailsOpen && selected?.id === module.id ? 'selected' : ''} ${module.error ? 'has-error' : ''}`} key={module.id}>
             <div className="tool-card-intro"><span className="tool-icon"><Icon name={moduleIcon(module)} size={40} /></span><div><h2>{module.name}</h2><p>{module.description}</p></div></div>
             <div className="tool-card-status"><span className={module.error ? 'error' : module.isActive ? 'enabled' : ''}>{module.error ? 'Hata' : module.isActive ? 'Etkin' : 'Kapalı'}</span><Toggle checked={module.isActive} label={`${module.name} modülünü etkinleştir`} onChange={enabled => send('module.toggle', { id: module.id, enabled })} /></div>
             <div className="tool-card-footer"><button className="tool-settings-button" aria-label={`${module.name}: Ayarları aç`} onClick={() => { setSelectedId(module.id); setDetailsOpen(true); }}><Icon name="settings" size={22} />Ayarları aç</button><button className={`tool-favorite ${favorites.includes(module.id) ? 'selected' : ''}`} aria-label={`${module.name}: ${favorites.includes(module.id) ? 'favorilerden çıkar' : 'favorilere ekle'}`} aria-pressed={favorites.includes(module.id)} onClick={() => setFavorites(current => current.includes(module.id) ? current.filter(id => id !== module.id) : [...current, module.id])}><Icon name="star" size={24} /></button></div>
           </article>)}
           {filtered.length === 0 && <div className="dashboard-empty"><Icon name="search" size={32} /><h2>{favoritesOnly ? 'Henüz favori araç yok' : 'Sonuç bulunamadı'}</h2><p>{favoritesOnly ? 'Kartlardaki yıldızla favori araçlarını buraya ekle.' : 'Başka bir arama veya kategori dene.'}</p><button className="tool-settings-button" onClick={clearFilters}>Filtreleri temizle</button></div>}
         </section>
-      </>}
+      </section>
+      {detailsOpen && selected && <aside className="dashboard-settings" aria-label="Seçili modülün ayarları">
+        <button className="dashboard-back" onClick={() => setDetailsOpen(false)}><Icon name="back" />Modüllere dön</button>
+        <div id="module-details"><ModuleDetails key={selected.id} module={selected} onToggle={enabled => send('module.toggle', { id: selected.id, enabled })} onUpdate={(key, value) => send('setting.update', { moduleId: selected.id, key, value })} onExecute={key => send('setting.execute', { moduleId: selected.id, key })} /></div>
+      </aside>}
+      </div>
     </main>
 
-    {showAppearance && <AppearanceDialog dataDirectory={state.dataDirectory} onOpenData={() => send('system.openData')} appearance={state.appearance} onClose={() => setShowAppearance(false)} onChange={value => send('appearance.update', value)} onOpenLogs={() => send('system.openLogs')} />}
+    {showAppearance && <AppearanceDialog dataDirectory={state.dataDirectory} onOpenData={() => send('system.openData')} appearance={state.appearance} onClose={() => setShowAppearance(false)} onChange={updateAppearance} onOpenLogs={() => send('system.openLogs')} />}
     {error && <div className="toast-error" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Bildirimi kapat"><Icon name="close" size={15} /></button></div>}
   </div>;
 }
@@ -323,7 +331,7 @@ function AppearanceDialog({ appearance, onClose, onChange, onOpenLogs, dataDirec
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   }}>
     <header><div><span className="eyebrow">KİŞİSELLEŞTİRME</span><h2 id="appearance-title">Görünüm</h2></div><button className="icon-button" onClick={onClose} aria-label="Kapat"><Icon name="close" /></button></header>
-    <div className="appearance-section"><h3>Yüzey tonu</h3><div className="tone-options">{appearance.tones.map(tone => <button key={tone} className={`tone-option ${appearance.tone === tone ? 'selected' : ''}`} onClick={() => onChange({ tone })}><span className={`tone-preview ${tone.toLowerCase()}`}><i /><i /><i /></span><span>{tone}</span>{appearance.tone === tone && <Icon name="check" size={15} />}</button>)}</div></div>
+    <div className="appearance-section"><h3>Tema</h3><div className="tone-options">{appearance.tones.map(tone => <button key={tone} className={`tone-option ${appearance.tone === tone ? 'selected' : ''}`} onClick={() => onChange({ tone })}><span className={`tone-preview ${tone.toLowerCase()}`}><i /><i /><i /></span><span>{tone === 'Siyah' ? 'Karanlık' : tone}</span>{appearance.tone === tone && <Icon name="check" size={15} />}</button>)}</div></div>
     <div className="appearance-section"><h3>Vurgu rengi</h3><div className="accent-options">{appearance.accents.map(accent => <button key={accent.name} className={`accent-option ${appearance.accent === accent.name ? 'selected' : ''}`} title={accent.name} aria-label={accent.name} style={{ '--swatch': accent.hex } as React.CSSProperties} onClick={() => onChange({ accent: accent.name })}>{appearance.accent === accent.name && <Icon name="check" size={14} />}</button>)}</div></div>
     <div className="setting-row"><div className="setting-copy"><strong>Arka plan parlaması</strong><p>Başlık alanında hafif vurgu ışığı göster.</p></div><Toggle checked={appearance.glow} label="Arka plan parlaması" onChange={glow => onChange({ glow })} /></div>
     {dataDirectory && <div className="appearance-section"><h3>Kayıt konumu</h3><p style={{ overflowWrap: 'anywhere' }}>{dataDirectory}</p><button className="secondary-button" onClick={onOpenData}>Veri klasörünü aç</button></div>}

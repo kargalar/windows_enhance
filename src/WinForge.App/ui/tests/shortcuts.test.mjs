@@ -241,9 +241,9 @@ test('context menu combines registrations and saves independent location switche
   const view = await mount(h(ContextMenuPanel, { state: { kind: 'context-menu', groups: [], entries }, command: (action, data) => sent.push({action, data}) }));
   try {
     assert.equal(view.container.querySelectorAll('.context-entry').length, 1);
-    assert.equal(view.container.querySelectorAll('.context-entry [role="switch"]').length, 8);
+    assert.equal(view.container.querySelectorAll('.context-entry .context-locations input[type="checkbox"]').length, 8);
     assert.equal(view.container.querySelector('input[aria-label$="grubu"]'), null);
-    const switches = view.container.querySelectorAll('.context-entry [role="switch"]');
+    const switches = view.container.querySelectorAll('.context-entry .context-locations input[type="checkbox"]');
     await click(switches[1]);
     const saved = sent.at(-1);
     assert.equal(saved.action, 'save-item');
@@ -281,7 +281,10 @@ test('context visibility supports row and filtered batch changes while preservin
   }
   const view = await mount(h(Harness));
   const button = text => [...view.container.querySelectorAll('button')].find(button => button.textContent === text);
-  const allSwitches = value => [...view.container.querySelectorAll('.context-entry [role="switch"]')].every(toggle => toggle.getAttribute('aria-checked') === String(value));
+  const allSwitches = value => {
+    const toggles = [...view.container.querySelectorAll('.context-entry .context-locations input[type="checkbox"]')];
+    return toggles.length > 0 && toggles.every(toggle => toggle.checked === value);
+  };
   try {
     await type(view.container.querySelector('input[aria-label$="görünen adı"]'), 'Yeni özellikler');
     await click(button('Tümünü kapat'));
@@ -319,7 +322,7 @@ test('context menu separates shortcuts and preserves separator placement and glo
   try {
     const copy = view.container.querySelector('[data-entry-id="builtin:copy"]');
     const shortcut = copy.querySelector('[aria-label="Kopyala: Kısayolda"]');
-    assert.equal(shortcut.getAttribute('aria-checked'), 'false', 'old file settings are inherited by shortcut scope');
+    assert.equal(shortcut.checked, false, 'old file settings are inherited by shortcut scope');
     await click(shortcut);
     assert.equal(sent.at(-1).data.rule.contexts.shortcut, true);
     assert.equal(sent.at(-1).data.rule.contexts.file, false);
@@ -330,7 +333,7 @@ test('context menu separates shortcuts and preserves separator placement and glo
     assert.equal(sent.at(-1).data.rule.separatorAfter, true);
     assert.equal(sent.at(-1).data.rule.contexts.shortcut, true);
     const line = view.container.querySelector('[data-entry-id="separator:ABC"]');
-    assert.equal(line.querySelector('input'), null, 'separators do not expose a command name or icon editor');
+    assert.equal(line.querySelector('input:not([type="checkbox"])'), null, 'separators do not expose a command name or icon editor');
     await click(line.querySelector('[aria-label$="Kısayolda"]'));
     assert.equal(sent.at(-1).data.ids[0], 'separator:ABC');
     await click(view.container.querySelector('[aria-label="Yol olarak kopyala: Tırnak işaretlerini kaldır"]'));

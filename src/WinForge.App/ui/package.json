@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "test:shortcuts": "node --test tests/shortcuts.test.mjs",
+    "test:dashboard": "node --test tests/dashboard.test.mjs",
     "build": "tsc -b && vite build"
   },
   "dependencies": {

@@ -32,6 +32,12 @@ UI klasöründe `npm run test:shortcuts`; derlenmiş regresyon testinde `WinForg
 
 ## Hazır eylemler
 
+**Gizli öğeleri göster / gizle** ve **Güç modu** eylemleri de Hazır eylemler filtresinde bulunur. Kullanmak için istediğiniz konumu (örneğin masaüstü veya klasörün boş alanı) açın. Başlangıçta kapalıdırlar; adlarını, simgelerini ve gruplarını düzenleyebilirsiniz.
+
+Gizli öğeler komutu Gezgin'in gizli dosya ve klasör görünürlüğünü değiştirir ve açık pencereleri yeniler. Seçili dosyaların Hidden özniteliğini veya korunan sistem dosyalarının görünürlüğünü değiştirmez. **Güç modu** alt menüsünde **En iyi performans**, **Dengeli** ve **Güç tasarrufu** bulunur. Windows güç modu API'si kullanılır; desteklenmeyen cihazlarda karşılık gelen klasik güç planı denenir. Mod veya plan kullanılamıyorsa hata gösterilir.
+
+Güç modu alt menüsü gruba taşınmadan önce özgün konumunda doldurulur; böylece grubun içinde de üç seçenek korunur. Her öğenin konum seçimlerinde **Masaüstü** ayrı bulunur; **Tüm konumları aç / kapat** işlemleri masaüstünü de kapsar.
+
 **Klasör simgesini değiştir** eylemi varsayılan olarak klasörlerin sağ tık menüsünde açıktır. Seçildiğinde Windows'un simge seçme penceresi doğrudan açılır; seçilen simge klasöre uygulanır. İptal işlemi klasörü değiştirmez. Eylem diğer hazır eylemler gibi düzenleyiciden kapatılabilir veya gruba taşınabilir. Windows 11'de klasik menüye **Daha fazla seçenek göster** ile ulaşılır.
 
 Tür filtresindeki **Hazır eylemler** altında **Masaüstü kısayolu oluştur** ve **Dosyayı / kısayolu gizle veya göster** bulunur. Başlangıçta kapalıdır. Dosya veya klasör anahtarını açarak etkinleştirin; adını ve simgesini diğer öğeler gibi düzenleyin, gruba grup formundan ekleyin. Dosya veya klasör seçiminde çalışırlar. Kısayol oluşturma mevcut masaüstü dosyalarını ezmez; aynı ad için numara ekler. Gizle/göster yalnızca seçilen öğenin Hidden özniteliğini değiştirir. Gizlenmiş öğeyi yeniden seçmek için Gezgin’in gizli öğeleri göster ayarı açık olmalıdır.

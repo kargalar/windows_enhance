@@ -24,6 +24,8 @@ inline std::wstring Canonical(std::wstring const& text, std::wstring const& pare
     if (name == L"masa\u00fcst\u00fc k\u0131sayolu olu\u015ftur") return L"prepared:desktop-shortcut";
     if (name == L"dosyay\u0131 / k\u0131sayolu gizle veya g\u00f6ster") return L"prepared:toggle-hidden";
     if (name == L"klas\u00f6r simgesini de\u011fi\u015ftir") return L"prepared:folder-icon";
+    if (name == L"gizli \u00f6\u011feleri g\u00f6ster / gizle") return L"prepared:hidden-items";
+    if (name == L"g\u00fc\u00e7 modu") return L"prepared:power-mode";
     if (name == L"properties" || name == L"\x00f6zellikler" || name == L"ozellikler") return L"builtin:properties";
     if (name == L"new folder" || name == L"yeni klas\x00f6r" || ((scope == L"new" || scope == L"yeni") && (name == L"folder" || name == L"klas\x00f6r"))) return L"builtin:new-folder";
     if (name == L"new" || name == L"yeni") return L"builtin:new";
@@ -64,9 +66,12 @@ inline std::vector<Item> ReadItems(HWND owner, HMENU menu, bool populate, std::w
         if (!GetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE, &item.info)) continue;
         item.text = label; item.info.dwTypeData = nullptr; result.push_back(item);
         if (item.info.hSubMenu) {
-            // Only New needs early initialization to promote its Folder command.
+            // Populate our power cascade before grouping changes its parent/position.
+            // Explorer resolves lazy cascades using the original menu location.
+            // New also needs early initialization to promote its Folder command.
             // Opening unrelated extension submenus can be expensive or contact remote locations.
-            if (populate && owner && Canonical(item.text) == L"builtin:new") SendMessageW(owner, WM_INITMENUPOPUP, reinterpret_cast<WPARAM>(item.info.hSubMenu), MAKELPARAM(i, FALSE));
+            auto canonical = Canonical(item.text);
+            if (populate && owner && (canonical == L"builtin:new" || canonical == L"prepared:power-mode")) SendMessageW(owner, WM_INITMENUPOPUP, reinterpret_cast<WPARAM>(item.info.hSubMenu), MAKELPARAM(i, FALSE));
             auto children = ReadItems(owner, item.info.hSubMenu, populate, item.text, depth + 1);
             result.insert(result.end(), children.begin(), children.end());
         }

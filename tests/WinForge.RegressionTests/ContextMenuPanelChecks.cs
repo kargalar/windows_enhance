@@ -31,7 +31,7 @@ internal static class ContextMenuPanelChecks
             Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Context menu editor");
             check(Script("document.querySelectorAll('.context-entry-icon img').length > 0") == "true", "Real UI renders existing item icons");
             check(Script("!!document.querySelector('[data-entry-id=\"builtin:properties\"]') && !!document.querySelector('[data-entry-id=\"builtin:new-folder\"]')") == "true", "Real UI includes Properties and New Folder");
-            check(Script("document.querySelector('[data-entry-id=\"builtin:properties\"]').querySelectorAll('.context-locations [role=switch]').length === 8") == "true", "Real menu editor includes shortcut, application and virtual item switches");
+            check(Script("document.querySelector('[data-entry-id=\"builtin:properties\"]').querySelectorAll('.context-locations input[type=checkbox]').length === 8") == "true", "Real menu editor includes shortcut, application and virtual item checkboxes");
             check(Script("document.querySelectorAll('.context-options [role=switch]').length === 3") == "true", "Real menu editor exposes separator cleanup, separator visibility and unquoted path options");
             Script("document.querySelector('[aria-label=\"Yol olarak kopyala: Tırnak işaretlerini kaldır\"]').click()");
             Wait(() => host.SettingsOf(module).GetString("unquoted-copy-path").Length > 0 && !host.SettingsOf(module).GetBool("unquoted-copy-path", true), "Unquoted path preference persistence");
@@ -51,17 +51,17 @@ internal static class ContextMenuPanelChecks
             Wait(() => Script("!!document.querySelector('.context-group-title img')") == "true", "Saved group icon preview");
             using (var icons = JsonDocument.Parse(host.SettingsOf(module).GetString("menu-group-icons", "{}")))
                 check(icons.RootElement.EnumerateObject().Single().Value.GetString() == "shell32.dll,3", "Group icon source persists through the React/native bridge");
-            Script("document.querySelectorAll('[data-entry-id=\"builtin:properties\"] [role=switch]')[3].click()");
-            Wait(() => JsonDocument.Parse(host.SettingsOf(module).GetString("menu-rules")).RootElement.EnumerateArray().Any(r => r.GetProperty("id").GetString() == "builtin:properties" && r.TryGetProperty("contexts", out var scopes) && scopes.ValueKind == JsonValueKind.Object && !scopes.GetProperty("desktop").GetBoolean()), "Desktop visibility switch persistence");
-            check(Script("document.querySelectorAll('[data-entry-id=\"builtin:properties\"] [role=switch]')[1].getAttribute('aria-checked') === 'true'") == "true", "Folder visibility stays on independently");
+            Script("document.querySelectorAll('[data-entry-id=\"builtin:properties\"] .context-locations input[type=checkbox]')[3].click()");
+            Wait(() => JsonDocument.Parse(host.SettingsOf(module).GetString("menu-rules")).RootElement.EnumerateArray().Any(r => r.GetProperty("id").GetString() == "builtin:properties" && r.TryGetProperty("contexts", out var scopes) && scopes.ValueKind == JsonValueKind.Object && !scopes.GetProperty("desktop").GetBoolean()), "Desktop visibility checkbox persistence");
+            check(Script("document.querySelectorAll('[data-entry-id=\"builtin:properties\"] .context-locations input[type=checkbox]')[1].checked === true") == "true", "Folder visibility stays on independently");
             check(SavedGroup("builtin:properties") && SavedGroup("builtin:new-folder"), "Visibility changes preserve group membership");
             Script("[...document.querySelectorAll('.context-toolbar button')].find(b => b.textContent === 'Tümünü kapat').click()");
-            Wait(() => Script("[...document.querySelectorAll('.context-entry [role=switch]')].every(b => b.getAttribute('aria-checked') === 'false')") == "true", "Batch hide acknowledgement");
+            Wait(() => Script("[...document.querySelectorAll('.context-entry .context-locations input[type=checkbox]')].every(b => b.checked === false)") == "true", "Batch hide acknowledgement");
             using (var hidden = JsonDocument.Parse(host.SettingsOf(module).GetString("menu-rules")))
                 check(hidden.RootElement.EnumerateArray().All(r => !r.GetProperty("visible").GetBoolean() && r.GetProperty("contexts").EnumerateObject().All(scope => !scope.Value.GetBoolean())), "Batch hide persists every location through the native bridge");
             check(SavedGroup("builtin:properties") && SavedGroup("builtin:new-folder"), "Batch visibility preserves group membership");
             Script("[...document.querySelectorAll('.context-toolbar button')].find(b => b.textContent === 'Tümünü aç').click()");
-            Wait(() => Script("[...document.querySelectorAll('.context-entry [role=switch]')].every(b => b.getAttribute('aria-checked') === 'true')") == "true", "Batch show acknowledgement");
+            Wait(() => Script("[...document.querySelectorAll('.context-entry .context-locations input[type=checkbox]')].every(b => b.checked === true)") == "true", "Batch show acknowledgement");
             using (var shown = JsonDocument.Parse(host.SettingsOf(module).GetString("menu-rules")))
                 check(shown.RootElement.EnumerateArray().All(r => r.GetProperty("visible").GetBoolean() && r.GetProperty("contexts").EnumerateObject().All(scope => scope.Value.GetBoolean())), "Batch show persists every location through the native bridge");
             Script("document.querySelector('.context-preview summary').click()");
@@ -104,7 +104,7 @@ internal static class ContextMenuPanelChecks
             }
             Script("(() => { if (document.querySelector('.context-menu-panel')) return; const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Sağ Tık Menüsü'); (card.querySelector('.tool-settings-button') || card).click(); })()");
             Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Return to context menu editor");
-            check(Script("[...document.querySelectorAll('[data-entry-id]')].filter(e => e.dataset.entryId.startsWith('prepared:')).length === 3") == "true", "Prepared desktop shortcut, visibility and folder icon actions are available in real UI");
+            check(Script("[...document.querySelectorAll('[data-entry-id]')].filter(e => e.dataset.entryId.startsWith('prepared:')).length === 5") == "true", "All five prepared actions are available in real UI");
             var panel = (IModulePanel)module;
             panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Icon test", previousName = "", ids = Array.Empty<string>(), icon = "shell32.dll,3" }));
             panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Icon renamed", previousName = "Icon test", ids = Array.Empty<string>() }));

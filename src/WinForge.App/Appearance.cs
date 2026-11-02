@@ -29,6 +29,8 @@ public static class Appearance
 
     public static IReadOnlyList<Tone> Tones { get; } = new[]
     {
+        new Tone("Açık", "#F5F7FB", "#FFFFFF", "#D6DEEA", "#EAF0FA",
+                 "#172033", "#58657A", "#FFFFFF", "#F0F3F8", "#E5EDFA"),
         new Tone("Siyah", "#090A0C", "#101114", "#292A30", "#1D1E24",
                  "#F5F5F5", "#A0A1AA", "#191A1F", "#191A1F", "#202128"),
         new Tone("Grafit", "#15161A", "#1B1C21", "#35363E", "#2B2C33",
@@ -59,7 +61,7 @@ public static class Appearance
             if (root.TryGetProperty("tone", out var tone) &&
                 tone.GetString() is { } toneName &&
                 Tones.Any(t => t.Name == toneName))
-                ToneName = toneName == "Grafit" ? "Grafit" : "Siyah";
+                ToneName = toneName;
 
             if (root.TryGetProperty("glow", out var glow) &&
                 (glow.ValueKind == JsonValueKind.True || glow.ValueKind == JsonValueKind.False))
