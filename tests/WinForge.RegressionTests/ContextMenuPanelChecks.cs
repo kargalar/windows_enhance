@@ -104,7 +104,7 @@ internal static class ContextMenuPanelChecks
             }
             Script("(() => { if (document.querySelector('.context-menu-panel')) return; const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Sağ Tık Menüsü'); (card.querySelector('.tool-settings-button') || card).click(); })()");
             Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Return to context menu editor");
-            check(Script("[...document.querySelectorAll('[data-entry-id]')].filter(e => e.dataset.entryId.startsWith('prepared:')).length === 2") == "true", "Prepared desktop shortcut and visibility actions are available in real UI");
+            check(Script("[...document.querySelectorAll('[data-entry-id]')].filter(e => e.dataset.entryId.startsWith('prepared:')).length === 3") == "true", "Prepared desktop shortcut, visibility and folder icon actions are available in real UI");
             var panel = (IModulePanel)module;
             panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Icon test", previousName = "", ids = Array.Empty<string>(), icon = "shell32.dll,3" }));
             panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Icon renamed", previousName = "Icon test", ids = Array.Empty<string>() }));

@@ -155,7 +155,7 @@ public partial class App : Application
     }
 
     private static bool IsCommandRequest(IReadOnlyList<string> args) =>
-        args.Count > 0 && args[0] is "--power-rename" or "--file-locksmith" or "--context-desktop-shortcut" or "--context-toggle-hidden";
+        args.Count > 0 && args[0] is "--power-rename" or "--file-locksmith" or "--context-desktop-shortcut" or "--context-toggle-hidden" or "--context-folder-icon";
 
     private static bool IsModuleCommand(string[] args) => IsCommandRequest(args) && args.Length > 1;
 

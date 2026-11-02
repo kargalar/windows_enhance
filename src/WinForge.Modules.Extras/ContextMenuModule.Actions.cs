@@ -13,10 +13,11 @@ public sealed partial class ContextMenuModule
             (@"Software\Classes\*\shell", "file"), (@"Software\Classes\Directory\shell", "folder"),
             (@"Software\Classes\lnkfile\shell", "shortcut"), (@"Software\Classes\InternetShortcut\shell", "shortcut"),
             (@"Software\Classes\exefile\shell", "application") })
-        foreach (var action in new[] { "desktop-shortcut", "toggle-hidden" })
+        foreach (var action in new[] { "desktop-shortcut", "toggle-hidden", "folder-icon" })
         {
             var path = root + @"\WinForge.Prepared." + action;
             Registry.CurrentUser.DeleteSubKeyTree(path, false);
+            if (action == "folder-icon" && scope != "folder") continue;
             var rule = rules.FirstOrDefault(r => r.Id == "prepared:" + action);
             if (rule is null || !(scope == "file"
                 ? new[] { "file", "shortcut", "application" }.Any(context => ContextMenuCatalog.VisibleIn(rule, context))
@@ -33,12 +34,19 @@ public sealed partial class ContextMenuModule
 
     public bool HandleCommand(string command, IReadOnlyList<string> arguments)
     {
-        if (command is not ("--context-desktop-shortcut" or "--context-toggle-hidden")) return false;
+        if (command is not ("--context-desktop-shortcut" or "--context-toggle-hidden" or "--context-folder-icon")) return false;
         if (!IsActive) throw new InvalidOperationException("Sağ tık menüsü modülü kapalı.");
         var action = command["--context-".Length..];
         var rule = _rules.FirstOrDefault(r => r.Id == "prepared:" + action);
         if (rule is null || !(rule.Contexts?.Values.Any(v => v) ?? rule.Visible))
             throw new InvalidOperationException("Bu menü eylemi kapalı.");
+        if (action == "folder-icon")
+        {
+            if (!ContextMenuCatalog.VisibleIn(rule, "folder")) throw new InvalidOperationException("Bu menü eylemi klasörler için kapalı.");
+            if (arguments.Count != 1) throw new ArgumentException("Simge değiştirmek için tek bir klasör seçin.");
+            FolderIconPicker.Show(arguments[0]);
+            return true;
+        }
         foreach (var argument in arguments.Take(100))
         {
             var path = Path.GetFullPath(argument);

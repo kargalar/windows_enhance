@@ -1,0 +1,50 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"examples/cli/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 8,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/MinSizeRel/whisper-cli.exe"
+			],
+			"targetId" : "whisper-cli::@ed55a284997177d9db58",
+			"targetIndex" : 17,
+			"type" : "target"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "examples/cli",
+		"source" : "examples/cli"
+	}
+}

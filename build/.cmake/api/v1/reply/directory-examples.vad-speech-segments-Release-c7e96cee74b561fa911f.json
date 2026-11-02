@@ -1,0 +1,50 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"examples/vad-speech-segments/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 8,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/Release/whisper-vad-speech-segments.exe"
+			],
+			"targetId" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516",
+			"targetIndex" : 20,
+			"type" : "target"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "examples/vad-speech-segments",
+		"source" : "examples/vad-speech-segments"
+	}
+}

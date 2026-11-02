@@ -189,6 +189,11 @@ internal static class Program
         Check(copyPath.GetProperty("separatorBefore").GetBoolean() && copyPath.GetProperty("separatorAfter").GetBoolean() && copyPath.GetProperty("contexts").GetProperty("shortcut").GetBoolean(), "Custom separator placement and shortcut overrides survive reload");
         var entries = JsonSerializer.SerializeToElement(panel.GetPanelState(), Json).GetProperty("entries");
         Check(entries.EnumerateArray().Count(e => e.GetProperty("id").GetString()!.StartsWith("prepared:") && !e.GetProperty("visible").GetBoolean()) == 2, "Prepared actions are available and disabled by default");
+        var folderIcon = entries.EnumerateArray().Single(e => e.GetProperty("id").GetString() == "prepared:folder-icon");
+        Check(folderIcon.GetProperty("visible").GetBoolean() && folderIcon.GetProperty("contexts").EnumerateObject().All(p => p.Value.GetBoolean() == (p.Name == "folder")), "Folder icon action defaults to folders only");
+        var shellLibrary = NativeLibrary.Load("shell32.dll");
+        try { Check(NativeLibrary.TryGetExport(shellLibrary, "PickIconDlg", out _), "Windows exposes the native icon selection dialog"); }
+        finally { NativeLibrary.Free(shellLibrary); }
         foreach (var id in new[] { "prepared:desktop-shortcut", "prepared:toggle-hidden" })
             panel.HandlePanelCommand("save", JsonSerializer.SerializeToElement(new { id, rule = new ContextMenuRule(id, Group: "Other") }, Json));
         var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinForge.PreparedActions", Guid.NewGuid().ToString("N"));
@@ -197,6 +202,16 @@ internal static class Program
         try
         {
             typeof(ContextMenuModule).GetProperty(nameof(ContextMenuModule.IsActive))!.SetValue(module, true);
+            Reject(() => module.HandleCommand("--context-folder-icon", [source]));
+            Reject(() => module.HandleCommand("--context-folder-icon", [root, root]));
+            var originalAttributes = System.IO.File.GetAttributes(root);
+            Check(!FolderIconPicker.Show(root, (IntPtr owner, System.Text.StringBuilder path, uint capacity, ref int index) => 0), "Cancelling the native icon picker returns without applying");
+            Check(!System.IO.File.Exists(System.IO.Path.Combine(root, "desktop.ini")) && System.IO.File.GetAttributes(root) == originalAttributes, "Cancelling leaves folder settings and attributes untouched");
+            Check(FolderIconPicker.Show(root, (IntPtr owner, System.Text.StringBuilder path, uint capacity, ref int index) => { index = 4; return 1; }), "Confirmed icon selection applies through Windows shell settings");
+            var ini = System.IO.Path.Combine(root, "desktop.ini");
+            Check(System.IO.File.Exists(ini) && System.IO.File.ReadAllText(ini).Contains("shell32.dll", StringComparison.OrdinalIgnoreCase), "Native folder customization persists the selected icon resource");
+            Check(System.IO.File.GetAttributes(root).HasFlag(System.IO.FileAttributes.ReadOnly), "Folder is marked for Explorer customization");
+            Check(!FolderIconPicker.Show(root, (IntPtr owner, System.Text.StringBuilder path, uint capacity, ref int index) => { Check(index == 4 && path.ToString().EndsWith("shell32.dll", StringComparison.OrdinalIgnoreCase), "Picker reopens with the current folder icon"); return 0; }), "Cancelling an existing customization preserves it");
             module.HandleCommand("--context-toggle-hidden", [source]);
             Check(System.IO.File.GetAttributes(source).HasFlag(System.IO.FileAttributes.Hidden), "Hide action changes the selected file attribute");
             module.HandleCommand("--context-toggle-hidden", [source]);
@@ -210,7 +225,12 @@ internal static class Program
         {
             typeof(ContextMenuModule).GetProperty(nameof(ContextMenuModule.IsActive))!.SetValue(module, false);
             var expected = System.IO.Path.GetFullPath(System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinForge.PreparedActions"));
-            if (System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(root)) == expected) System.IO.Directory.Delete(root, true);
+            if (System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(root)) == expected)
+            {
+                foreach (var file in System.IO.Directory.EnumerateFiles(root, "*", System.IO.SearchOption.AllDirectories)) System.IO.File.SetAttributes(file, System.IO.FileAttributes.Normal);
+                System.IO.File.SetAttributes(root, System.IO.FileAttributes.Directory);
+                System.IO.Directory.Delete(root, true);
+            }
         }
     }
 

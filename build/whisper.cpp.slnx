@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="030f4047-2a5e-3b73-81f0-1bb70a0dec9f" DefaultStartup="true">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/deprecation-warning/bench.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="examples/deprecation-warning/main.vcxproj"/>
+		<BuildDependency Project="tests/test-vad.vcxproj"/>
+		<BuildDependency Project="tests/test-vad-full.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+		<BuildDependency Project="examples/bench/whisper-bench.vcxproj"/>
+		<BuildDependency Project="examples/cli/whisper-cli.vcxproj"/>
+		<BuildDependency Project="examples/quantize/whisper-quantize.vcxproj"/>
+		<BuildDependency Project="examples/server/whisper-server.vcxproj"/>
+		<BuildDependency Project="examples/vad-speech-segments/whisper-vad-speech-segments.vcxproj"/>
+	</Project>
+	<Project Path="Continuous.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="0c9f5e04-e497-3f79-851e-89fb81fe28b4">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="Experimental.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="826812ab-d481-381a-a772-76862d0c9946">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="INSTALL.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="cd55b5df-359e-33f1-9fd4-c2f9b5586140">
+		<BuildDependency Project="ALL_BUILD.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="Nightly.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f96c1462-570b-3515-a7a1-19ab78917531">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="NightlyMemoryCheck.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f507f298-9534-39f2-bd93-2f6573093dc6">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="RUN_TESTS.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="961707d1-8420-338a-b0c3-b501b7105190">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="bf9a2e22-ecc6-351f-a254-9688c9cb471f"/>
+	<Project Path="examples/deprecation-warning/bench.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="029ea134-3764-32fa-8895-8ad2a35dc226">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="examples/common.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="2d232c44-acea-3925-bab2-53769c38e52c">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="ggml/src/ggml.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="b89eaf35-d971-30a1-a3c6-314463614ba5">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+	</Project>
+	<Project Path="ggml/src/ggml-base.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f390eb36-9423-33b2-8090-08ff8f10f938">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="ggml/src/ggml-cpu.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="28e41f75-1d2b-3dc4-b1b4-a3028c5fa634">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+	</Project>
+	<Project Path="examples/deprecation-warning/main.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="b6440f50-9400-3e8e-a356-3ce1f9ab8f88">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Project Path="tests/test-vad.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="e13947d5-b681-3f32-93f2-6b1be3733a16">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="tests/test-vad-full.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="6aca90f4-fd17-373a-bdc0-0199abc062cd">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="src/whisper.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="6a773d10-a493-36c6-ab2e-63c3e0be79b1">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+	</Project>
+	<Project Path="examples/bench/whisper-bench.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="98010f0d-d021-3245-956d-2a753568439a">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="examples/cli/whisper-cli.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="159a27bd-34fb-3a30-b007-ab531304ae5c">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="examples/quantize/whisper-quantize.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d205213d-6965-3580-8e94-d423b91d4c19">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="examples/server/whisper-server.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d40220c1-2922-37b6-a7d6-52c29869a6f5">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+	<Project Path="examples/vad-speech-segments/whisper-vad-speech-segments.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="401d0a47-f503-33a0-a1f8-0958783e4498">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="examples/common.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-base.vcxproj"/>
+		<BuildDependency Project="ggml/src/ggml-cpu.vcxproj"/>
+		<BuildDependency Project="src/whisper.vcxproj"/>
+	</Project>
+</Solution>

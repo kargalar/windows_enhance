@@ -1,0 +1,2156 @@
+{
+	"configurations" : 
+	[
+		{
+			"abstractTargets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "Git::Git::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Git__Git-Debug-9ac3dc8c03a58e5b4cd4.json",
+					"name" : "Git::Git",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_C::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_C-Debug-c3c2d3634bcdb8be7420.json",
+					"name" : "OpenMP::OpenMP_C",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_CXX::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_CXX-Debug-faf8f7348dd5a47a3793.json",
+					"name" : "OpenMP::OpenMP_CXX",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "Threads::Threads::@beca84bc0433526980ad",
+					"jsonFile" : "target-Threads__Threads-Debug-68b893b305f2f473b805.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "Threads::Threads::@145eef247bfb46b6828c",
+					"jsonFile" : "target-Threads__Threads-Debug-2228d58321cdefb1130f.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "Threads::Threads::@714eac15f71a94114fdf",
+					"jsonFile" : "target-Threads__Threads-Debug-d14d1c6f3e52e121bc65.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "json_cpp::@714eac15f71a94114fdf",
+					"jsonFile" : "target-json_cpp-Debug-4bb40d5e9c8399330126.json",
+					"name" : "json_cpp",
+					"projectIndex" : 0
+				}
+			],
+			"directories" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0
+					],
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						4,
+						5,
+						6
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Debug-03ea17bed53fbac2f956.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						3
+					],
+					"build" : "ggml",
+					"childIndexes" : 
+					[
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml-Debug-f04e57b48eeb0dd3bf87.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "ggml",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2
+					],
+					"build" : "ggml/src",
+					"childIndexes" : 
+					[
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml.src-Debug-c49919e88b116d959a59.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 1,
+					"projectIndex" : 1,
+					"source" : "ggml/src",
+					"targetIndexes" : 
+					[
+						9,
+						10,
+						11
+					]
+				},
+				{
+					"build" : "ggml/src/ggml-cpu",
+					"jsonFile" : "directory-ggml.src.ggml-cpu-Debug-74a6fe7e0fce64612b02.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 2,
+					"projectIndex" : 1,
+					"source" : "ggml/src/ggml-cpu"
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						4
+					],
+					"build" : "src",
+					"jsonFile" : "directory-src-Debug-4002d1304ad276179d0e.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "src",
+					"targetIndexes" : 
+					[
+						15
+					]
+				},
+				{
+					"build" : "tests",
+					"jsonFile" : "directory-tests-Debug-fec999d3eb2ffa72f462.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "tests",
+					"targetIndexes" : 
+					[
+						13,
+						14
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						5,
+						6
+					],
+					"build" : "examples",
+					"childIndexes" : 
+					[
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples-Debug-97274ece987b9369c56b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "examples",
+					"targetIndexes" : 
+					[
+						8
+					]
+				},
+				{
+					"build" : "examples/cli",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.cli-Debug-75102198dee490567d7d.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/cli",
+					"targetIndexes" : 
+					[
+						17
+					]
+				},
+				{
+					"build" : "examples/bench",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.bench-Debug-0214ae66a05dfd890aab.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/bench",
+					"targetIndexes" : 
+					[
+						16
+					]
+				},
+				{
+					"build" : "examples/server",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.server-Debug-3d11a58c002d28abaab9.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/server",
+					"targetIndexes" : 
+					[
+						19
+					]
+				},
+				{
+					"build" : "examples/quantize",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.quantize-Debug-1d09207a1d2f9c11e0fd.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/quantize",
+					"targetIndexes" : 
+					[
+						18
+					]
+				},
+				{
+					"build" : "examples/vad-speech-segments",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.vad-speech-segments-Debug-d7a9de3fb5eb819d2c18.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/vad-speech-segments",
+					"targetIndexes" : 
+					[
+						20
+					]
+				},
+				{
+					"build" : "examples/deprecation-warning",
+					"jsonFile" : "directory-examples.deprecation-warning-Debug-0082f30b6e7c34db261b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/deprecation-warning",
+					"targetIndexes" : 
+					[
+						7,
+						12
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6
+					],
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"name" : "whisper.cpp",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"directoryIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"name" : "ggml",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						1,
+						9,
+						10,
+						11
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ALL_BUILD::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ALL_BUILD-Debug-f6b547321559fec19e54.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "ALL_BUILD::@beca84bc0433526980ad",
+					"jsonFile" : "target-ALL_BUILD-Debug-37014b67b452c3391190.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Continuous::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Continuous-Debug-fa057606de4d7c92af14.json",
+					"name" : "Continuous",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Experimental::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Experimental-Debug-224e3fcbd1a60d2dd5ae.json",
+					"name" : "Experimental",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Nightly::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Nightly-Debug-6b02e4e151f331b9ec67.json",
+					"name" : "Nightly",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "NightlyMemoryCheck::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-NightlyMemoryCheck-Debug-54205cbdd583abf71970.json",
+					"name" : "NightlyMemoryCheck",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ZERO_CHECK::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZERO_CHECK-Debug-bf675c8e13edbbe143d0.json",
+					"name" : "ZERO_CHECK",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "bench::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-bench-Debug-f4dd1565dc25e20ba5df.json",
+					"name" : "bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "common::@714eac15f71a94114fdf",
+					"jsonFile" : "target-common-Debug-65fe420882b61b8aa67e.json",
+					"name" : "common",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-Debug-edda6044f28b9149a67b.json",
+					"name" : "ggml",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-base::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-base-Debug-cddada93c04f6483a2f1.json",
+					"name" : "ggml-base",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-cpu::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-cpu-Debug-d37034b3c1d4fac74016.json",
+					"name" : "ggml-cpu",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "main::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-main-Debug-7016907a8c05867d0cad.json",
+					"name" : "main",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-Debug-58bd05fbcab90d49fc3d.json",
+					"name" : "test-vad",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad-full::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-full-Debug-e386afb63dffe03fd635.json",
+					"name" : "test-vad-full",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "whisper::@145eef247bfb46b6828c",
+					"jsonFile" : "target-whisper-Debug-c22ff9230894b585b5e7.json",
+					"name" : "whisper",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 8,
+					"id" : "whisper-bench::@d0a029687d6a416c1cdc",
+					"jsonFile" : "target-whisper-bench-Debug-e66e57b234d02cad9cbd.json",
+					"name" : "whisper-bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 7,
+					"id" : "whisper-cli::@ed55a284997177d9db58",
+					"jsonFile" : "target-whisper-cli-Debug-457d2085e438a1067f0b.json",
+					"name" : "whisper-cli",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 10,
+					"id" : "whisper-quantize::@ae188d8102f0422d3839",
+					"jsonFile" : "target-whisper-quantize-Debug-425e5a4d325b977fd945.json",
+					"name" : "whisper-quantize",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 9,
+					"id" : "whisper-server::@c58c5eba9c521975edee",
+					"jsonFile" : "target-whisper-server-Debug-e364f56c47aee242a077.json",
+					"name" : "whisper-server",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 11,
+					"id" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516",
+					"jsonFile" : "target-whisper-vad-speech-segments-Debug-72e7af41108dccb1e526.json",
+					"name" : "whisper-vad-speech-segments",
+					"projectIndex" : 0
+				}
+			]
+		},
+		{
+			"abstractTargets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "Git::Git::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Git__Git-Release-9ac3dc8c03a58e5b4cd4.json",
+					"name" : "Git::Git",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_C::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_C-Release-c3c2d3634bcdb8be7420.json",
+					"name" : "OpenMP::OpenMP_C",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_CXX::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_CXX-Release-faf8f7348dd5a47a3793.json",
+					"name" : "OpenMP::OpenMP_CXX",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "Threads::Threads::@beca84bc0433526980ad",
+					"jsonFile" : "target-Threads__Threads-Release-68b893b305f2f473b805.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "Threads::Threads::@145eef247bfb46b6828c",
+					"jsonFile" : "target-Threads__Threads-Release-2228d58321cdefb1130f.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "Threads::Threads::@714eac15f71a94114fdf",
+					"jsonFile" : "target-Threads__Threads-Release-d14d1c6f3e52e121bc65.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "json_cpp::@714eac15f71a94114fdf",
+					"jsonFile" : "target-json_cpp-Release-4bb40d5e9c8399330126.json",
+					"name" : "json_cpp",
+					"projectIndex" : 0
+				}
+			],
+			"directories" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0
+					],
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						4,
+						5,
+						6
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Release-fbbe08faccbda8975ba5.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						3
+					],
+					"build" : "ggml",
+					"childIndexes" : 
+					[
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml-Release-da418c5f64ef7da4c450.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "ggml",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2
+					],
+					"build" : "ggml/src",
+					"childIndexes" : 
+					[
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml.src-Release-74024f7b3c2c8f07f65b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 1,
+					"projectIndex" : 1,
+					"source" : "ggml/src",
+					"targetIndexes" : 
+					[
+						9,
+						10,
+						11
+					]
+				},
+				{
+					"build" : "ggml/src/ggml-cpu",
+					"jsonFile" : "directory-ggml.src.ggml-cpu-Release-74a6fe7e0fce64612b02.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 2,
+					"projectIndex" : 1,
+					"source" : "ggml/src/ggml-cpu"
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						4
+					],
+					"build" : "src",
+					"jsonFile" : "directory-src-Release-4002d1304ad276179d0e.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "src",
+					"targetIndexes" : 
+					[
+						15
+					]
+				},
+				{
+					"build" : "tests",
+					"jsonFile" : "directory-tests-Release-fec999d3eb2ffa72f462.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "tests",
+					"targetIndexes" : 
+					[
+						13,
+						14
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						5,
+						6
+					],
+					"build" : "examples",
+					"childIndexes" : 
+					[
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples-Release-97274ece987b9369c56b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "examples",
+					"targetIndexes" : 
+					[
+						8
+					]
+				},
+				{
+					"build" : "examples/cli",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.cli-Release-006fd5b8b8c78b4659a9.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/cli",
+					"targetIndexes" : 
+					[
+						17
+					]
+				},
+				{
+					"build" : "examples/bench",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.bench-Release-ff73b29426b20453d015.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/bench",
+					"targetIndexes" : 
+					[
+						16
+					]
+				},
+				{
+					"build" : "examples/server",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.server-Release-b21d8911649518e51ca4.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/server",
+					"targetIndexes" : 
+					[
+						19
+					]
+				},
+				{
+					"build" : "examples/quantize",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.quantize-Release-75304ac23dc18e312e04.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/quantize",
+					"targetIndexes" : 
+					[
+						18
+					]
+				},
+				{
+					"build" : "examples/vad-speech-segments",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.vad-speech-segments-Release-c7e96cee74b561fa911f.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/vad-speech-segments",
+					"targetIndexes" : 
+					[
+						20
+					]
+				},
+				{
+					"build" : "examples/deprecation-warning",
+					"jsonFile" : "directory-examples.deprecation-warning-Release-0082f30b6e7c34db261b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/deprecation-warning",
+					"targetIndexes" : 
+					[
+						7,
+						12
+					]
+				}
+			],
+			"name" : "Release",
+			"projects" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6
+					],
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"name" : "whisper.cpp",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"directoryIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"name" : "ggml",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						1,
+						9,
+						10,
+						11
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ALL_BUILD::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ALL_BUILD-Release-f6b547321559fec19e54.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "ALL_BUILD::@beca84bc0433526980ad",
+					"jsonFile" : "target-ALL_BUILD-Release-37014b67b452c3391190.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Continuous::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Continuous-Release-fa057606de4d7c92af14.json",
+					"name" : "Continuous",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Experimental::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Experimental-Release-224e3fcbd1a60d2dd5ae.json",
+					"name" : "Experimental",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Nightly::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Nightly-Release-6b02e4e151f331b9ec67.json",
+					"name" : "Nightly",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "NightlyMemoryCheck::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-NightlyMemoryCheck-Release-54205cbdd583abf71970.json",
+					"name" : "NightlyMemoryCheck",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ZERO_CHECK::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZERO_CHECK-Release-bf675c8e13edbbe143d0.json",
+					"name" : "ZERO_CHECK",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "bench::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-bench-Release-eff819a3b01ae9e0d908.json",
+					"name" : "bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "common::@714eac15f71a94114fdf",
+					"jsonFile" : "target-common-Release-ae04d5d384805cadc34f.json",
+					"name" : "common",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-Release-c119d273f4fa57994827.json",
+					"name" : "ggml",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-base::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-base-Release-9aa39ab834b4d34dd2a3.json",
+					"name" : "ggml-base",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-cpu::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-cpu-Release-54cb6fc03b721632b357.json",
+					"name" : "ggml-cpu",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "main::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-main-Release-5957f6e6b4686068bcdd.json",
+					"name" : "main",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-Release-cf9f0ba79bc2e1971e7c.json",
+					"name" : "test-vad",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad-full::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-full-Release-a01b48a84563a037a833.json",
+					"name" : "test-vad-full",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "whisper::@145eef247bfb46b6828c",
+					"jsonFile" : "target-whisper-Release-91190819fcf6b729d2c4.json",
+					"name" : "whisper",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 8,
+					"id" : "whisper-bench::@d0a029687d6a416c1cdc",
+					"jsonFile" : "target-whisper-bench-Release-3e6f9987bd20f8f8712b.json",
+					"name" : "whisper-bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 7,
+					"id" : "whisper-cli::@ed55a284997177d9db58",
+					"jsonFile" : "target-whisper-cli-Release-e3174007e8ca963c3c9e.json",
+					"name" : "whisper-cli",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 10,
+					"id" : "whisper-quantize::@ae188d8102f0422d3839",
+					"jsonFile" : "target-whisper-quantize-Release-a6a7918706d79390d687.json",
+					"name" : "whisper-quantize",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 9,
+					"id" : "whisper-server::@c58c5eba9c521975edee",
+					"jsonFile" : "target-whisper-server-Release-64e7bf64dfd043984b64.json",
+					"name" : "whisper-server",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 11,
+					"id" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516",
+					"jsonFile" : "target-whisper-vad-speech-segments-Release-dfa9cf38ea7f10c23a94.json",
+					"name" : "whisper-vad-speech-segments",
+					"projectIndex" : 0
+				}
+			]
+		},
+		{
+			"abstractTargets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "Git::Git::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Git__Git-MinSizeRel-9ac3dc8c03a58e5b4cd4.json",
+					"name" : "Git::Git",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_C::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_C-MinSizeRel-c3c2d3634bcdb8be7420.json",
+					"name" : "OpenMP::OpenMP_C",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_CXX::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_CXX-MinSizeRel-faf8f7348dd5a47a3793.json",
+					"name" : "OpenMP::OpenMP_CXX",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "Threads::Threads::@beca84bc0433526980ad",
+					"jsonFile" : "target-Threads__Threads-MinSizeRel-68b893b305f2f473b805.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "Threads::Threads::@145eef247bfb46b6828c",
+					"jsonFile" : "target-Threads__Threads-MinSizeRel-2228d58321cdefb1130f.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "Threads::Threads::@714eac15f71a94114fdf",
+					"jsonFile" : "target-Threads__Threads-MinSizeRel-d14d1c6f3e52e121bc65.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "json_cpp::@714eac15f71a94114fdf",
+					"jsonFile" : "target-json_cpp-MinSizeRel-4bb40d5e9c8399330126.json",
+					"name" : "json_cpp",
+					"projectIndex" : 0
+				}
+			],
+			"directories" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0
+					],
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						4,
+						5,
+						6
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-MinSizeRel-b326a7be3236aef0279c.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						3
+					],
+					"build" : "ggml",
+					"childIndexes" : 
+					[
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml-MinSizeRel-ee5f78467b49e5adeab3.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "ggml",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2
+					],
+					"build" : "ggml/src",
+					"childIndexes" : 
+					[
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml.src-MinSizeRel-63a604d46551b17f8cef.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 1,
+					"projectIndex" : 1,
+					"source" : "ggml/src",
+					"targetIndexes" : 
+					[
+						9,
+						10,
+						11
+					]
+				},
+				{
+					"build" : "ggml/src/ggml-cpu",
+					"jsonFile" : "directory-ggml.src.ggml-cpu-MinSizeRel-74a6fe7e0fce64612b02.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 2,
+					"projectIndex" : 1,
+					"source" : "ggml/src/ggml-cpu"
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						4
+					],
+					"build" : "src",
+					"jsonFile" : "directory-src-MinSizeRel-4002d1304ad276179d0e.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "src",
+					"targetIndexes" : 
+					[
+						15
+					]
+				},
+				{
+					"build" : "tests",
+					"jsonFile" : "directory-tests-MinSizeRel-fec999d3eb2ffa72f462.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "tests",
+					"targetIndexes" : 
+					[
+						13,
+						14
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						5,
+						6
+					],
+					"build" : "examples",
+					"childIndexes" : 
+					[
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples-MinSizeRel-97274ece987b9369c56b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "examples",
+					"targetIndexes" : 
+					[
+						8
+					]
+				},
+				{
+					"build" : "examples/cli",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.cli-MinSizeRel-710074ea43509c9baeff.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/cli",
+					"targetIndexes" : 
+					[
+						17
+					]
+				},
+				{
+					"build" : "examples/bench",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.bench-MinSizeRel-7118820dc55b5f0b4c3b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/bench",
+					"targetIndexes" : 
+					[
+						16
+					]
+				},
+				{
+					"build" : "examples/server",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.server-MinSizeRel-9dc44e691cb9f0c08b4c.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/server",
+					"targetIndexes" : 
+					[
+						19
+					]
+				},
+				{
+					"build" : "examples/quantize",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.quantize-MinSizeRel-1ab410c21881d1bf89ef.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/quantize",
+					"targetIndexes" : 
+					[
+						18
+					]
+				},
+				{
+					"build" : "examples/vad-speech-segments",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.vad-speech-segments-MinSizeRel-54fa57c0610f5a1463bf.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/vad-speech-segments",
+					"targetIndexes" : 
+					[
+						20
+					]
+				},
+				{
+					"build" : "examples/deprecation-warning",
+					"jsonFile" : "directory-examples.deprecation-warning-MinSizeRel-0082f30b6e7c34db261b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/deprecation-warning",
+					"targetIndexes" : 
+					[
+						7,
+						12
+					]
+				}
+			],
+			"name" : "MinSizeRel",
+			"projects" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6
+					],
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"name" : "whisper.cpp",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"directoryIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"name" : "ggml",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						1,
+						9,
+						10,
+						11
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ALL_BUILD::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ALL_BUILD-MinSizeRel-f6b547321559fec19e54.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "ALL_BUILD::@beca84bc0433526980ad",
+					"jsonFile" : "target-ALL_BUILD-MinSizeRel-37014b67b452c3391190.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Continuous::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Continuous-MinSizeRel-fa057606de4d7c92af14.json",
+					"name" : "Continuous",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Experimental::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Experimental-MinSizeRel-224e3fcbd1a60d2dd5ae.json",
+					"name" : "Experimental",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Nightly::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Nightly-MinSizeRel-6b02e4e151f331b9ec67.json",
+					"name" : "Nightly",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "NightlyMemoryCheck::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-NightlyMemoryCheck-MinSizeRel-54205cbdd583abf71970.json",
+					"name" : "NightlyMemoryCheck",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ZERO_CHECK::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZERO_CHECK-MinSizeRel-bf675c8e13edbbe143d0.json",
+					"name" : "ZERO_CHECK",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "bench::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-bench-MinSizeRel-f4f5ed00570db7519b78.json",
+					"name" : "bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "common::@714eac15f71a94114fdf",
+					"jsonFile" : "target-common-MinSizeRel-979607b19d8bca7e63c4.json",
+					"name" : "common",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-MinSizeRel-c108ee21fa6c21872d13.json",
+					"name" : "ggml",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-base::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-base-MinSizeRel-d432d39039a2a1605da2.json",
+					"name" : "ggml-base",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-cpu::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-cpu-MinSizeRel-cff6fd19c1e0ef91c018.json",
+					"name" : "ggml-cpu",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "main::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-main-MinSizeRel-4d182d3fa064314e8003.json",
+					"name" : "main",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-MinSizeRel-ebe37bdb9983a833697e.json",
+					"name" : "test-vad",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad-full::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-full-MinSizeRel-ba350b9aa9ff0fe56d95.json",
+					"name" : "test-vad-full",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "whisper::@145eef247bfb46b6828c",
+					"jsonFile" : "target-whisper-MinSizeRel-b7024cdd628158c62d36.json",
+					"name" : "whisper",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 8,
+					"id" : "whisper-bench::@d0a029687d6a416c1cdc",
+					"jsonFile" : "target-whisper-bench-MinSizeRel-52fab796dba040beb099.json",
+					"name" : "whisper-bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 7,
+					"id" : "whisper-cli::@ed55a284997177d9db58",
+					"jsonFile" : "target-whisper-cli-MinSizeRel-cd61e8be4831c7b6ea3b.json",
+					"name" : "whisper-cli",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 10,
+					"id" : "whisper-quantize::@ae188d8102f0422d3839",
+					"jsonFile" : "target-whisper-quantize-MinSizeRel-5bca3e3793e7560f4d77.json",
+					"name" : "whisper-quantize",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 9,
+					"id" : "whisper-server::@c58c5eba9c521975edee",
+					"jsonFile" : "target-whisper-server-MinSizeRel-08be2cd1f973fffc3c48.json",
+					"name" : "whisper-server",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 11,
+					"id" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516",
+					"jsonFile" : "target-whisper-vad-speech-segments-MinSizeRel-80f4653666af8beafadb.json",
+					"name" : "whisper-vad-speech-segments",
+					"projectIndex" : 0
+				}
+			]
+		},
+		{
+			"abstractTargets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "Git::Git::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Git__Git-RelWithDebInfo-9ac3dc8c03a58e5b4cd4.json",
+					"name" : "Git::Git",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_C::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_C-RelWithDebInfo-c3c2d3634bcdb8be7420.json",
+					"name" : "OpenMP::OpenMP_C",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "OpenMP::OpenMP_CXX::@64c2a4576bf370762041",
+					"jsonFile" : "target-OpenMP__OpenMP_CXX-RelWithDebInfo-faf8f7348dd5a47a3793.json",
+					"name" : "OpenMP::OpenMP_CXX",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "Threads::Threads::@beca84bc0433526980ad",
+					"jsonFile" : "target-Threads__Threads-RelWithDebInfo-68b893b305f2f473b805.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "Threads::Threads::@145eef247bfb46b6828c",
+					"jsonFile" : "target-Threads__Threads-RelWithDebInfo-2228d58321cdefb1130f.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "Threads::Threads::@714eac15f71a94114fdf",
+					"jsonFile" : "target-Threads__Threads-RelWithDebInfo-d14d1c6f3e52e121bc65.json",
+					"name" : "Threads::Threads",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "json_cpp::@714eac15f71a94114fdf",
+					"jsonFile" : "target-json_cpp-RelWithDebInfo-4bb40d5e9c8399330126.json",
+					"name" : "json_cpp",
+					"projectIndex" : 0
+				}
+			],
+			"directories" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0
+					],
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						4,
+						5,
+						6
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-RelWithDebInfo-9110f791741e3b655136.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						3
+					],
+					"build" : "ggml",
+					"childIndexes" : 
+					[
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml-RelWithDebInfo-a761e66a4d47ea21232f.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 1,
+					"source" : "ggml",
+					"targetIndexes" : 
+					[
+						1
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2
+					],
+					"build" : "ggml/src",
+					"childIndexes" : 
+					[
+						3
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-ggml.src-RelWithDebInfo-8c8b57a7de0fd387a9fc.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 1,
+					"projectIndex" : 1,
+					"source" : "ggml/src",
+					"targetIndexes" : 
+					[
+						9,
+						10,
+						11
+					]
+				},
+				{
+					"build" : "ggml/src/ggml-cpu",
+					"jsonFile" : "directory-ggml.src.ggml-cpu-RelWithDebInfo-74a6fe7e0fce64612b02.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.14"
+					},
+					"parentIndex" : 2,
+					"projectIndex" : 1,
+					"source" : "ggml/src/ggml-cpu"
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						4
+					],
+					"build" : "src",
+					"jsonFile" : "directory-src-RelWithDebInfo-4002d1304ad276179d0e.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "src",
+					"targetIndexes" : 
+					[
+						15
+					]
+				},
+				{
+					"build" : "tests",
+					"jsonFile" : "directory-tests-RelWithDebInfo-fec999d3eb2ffa72f462.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "tests",
+					"targetIndexes" : 
+					[
+						13,
+						14
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						5,
+						6
+					],
+					"build" : "examples",
+					"childIndexes" : 
+					[
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples-RelWithDebInfo-97274ece987b9369c56b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "examples",
+					"targetIndexes" : 
+					[
+						8
+					]
+				},
+				{
+					"build" : "examples/cli",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.cli-RelWithDebInfo-e00d3b494aa1bfb7b9d8.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/cli",
+					"targetIndexes" : 
+					[
+						17
+					]
+				},
+				{
+					"build" : "examples/bench",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.bench-RelWithDebInfo-23006290b6e8415b4b00.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/bench",
+					"targetIndexes" : 
+					[
+						16
+					]
+				},
+				{
+					"build" : "examples/server",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.server-RelWithDebInfo-bb69a82ff777e826bbb7.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/server",
+					"targetIndexes" : 
+					[
+						19
+					]
+				},
+				{
+					"build" : "examples/quantize",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.quantize-RelWithDebInfo-0e9f0a1e37ce17265f02.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/quantize",
+					"targetIndexes" : 
+					[
+						18
+					]
+				},
+				{
+					"build" : "examples/vad-speech-segments",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-examples.vad-speech-segments-RelWithDebInfo-72ea801c0550b7157cc8.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/vad-speech-segments",
+					"targetIndexes" : 
+					[
+						20
+					]
+				},
+				{
+					"build" : "examples/deprecation-warning",
+					"jsonFile" : "directory-examples.deprecation-warning-RelWithDebInfo-0082f30b6e7c34db261b.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.5"
+					},
+					"parentIndex" : 6,
+					"projectIndex" : 0,
+					"source" : "examples/deprecation-warning",
+					"targetIndexes" : 
+					[
+						7,
+						12
+					]
+				}
+			],
+			"name" : "RelWithDebInfo",
+			"projects" : 
+			[
+				{
+					"abstractTargetIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6
+					],
+					"childIndexes" : 
+					[
+						1
+					],
+					"directoryIndexes" : 
+					[
+						0,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12
+					],
+					"name" : "whisper.cpp",
+					"targetIndexes" : 
+					[
+						0,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20
+					]
+				},
+				{
+					"abstractTargetIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"directoryIndexes" : 
+					[
+						1,
+						2,
+						3
+					],
+					"name" : "ggml",
+					"parentIndex" : 0,
+					"targetIndexes" : 
+					[
+						1,
+						9,
+						10,
+						11
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ALL_BUILD::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ALL_BUILD-RelWithDebInfo-f6b547321559fec19e54.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "ALL_BUILD::@beca84bc0433526980ad",
+					"jsonFile" : "target-ALL_BUILD-RelWithDebInfo-37014b67b452c3391190.json",
+					"name" : "ALL_BUILD",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Continuous::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Continuous-RelWithDebInfo-fa057606de4d7c92af14.json",
+					"name" : "Continuous",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Experimental::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Experimental-RelWithDebInfo-224e3fcbd1a60d2dd5ae.json",
+					"name" : "Experimental",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "Nightly::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-Nightly-RelWithDebInfo-6b02e4e151f331b9ec67.json",
+					"name" : "Nightly",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "NightlyMemoryCheck::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-NightlyMemoryCheck-RelWithDebInfo-54205cbdd583abf71970.json",
+					"name" : "NightlyMemoryCheck",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ZERO_CHECK::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZERO_CHECK-RelWithDebInfo-bf675c8e13edbbe143d0.json",
+					"name" : "ZERO_CHECK",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "bench::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-bench-RelWithDebInfo-60846194ad1a3a10d470.json",
+					"name" : "bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 6,
+					"id" : "common::@714eac15f71a94114fdf",
+					"jsonFile" : "target-common-RelWithDebInfo-84385cb6b9a5946414a4.json",
+					"name" : "common",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-RelWithDebInfo-8fa7390eddd55bdbe49d.json",
+					"name" : "ggml",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-base::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-base-RelWithDebInfo-48a48cd4c7bd6f1a06e3.json",
+					"name" : "ggml-base",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "ggml-cpu::@64c2a4576bf370762041",
+					"jsonFile" : "target-ggml-cpu-RelWithDebInfo-c1bd9c08864f7b269f55.json",
+					"name" : "ggml-cpu",
+					"projectIndex" : 1
+				},
+				{
+					"directoryIndex" : 12,
+					"id" : "main::@445d1025aa5af351cb8d",
+					"jsonFile" : "target-main-RelWithDebInfo-ed1c0a068d8a6a0977a2.json",
+					"name" : "main",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-RelWithDebInfo-f51a80f2911694e68000.json",
+					"name" : "test-vad",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 5,
+					"id" : "test-vad-full::@a44f0ac069e85531cdee",
+					"jsonFile" : "target-test-vad-full-RelWithDebInfo-774e44a89d7cb5207283.json",
+					"name" : "test-vad-full",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 4,
+					"id" : "whisper::@145eef247bfb46b6828c",
+					"jsonFile" : "target-whisper-RelWithDebInfo-64c8522c73931211da33.json",
+					"name" : "whisper",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 8,
+					"id" : "whisper-bench::@d0a029687d6a416c1cdc",
+					"jsonFile" : "target-whisper-bench-RelWithDebInfo-a3a9e89703e9e6496bea.json",
+					"name" : "whisper-bench",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 7,
+					"id" : "whisper-cli::@ed55a284997177d9db58",
+					"jsonFile" : "target-whisper-cli-RelWithDebInfo-4946ca10d1828ac2ca29.json",
+					"name" : "whisper-cli",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 10,
+					"id" : "whisper-quantize::@ae188d8102f0422d3839",
+					"jsonFile" : "target-whisper-quantize-RelWithDebInfo-4c7bd22594a9a8d7e796.json",
+					"name" : "whisper-quantize",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 9,
+					"id" : "whisper-server::@c58c5eba9c521975edee",
+					"jsonFile" : "target-whisper-server-RelWithDebInfo-51b95018563d06f60509.json",
+					"name" : "whisper-server",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 11,
+					"id" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516",
+					"jsonFile" : "target-whisper-vad-speech-segments-RelWithDebInfo-fe8a79a7d07b4483025b.json",
+					"name" : "whisper-vad-speech-segments",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/kargalar/Projects/Other Apps/windows_enhance/build",
+		"source" : "C:/kargalar/Projects/Other Apps/windows_enhance/.upstream/whisper.cpp"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	}
+}

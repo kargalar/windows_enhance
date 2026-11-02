@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-alloc.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-backend.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-opt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-threading.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-quants.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\gguf.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\include\ggml.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\include\ggml-alloc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\include\ggml-backend.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\include\ggml-cpp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\include\ggml-opt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\include\gguf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-threading.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\ggml-quants.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\ggml\src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{9058F378-A5E8-3AD9-83E9-813D881D0084}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{13EF50D8-2D6F-3BB9-85FF-03B5A5DA1BFC}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -23,6 +23,7 @@ inline std::wstring Canonical(std::wstring const& text, std::wstring const& pare
     auto name = Normalize(text), scope = Normalize(parent);
     if (name == L"masa\u00fcst\u00fc k\u0131sayolu olu\u015ftur") return L"prepared:desktop-shortcut";
     if (name == L"dosyay\u0131 / k\u0131sayolu gizle veya g\u00f6ster") return L"prepared:toggle-hidden";
+    if (name == L"klas\u00f6r simgesini de\u011fi\u015ftir") return L"prepared:folder-icon";
     if (name == L"properties" || name == L"\x00f6zellikler" || name == L"ozellikler") return L"builtin:properties";
     if (name == L"new folder" || name == L"yeni klas\x00f6r" || ((scope == L"new" || scope == L"yeni") && (name == L"folder" || name == L"klas\x00f6r"))) return L"builtin:new-folder";
     if (name == L"new" || name == L"yeni") return L"builtin:new";

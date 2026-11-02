@@ -1,0 +1,136 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"ggml/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 333,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 334,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 402,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"ggml/src/Release/ggml.lib"
+			],
+			"targetId" : "ggml::@64c2a4576bf370762041",
+			"targetIndex" : 9,
+			"targetIsImportLibrary" : true,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/Release/ggml.dll"
+			],
+			"targetId" : "ggml::@64c2a4576bf370762041",
+			"targetIndex" : 9,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include",
+			"paths" : 
+			[
+				"ggml/include/ggml.h",
+				"ggml/include/ggml-cpu.h",
+				"ggml/include/ggml-alloc.h",
+				"ggml/include/ggml-backend.h",
+				"ggml/include/ggml-blas.h",
+				"ggml/include/ggml-cann.h",
+				"ggml/include/ggml-cpp.h",
+				"ggml/include/ggml-cuda.h",
+				"ggml/include/ggml-opt.h",
+				"ggml/include/ggml-metal.h",
+				"ggml/include/ggml-rpc.h",
+				"ggml/include/ggml-sycl.h",
+				"ggml/include/ggml-vulkan.h",
+				"ggml/include/ggml-webgpu.h",
+				"ggml/include/ggml-zendnn.h",
+				"ggml/include/gguf.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"ggml/src/Release/ggml-base.lib"
+			],
+			"targetId" : "ggml-base::@64c2a4576bf370762041",
+			"targetIndex" : 10,
+			"targetIsImportLibrary" : true,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/Release/ggml-base.dll"
+			],
+			"targetId" : "ggml-base::@64c2a4576bf370762041",
+			"targetIndex" : 10,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib/cmake/ggml",
+			"paths" : 
+			[
+				"C:/kargalar/Projects/Other Apps/windows_enhance/build/ggml/ggml-config.cmake",
+				"C:/kargalar/Projects/Other Apps/windows_enhance/build/ggml/ggml-version.cmake"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "ggml",
+		"source" : "ggml"
+	}
+}

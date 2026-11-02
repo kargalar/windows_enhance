@@ -1,0 +1,78 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install",
+			"ggml_add_backend_library",
+			"ggml_add_cpu_backend_variant_impl"
+		],
+		"files" : 
+		[
+			"ggml/src/CMakeLists.txt",
+			"ggml/src/ggml-cpu/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 2,
+				"file" : 0,
+				"line" : 444,
+				"parent" : 0
+			},
+			{
+				"command" : 1,
+				"file" : 1,
+				"line" : 22,
+				"parent" : 1
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 261,
+				"parent" : 2
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib",
+			"paths" : 
+			[
+				"ggml/src/MinSizeRel/ggml-cpu.lib"
+			],
+			"targetId" : "ggml-cpu::@64c2a4576bf370762041",
+			"targetIndex" : 11,
+			"targetIsImportLibrary" : true,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/MinSizeRel/ggml-cpu.dll"
+			],
+			"targetId" : "ggml-cpu::@64c2a4576bf370762041",
+			"targetIndex" : 11,
+			"type" : "target"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "ggml/src",
+		"source" : "ggml/src"
+	}
+}

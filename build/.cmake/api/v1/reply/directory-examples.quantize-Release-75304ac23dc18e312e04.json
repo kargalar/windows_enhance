@@ -1,0 +1,50 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"examples/quantize/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 7,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/Release/whisper-quantize.exe"
+			],
+			"targetId" : "whisper-quantize::@ae188d8102f0422d3839",
+			"targetIndex" : 18,
+			"type" : "target"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "examples/quantize",
+		"source" : "examples/quantize"
+	}
+}

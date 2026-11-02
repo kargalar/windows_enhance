@@ -61,6 +61,7 @@ internal static class ContextMenuCatalog
         }) entries["builtin:" + id] = new("builtin:" + id, name, "Windows komutu", "builtin:" + id, icon);
         entries["prepared:desktop-shortcut"] = new("prepared:desktop-shortcut", "Masaüstü kısayolu oluştur", "Hazır eylem", Normalize("Masaüstü kısayolu oluştur"), "shell32.dll,167");
         entries["prepared:toggle-hidden"] = new("prepared:toggle-hidden", "Dosyayı / kısayolu gizle veya göster", "Hazır eylem", Normalize("Dosyayı / kısayolu gizle veya göster"), "shell32.dll,3");
+        entries["prepared:folder-icon"] = new("prepared:folder-icon", "Klasör simgesini değiştir", "Hazır eylem", Normalize("Klasör simgesini değiştir"), "shell32.dll,3");
         foreach (var root in Roots)
         {
             ReadVerbs(root, entries);

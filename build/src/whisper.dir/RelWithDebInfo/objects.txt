@@ -1,0 +1,1 @@
+C:/kargalar/Projects/Other Apps/windows_enhance/build/src/whisper.dir/RelWithDebInfo/whisper.obj

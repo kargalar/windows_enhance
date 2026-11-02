@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\tests\test-vad-full.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\kargalar\Projects\Other Apps\windows_enhance\.upstream\whisper.cpp\tests\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{13EF50D8-2D6F-3BB9-85FF-03B5A5DA1BFC}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

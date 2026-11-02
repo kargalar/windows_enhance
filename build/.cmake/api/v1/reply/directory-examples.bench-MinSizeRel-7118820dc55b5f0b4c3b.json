@@ -1,0 +1,50 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"examples/bench/CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 8,
+				"parent" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "bin",
+			"paths" : 
+			[
+				"bin/MinSizeRel/whisper-bench.exe"
+			],
+			"targetId" : "whisper-bench::@d0a029687d6a416c1cdc",
+			"targetIndex" : 16,
+			"type" : "target"
+		}
+	],
+	"paths" : 
+	{
+		"build" : "examples/bench",
+		"source" : "examples/bench"
+	}
+}

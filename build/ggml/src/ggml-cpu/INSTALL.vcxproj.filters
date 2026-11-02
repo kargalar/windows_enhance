@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\kargalar\Projects\Other Apps\windows_enhance\build\CMakeFiles\109fdbbde31bfe8ca04d0c9390221b0e\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{9FD43A59-4213-3F5E-B70F-AE2E26FDC06E}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

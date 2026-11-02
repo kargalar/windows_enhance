@@ -15,6 +15,11 @@ public sealed partial class ContextMenuModule : IModulePanel
         _entries = ContextMenuCatalog.Read();
         _rules = JsonSerializer.Deserialize<List<ContextMenuRule>>(_context!.Settings.GetString("menu-rules", "[]"), ContextMenuCatalog.Json) ?? [];
         ContextMenuCatalog.ValidateRules(_rules); _runtime = new(_context.Log);
+        if (!_rules.Any(rule => rule.Id == "prepared:folder-icon"))
+        {
+            _rules.Add(new("prepared:folder-icon", Contexts: ContextMenuCatalog.Contexts.ToDictionary(scope => scope, scope => scope == "folder")));
+            _context.Settings.Set("menu-rules", JsonSerializer.Serialize(_rules, ContextMenuCatalog.Json));
+        }
     }
     private string? Preview(string icon)
     {

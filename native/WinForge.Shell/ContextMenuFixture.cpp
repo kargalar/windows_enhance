@@ -126,6 +126,7 @@ int wmain(int argc, wchar_t** argv) {
         SeparatorAndPathChecks();
         Check(WinForgeMenu::Canonical(L"Masa\u00fcst\u00fc k\u0131sayolu olu\u015ftur") == L"prepared:desktop-shortcut", "Prepared shortcut catalog identity remains stable");
         Check(WinForgeMenu::Canonical(L"Dosyay\u0131 / k\u0131sayolu gizle veya g\u00f6ster") == L"prepared:toggle-hidden", "Prepared visibility catalog identity remains stable");
+        Check(WinForgeMenu::Canonical(L"Klas\u00f6r simgesini de\u011fi\u015ftir") == L"prepared:folder-icon", "Prepared folder icon catalog identity remains stable");
 
         AppendMenuW(root, MF_STRING | MF_CHECKED, 101, L"&Properties");
         AppendMenuW(create, MF_STRING, 201, L"&Folder"); AppendMenuW(create, MF_STRING, 202, L"Shortcut");

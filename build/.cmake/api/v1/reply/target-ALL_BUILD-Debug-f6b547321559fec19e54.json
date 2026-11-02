@@ -1,0 +1,125 @@
+{
+	"backtrace" : 0,
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			}
+		]
+	},
+	"codemodelVersion" : 
+	{
+		"major" : 2,
+		"minor" : 10
+	},
+	"dependencies" : 
+	[
+		{
+			"id" : "ggml::@64c2a4576bf370762041"
+		},
+		{
+			"id" : "ggml-cpu::@64c2a4576bf370762041"
+		},
+		{
+			"id" : "ggml-base::@64c2a4576bf370762041"
+		},
+		{
+			"id" : "test-vad-full::@a44f0ac069e85531cdee"
+		},
+		{
+			"id" : "test-vad::@a44f0ac069e85531cdee"
+		},
+		{
+			"id" : "whisper::@145eef247bfb46b6828c"
+		},
+		{
+			"id" : "whisper-server::@c58c5eba9c521975edee"
+		},
+		{
+			"id" : "common::@714eac15f71a94114fdf"
+		},
+		{
+			"id" : "whisper-cli::@ed55a284997177d9db58"
+		},
+		{
+			"id" : "whisper-bench::@d0a029687d6a416c1cdc"
+		},
+		{
+			"id" : "whisper-quantize::@ae188d8102f0422d3839"
+		},
+		{
+			"id" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516"
+		},
+		{
+			"id" : "bench::@445d1025aa5af351cb8d"
+		},
+		{
+			"id" : "ZERO_CHECK::@6890427a1f51a3e7e1df"
+		},
+		{
+			"id" : "main::@445d1025aa5af351cb8d"
+		}
+	],
+	"id" : "ALL_BUILD::@6890427a1f51a3e7e1df",
+	"isGeneratorProvided" : true,
+	"name" : "ALL_BUILD",
+	"orderDependencies" : 
+	[
+		{
+			"id" : "ggml::@64c2a4576bf370762041"
+		},
+		{
+			"id" : "ggml-cpu::@64c2a4576bf370762041"
+		},
+		{
+			"id" : "ggml-base::@64c2a4576bf370762041"
+		},
+		{
+			"id" : "test-vad-full::@a44f0ac069e85531cdee"
+		},
+		{
+			"id" : "test-vad::@a44f0ac069e85531cdee"
+		},
+		{
+			"id" : "whisper::@145eef247bfb46b6828c"
+		},
+		{
+			"id" : "whisper-server::@c58c5eba9c521975edee"
+		},
+		{
+			"id" : "common::@714eac15f71a94114fdf"
+		},
+		{
+			"id" : "whisper-cli::@ed55a284997177d9db58"
+		},
+		{
+			"id" : "whisper-bench::@d0a029687d6a416c1cdc"
+		},
+		{
+			"id" : "whisper-quantize::@ae188d8102f0422d3839"
+		},
+		{
+			"id" : "whisper-vad-speech-segments::@1a5c4726c61aeefcd516"
+		},
+		{
+			"id" : "bench::@445d1025aa5af351cb8d"
+		},
+		{
+			"id" : "main::@445d1025aa5af351cb8d"
+		}
+	],
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	},
+	"sources" : [],
+	"type" : "UTILITY"
+}

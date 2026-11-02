@@ -1,0 +1,19 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/ggml/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/ggml/src/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/ggml/src/ggml-cpu/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/src/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/tests/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/cli/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/bench/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/server/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/quantize/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/vad-speech-segments/cmake_install.cmake",
+		"C:/kargalar/Projects/Other Apps/windows_enhance/build/examples/deprecation-warning/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
