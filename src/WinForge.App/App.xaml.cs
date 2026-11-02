@@ -40,6 +40,7 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
+        using var timing = PerformanceTrace.Measure("startup.host");
         _mutex = new Mutex(true, SingleInstanceMutexName, out _ownsMutex);
         if (!_ownsMutex)
         {
@@ -91,7 +92,14 @@ public partial class App : Application
         }
         finally { startupWindow?.Complete(); }
 
-        Logger = new FileLogger(Path.Combine(dataDirectory, "winforge.log"));
+        Logger = new FileLogger(Path.Combine(dataDirectory, "winforge.log"), asynchronous: true);
+        Store.DeferWrites = true;
+        Store.PersistenceChanged += state =>
+        {
+            if (state.Error is { } error) Logger.Error("Ayarlar kaydedilemedi: " + error);
+            _ = Dispatcher.BeginInvoke(new Action(() => { if (!IsExiting) MainView?.RefreshPersistence(); }));
+        };
+        if (Store.Persistence.Recovery is { } recovery) Logger.Error(recovery);
         CleanupRetiredPreviewCommand();
         Logger.Info($"WinForge başlatılıyor · {Environment.OSVersion.VersionString}");
 
@@ -265,7 +273,9 @@ public partial class App : Application
         try { (FeatureUi as IDisposable)?.Dispose(); } catch { }
         try { _tray?.Dispose(); } catch { }
         try { Hotkeys?.Dispose(); } catch { }
-        try { Store?.Save(); } catch { }
+        try { Store?.Dispose(); } catch (Exception error) { Logger?.Error("Son ayarlar kaydedilemedi.", error); }
+        PerformanceTrace.Flush();
+        Logger?.Dispose();
 
         if (_mutex is not null && _ownsMutex)
         {

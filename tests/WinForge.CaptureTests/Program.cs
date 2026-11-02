@@ -20,6 +20,29 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--history-benchmark")
+            {
+                var benchmarkParent = Path.Combine(Path.GetTempPath(), "WinForge.HistoryBenchmarks");
+                var benchmarkRoot = Path.Combine(benchmarkParent, Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(benchmarkRoot);
+                try { HistoryPerformanceChecks.Run(benchmarkRoot, args[1], Check); }
+                finally
+                {
+                    SqliteConnection.ClearAllPools();
+                    if (Path.GetDirectoryName(Path.GetFullPath(benchmarkRoot)) == Path.GetFullPath(benchmarkParent)) Directory.Delete(benchmarkRoot, true);
+                }
+                Console.WriteLine($"PASS: {checks} history performance checks.");
+                return 0;
+            }
+            if (args.Length == 1 && args[0] == "--history-refresh")
+            {
+                var refreshRoot = Path.Combine(Path.GetTempPath(), "WinForge-HistoryRefreshTests", Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(refreshRoot);
+                try { HistoryRefreshChecks.Run(refreshRoot, Check); }
+                finally { SqliteConnection.ClearAllPools(); Directory.Delete(refreshRoot, true); }
+                Console.WriteLine($"PASS: {checks} history refresh checks.");
+                return 0;
+            }
             if (args.Length == 1 && args[0] == "--archive-history")
             {
                 var archiveRoot = Path.Combine(Path.GetTempPath(), "WinForge-ArchiveTests", Guid.NewGuid().ToString("N"));
@@ -50,7 +73,7 @@ internal static class Program
             if (args.Length == 1 && args[0] == "--audit") { Audit(); return 0; }
             if (args.Length == 1 && args[0] == "--scrolling") return Scrolling();
             var root = Path.Combine(Path.GetTempPath(), "WinForge-CaptureTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-            try { CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); }
+            try { HistoryRefreshChecks.Run(root, Check); CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
             Console.WriteLine($"PASS: {checks} capture/history checks."); return 0;
         }

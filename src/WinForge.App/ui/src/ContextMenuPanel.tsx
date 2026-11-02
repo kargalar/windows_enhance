@@ -77,7 +77,8 @@ export function ContextMenuPanel({ state, command }: { state: ContextMenuState; 
     if (updates.length) command('save-items', { items: updates });
   };
   const items = combineEntries(state.entries);
-  const entries = items.filter(entry => `${entry.name} ${entry.originalName} ${entry.sources.join(' ')}`.toLocaleLowerCase('tr').includes(query.toLocaleLowerCase('tr')) && (source === 'all' || source === 'separators' && entry.isSeparator || source === 'prepared' && entry.ids.some(id => id.startsWith('prepared:')) || source === 'live' && entry.sources.includes('Gerçek menü öğesi') || source === 'windows' && entry.ids.some(id => id.startsWith('builtin:')) || source === 'extensions' && entry.sources.includes('Kabuk uzantısı')));
+  const search = query.trim().toLocaleLowerCase('tr');
+  const entries = search ? items.filter(entry => `${entry.name} ${entry.originalName} ${entry.sources.join(' ')}`.toLocaleLowerCase('tr').includes(search) && (source === 'all' || source === 'separators' && entry.isSeparator || source === 'prepared' && entry.ids.some(id => id.startsWith('prepared:')) || source === 'live' && entry.sources.includes('Gerçek menü öğesi') || source === 'windows' && entry.ids.some(id => id.startsWith('builtin:')) || source === 'extensions' && entry.sources.includes('Kabuk uzantısı'))) : [];
   const visible = items.filter(entry => entry.visible && !entry.isSeparator);
   return <section className="context-menu-panel">
     <section className="context-options" aria-label="Ayırıcı ve yol kopyalama ayarları">{([
@@ -96,6 +97,6 @@ export function ContextMenuPanel({ state, command }: { state: ContextMenuState; 
     <div className="context-toolbar" aria-label="Toplu görünürlük"><span>{query || source !== 'all' ? 'Filtrelenen öğeler' : 'Tüm öğeler'} · {entries.length}</span><button className="secondary-button" disabled={!entries.length} onClick={() => setAllVisibility(true)}>Tümünü aç</button><button className="secondary-button" disabled={!entries.length} onClick={() => setAllVisibility(false)}>Tümünü kapat</button></div>
     <p className="automation-hint">{entries.length} öğe · {items.filter(entry => !entry.visible).length} tüm konumlarda gizli</p>
     {entries.map(entry => <MenuEntry key={entry.ids.join('|')} entry={entry} command={itemCommand} ref={control => { if (control) controls.current.set(entry.id, control); else controls.current.delete(entry.id); }} />)}
-    {entries.length === 0 && <p>Bu filtreyle öğe bulunamadı.</p>}
+    {!search ? <p className="automation-hint">Menü öğelerini görmek için arama yapın.</p> : entries.length === 0 && <p>Bu filtreyle öğe bulunamadı.</p>}
   </section>;
 }

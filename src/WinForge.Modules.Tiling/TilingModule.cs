@@ -6,7 +6,7 @@ using RECT = WinForge.Core.RECT;
 
 namespace WinForge.Modules.Tiling;
 
-public class TilingModule : ITweakModule, IWindowZoneDragProvider
+public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
 {
     private const int GWL_EXSTYLE = -20;
     private const int GWL_STYLE = -16;
@@ -64,7 +64,8 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private const uint EVENT_OBJECT_HIDE = 0x8003;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
-    private static readonly TimeSpan NewWindowPlacementDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan NewWindowPlacementDelay = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan NewWindowPlacementTimeout = TimeSpan.FromSeconds(3);
 
     private static readonly HashSet<string> IgnoredClasses = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -84,7 +85,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private IDisposable? _nextZoneWindowHotkey;
     private IDisposable? _previousZoneWindowHotkey;
     private readonly List<IDisposable> _zoneMoveHotkeys = new();
-    private readonly HashSet<IntPtr> _pendingZoneWindows = new();
+    private readonly Dictionary<IntPtr, long> _pendingZoneWindows = new();
     private readonly object _pendingZoneWindowsLock = new();
     private int _gap = 8;
     private int _layout;
@@ -327,7 +328,6 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         };
         _zonePlacementTimer.Tick += (_, _) =>
         {
-            _zonePlacementTimer.Stop();
             PlacePendingWindowsInZones();
         };
         _zoneTimer = new DispatcherTimer(DispatcherPriority.Input)
@@ -661,6 +661,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
 
         if (_mode == ZoneMoveMode && eventType == EVENT_OBJECT_DESTROY)
         {
+            lock (_pendingZoneWindowsLock) _pendingZoneWindows.Remove(hwnd);
             _placed.Remove(hwnd);
             _fullscreenWindows.Remove(hwnd);
             return;
@@ -690,8 +691,9 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private void QueueNewWindowForZonePlacement(IntPtr hwnd)
     {
         if (!IsActive || hwnd == IntPtr.Zero) return;
-        lock (_pendingZoneWindowsLock) _pendingZoneWindows.Add(hwnd);
-        _zonePlacementTimer?.Stop();
+        lock (_pendingZoneWindowsLock)
+            _pendingZoneWindows.TryAdd(hwnd, Environment.TickCount64 + (long)NewWindowPlacementTimeout.TotalMilliseconds);
+        // Do not debounce: unrelated SHOW events must not delay an opening window.
         _zonePlacementTimer?.Start();
     }
 
@@ -706,6 +708,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private void BeginZoneDrag(IntPtr window, bool usesWindowControl)
     {
         if (!IsActive || !Native.IsWindow(window)) return;
+        lock (_pendingZoneWindowsLock) _pendingZoneWindows.Remove(window);
         lock (_autoTileLock)
         {
             if (_dragging && _draggedWindow == window) return;
@@ -802,39 +805,50 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
 
     private void PlacePendingWindowsInZones()
     {
-        if (!IsActive || _mode != ZoneMoveMode || !_zoneAutoPlaceNewWindows) return;
-
-        IntPtr[] pending;
-        lock (_pendingZoneWindowsLock)
+        if (!IsActive || _mode != ZoneMoveMode || !_zoneAutoPlaceNewWindows)
         {
-            pending = _pendingZoneWindows.ToArray();
-            _pendingZoneWindows.Clear();
+            lock (_pendingZoneWindowsLock) _pendingZoneWindows.Clear();
+            _zonePlacementTimer?.Stop();
+            return;
         }
 
-        foreach (var hwnd in pending) PlaceNewWindowInAvailableZone(hwnd);
+        KeyValuePair<IntPtr, long>[] pending;
+        lock (_pendingZoneWindowsLock)
+            pending = _pendingZoneWindows.ToArray();
+
+        foreach (var (hwnd, deadline) in pending)
+        {
+            if (PlaceNewWindowInAvailableZone(hwnd) || Environment.TickCount64 >= deadline)
+                lock (_pendingZoneWindowsLock) _pendingZoneWindows.Remove(hwnd);
+        }
+        lock (_pendingZoneWindowsLock)
+            if (_pendingZoneWindows.Count == 0) _zonePlacementTimer?.Stop();
     }
 
-    private void PlaceNewWindowInAvailableZone(IntPtr hwnd)
+    // False keeps an opening window queued while its title, frame or visibility initializes.
+    private bool PlaceNewWindowInAvailableZone(IntPtr hwnd)
     {
-        if (!Native.IsWindow(hwnd) || !Native.IsWindowVisible(hwnd) || Native.IsIconic(hwnd) ||
-            hwnd == _draggedWindow || _fullscreenWindows.ContainsKey(hwnd) ||
-            _placed.ContainsKey(hwnd) || !IsResizableWindow(hwnd) || !TryTileable(hwnd, out var monitor, out var workArea) ||
-            !TryGetMonitorWorkArea(hwnd, out _, out var monitorName, out _)) return;
+        if (!Native.IsWindow(hwnd) || _fullscreenWindows.ContainsKey(hwnd) || _placed.ContainsKey(hwnd)) return true;
+        if (!Native.IsWindowVisible(hwnd) || Native.IsIconic(hwnd) || hwnd == _draggedWindow ||
+            !IsResizableWindow(hwnd) || !TryTileableCore(hwnd, out var monitor, out var workArea, allowMaximized: true) ||
+            !TryGetMonitorWorkArea(hwnd, out _, out var monitorName, out _)) return false;
 
         ApplyMonitorGridProfile(monitorName);
         var zones = CreateZones(workArea);
-        if (zones.Count == 0 || !TryGetVisibleFrameBounds(hwnd, out var frameBounds) ||
-            FindBestZone(zones, frameBounds) >= 0) return;
+        if (zones.Count == 0) return false;
 
         var occupancy = CountOccupiedZones(zones, monitor, hwnd);
         if (AreAllZonesOccupied(occupancy))
         {
             EnterTrueFullscreen(hwnd, monitor);
-            return;
+            return _fullscreenWindows.ContainsKey(hwnd);
         }
 
         var targetZone = FindLeastOccupiedZone(occupancy);
-        if (targetZone >= 0) Move(hwnd, zones[targetZone]);
+        if (targetZone < 0) return false;
+        if (IsZoomed(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        Move(hwnd, zones[targetZone]);
+        return _placed.ContainsKey(hwnd);
     }
 
     private static bool IsResizableWindow(IntPtr hwnd) =>
@@ -1049,123 +1063,6 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         rows = _zoneLayout switch { 2 => 2, 3 => _zoneRows, _ => 1 };
     }
 
-    internal static HashSet<int> FindZonesNearDividers(IReadOnlyList<RECT> zones, int columns, int rows,
-        POINT cursor, int distance)
-    {
-        var hovered = FindZone(zones, cursor);
-        if (hovered < 0) hovered = FindNearestZone(zones, cursor);
-        var result = new HashSet<int>();
-        if (hovered < 0 || columns <= 0 || rows <= 0) return result;
-
-        var row = hovered / columns;
-        var column = hovered % columns;
-        var selectedRows = new HashSet<int> { row };
-        var selectedColumns = new HashSet<int> { column };
-        if (column + 1 < columns && IsNearVerticalDivider(zones[hovered], zones[hovered + 1], cursor.X, distance))
-            selectedColumns.Add(column + 1);
-        else if (column > 0 && IsNearVerticalDivider(zones[hovered - 1], zones[hovered], cursor.X, distance))
-            selectedColumns.Add(column - 1);
-
-        if (row + 1 < rows && IsNearHorizontalDivider(zones[hovered], zones[hovered + columns], cursor.Y, distance))
-            selectedRows.Add(row + 1);
-        else if (row > 0 && IsNearHorizontalDivider(zones[hovered - columns], zones[hovered], cursor.Y, distance))
-            selectedRows.Add(row - 1);
-
-        foreach (var selectedRow in selectedRows)
-            foreach (var selectedColumn in selectedColumns)
-            {
-                var index = selectedRow * columns + selectedColumn;
-                if (index >= 0 && index < zones.Count) result.Add(index);
-            }
-        return result;
-    }
-
-    private static bool IsNearVerticalDivider(RECT left, RECT right, int x, int distance)
-    {
-        if (Math.Min(left.Bottom, right.Bottom) <= Math.Max(left.Top, right.Top)) return false;
-        var divider = (left.Right + right.Left) / 2;
-        return Math.Abs(x - divider) <= distance;
-    }
-
-    private static bool IsNearHorizontalDivider(RECT top, RECT bottom, int y, int distance)
-    {
-        if (Math.Min(top.Right, bottom.Right) <= Math.Max(top.Left, bottom.Left)) return false;
-        var divider = (top.Bottom + bottom.Top) / 2;
-        return Math.Abs(y - divider) <= distance;
-    }
-
-    private static bool TryExtendZoneSelection(IReadOnlyList<RECT> zones, ISet<int> selection, int candidate, int gap)
-    {
-        if (candidate < 0 || candidate >= zones.Count || selection.Contains(candidate)) return false;
-        if (!TryGetSpanBounds(zones, selection.ToHashSet(), gap, out var currentBounds) ||
-            !selection.Any(index => AreZonesAdjacent(zones[index], zones[candidate], gap))) return false;
-
-        var candidateBounds = zones[candidate];
-        var extendedBounds = new RECT
-        {
-            Left = Math.Min(currentBounds.Left, candidateBounds.Left),
-            Top = Math.Min(currentBounds.Top, candidateBounds.Top),
-            Right = Math.Max(currentBounds.Right, candidateBounds.Right),
-            Bottom = Math.Max(currentBounds.Bottom, candidateBounds.Bottom)
-        };
-        var expanded = Enumerable.Range(0, zones.Count).Where(index =>
-        {
-            var zone = zones[index];
-            return zone.Left >= extendedBounds.Left && zone.Top >= extendedBounds.Top &&
-                   zone.Right <= extendedBounds.Right && zone.Bottom <= extendedBounds.Bottom;
-        }).ToHashSet();
-        if (!expanded.Contains(candidate) || !selection.All(expanded.Contains)) return false;
-        selection.Clear();
-        foreach (var index in expanded) selection.Add(index);
-        return true;
-    }
-
-    private static bool TryGetSpanBounds(IReadOnlyList<RECT> zones, IReadOnlySet<int> selection, int gap, out RECT bounds)
-    {
-        bounds = default;
-        if (selection.Count == 0 || selection.Any(index => index < 0 || index >= zones.Count)) return false;
-        var selected = selection.ToHashSet();
-        var first = zones[selected.First()];
-        bounds = selected.Skip(1).Select(index => zones[index]).Aggregate(first, (current, zone) => new RECT
-        {
-            Left = Math.Min(current.Left, zone.Left),
-            Top = Math.Min(current.Top, zone.Top),
-            Right = Math.Max(current.Right, zone.Right),
-            Bottom = Math.Max(current.Bottom, zone.Bottom)
-        });
-        var spanBounds = bounds;
-
-        var enclosedZones = Enumerable.Range(0, zones.Count).Where(index =>
-        {
-            var zone = zones[index];
-            return zone.Left >= spanBounds.Left && zone.Top >= spanBounds.Top &&
-                   zone.Right <= spanBounds.Right && zone.Bottom <= spanBounds.Bottom;
-        }).ToHashSet();
-        if (!selected.SetEquals(enclosedZones)) return false;
-
-        var connected = new HashSet<int> { selected.First() };
-        var pending = new Queue<int>(connected);
-        while (pending.TryDequeue(out var current))
-        {
-            foreach (var candidate in selected)
-                if (!connected.Contains(candidate) && AreZonesAdjacent(zones[current], zones[candidate], gap))
-                {
-                    connected.Add(candidate);
-                    pending.Enqueue(candidate);
-                }
-        }
-        return connected.Count == selected.Count;
-    }
-
-    private static bool AreZonesAdjacent(RECT first, RECT second, int gap)
-    {
-        var verticalOverlap = Math.Min(first.Bottom, second.Bottom) - Math.Max(first.Top, second.Top);
-        var horizontalOverlap = Math.Min(first.Right, second.Right) - Math.Max(first.Left, second.Left);
-        var horizontalDistance = Math.Min(Math.Abs(first.Right - second.Left), Math.Abs(second.Right - first.Left));
-        var verticalDistance = Math.Min(Math.Abs(first.Bottom - second.Top), Math.Abs(second.Bottom - first.Top));
-        return (horizontalDistance <= gap && verticalOverlap > 0) || (verticalDistance <= gap && horizontalOverlap > 0);
-    }
-
     private bool TryGetWorkArea(POINT cursor, out RECT workArea, out string monitorName)
     {
         workArea = default;
@@ -1188,161 +1085,6 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         _zoneLayout = 3;
         _zoneColumns = profile.Columns;
         _zoneRows = profile.Rows;
-    }
-
-    internal static Dictionary<string, (int Columns, int Rows)> ParseMonitorGridProfiles(string value)
-    {
-        var profiles = new Dictionary<string, (int Columns, int Rows)>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var pair = entry.Split('=', 2, StringSplitOptions.TrimEntries);
-            if (pair.Length != 2 || !IsValidMonitorName(pair[0])) continue;
-            var dimensions = pair[1].Split('x', 2, StringSplitOptions.TrimEntries);
-            if (dimensions.Length != 2 || !int.TryParse(dimensions[0], out var columns) || !int.TryParse(dimensions[1], out var rows)) continue;
-            profiles[pair[0]] = (Math.Clamp(columns, 1, 6), Math.Clamp(rows, 1, 4));
-        }
-        return profiles;
-    }
-
-    private static bool IsValidMonitorName(string value) =>
-        value.Length is > 0 and <= 32 && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-');
-
-    private List<RECT> CreateZones(RECT workArea)
-    {
-        if (_zoneLayout == 3) return CreateGridZones(workArea, _zoneColumns, _zoneRows, _gap);
-        var zones = new List<RECT>();
-        var width = workArea.Right - workArea.Left;
-        var height = workArea.Bottom - workArea.Top;
-
-        if (_zoneLayout == 2)
-        {
-            var widths = SplitSizes(width, 2, _gap);
-            var heights = SplitSizes(height, 2, _gap);
-            var top = workArea.Top;
-            for (var row = 0; row < 2; row++)
-            {
-                var left = workArea.Left;
-                for (var column = 0; column < 2; column++)
-                {
-                    zones.Add(new RECT
-                    {
-                        Left = left,
-                        Top = top,
-                        Right = left + widths[column],
-                        Bottom = top + heights[row]
-                    });
-                    left += widths[column] + _gap;
-                }
-                top += heights[row] + _gap;
-            }
-            return zones;
-        }
-
-        var count = _zoneLayout == 1 ? 3 : 2;
-        var columnWidths = SplitSizes(width, count, _gap);
-        var x = workArea.Left;
-        foreach (var columnWidth in columnWidths)
-        {
-            zones.Add(new RECT
-            {
-                Left = x,
-                Top = workArea.Top,
-                Right = x + columnWidth,
-                Bottom = workArea.Bottom
-            });
-            x += columnWidth + _gap;
-        }
-
-        return zones;
-    }
-
-    private static List<RECT> CreateGridZones(RECT workArea, int columns, int rows, int gap)
-    {
-        columns = Math.Clamp(columns, 1, 6);
-        rows = Math.Clamp(rows, 1, 4);
-        gap = Math.Clamp(gap, 0, 48);
-        var width = Math.Max(1, workArea.Right - workArea.Left);
-        var height = Math.Max(1, workArea.Bottom - workArea.Top);
-        columns = Math.Min(columns, width);
-        rows = Math.Min(rows, height);
-        var horizontalGap = columns == 1 ? 0 : Math.Min(gap, Math.Max(0, (width - columns) / (columns - 1)));
-        var verticalGap = rows == 1 ? 0 : Math.Min(gap, Math.Max(0, (height - rows) / (rows - 1)));
-        var widths = SplitSizes(width, columns, horizontalGap);
-        var heights = SplitSizes(height, rows, verticalGap);
-        var zones = new List<RECT>(columns * rows);
-        var top = workArea.Top;
-        for (var row = 0; row < rows; row++)
-        {
-            var left = workArea.Left;
-            for (var column = 0; column < columns; column++)
-            {
-                zones.Add(new RECT
-                {
-                    Left = left,
-                    Top = top,
-                    Right = left + widths[column],
-                    Bottom = top + heights[row]
-                });
-                left += widths[column] + horizontalGap;
-            }
-            top += heights[row] + verticalGap;
-        }
-        return zones;
-    }
-
-    private static int FindZone(IReadOnlyList<RECT> zones, POINT point)
-    {
-        for (var index = 0; index < zones.Count; index++)
-        {
-            var zone = zones[index];
-            if (point.X >= zone.Left && point.X < zone.Right && point.Y >= zone.Top && point.Y < zone.Bottom)
-                return index;
-        }
-
-        return -1;
-    }
-
-    private static int FindNearestZone(IReadOnlyList<RECT> zones, POINT point)
-    {
-        if (zones.Count == 0) return -1;
-        var nearest = 0;
-        var bestDistance = double.MaxValue;
-        for (var index = 0; index < zones.Count; index++)
-        {
-            var zone = zones[index];
-            var deltaX = (zone.Left + zone.Right) / 2.0 - point.X;
-            var deltaY = (zone.Top + zone.Bottom) / 2.0 - point.Y;
-            var distance = deltaX * deltaX + deltaY * deltaY;
-            if (distance >= bestDistance) continue;
-            nearest = index;
-            bestDistance = distance;
-        }
-        return nearest;
-    }
-
-    private static int FindAdjacentZone(IReadOnlyList<RECT> zones, int current, int direction)
-    {
-        if (current < 0 || current >= zones.Count || direction is not (1 or 2 or 4 or 8)) return current;
-        var origin = zones[current];
-        var originX = (origin.Left + origin.Right) / 2.0;
-        var originY = (origin.Top + origin.Bottom) / 2.0;
-        var bestIndex = current;
-        var bestScore = double.MaxValue;
-        for (var index = 0; index < zones.Count; index++)
-        {
-            if (index == current) continue;
-            var candidate = zones[index];
-            var deltaX = (candidate.Left + candidate.Right) / 2.0 - originX;
-            var deltaY = (candidate.Top + candidate.Bottom) / 2.0 - originY;
-            var primary = direction switch { 1 => -deltaX, 2 => -deltaY, 4 => deltaX, _ => deltaY };
-            if (primary <= 0) continue;
-            var secondary = direction is 1 or 4 ? Math.Abs(deltaY) : Math.Abs(deltaX);
-            var score = primary + secondary * 1.5;
-            if (score >= bestScore) continue;
-            bestIndex = index;
-            bestScore = score;
-        }
-        return bestIndex;
     }
 
     private static int ReadZoneDirectionMask()
@@ -1402,6 +1144,9 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     }
 
     private bool TryTileable(IntPtr hwnd, out IntPtr monitor, out RECT work)
+        => TryTileableCore(hwnd, out monitor, out work, allowMaximized: false);
+
+    private bool TryTileableCore(IntPtr hwnd, out IntPtr monitor, out RECT work, bool allowMaximized)
     {
         monitor = IntPtr.Zero;
         work = default;
@@ -1424,7 +1169,8 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
             ShowWindow(hwnd, SW_RESTORE);
             if (Native.IsIconic(hwnd)) return false;
         }
-        if (IsZoomed(hwnd)) return false;
+        var maximized = IsZoomed(hwnd);
+        if (maximized && !allowMaximized) return false;
 
         monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
         var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
@@ -1435,7 +1181,7 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
         var height = rect.Bottom - rect.Top;
         if (width < 80 || height < 80) return false;
 
-        if (Covers(rect, info.rcMonitor) && !IsOurPlacement(hwnd, rect)) return false;
+        if (!(allowMaximized && maximized) && Covers(rect, info.rcMonitor) && !IsOurPlacement(hwnd, rect)) return false;
 
         work = info.rcWork;
         return work.Right - work.Left >= 200 && work.Bottom - work.Top >= 200;
@@ -1449,230 +1195,6 @@ public class TilingModule : ITweakModule, IWindowZoneDragProvider
     private static bool Covers(RECT window, RECT monitor) =>
         window.Left <= monitor.Left + 2 && window.Top <= monitor.Top + 2 &&
         window.Right >= monitor.Right - 2 && window.Bottom >= monitor.Bottom - 2;
-
-    private void TileMaster(IReadOnlyList<IntPtr> windows, RECT work, int gap)
-    {
-        var area = work;
-        if (windows.Count == 1)
-        {
-            Move(windows[0], area);
-            return;
-        }
-
-        var width = area.Right - area.Left;
-        var height = area.Bottom - area.Top;
-        var masterWidth = (int)((long)(width - gap) * _masterPercent / 100);
-        if (masterWidth < 160) masterWidth = (width - gap) / 2;
-        if (masterWidth < 80) return;
-
-        Move(windows[0], new RECT
-        {
-            Left = area.Left,
-            Top = area.Top,
-            Right = area.Left + masterWidth,
-            Bottom = area.Bottom
-        });
-
-        var stackLeft = area.Left + masterWidth + gap;
-        var stackWidth = area.Right - stackLeft;
-        if (stackWidth < 80) return;
-
-        var heights = SplitSizes(height, windows.Count - 1, gap);
-        var top = area.Top;
-        for (var i = 1; i < windows.Count; i++)
-        {
-            var bottom = top + heights[i - 1];
-            Move(windows[i], new RECT
-            {
-                Left = stackLeft,
-                Top = top,
-                Right = stackLeft + stackWidth,
-                Bottom = bottom
-            });
-            top = bottom + gap;
-        }
-    }
-
-    private void TileColumns(IReadOnlyList<IntPtr> windows, RECT work, int gap)
-    {
-        var widths = SplitSizes(work.Right - work.Left, windows.Count, gap);
-        var left = work.Left;
-
-        for (var i = 0; i < windows.Count; i++)
-        {
-            var right = left + widths[i];
-            Move(windows[i], new RECT
-            {
-                Left = left,
-                Top = work.Top,
-                Right = right,
-                Bottom = work.Bottom
-            });
-            left = right + gap;
-        }
-    }
-
-    private void TileGrid(IReadOnlyList<IntPtr> windows, RECT work, int gap)
-    {
-        var area = work;
-        var count = windows.Count;
-        var width = area.Right - area.Left;
-        var height = area.Bottom - area.Top;
-        var columns = (int)Math.Ceiling(Math.Sqrt(count));
-        var rows = (int)Math.Ceiling(count / (double)columns);
-        if (columns < 1 || rows < 1) return;
-
-        var heights = SplitSizes(height, rows, gap);
-        var top = area.Top;
-        var index = 0;
-
-        for (var row = 0; row < rows; row++)
-        {
-            var inRow = Math.Min(columns, count - index);
-            var widths = SplitSizes(width, inRow, gap);
-            var left = area.Left;
-
-            for (var column = 0; column < inRow; column++)
-            {
-                var right = left + widths[column];
-                Move(windows[index++], new RECT
-                {
-                    Left = left,
-                    Top = top,
-                    Right = right,
-                    Bottom = top + heights[row]
-                });
-                left = right + gap;
-            }
-
-            top += heights[row] + gap;
-        }
-    }
-
-    private static int[] SplitSizes(int total, int count, int gap)
-    {
-        var sizes = new int[count];
-        if (count <= 0) return sizes;
-
-        var available = total - gap * (count - 1);
-        if (available < count) available = count;
-
-        var previous = 0;
-        for (var i = 0; i < count; i++)
-        {
-            var edge = (int)((long)available * (i + 1) / count);
-            sizes[i] = edge - previous;
-            previous = edge;
-        }
-
-        return sizes;
-    }
-
-    private void Move(IntPtr hwnd, RECT target)
-    {
-        RestoreFullscreenWindow(hwnd, restorePlacement: true);
-        if (!Native.GetWindowRect(hwnd, out var current)) return;
-
-        var windowTarget = target;
-        if (DwmGetWindowAttributeRect(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out var frame,
-                Marshal.SizeOf<RECT>()) == 0 && frame.Right > frame.Left && frame.Bottom > frame.Top)
-        {
-            windowTarget.Left -= frame.Left - current.Left;
-            windowTarget.Top -= frame.Top - current.Top;
-            windowTarget.Right += current.Right - frame.Right;
-            windowTarget.Bottom += current.Bottom - frame.Bottom;
-        }
-
-        if (_placed.Count > 64)
-        {
-            foreach (var stale in _placed.Keys.Where(h => !Native.IsWindow(h)).ToList())
-                _placed.Remove(stale);
-        }
-
-        if (current.Left == windowTarget.Left && current.Top == windowTarget.Top &&
-            current.Right == windowTarget.Right && current.Bottom == windowTarget.Bottom)
-        {
-            _placed[hwnd] = current;
-            return;
-        }
-
-        Native.SetWindowPos(hwnd, IntPtr.Zero, windowTarget.Left, windowTarget.Top,
-            windowTarget.Right - windowTarget.Left, windowTarget.Bottom - windowTarget.Top,
-            SWP_NOZORDER | Native.SWP_NOACTIVATE);
-
-        _placed[hwnd] = windowTarget;
-    }
-
-    private void EnterTrueFullscreen(IntPtr hwnd, IntPtr monitor)
-    {
-        RestoreFullscreenWindow(hwnd, restorePlacement: true);
-        if (!TryGetMonitorBounds(monitor, out var bounds)) return;
-
-        var placement = new WINDOWPLACEMENT { Length = Marshal.SizeOf<WINDOWPLACEMENT>() };
-        if (!GetWindowPlacement(hwnd, ref placement)) return;
-
-        var style = Native.GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
-        var extendedStyle = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-        _fullscreenWindows[hwnd] = new FullscreenWindowState(style, extendedStyle, placement);
-
-        ShowWindow(hwnd, SW_RESTORE);
-        var fullscreenStyle = (style & ~WS_OVERLAPPEDWINDOW) | WS_POPUP;
-        Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(fullscreenStyle));
-        if (!Native.SetWindowPos(hwnd, IntPtr.Zero, bounds.Left, bounds.Top,
-                bounds.Right - bounds.Left, bounds.Bottom - bounds.Top,
-                SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW))
-        {
-            RestoreFullscreenWindow(hwnd, restorePlacement: true);
-            return;
-        }
-
-        Native.SetForegroundWindow(hwnd);
-        _placed.Remove(hwnd);
-    }
-
-    private void RestoreFullscreenWindow(IntPtr hwnd, bool restorePlacement)
-    {
-        if (!_fullscreenWindows.Remove(hwnd, out var state) || !Native.IsWindow(hwnd)) return;
-
-        Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(state.Style));
-        var currentTopmost = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOPMOST;
-        var restoredExtendedStyle = (state.ExtendedStyle & ~WS_EX_TOPMOST) | currentTopmost;
-        Native.SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(restoredExtendedStyle));
-        Native.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
-            Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | SWP_NOZORDER | SWP_FRAMECHANGED);
-        if (restorePlacement)
-        {
-            var placement = state.Placement;
-            placement.Length = Marshal.SizeOf<WINDOWPLACEMENT>();
-            SetWindowPlacement(hwnd, ref placement);
-        }
-    }
-
-    private static bool TryGetMonitorBounds(IntPtr monitor, out RECT bounds)
-    {
-        var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (monitor != IntPtr.Zero && GetMonitorInfo(monitor, ref info))
-        {
-            bounds = info.rcMonitor;
-            return true;
-        }
-
-        bounds = default;
-        return false;
-    }
-
-    private readonly record struct FullscreenWindowState(long Style, long ExtendedStyle, WINDOWPLACEMENT Placement);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WINDOWPLACEMENT
-    {
-        public int Length;
-        public int Flags;
-        public int ShowCommand;
-        public POINT MinPosition;
-        public POINT MaxPosition;
-        public RECT NormalPosition;
-    }
 
     private static bool IsCloaked(IntPtr hwnd) =>
         DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out var cloaked, sizeof(int)) == 0 && cloaked != 0;

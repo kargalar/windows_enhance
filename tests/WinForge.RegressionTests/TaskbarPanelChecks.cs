@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -14,8 +15,8 @@ internal static class TaskbarPanelChecks
 {
     internal static void Run(ForgeApplication app, string directory, Action<bool, string> check)
     {
-        var store = new SettingsStore(Path.Combine(directory, "taskbar-panel.json"));
-        var logger = new FileLogger(Path.Combine(directory, "taskbar-panel.log"));
+        using var store = new SettingsStore(Path.Combine(directory, "taskbar-panel.json"));
+        using var logger = new FileLogger(Path.Combine(directory, "taskbar-panel.log"));
         var host = new ModuleHost(store, logger, new FakeHotkeys(), Path.Combine(AppContext.BaseDirectory, "modules"), _ => { });
         host.Load();
         var module = host.Modules.Single(module => module.Id == "taskbar");
@@ -23,14 +24,18 @@ internal static class TaskbarPanelChecks
             "The real host exposes taskbar customization and tray settings as one module");
         SetAppProperty(app, nameof(ForgeApplication.Host), host);
         SetAppProperty(app, nameof(ForgeApplication.Logger), logger);
-        var window = new MainWindow(Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2")));
+        SetAppProperty(app, nameof(ForgeApplication.Store), store);
+        var profile = Path.GetFullPath(Path.Combine(directory, "taskbar-webview"));
+        var window = new MainWindow(CoreWebView2Environment.CreateAsync(null, profile));
+        Process? browser = null;
         try
         {
             window.Show();
             var web = (WebView2)window.FindName("UiWebView");
             WaitUntil(() => web.CoreWebView2 is not null, "WebView2 initialization");
-            WaitUntil(() => Script("[...document.querySelectorAll('.module-card strong')].some(x => x.textContent === 'Görev Çubuğu')") == "true", "Taskbar module card");
-            Script("[...document.querySelectorAll('.module-card')].find(x => x.querySelector('strong')?.textContent === 'Görev Çubuğu').click()");
+            browser = Process.GetProcessById((int)web.CoreWebView2.BrowserProcessId);
+            WaitUntil(() => Script("[...document.querySelectorAll('.tool-card h2, .module-card strong')].some(x => x.textContent === 'Görev Çubuğu')") == "true", "Taskbar module card");
+            Script("(() => { const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Görev Çubuğu'); (card.querySelector('.tool-card-open') || card).click(); })()");
             WaitUntil(() => Script("document.querySelector('.details-title h2')?.textContent") == "\"Görev Çubuğu\"", "Taskbar panel selection");
             check(Script("['Bileşenler','Sistem simgeleri','Dock animasyonu','Saat','Bildirim alanı'].every(s => [...document.querySelectorAll('.settings-section h3')].some(x => x.textContent === s))") == "true",
                 "The rendered React panel groups component, system icon, dock, clock and application-tray controls");
@@ -41,8 +46,11 @@ internal static class TaskbarPanelChecks
             check(!module.IsActive && new SettingsStore(store.FilePath).For("taskbar")["hide-start"] == "true",
                 "Start visibility saves through the native UI bridge while a disabled module leaves the actual taskbar unchanged");
             Script("const bell = document.querySelector('select[aria-label=\"Bildirim zili\"]'); bell.value = 'when-empty'; bell.dispatchEvent(new Event('change', {bubbles:true}));");
-            WaitUntil(() => host.SettingsOf(module).GetString("hide-bell") == "when-empty", "Bell choice persistence");
-            check(Script("document.querySelector('select[aria-label=\"Bildirim zili\"] option:checked').textContent") == "\"Yeni bildirim yoksa gizle\"",
+            WaitUntil(() => host.SettingsOf(module).GetString("hide-bell") == "when-empty" &&
+                JsonSerializer.Deserialize<string>(Script("document.querySelector('select[aria-label=\"Bildirim zili\"]').value")) == "when-empty",
+                "Bell persistence and rendered acknowledgement");
+            var bellLabel = JsonSerializer.Deserialize<string>(Script("document.querySelector('select[aria-label=\"Bildirim zili\"] option:checked').textContent"));
+            check(bellLabel == "Yeni bildirim yoksa gizle",
                 "The notification bell offers localized labels and persists its conditional-hide mode");
             check(Script("document.querySelector('input[aria-label=\"Masaüstünü göster genişliği (0: Windows)\"]')?.max") == "\"100\"" &&
                   Script("document.querySelector('input[aria-label=\"Büyütme (%)\"]')?.max") == "\"160\"",
@@ -76,6 +84,14 @@ internal static class TaskbarPanelChecks
             var wasExiting = app.IsExiting;
             SetAppProperty(app, nameof(ForgeApplication.IsExiting), true);
             window.Close();
+            if (browser is not null) { WaitUntil(() => browser.HasExited, "Owned taskbar-panel browser teardown"); browser.Dispose(); }
+            if (Path.GetDirectoryName(profile) != Path.GetFullPath(directory)) throw new InvalidOperationException("Unexpected taskbar profile path.");
+            WaitUntil(() =>
+            {
+                try { if (Directory.Exists(profile)) Directory.Delete(profile, true); return true; }
+                catch (IOException) { return false; }
+                catch (UnauthorizedAccessException) { return false; }
+            }, "Owned taskbar-panel profile cleanup");
             SetAppProperty(app, nameof(ForgeApplication.IsExiting), wasExiting);
         }
     }

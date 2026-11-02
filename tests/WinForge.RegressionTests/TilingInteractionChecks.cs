@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Windows.Threading;
 using WinForge.Core;
 
 namespace WinForge.RegressionTests;
@@ -40,7 +41,86 @@ internal static class TilingInteractionChecks
         VerifyDragLifecycle(tilingType, check);
         VerifyFullscreenStacking(tilingType, check, originallyTopmost: false);
         VerifyFullscreenStacking(tilingType, check, originallyTopmost: true);
+        VerifyNewWindowPlacement(tilingType, check);
     }
+
+    private static void VerifyNewWindowPlacement(Type tilingType, Action<bool, string> check)
+    {
+        var fancyType = tilingType.Assembly.GetType("WinForge.Modules.Tiling.FancyZonesModule")!;
+        var module = (ITweakModule)Activator.CreateInstance(fancyType)!;
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var placed = (Dictionary<IntPtr, RECT>)tilingType.GetField("_placed", flags)!.GetValue(module)!;
+        var queue = tilingType.GetMethod("QueueNewWindowForZonePlacement", InstanceMethods)!;
+        var flush = tilingType.GetMethod("PlacePendingWindowsInZones", InstanceMethods)!;
+        using var large = new NativeWindowFixture($"WinForge.Zone.Large.{Guid.NewGuid():N}", "Large opening window",
+            new RECT { Left = 100, Top = 100, Right = 500, Bottom = 400 }, 0x00CF0000, 0);
+        using var delayed = new NativeWindowFixture($"WinForge.Zone.Delayed.{Guid.NewGuid():N}", "",
+            new RECT { Left = 100, Top = 100, Right = 500, Bottom = 400 }, 0x00CF0000, 0);
+        using var maximized = new NativeWindowFixture($"WinForge.Zone.Maximized.{Guid.NewGuid():N}", "Maximized opening window",
+            new RECT { Left = 100, Top = 100, Right = 500, Bottom = 400 }, 0x00CF0000, 0);
+        module.Activate();
+        try
+        {
+            // Many small zones keep these fixtures independent of other open desktop windows.
+            tilingType.GetField("_defaultZoneLayout", flags)!.SetValue(module, 3);
+            tilingType.GetField("_defaultZoneColumns", flags)!.SetValue(module, 6);
+            tilingType.GetField("_defaultZoneRows", flags)!.SetValue(module, 4);
+            large.Show();
+            var monitor = tilingType.GetMethod("MonitorFromWindow", StaticMethods)!.Invoke(null, [large.Handle, 2u])!;
+            object[] monitorArguments = [monitor, new RECT()];
+            tilingType.GetMethod("TryGetMonitorBounds", StaticMethods)!.Invoke(null, monitorArguments);
+            var bounds = (RECT)monitorArguments[1];
+            Native.SetWindowPos(large.Handle, IntPtr.Zero, bounds.Left + 10, bounds.Top + 10,
+                bounds.Right - bounds.Left - 20, bounds.Bottom - bounds.Top - 40, 0x0004 | Native.SWP_NOACTIVATE);
+            queue.Invoke(module, [large.Handle]);
+            PumpPlacementTimer();
+            check(placed.ContainsKey(large.Handle),
+                "A large opening window is fitted to a zone even when it already covers several zones");
+
+            delayed.Show();
+            queue.Invoke(module, [delayed.Handle]);
+            flush.Invoke(module, null);
+            check(!placed.ContainsKey(delayed.Handle), "An opening window without a title waits for initialization");
+            SetWindowText(delayed.Handle, "Ready opening window");
+            PumpPlacementTimer();
+            check(placed.ContainsKey(delayed.Handle),
+                "An opening window is retried and placed once ready without another SHOW event");
+
+            maximized.Show();
+            ShowWindow(maximized.Handle, 3);
+            queue.Invoke(module, [maximized.Handle]);
+            PumpPlacementTimer();
+            check(placed.ContainsKey(maximized.Handle) && !IsZoomed(maximized.Handle),
+                "A window launched maximized is restored and fitted to an available zone");
+
+            tilingType.GetField("_zoneAutoPlaceNewWindows", flags)!.SetValue(module, false);
+            using var disabled = new NativeWindowFixture($"WinForge.Zone.Disabled.{Guid.NewGuid():N}", "Auto placement disabled",
+                new RECT { Left = 100, Top = 100, Right = 500, Bottom = 400 }, 0x00CF0000, 0);
+            disabled.Show();
+            queue.Invoke(module, [disabled.Handle]);
+            PumpPlacementTimer();
+            check(!placed.ContainsKey(disabled.Handle), "Disabling automatic zone placement leaves opening windows alone");
+        }
+        finally { module.Deactivate(); }
+    }
+
+    private static void PumpPlacementTimer()
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(180) };
+        timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool SetWindowText(IntPtr window, string text);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsZoomed(IntPtr window);
 
     private static void VerifyDragLifecycle(Type tilingType, Action<bool, string> check)
     {

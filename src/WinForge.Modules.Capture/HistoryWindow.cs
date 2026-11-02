@@ -17,6 +17,9 @@ internal sealed class HistoryWindow : Window
     private readonly List<HistoryRow> rows = [];
     private int offset;
     private bool busy;
+    private long refreshVersion;
+    private bool closed;
+    private readonly Func<HistoryFilter, Task<IReadOnlyList<HistoryItem>>> query;
     private bool deleteConfirmedFromUi;
     private bool confirmDelete;
     private bool confirmDeleteRange;
@@ -33,10 +36,12 @@ internal sealed class HistoryWindow : Window
     private BitmapSource? previewImage;
     private Point? cursorImagePoint;
 
-    public HistoryWindow(HistoryStore store, string kind, string title, IFeatureUiService? featureUi = null)
+    public HistoryWindow(HistoryStore store, string kind, string title, IFeatureUiService? featureUi = null,
+        Func<HistoryFilter, Task<IReadOnlyList<HistoryItem>>>? query = null)
     {
         this.store = store;
         this.kind = kind;
+        this.query = query ?? (filter => Task.Run(() => store.Search(filter)));
         this.featureUi = featureUi ?? throw new InvalidOperationException("The React history view is required.");
         Title = title;
         Width = 1180;
@@ -49,7 +54,13 @@ internal sealed class HistoryWindow : Window
         uiSurface.MessageReceived += OnUiMessage;
         Content = uiSurface.Element;
         Loaded += (_, _) => _ = RefreshAsync();
-        Closed += (_, _) => uiSurface.Dispose();
+        Closed += (_, _) =>
+        {
+            closed = true;
+            refreshVersion++;
+            uiSurface.MessageReceived -= OnUiMessage;
+            uiSurface.Dispose();
+        };
     }
 
     private DateTimeOffset? Start => ParseDate(fromText);
@@ -65,26 +76,41 @@ internal sealed class HistoryWindow : Window
 
     private async Task RefreshAsync()
     {
-        if (busy) return;
+        refreshVersion++;
+        if (closed || busy) return;
         busy = true;
         try
         {
-            var filter = new HistoryFilter(kind, searchText, appText.Trim(), tagText.Trim(), Start, End, Offset: offset);
-            var items = await Task.Run(() => store.Search(filter));
-            rows.Clear();
-            rows.AddRange(items.Select(item => new HistoryRow(item)));
-            selectedId = rows.FirstOrDefault()?.Item.Id;
-            statusText = rows.Count == 0 ? "Kayıt bulunamadı." : $"{offset + 1}–{offset + rows.Count} · {store.DirectoryPath}";
-            ShowSelection();
-        }
-        catch (Exception error)
-        {
-            statusText = error.Message;
+            // Only one query runs at a time. Changes during it coalesce into the
+            // latest snapshot, and obsolete results/errors never reach the UI.
+            while (!closed)
+            {
+                var version = refreshVersion;
+                try
+                {
+                    var filter = new HistoryFilter(kind, searchText, appText.Trim(), tagText.Trim(), Start, End, Offset: offset);
+                    var items = await query(filter);
+                    if (closed) return;
+                    if (version != refreshVersion) continue;
+                    rows.Clear();
+                    rows.AddRange(items.Select(item => new HistoryRow(item)));
+                    selectedId = rows.FirstOrDefault()?.Item.Id;
+                    statusText = rows.Count == 0 ? "Kayıt bulunamadı." : $"{filter.Offset + 1}–{filter.Offset + rows.Count} · {store.DirectoryPath}";
+                    ShowSelection();
+                }
+                catch (Exception error)
+                {
+                    if (closed) return;
+                    if (version != refreshVersion) continue;
+                    statusText = error.Message;
+                }
+                break;
+            }
         }
         finally
         {
             busy = false;
-            PushUiState();
+            if (!closed) PushUiState();
         }
     }
 

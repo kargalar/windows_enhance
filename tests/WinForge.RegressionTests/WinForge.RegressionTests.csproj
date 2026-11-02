@@ -9,6 +9,7 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/BenchmarkMachineInfo.cs" Link="BenchmarkMachineInfo.cs" />
     <ProjectReference Include="../../src/WinForge.App/WinForge.App.csproj" />
     <ProjectReference Include="../../src/WinForge.Modules.WindowControl/WinForge.Modules.WindowControl.csproj" />
   </ItemGroup>

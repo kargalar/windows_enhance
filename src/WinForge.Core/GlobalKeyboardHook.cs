@@ -16,6 +16,7 @@ public sealed class GlobalKeyboardHook : IDisposable
 
     public event Action? DoubleControlPressed;
     public event Action<uint, bool>? KeyStateChanged;
+    public Action<Exception>? ErrorHandler { get; set; }
 
     public bool IsInstalled => _hook != IntPtr.Zero;
 
@@ -31,6 +32,7 @@ public sealed class GlobalKeyboardHook : IDisposable
 
     private IntPtr Handle(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        using var timing = PerformanceTrace.Measure("input.keyboard.callback");
         if (nCode >= 0)
         {
             var message = wParam.ToInt64();
@@ -62,7 +64,9 @@ public sealed class GlobalKeyboardHook : IDisposable
                         _lastControlUp = -DoublePressWindowMs;
                         try
                         {
-                            DoubleControlPressed?.Invoke();
+                            if (DoubleControlPressed is { } observers)
+                                foreach (Action observer in observers.GetInvocationList())
+                                    try { observer(); } catch (Exception error) { ReportError(error); }
                         }
                         catch
                         {
@@ -85,14 +89,14 @@ public sealed class GlobalKeyboardHook : IDisposable
         return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
-    private void NotifyKeyStateChanged(uint virtualKey, bool isDown)
+    internal void NotifyKeyStateChanged(uint virtualKey, bool isDown)
     {
-        try { KeyStateChanged?.Invoke(virtualKey, isDown); }
-        catch
-        {
-            // A hook callback must never take the message loop down.
-        }
+        if (KeyStateChanged is not { } observers) return;
+        foreach (Action<uint, bool> observer in observers.GetInvocationList())
+            try { observer(virtualKey, isDown); } catch (Exception error) { ReportError(error); }
     }
+
+    private void ReportError(Exception error) { try { ErrorHandler?.Invoke(error); } catch { } }
 
     public void Dispose()
     {

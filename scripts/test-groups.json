@@ -1,0 +1,8 @@
+{
+  "fast": ["WinForge.CoreTests", "WinForge.DefaultSettingsTests", "WinForge.AutomationTests", "WinForge.ShortcutActionTests"],
+  "integration": ["WinForge.NavigationTests", "WinForge.CaptureTests", "WinForge.FileToolsTests", "WinForge.RegressionTests", "WinForge.FolderSizeTests"],
+  "fastArguments": { "WinForge.ShortcutActionTests": ["--fast"] },
+  "interactive": [
+    { "name": "Shortcut native input", "project": "WinForge.ShortcutActionTests", "arguments": ["--native-input-only"], "requires": "An unlocked Windows desktop for actual SendInput and WM_HOTKEY delivery." }
+  ]
+}

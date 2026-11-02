@@ -145,7 +145,14 @@ public sealed class HistoryStore
     public IReadOnlyList<HistoryItem> Search(HistoryFilter filter)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = """
+        ConfigureSearch(command, filter);
+        using var reader = command.ExecuteReader(); var result = new List<HistoryItem>();
+        while (reader.Read()) result.Add(new(reader.GetInt64(0), reader.GetString(1), DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
+            reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDouble(7), reader.GetBoolean(8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12)));
+        return result;
+    }
+
+    private const string SearchSql = """
             SELECT i.id,i.kind,i.created,i.app,i.title,i.text,i.media,i.seconds,i.estimated,
             coalesce((SELECT group_concat(tag, ', ') FROM app_tags WHERE app=i.app),''),i.ocr_state,i.icon,i.metadata
             FROM items i WHERE kind=$kind
@@ -155,14 +162,24 @@ public sealed class HistoryStore
             AND ($from='' OR created >= $from) AND ($until='' OR created < $until)
             ORDER BY created DESC,id DESC LIMIT $limit OFFSET $offset
             """;
+
+    private static void ConfigureSearch(SqliteCommand command, HistoryFilter filter)
+    {
+        command.CommandText = SearchSql;
         var query = filter.Query.Trim();
         Bind(command, ("$kind", filter.Kind), ("$query", query), ("$match", "\"" + query.Replace("\"", "\"\"") + "\""),
             ("$app", filter.App), ("$tag", filter.Tag), ("$from", filter.From is { } from ? Timestamp(from) : ""),
             ("$until", filter.Until is { } until ? Timestamp(until) : ""), ("$limit", Math.Clamp(filter.Limit, 1, 1000)), ("$offset", Math.Max(0, filter.Offset)));
-        using var reader = command.ExecuteReader(); var result = new List<HistoryItem>();
-        while (reader.Read()) result.Add(new(reader.GetInt64(0), reader.GetString(1), DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
-            reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDouble(7), reader.GetBoolean(8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12)));
-        return result;
+    }
+
+    internal IReadOnlyList<string> ExplainSearch(HistoryFilter filter)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        ConfigureSearch(command, filter);
+        command.CommandText = "EXPLAIN QUERY PLAN " + command.CommandText;
+        using var reader = command.ExecuteReader(); var steps = new List<string>();
+        while (reader.Read()) steps.Add(reader.GetString(3));
+        return steps;
     }
 
     public void CompleteOcr(long id, string text, bool failed = false)

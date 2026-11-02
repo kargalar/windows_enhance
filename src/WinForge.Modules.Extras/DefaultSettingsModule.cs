@@ -17,10 +17,29 @@ public abstract class DefaultSettingsModule : ITweakModule, IModulePanel
     public IReadOnlyList<SettingDescriptor> Settings { get; }
 
     private object? _panelState;
+    private bool _panelInitialized;
     public event Action? PanelStateChanged;
     protected DefaultSettingsModule() { Settings = []; }
-    public void Initialize(IModuleContext context) { Context = context; Refresh(); PushState(); }
-    public object GetPanelState() => new { kind = Id, state = _panelState };
+    public void Initialize(IModuleContext context)
+    {
+        Context = context;
+        _panelInitialized = false;
+        _panelState = null;
+        Status = "Hazır";
+    }
+    public object GetPanelState()
+    {
+        EnsurePanelInitialized();
+        return new { kind = Id, state = _panelState };
+    }
+    private void EnsurePanelInitialized()
+    {
+        if (_panelInitialized) return;
+        using var timing = PerformanceTrace.Measure("defaults.read", Id);
+        Refresh();
+        _panelInitialized = true;
+        PushState();
+    }
     public void HandlePanelCommand(string action, JsonElement payload) => HandleMessage(action, payload);
     protected void PublishState(object state)
     {
@@ -38,8 +57,13 @@ public abstract class DefaultSettingsModule : ITweakModule, IModulePanel
     {
         try
         {
-            if (command == "defaults.reload") { Refresh(); Status = "Güncel Windows ayarları okundu."; }
-            else OnMessage(command, payload);
+            if (command == "defaults.reload")
+            {
+                Refresh();
+                _panelInitialized = true;
+                Status = "Güncel Windows ayarları okundu.";
+            }
+            else { EnsurePanelInitialized(); OnMessage(command, payload); }
         }
         catch (Exception exception)
         {

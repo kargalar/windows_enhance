@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { FeatureApp } from './features/FeatureApp';
 import { AutomationPanel, type AutomationState } from './AutomationPanel';
 import { ShortcutActionsPanel, type ShortcutActionsState } from './ShortcutActionsPanel';
 import { ShortcutField } from './ShortcutField';
@@ -11,6 +10,9 @@ import './styles.css';
 import './island-design.css';
 import './management.css';
 import './dashboard.css';
+import { DashboardStateBridge } from './dashboardStateBridge';
+
+const FeatureApp = React.lazy(() => import('./features/FeatureApp').then(module => ({ default: module.FeatureApp })));
 
 type Setting = {
   key: string;
@@ -34,6 +36,9 @@ type Module = {
   warning?: string;
   isActive: boolean;
   error?: string;
+  panelAvailable?: boolean;
+  panelLoaded?: boolean;
+  panelError?: string;
   settings: Setting[];
   panel?: AutomationState | ShortcutActionsState | ContextMenuState | { kind: 'start-sections'; buttons: { id: string; name: string; visible: boolean }[] } | { kind: 'default-paths' | 'default-apps'; state: Record<string, unknown> | null };
 };
@@ -54,6 +59,7 @@ type AppState = {
   version: string;
   appearance: Appearance;
   dataDirectory?: string;
+  persistence?: { pending: boolean; error?: string; recovery?: string };
 };
 
 const previewState: AppState = {
@@ -77,8 +83,10 @@ const previewState: AppState = {
   appearance: { tone: 'Açık', accent: 'Mavi', glow: false, tones: ['Açık', 'Siyah', 'Grafit'], accents: [{ name: 'Mavi', hex: '#75A7FF' }, { name: 'Yeşil', hex: '#4CD97B' }, { name: 'Kırmızı', hex: '#FF6B6B' }] },
 };
 
+let requestSequence = 0;
+const pageRequestPrefix = Math.random().toString(36).slice(2);
 function send(command: string, payload: Record<string, unknown> = {}) {
-  window.chrome?.webview?.postMessage({ command, payload });
+  window.chrome?.webview?.postMessage({ command, payload, requestId: `${pageRequestPrefix}-${++requestSequence}` });
 }
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -128,6 +136,8 @@ function moduleIcon(module: Module) {
 }
 
 function App() {
+  const [stateBridge] = useState(() => new DashboardStateBridge<AppState>());
+  const panelRequests = useRef(new Set<string>());
   const [state, setState] = useState<AppState | null>(null);
   const [category, setCategory] = useState('Tümü');
   const [query, setQuery] = useState('');
@@ -150,15 +160,15 @@ function App() {
   }, [favorites]);
 
   const receive = useCallback((event: MessageEvent) => {
-    const message = event.data as { type: string; payload?: AppState; message?: string };
-    if (message.type === 'state' && message.payload) {
-      setState(message.payload);
-      setSelectedId(current => current || message.payload!.modules[0]?.id || '');
+    const result = stateBridge.accept(event.data);
+    if (result.resync) send('ui.resync');
+    if (result.accepted && result.state) {
+      if (event.data.type === 'state' || event.data.type === 'error') panelRequests.current.clear();
+      setState(result.state);
+      setSelectedId(current => current || result.state!.modules[0]?.id || '');
+      if (result.requestId && !result.error) setError('');
     }
-    if (message.type === 'error') {
-      setError(message.message ?? 'İşlem tamamlanamadı.');
-      if (message.payload) setState(message.payload);
-    }
+    if (result.error) setError(result.error);
   }, []);
 
   useEffect(() => {
@@ -167,7 +177,7 @@ function App() {
       if (import.meta.env.DEV) setState(previewState);
     }
     bridge?.addEventListener('message', receive);
-    bridge?.postMessage({ command: 'ui.ready', payload: {} });
+    if (bridge) send('ui.ready', { deferredPanels: true });
     const focusSearch = () => document.getElementById('module-search')?.focus();
     window.addEventListener('winforge-search', focusSearch);
     window.addEventListener('keydown', onGlobalSearch);
@@ -196,13 +206,19 @@ function App() {
     if (favoritesOnly && !favorites.includes(module.id)) return false;
     const needle = query.trim().toLocaleLowerCase('tr');
     return !needle || `${module.name} ${module.description} ${module.category} ${module.settings.map(setting => `${setting.label} ${setting.description ?? ''} ${setting.section ?? ''}`).join(' ')}`.toLocaleLowerCase('tr').includes(needle);
-  }), [status, favoritesOnly, favorites, category, query, state]);
+  }), [status, favoritesOnly, favorites, category, query, state?.modules]);
   const selected = filtered.find(module => module.id === selectedId) ?? filtered[0];
   const navigate = (item: string) => { clearFilters(); setNavigation(item); setDetailsOpen(false); if (item === 'Favoriler') setFavoritesOnly(true); else if (!['Genel bakış', 'Tüm modüller'].includes(item)) setCategory(item); };
 
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
+
+  useEffect(() => {
+    if (!detailsOpen || !selected?.panelAvailable || selected.panelLoaded || selected.panelError || panelRequests.current.has(selected.id)) return;
+    panelRequests.current.add(selected.id);
+    send('module.inspect', { moduleId: selected.id });
+  }, [detailsOpen, selected]);
 
   if (!state) return <div className="loading"><span className="loader" />WinForge hazırlanıyor</div>;
 
@@ -217,7 +233,7 @@ function App() {
     <a className="skip-link" href="#dashboard-content">İçeriğe geç</a>
     <main className={`dashboard-main ${detailsOpen && selected ? 'details-open' : ''}`} id="dashboard-content" tabIndex={-1}>
       <header className="dashboard-topbar">
-        <div className="dashboard-brand"><img className="app-logo" src="./favicon.svg" alt="" aria-hidden="true" /><div><strong>WinForge</strong><span>Daha iyi bir Windows.</span></div></div>
+        <div className="dashboard-brand"><img className="app-logo" src="./favicon.svg" alt="" aria-hidden="true" /></div>
         <label className="dashboard-search"><Icon name="search" size={21} /><input id="module-search" aria-label="Araç veya ayar ara" value={query} onChange={event => { setQuery(event.target.value); setDetailsOpen(false); }} placeholder="Araç veya ayar ara..." /><kbd>Ctrl + F</kbd></label>
         <div className="dashboard-actions">
           <button className="secondary-button" onClick={() => updateAppearance({ tone: dark ? 'Açık' : 'Siyah' })} aria-label={dark ? 'Açık temaya geç' : 'Karanlık temaya geç'}><Icon name="monitor" />{dark ? 'Açık tema' : 'Karanlık tema'}</button>
@@ -227,9 +243,12 @@ function App() {
       <nav className="dashboard-navigation" aria-label="Modül gezintisi">
         {['Genel bakış', 'Favoriler', 'Tüm modüller', 'Görünüm', 'Pencereler', 'Gezgin', 'Verimlilik', 'Sistem'].map((item, index) => <button key={item} className={`dashboard-nav-item ${navigation === item ? 'selected' : ''}`} aria-current={navigation === item ? 'page' : undefined} onClick={() => navigate(item)}><Icon name={['home', 'star', 'grid', 'monitor', 'window', 'folder', 'bolt', 'settings'][index]} size={18} /><span>{item}</span></button>)}
       </nav>
+      {(state.persistence?.error || state.persistence?.recovery) && <div role="alert" className="dashboard-empty">
+        {state.persistence.error ? `Ayarlar kaydedilemedi: ${state.persistence.error}` : state.persistence.recovery}
+      </div>}
       <div className={`dashboard-workspace ${detailsOpen && selected ? 'with-details' : ''}`}>
       <section className="dashboard-catalog" aria-label="Modül kataloğu">
-        <header className="dashboard-heading"><div><h1>{navigation === 'Genel bakış' || navigation === 'Tüm modüller' ? 'Araçların, tek bir yerde' : navigation}</h1><p>Windows deneyimini kendine göre düzenle.</p></div><span className="dashboard-active-count"><i />{state.activeCount} modül etkin</span></header>
+        <div className="dashboard-heading"><span className="dashboard-active-count"><i />{state.activeCount} modül etkin</span></div>
         <section className="dashboard-grid" aria-label="Modüller">
           {filtered.map(module => <article className={`tool-card ${module.isActive ? 'is-enabled' : 'is-disabled'} ${detailsOpen && selected?.id === module.id ? 'selected' : ''} ${module.error ? 'has-error' : ''}`} key={module.id}>
             <button className="tool-card-open" aria-label={`${module.name}: Ayarları aç`} aria-expanded={detailsOpen && selected?.id === module.id} aria-controls="module-details" title="Ayarları aç" onClick={() => { setSelectedId(module.id); setDetailsOpen(true); }}></button>
@@ -268,6 +287,9 @@ function ModuleDetails({ module, onToggle, onUpdate, onExecute }: { module: Modu
     <div className={`module-state ${module.isActive ? 'enabled' : ''}`}><span className="state-dot" />{module.isActive ? 'Bu modül etkin' : 'Bu modül kapalı'}</div>
     {module.warning && <div className="warning-box"><strong>Bilgi</strong><p>{module.warning}</p></div>}
     {module.error && <div className="error-box"><strong>Bir hata oluştu</strong><p>{module.error}</p></div>}
+    {module.panelAvailable && !module.panelLoaded && (module.panelError
+      ? <button className="secondary-button" onClick={() => send('module.inspect', { moduleId: module.id })}>Ayarları yeniden yükle</button>
+      : <p role="status">Ayarlar yükleniyor…</p>)}
     {!module.isActive && <p className="inactive-hint">Ayarları düzenleyebilirsin. Kullanmak için üstteki anahtardan modülü etkinleştir.</p>}
     {sections.length > 1 && <nav className="settings-jumps" aria-label="Ayar bölümleri">{sections.map(([section], index) => <a key={section} href={`#settings-${module.id}-${index}`}>{section || 'Genel'}</a>)}</nav>}
     {module.panel && 'kind' in module.panel && module.panel.kind === 'default-paths' && <DefaultPathsPanel inline state={module.panel.state} sendCommand={(action, data = {}) => send('module.command', { moduleId: module.id, action, data })} />}
@@ -342,5 +364,5 @@ function AppearanceDialog({ appearance, onClose, onChange, onOpenLogs, dataDirec
 
 const view = new URLSearchParams(window.location.search).get('view');
 createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>{view ? <FeatureApp view={view} /> : <App />}</React.StrictMode>,
+  <React.StrictMode>{view ? <React.Suspense fallback={<div role="status">Yükleniyor…</div>}><FeatureApp view={view} /></React.Suspense> : <App />}</React.StrictMode>,
 );

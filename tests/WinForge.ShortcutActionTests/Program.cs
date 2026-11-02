@@ -13,6 +13,12 @@ internal static class Program
     {
         try
         {
+            if (args.Contains("--native-input-only"))
+            {
+                NativeMediaShortcutCheck();
+                Console.WriteLine($"PASS: {_checks} native media shortcut input checks.");
+                return 0;
+            }
             if (args.Contains("--capture-context-only"))
             {
                 NativeRecordingChecks(); ContextMenuChecks(); PreparedActionsChecks(); QuickSettingsChecks();
@@ -27,6 +33,7 @@ internal static class Program
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
             Check(ActionShortcut.Parse("MouseX2") == new ActionShortcut(0, 0, "mousex2"), "Bare XButton2 accepted");
             DownloadsShortcutChecks();
+            SystemShortcutChecks();
             TranslationChecks();
             NativeRecordingChecks();
             TextExpansionChecks();
@@ -54,7 +61,7 @@ internal static class Program
             Check(!encrypted.Contains(secret) && ShortcutSecret.Unprotect(encrypted) == secret, "DPAPI Unicode round trip");
             Reject(() => ShortcutSecret.Unprotect("invalid"));
 
-            foreach (var module in new ShortcutActionModule[] { new MediaShortcutsModule(), new WindowShortcutsModule(), new DesktopShortcutsModule(), new TextShortcutsModule(), new ProgramShortcutsModule(), new MonitorShortcutsModule() })
+            foreach (var module in new ShortcutActionModule[] { new MediaShortcutsModule(), new WindowShortcutsModule(), new SystemShortcutsModule(), new DesktopShortcutsModule(), new TextShortcutsModule(), new ProgramShortcutsModule(), new MonitorShortcutsModule() })
             {
                 var context = new Context(); module.Initialize(context); module.Activate();
                 Check(context.HotkeyItems.Count == 0, module.Id + " defaults do not intercept existing shortcuts");
@@ -105,7 +112,8 @@ internal static class Program
             Save(media, new("play", "Play", true, "Ctrl+F23", "play"));
             Check(!Panel(media).GetProperty("saveErrors").TryGetProperty("play", out _), "Successful retry clears card error");
             media.Deactivate();
-            NativeMediaShortcutCheck();
+            if (!args.Contains("--fast")) NativeMediaShortcutCheck();
+            else Console.WriteLine("SKIP: Native media shortcut input requires an unlocked desktop; run --native-input-only or scripts/test.ps1 -InteractiveInput.");
 
             var hits = 0; var key = ActionShortcut.Parse("Ctrl+Alt+MouseLeft");
             using (var binding = ActionMouseBindings.Register(key, () => hits++))
@@ -486,6 +494,47 @@ internal static class Program
         var emptyContext = new Context(); emptyContext.Values["rules"] = "[]";
         var empty = new ProgramShortcutsModule(); empty.Initialize(emptyContext);
         Check(Panel(empty).GetProperty("rules")[0].GetProperty("enabled").GetBoolean(), "Existing empty configuration gets enabled Downloads shortcut");
+    }
+    private static void SystemShortcutChecks()
+    {
+        var started = new List<System.Diagnostics.ProcessStartInfo>();
+        var context = new Context();
+        var module = new SystemShortcutsModule(started.Add);
+        module.Initialize(context); module.Activate();
+        try
+        {
+            Check(context.HotkeyItems.Count == 0 && Panel(module).GetProperty("rules").EnumerateArray().All(r => !r.GetProperty("enabled").GetBoolean()), "Power shortcuts start disabled");
+            Check(Panel(module).GetProperty("actions").GetArrayLength() == 2, "Both power actions are available");
+            Save(module, new("shutdown", "Power off", true, "F23", "shutdown", "ignored", "/f"));
+            var shutdown = context.HotkeyItems.Single().Callback;
+            shutdown();
+            Check(started.Count == 1 && started[0].FileName == System.IO.Path.Combine(Environment.SystemDirectory, "shutdown.exe"), "Power shortcut dispatches the trusted Windows executable through the injected launcher");
+            Check(started[0].ArgumentList.SequenceEqual(new[] { "/s", "/t", "0" }) && !started[0].UseShellExecute && started[0].CreateNoWindow, "Shutdown does not force apps or accept custom arguments");
+            Command(module, "capture-begin", new { }); shutdown();
+            Check(started.Count == 1 && context.HotkeyItems.Count == 0, "Recording suppresses power actions");
+            Command(module, "capture-end", new { });
+            Save(module, new("shutdown", "Restart", true, "F24", "restart"));
+            shutdown();
+            Check(started.Count == 1 && context.HotkeyItems.Single().Key == 0x87, "Changing a power shortcut invalidates the old callback");
+            var restart = context.HotkeyItems.Single().Callback;
+            restart();
+            Check(started.Count == 2 && started[1].ArgumentList.SequenceEqual(new[] { "/r", "/t", "0" }), "Restart dispatches the selected power action");
+            var persisted = context.Values["rules"];
+            Reject(() => Save(module, new("shutdown", "Invalid", true, "F24", "launch", "shutdown.exe")));
+            Check(context.Values["rules"] == persisted, "Unknown power action preserves settings");
+            module.Deactivate(); restart();
+            Check(started.Count == 2 && context.HotkeyItems.Count == 0, "Disabled module suppresses power actions");
+            var reload = new SystemShortcutsModule(started.Add); reload.Initialize(context); reload.Activate();
+            try
+            {
+                Check(context.HotkeyItems.Single().Key == 0x87, "Power shortcut survives reload");
+                context.HotkeyItems.Single().Callback();
+                Check(started.Count == 3 && started[2].ArgumentList[0] == "/r", "Reload preserves selected power action");
+            }
+            finally { reload.Deactivate(); }
+            Reject(() => SystemShortcutsModule.CreatePowerInfo("launch"));
+        }
+        finally { Command(module, "capture-end", new { }); module.Deactivate(); }
     }
     private static void Command(ShortcutActionModule m, string action, object data) => m.HandlePanelCommand(action, JsonSerializer.SerializeToElement(data, Json));
     private static JsonElement Panel(ShortcutActionModule m) => JsonSerializer.SerializeToElement(m.GetPanelState(), Json);

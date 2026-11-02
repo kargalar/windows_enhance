@@ -13,7 +13,6 @@ namespace WinForge.App;
 
 public partial class MainWindow : Window
 {
-    private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Task<CoreWebView2Environment> _webViewEnvironment;
     private bool _backgroundNoticeShown;
     private IDisposable? _shortcutCapture;
@@ -32,8 +31,7 @@ public partial class MainWindow : Window
             catch (Exception ex) { App.Instance.Logger.Error("Kısayollar geri açılamadı.", ex); }
         };
         Loaded += OnLoaded;
-        foreach (var panel in App.Instance.Host.Modules.OfType<IModulePanel>())
-            panel.PanelStateChanged += () => Dispatcher.BeginInvoke(new Action(RefreshState));
+        SubscribeToModulePanels();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -50,6 +48,7 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        Loaded -= OnLoaded;
         try
         {
             await UiWebView.EnsureCoreWebView2Async(await _webViewEnvironment);
@@ -66,6 +65,16 @@ public partial class MainWindow : Window
             {
                 if (!args.Uri.StartsWith("https://appassets.winforge/", StringComparison.OrdinalIgnoreCase))
                     args.Cancel = true;
+                else BeginPageNavigation();
+            };
+            core.ProcessFailed += (_, args) =>
+            {
+                App.Instance.Logger.Error($"Ana panel WebView2 işlemi durdu: {args.ProcessFailedKind}");
+                if (args.ProcessFailedKind == CoreWebView2ProcessFailedKind.RenderProcessExited)
+                {
+                    BeginPageNavigation();
+                    try { core.Reload(); } catch (Exception error) { App.Instance.Logger.Error("Ana panel yeniden yüklenemedi.", error); }
+                }
             };
             core.NewWindowRequested += (_, args) => args.Handled = true;
 
@@ -87,65 +96,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(args.WebMessageAsJson);
-            var root = document.RootElement;
-            var command = root.GetProperty("command").GetString();
-            var payload = root.TryGetProperty("payload", out var value) ? value : default;
-            object? result = command switch
-            {
-                "ui.ready" => BuildState(),
-                "module.toggle" => await ToggleModule(payload),
-                "setting.update" => await UpdateSetting(payload),
-                "setting.execute" => ExecuteSetting(payload),
-                "module.command" => ExecutePanelCommand(payload),
-                "shortcut.capture-begin" => BeginShortcutCapture(),
-                "shortcut.capture-end" => EndShortcutCapture(),
-                "shortcut.record-begin" => BeginShortcutRecording(),
-                "appearance.update" => UpdateAppearance(payload),
-                "system.openLogs" => OpenLogs(),
-                "system.openData" => OpenData(),
-                "app.exit" => ExitApp(),
-                _ => throw new InvalidOperationException("Bilinmeyen arayüz komutu.")
-            };
-
-            if (command != "app.exit") PostMessage(new { type = "state", payload = result ?? BuildState() });
-        }
-        catch (Exception exception)
-        {
-            App.Instance.Logger.Error("Arayüz komutu işlenemedi.", exception);
-            PostMessage(new { type = "error", message = exception.Message, payload = BuildState() });
-        }
-    }
-
-    private object OpenData()
+    private void OpenData()
     {
         Directory.CreateDirectory(AppData.DirectoryPath);
         Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { AppData.DirectoryPath }, UseShellExecute = true });
-        return BuildState();
     }
 
-    private object BeginShortcutCapture()
+    private void BeginShortcutCapture()
     {
         _shortcutCapture ??= App.Instance.Hotkeys.Suspend();
         _shortcutCaptureTimer.Stop();
         _shortcutCaptureTimer.Start();
-        return BuildState();
     }
 
-    private object BeginShortcutRecording()
+    private void BeginShortcutRecording()
     {
         BeginShortcutCapture();
         _shortcutRecorder?.Dispose();
         _shortcutRecorder = new ShortcutRecorder(chord => Dispatcher.BeginInvoke(new Action(() =>
             PostMessage(new { type = "shortcut-recorded", shortcut = chord }))));
-        return BuildState();
     }
 
-    private object EndShortcutCapture()
+    private void EndShortcutCapture()
     {
         _shortcutRecorder?.Dispose();
         _shortcutRecorder = null;
@@ -153,55 +125,6 @@ public partial class MainWindow : Window
         var capture = _shortcutCapture;
         _shortcutCapture = null;
         capture?.Dispose();
-        return BuildState();
-    }
-
-    private object BuildState()
-    {
-        var modules = App.Instance.Host.Modules.Select(module => new
-        {
-            id = module.Id,
-            name = module.Name,
-            category = module.Category,
-            description = module.Description,
-            warning = module.Warning,
-            isActive = module.IsActive,
-            error = App.Instance.Host.ErrorOf(module),
-            panel = (module as IModulePanel)?.GetPanelState(),
-            settings = module.Settings.Select(setting => new
-            {
-                key = setting.Key,
-                label = setting.Label,
-                description = setting.Description,
-                section = setting.Section,
-                kind = setting.Kind.ToString().ToLowerInvariant(),
-                defaultValue = setting.Default,
-                value = ReadSetting(module, setting),
-                min = setting.Min,
-                max = setting.Max,
-                options = setting.Options,
-                optionLabels = setting.OptionLabels
-            })
-        }).ToArray();
-
-        return new
-        {
-            modules,
-            categories = modules.Select(module => module.category).Distinct(StringComparer.CurrentCultureIgnoreCase)
-                .OrderBy(category => category, StringComparer.CurrentCultureIgnoreCase).ToArray(),
-            activeCount = modules.Count(module => module.isActive),
-            totalCount = modules.Length,
-            dataDirectory = AppData.DirectoryPath,
-            version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
-            appearance = new
-            {
-                tone = Appearance.ToneName,
-                accent = Appearance.AccentName,
-                glow = Appearance.Glow,
-                tones = Appearance.Tones.Select(tone => tone.Name),
-                accents = Appearance.Accents
-            }
-        };
     }
 
     private static object? ReadSetting(ITweakModule module, SettingDescriptor setting)
@@ -217,14 +140,14 @@ public partial class MainWindow : Window
         };
     }
 
-    private async Task<object> ToggleModule(JsonElement payload)
+    private async Task ToggleModule(JsonElement payload)
     {
         var module = FindModule(payload.GetProperty("id").GetString());
         await App.Instance.Host.SetEnabledAsync(module, payload.GetProperty("enabled").GetBoolean());
-        return BuildState();
+        MarkModuleChanged(module.Id);
     }
 
-    private async Task<object> UpdateSetting(JsonElement payload)
+    private async Task UpdateSetting(JsonElement payload)
     {
         var module = FindModule(payload.GetProperty("moduleId").GetString());
         var key = payload.GetProperty("key").GetString();
@@ -239,20 +162,11 @@ public partial class MainWindow : Window
             _ => throw new InvalidOperationException("Bu ayar doğrudan düzenlenemez.")
         };
 
-        var settings = App.Instance.Host.SettingsOf(module);
-        var previous = ReadSetting(module, descriptor);
-        settings.Set(descriptor.Key, settingValue);
-        await App.Instance.Host.ApplyAsync(module);
-        if (App.Instance.Host.ErrorOf(module) is { } error)
-        {
-            settings.Set(descriptor.Key, previous);
-            await App.Instance.Host.ApplyAsync(module);
-            throw new InvalidOperationException("Ayar uygulanamadı; önceki kayıt korundu. " + error);
-        }
-        return BuildState();
+        await App.Instance.Host.UpdateSettingAsync(module, descriptor, settingValue);
+        MarkModuleChanged(module.Id);
     }
 
-    private object ExecuteSetting(JsonElement payload)
+    private void ExecuteSetting(JsonElement payload)
     {
         var module = FindModule(payload.GetProperty("moduleId").GetString());
         var key = payload.GetProperty("key").GetString();
@@ -261,53 +175,71 @@ public partial class MainWindow : Window
         if (descriptor.Kind != SettingKind.Action)
             throw new InvalidOperationException("Bu ayar bir eylem değil.");
         descriptor.Execute?.Invoke();
-        return BuildState();
+        MarkModuleChanged(module.Id);
     }
 
-    private object ExecutePanelCommand(JsonElement payload)
+    private void ExecutePanelCommand(JsonElement payload)
     {
         var module = FindModule(payload.GetProperty("moduleId").GetString());
         if (module is not IModulePanel panel) throw new InvalidOperationException("Modül paneli bulunamadı.");
+        _inspectedModules.Add(module.Id);
         panel.HandlePanelCommand(payload.GetProperty("action").GetString() ?? "", payload.GetProperty("data"));
-        return BuildState();
+        MarkModuleChanged(module.Id);
     }
 
-    private object UpdateAppearance(JsonElement payload)
+    private void UpdateAppearance(JsonElement payload)
     {
         if (payload.TryGetProperty("tone", out var tone)) Appearance.SetTone(tone.GetString() ?? "Varsayılan");
         if (payload.TryGetProperty("accent", out var accent)) Appearance.SetAccent(accent.GetString() ?? "Mavi");
         if (payload.TryGetProperty("glow", out var glow)) Appearance.SetGlow(glow.GetBoolean());
         ApplyAppearance();
-        return BuildState();
+        _appearanceChanged = true;
     }
 
     private static ITweakModule FindModule(string? id) =>
         App.Instance.Host.Modules.FirstOrDefault(module => module.Id == id)
         ?? throw new InvalidOperationException("Modül bulunamadı.");
 
-    private object OpenLogs()
+    private async Task OpenLogs()
     {
+        await App.Instance.Logger.FlushAsync();
+        WriteDiagnosticReport();
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{App.Instance.Logger.Path}\"")
         {
             UseShellExecute = true
         });
-        return BuildState();
     }
 
-    private static object? ExitApp()
+    private string WriteDiagnosticReport()
+    {
+        var logger = App.Instance.Logger;
+        var report = new
+        {
+            createdUtc = DateTimeOffset.UtcNow,
+            appVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(),
+            windows = Environment.OSVersion.VersionString, runtime = Environment.Version.ToString(),
+            webView2 = UiWebView.CoreWebView2?.Environment.BrowserVersionString,
+            modules = App.Instance.Host.Modules.Select(module => new { id = module.Id, active = module.IsActive, error = App.Instance.Host.ErrorOf(module) }).ToArray(),
+            persistence = App.Instance.Store.Persistence,
+            logging = new { droppedMessages = logger.DroppedMessages, failedMessages = logger.FailedMessages, lastError = logger.LastError },
+            performanceTrace = new { enabled = PerformanceTrace.Enabled, droppedEntries = PerformanceTrace.DroppedEntries }
+        };
+        var path = Path.Combine(AppData.DirectoryPath, "diagnostics.json");
+        Directory.CreateDirectory(AppData.DirectoryPath);
+        var temporary = path + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(report, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true }));
+            File.Move(temporary, path, true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        return path;
+    }
+
+    private static void ExitApp()
     {
         App.Instance.ExitApp();
-        return null;
     }
-
-    private void PostMessage(object message)
-    {
-        if (App.Instance.IsExiting) return;
-        if (UiWebView.CoreWebView2 is null) return;
-        UiWebView.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, _jsonOptions));
-    }
-
-    internal void RefreshState() => PostMessage(new { type = "state", payload = BuildState() });
 
     private void ApplyAppearance() => Appearance.Apply();
 
@@ -376,6 +308,7 @@ public partial class MainWindow : Window
         }
         else
         {
+            DisposeStateBridge();
             UiWebView.Dispose();
         }
         base.OnClosing(e);

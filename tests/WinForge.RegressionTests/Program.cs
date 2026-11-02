@@ -67,6 +67,18 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--startup-probe")
+            {
+                StartupComponentChecks.Run(app, TestDirectory, args[1], Check);
+                Console.WriteLine($"PASS: {_passed} startup component checks.");
+                return 0;
+            }
+            if (args.Contains("--bridge-only"))
+            {
+                DashboardBridgeChecks.Run(app, TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} dashboard bridge checks.");
+                return 0;
+            }
             if (args.Contains("--module-fixes-only"))
             {
                 ModuleFixChecks.Run(TestDirectory, Check);
@@ -198,6 +210,14 @@ internal static class Program
                 var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Tiling.dll"));
                 TilingInteractionChecks.Run(assembly.GetType("WinForge.Modules.Tiling.TilingModule")!, Check);
                 Console.WriteLine($"PASS: {_passed} tiling interaction checks.");
+                return 0;
+            }
+            if (args.Contains("--dashboard-interface-only"))
+            {
+                TestSettings();
+                TestLifecycle();
+                DashboardInterfaceChecks.Run(app, TestDirectory, Check);
+                Console.WriteLine($"PASS: {_passed} dashboard interface checks.");
                 return 0;
             }
             if (args.Contains("--interface-only"))
@@ -1319,154 +1339,8 @@ internal static class Program
                     Check(setting.Options.Contains(setting.Default as string), $"Choice default exists: {module.Id}/{setting.Key}");
             }
         }
-        SetProperty(app, nameof(ForgeApplication.Host), host);
-        var window = new MainWindow(Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2")));
-        window.Show();
-        Pump(window);
-        var list = Find<ListBox>(window, "ModuleList");
-        var search = Find<TextBox>(window, "SearchBox");
-        var categories = Find<ListBox>(window, "CategoryList");
-        Check(list.Items.Count == host.Modules.Count && list.SelectedItem is ModuleVm, "Initial view selects a module");
-        foreach (var category in categories.Items.Cast<string>().ToArray())
-        {
-            categories.SelectedItem = category;
-            Check(list.Items.Count > 0 && list.SelectedItem is ModuleVm selected && (category == "Tümü" || selected.Category == category), $"Category updates selection: {category}");
-        }
-        categories.SelectedIndex = 0;
-        search.Text = "   TASKBAR   ";
-        Check(list.Items.Count > 0 && list.Items.Cast<ModuleVm>().All(module => module.Category == "Taskbar"), "Search matches category and trims whitespace");
-        search.Text = "no-such-module-123456";
-        Check(list.Items.Count == 0 && list.SelectedItem is null && Find<StackPanel>(window, "EmptyState").Visibility == Visibility.Visible, "Empty results clear stale details and show recovery");
-        Click(Descendants<Button>(Find<StackPanel>(window, "EmptyState")).Single());
-        Check(search.Text == "" && categories.SelectedIndex == 0 && list.Items.Count == host.Modules.Count, "Reset filters restores the module list");
-        var activeOnly = Find<CheckBox>(window, "ActiveOnlyToggle");
-        activeOnly.IsChecked = true;
-        Click(activeOnly);
-        Check(list.Items.Count == 0, "Active filter hides inactive modules");
-        activeOnly.IsChecked = false;
-        Click(activeOnly);
-        foreach (var vm in list.Items.Cast<ModuleVm>().ToArray())
-        {
-            list.SelectedItem = vm;
-            Pump(window);
-            Check(Find<StackPanel>(window, "DetailPanel").Children.Count >= 4, $"Settings render: {vm.Name}");
-        }
-        list.SelectedItem = list.Items.Cast<ModuleVm>().Single(module => module.Module.Id == "window-control");
-        Pump(window);
-        var windowControlDetail = Find<StackPanel>(window, "DetailPanel");
-        var leftButtonAction = Descendants<ComboBox>(windowControlDetail).Single(combo =>
-            System.Windows.Automation.AutomationProperties.GetAutomationId(combo) == "window-control.LMB");
-        Check(leftButtonAction.Items.Contains("Taşı") && leftButtonAction.Items.Contains("Boyutlandır"),
-            "Native window actions render configurable move and resize choices");
-        leftButtonAction.SelectedItem = "Ortala";
-        Check(host.SettingsOf(host.Modules.Single(module => module.Id == "window-control")).GetString("LMB") == "Ortala",
-            "Native window action changes persist through the application settings panel");
-        Capture(window, "window-control.png");
-        list.SelectedItem = list.Items.Cast<ModuleVm>().First(module => module.Module.Id == "net-speed");
-        Pump(window);
-        var detailScroll = Find<ScrollViewer>(window, "DetailScrollViewer");
-        detailScroll.ScrollToEnd();
-        Pump(window);
-        Check(detailScroll.VerticalOffset > 0, "Detail settings scroll to their final options");
-        list.SelectedItem = list.Items[0];
-        Pump(window);
-        Check(detailScroll.VerticalOffset == 0, "Selecting another module resets detail scrolling");
-        list.SelectedItem = list.Items.Cast<ModuleVm>().First(module => module.Module.Id == "net-speed");
-        window.Width = window.MinWidth;
-        window.Height = window.MinHeight;
-        Pump(window);
-        Check(list.ActualWidth >= 360 && Find<StackPanel>(window, "DetailPanel").ActualWidth > 300, "Minimum window size keeps both columns usable");
-        foreach (var control in Descendants<CheckBox>(list))
-        {
-            var origin = control.TranslatePoint(new Point(), list);
-            Check(origin.X + control.ActualWidth <= list.ActualWidth, $"Module switch remains visible at minimum width ({origin.X}, {list.ActualWidth})");
-        }
-        Capture(window, "compact.png");
-        window.Width = 1180;
-        window.Height = 820;
-        Click(Find<Button>(window, "AppearanceButton"));
-        Check(Find<TextBlock>(window, "PageTitle").Text == "Görünüm", "Appearance opens from the toolbar");
-        var originalTone = Appearance.ToneName;
-        var originalAccent = Appearance.AccentName;
-        foreach (var tone in Appearance.Tones)
-        {
-            SetProperty(null, nameof(Appearance.ToneName), tone.Name, typeof(Appearance));
-            Invoke(window, "ApplyAppearance");
-            Invoke(window, "RenderDetail");
-            Pump(window);
-            Check(((SolidColorBrush)app.Resources["TextBrush"]).Color != ((SolidColorBrush)app.Resources["CardBrush"]).Color, $"Theme resources update: {tone.Name}");
-            if (tone.Name == "Açık") Capture(window, "light.png");
-            foreach (var accent in Appearance.Accents)
-            {
-                SetProperty(null, nameof(Appearance.AccentName), accent.Name, typeof(Appearance));
-                Appearance.Apply();
-                Check(Contrast(app, "MutedBrush", "CardBrush") >= 4.5 && Contrast(app, "AccentBrush", "CardBrush") >= 4.5,
-                    $"Readable text contrast: {tone.Name}/{accent.Name}");
-                Check(Contrast(app, "SwitchThumbBrush", "SwitchTrackBrush") >= 3,
-                    $"Visible switch contrast: {tone.Name}/{accent.Name}");
-            }
-        }
-        SetProperty(null, nameof(Appearance.ToneName), originalTone, typeof(Appearance));
-        SetProperty(null, nameof(Appearance.AccentName), originalAccent, typeof(Appearance));
-        Invoke(window, "ApplyAppearance");
-        search.Text = "İnternet";
-        Pump(window);
-        Check(Find<TextBlock>(window, "PageTitle").Text != "Görünüm" && list.SelectedItem is ModuleVm, "Search leaves appearance and selects the matching module");
-        Click(Find<Button>(window, "ClearSearchButton"));
-        Pump(window);
-        Check(search.Text == "" && list.Items.Count == host.Modules.Count, "Clear-search button restores results");
-        var selectedContainer = list.ItemContainerGenerator.ContainerFromItem(list.SelectedItem) as ListBoxItem;
-        Check(selectedContainer is not null && selectedContainer.TranslatePoint(new Point(), list).Y >= 0
-            && selectedContainer.TranslatePoint(new Point(), list).Y + selectedContainer.ActualHeight <= list.ActualHeight,
-            "Selected module remains in view after clearing search");
-        Capture(window, "main.png");
-        TestToggleUi(app);
+        DashboardInterfaceChecks.Run(app, TestDirectory, Check);
     }
-
-    private static void TestToggleUi(ForgeApplication app)
-    {
-        var host = CreateHost(Path.Combine(TestDirectory, "fixtures"), "ui-toggle");
-        host.Load();
-        SetProperty(app, nameof(ForgeApplication.Host), host);
-        var window = new MainWindow(Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2")));
-        window.Show();
-        Pump(window);
-        var list = Find<ListBox>(window, "ModuleList");
-        var toggle = Descendants<CheckBox>(Find<StackPanel>(window, "DetailPanel")).First();
-        toggle.IsChecked = true;
-        Click(toggle);
-        Check(host.Modules.Single().IsActive && ((ModuleVm)list.SelectedItem).IsActive, "Detail switch updates module and list");
-        var detail = Find<StackPanel>(window, "DetailPanel");
-        var settings = host.SettingsOf(host.Modules.Single());
-        var settingToggle = Descendants<CheckBox>(detail).Last();
-        settingToggle.IsChecked = true;
-        Click(settingToggle);
-        Check(settings.GetBool("toggle"), "Toggle setting saves its value");
-        Descendants<Slider>(detail).Single().Value = 7;
-        PumpFor(window, TimeSpan.FromMilliseconds(220));
-        Check(settings.GetInt("number") == 7, "Numeric setting saves its value");
-        var text = Descendants<TextBox>(detail).Single();
-        text.Text = "  saved text  ";
-        text.RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
-        Check(settings.GetString("text") == "saved text", "Text setting trims and saves on focus loss");
-        Descendants<RadioButton>(detail).Last().IsChecked = true;
-        Check(settings.GetString("choice") == "Two", "Choice setting saves its value");
-        var labeledChoice = Descendants<ComboBox>(detail).Single();
-        labeledChoice.SelectedValue = "21996";
-        Pump(window);
-        Check(settings.GetString("labeled-choice") == "21996" && labeledChoice.Text == "SunValley (Legacy)",
-            "Labeled choice settings display friendly names while persisting the underlying value");
-        var activeOnly = Find<CheckBox>(window, "ActiveOnlyToggle");
-        activeOnly.IsChecked = true;
-        Click(activeOnly);
-        Pump(window);
-        toggle = Descendants<CheckBox>(list).Single();
-        toggle.IsChecked = false;
-        Click(toggle);
-        Check(!host.Modules.Single().IsActive && list.Items.Count == 0 && list.SelectedItem is null, "List switch updates active filter and removes stale selection");
-    }
-
-    private static T Find<T>(Window window, string name) where T : FrameworkElement => (T)window.FindName(name);
 
     private static double Contrast(ForgeApplication app, string foreground, string background)
     {

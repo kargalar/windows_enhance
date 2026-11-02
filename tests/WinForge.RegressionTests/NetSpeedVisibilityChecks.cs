@@ -37,9 +37,30 @@ internal static class NetSpeedVisibilityChecks
             var initialized = false;
             PumpUntil(() => webView.CoreWebView2 is not null);
             var core = webView.CoreWebView2;
-            core.NavigationCompleted += (_, args) => initialized = args.IsSuccess;
+            core.NavigationCompleted += (_, args) =>
+            {
+                initialized = args.IsSuccess;
+                if (!args.IsSuccess) Console.WriteLine($"Network overlay navigation failed: {args.WebErrorStatus}");
+            };
+            core.ProcessFailed += (_, args) => Console.WriteLine($"Network overlay process failed: {args.ProcessFailedKind}");
+            core.WebResourceResponseReceived += (_, args) =>
+            {
+                if (args.Response.StatusCode >= 400) Console.WriteLine($"Network overlay resource failed: {args.Response.StatusCode} {args.Request.Uri}");
+            };
             // Navigation can have completed during controller initialization.
             PumpUntil(() => initialized || core.DocumentTitle.Length > 0);
+            Task<string>? featureContent = null;
+            var lastFeatureContent = "";
+            PumpUntil(() =>
+            {
+                featureContent ??= core.ExecuteScriptAsync("(() => { const el = document.querySelector('.network-speed-display'); return el ? el.textContent + '|' + getComputedStyle(el).display : ''; })()");
+                if (!featureContent.IsCompleted) return false;
+                var text = featureContent.GetAwaiter().GetResult();
+                lastFeatureContent = text;
+                featureContent = null;
+                return text.Contains("1.0 MB/s") && text.Contains("flex");
+            }, () => "Last feature content: " + lastFeatureContent);
+            check(true, "Lazy-loaded feature JavaScript and CSS render the native state under the production content policy");
             var navigations = 0;
             core.NavigationStarting += (_, _) => navigations++;
 
@@ -71,10 +92,19 @@ internal static class NetSpeedVisibilityChecks
         type.GetMethod("Start")!.Invoke(indicator, null);
         try
         {
+            ui.Window.Hide(); // Simulate a visibility loss without altering the user's taskbar.
             var placements = ui.Window.Placements;
             var samples = ui.Window.Samples;
             PumpFor(TimeSpan.FromMilliseconds(400));
-            check(ui.Window.Placements >= placements + 3, "Taskbar placement follows visibility and stacking changes without waiting for the 3-second network interval");
+            var taskbar = Native.FindWindow("Shell_TrayWnd", null);
+            Native.GetWindowRect(taskbar, out var rect);
+            var screen = DesktopDisplays.ForWindow(taskbar).Bounds;
+            var visibleWidth = Math.Max(0, Math.Min(rect.Right, screen.Right) - Math.Max(rect.Left, screen.Left));
+            var visibleHeight = Math.Max(0, Math.Min(rect.Bottom, screen.Bottom) - Math.Max(rect.Top, screen.Top));
+            var taskbarShown = Native.IsWindowVisible(taskbar) && visibleWidth > 2 && visibleHeight > 2;
+            check(taskbarShown ? ui.Window.Placements > placements && ui.Window.IsVisible : !ui.Window.IsVisible,
+                taskbarShown ? "Taskbar tracking repairs visibility without waiting for the 3-second network interval"
+                    : "An auto-hidden taskbar reveal strip keeps the network indicator hidden");
             check(ui.Window.Samples == samples, "Fast taskbar tracking does not increase network sampling or reset speed values");
             type.GetMethod("ApplyOptions")!.Invoke(indicator, [11d, false, false, 10, "Otomatik", 3000, "Görev çubuğunun içinde", "Yan yana"]);
             PumpFor(TimeSpan.FromMilliseconds(100));
@@ -110,11 +140,15 @@ internal static class NetSpeedVisibilityChecks
         public void SetState(object state) => Samples++;
     }
 
-    private static void PumpUntil(Func<bool> ready)
+    private static void PumpUntil(Func<bool> ready, Func<string>? diagnostic = null)
     {
         var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (!ready() && DateTime.UtcNow < deadline) PumpFor(TimeSpan.FromMilliseconds(20));
-        if (!ready()) throw new TimeoutException("Network overlay WebView did not initialize.");
+        while (DateTime.UtcNow < deadline)
+        {
+            if (ready()) return;
+            PumpFor(TimeSpan.FromMilliseconds(20));
+        }
+        throw new TimeoutException("Network overlay WebView did not initialize. " + diagnostic?.Invoke());
     }
 
     private static void PumpFor(TimeSpan duration)

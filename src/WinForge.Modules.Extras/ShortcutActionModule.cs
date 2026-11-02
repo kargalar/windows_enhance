@@ -30,6 +30,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         "monitor-shortcuts" => "Monitör düzenlerini kaydedin; kısayolla ekranları etkinleştirin ve düzenler arasında geçin. Harici program gerekmez.",
         "media-shortcuts" => "Oynat/duraklat, parça geçişi ve ses için klavye veya fare kısayolları atayın.",
         "window-shortcuts" => "Etkin pencereyi kapatma, küçültme ve büyütme kısayollarını belirleyin.",
+        "system-shortcuts" => "Bilgisayarı kapatmak veya yeniden başlatmak için kendi klavye veya fare kısayollarınızı atayın.",
         "desktop-shortcuts" => "Sanal masaüstleri arasında klavye veya fare kısayollarıyla geçin.",
         "text-shortcuts" => "Kısayolla metin yazdırın veya kısaltmaları boşlukla genişletin. Metinler bu Windows hesabına bağlı şifreleme ile saklanır; panoya kopyalanmaz.",
         "combination-translator" => "Sabit atanmış bir kombinasyonu başka kombinasyona çevirin: örneğin Ctrl+D → Alt+W.",
@@ -131,7 +132,7 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         catch (Exception ex) { Context.Notify("Kısayol çalıştırılamadı: " + ex.Message); }
         finally { _busy = false; PanelStateChanged?.Invoke(); }
     }
-    private void Execute(ShortcutActionRule r)
+    protected virtual void Execute(ShortcutActionRule r)
     {
         switch (r.Action)
         {
@@ -318,6 +319,44 @@ public sealed class WindowShortcutsModule : ShortcutActionModule
     public override string Name => "Pencere Kısayolları";
     protected override IReadOnlyDictionary<string, string> Actions => new Dictionary<string, string> { ["close"] = "Pencereyi kapat (Alt+F4)", ["minimize"] = "Küçült", ["maximize"] = "Büyüt / geri yükle" };
     protected override IEnumerable<ShortcutActionRule> Defaults => [new("close", "Pencereyi kapat", false, "Alt+W", "close")];
+}
+public sealed class SystemShortcutsModule : ShortcutActionModule
+{
+    private readonly Action<ProcessStartInfo> _start;
+    public SystemShortcutsModule() : this(info => { using var process = Process.Start(info); }) { }
+    internal SystemShortcutsModule(Action<ProcessStartInfo> start) => _start = start;
+    public override string Id => "system-shortcuts";
+    public override string Name => "Sistem Kısayolları";
+    protected override IReadOnlyDictionary<string, string> Actions => new Dictionary<string, string>
+    {
+        ["shutdown"] = "Bilgisayarı kapat",
+        ["restart"] = "Bilgisayarı yeniden başlat"
+    };
+    protected override IEnumerable<ShortcutActionRule> Defaults =>
+    [
+        new("shutdown", "Bilgisayarı kapat", false, "Ctrl+Alt+End", "shutdown"),
+        new("restart", "Bilgisayarı yeniden başlat", false, "Ctrl+Alt+Home", "restart")
+    ];
+    protected override void Execute(ShortcutActionRule rule) => _start(CreatePowerInfo(rule.Action));
+    internal static ProcessStartInfo CreatePowerInfo(string action)
+    {
+        var flag = action switch
+        {
+            "shutdown" => "/s",
+            "restart" => "/r",
+            _ => throw new FormatException("Bilinmeyen sistem işlemi.")
+        };
+        var info = new ProcessStartInfo(System.IO.Path.Combine(Environment.SystemDirectory, "shutdown.exe"))
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        // Let Windows handle applications with unsaved work; never force their closure.
+        info.ArgumentList.Add(flag);
+        info.ArgumentList.Add("/t");
+        info.ArgumentList.Add("0");
+        return info;
+    }
 }
 public sealed class DesktopShortcutsModule : ShortcutActionModule
 {

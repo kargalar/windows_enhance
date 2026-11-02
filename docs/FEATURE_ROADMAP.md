@@ -14,7 +14,7 @@ feature engines continue to use Windows/.NET APIs and their existing contracts.
 | Mouse | Double-Ctrl spotlight; click rings for left, right, middle and both side buttons with an opt-in all-button scope, independent per-button colors, configurable click diameter and fade duration; configurable crosshairs; monitor jump | Add richer click highlighter modes such as per-button animation styles |
 | Displays / Power Display | DDC/CI capability discovery with brightness, contrast, monitor volume, input-source and color-preset controls; Windows WMI brightness for built-in panels; linked brightness levels; async discovery, color-change confirmation, persistent per-monitor profiles, opt-in local-time day/night brightness schedules, and cursor-monitor brightness hotkeys | Add rotation/power controls, custom VCP names, and profile integration with Light Switch |
 | Fluent Flyout | Compact media flyout with Windows media session title/artist and bounded album artwork, selectable sessions and persistently pinnable sessions through the taskbar widget, playback timeline/seek, shuffle/repeat, allowlist/blocklist app filtering, direct play/pause/skip commands (key fallback), independently configurable lock-key OSD and non-activating notifications, `Win+Alt+M`/`Ctrl+Alt+V` shortcuts, hardware media-key triggers, bottom-centered audio volume OSD with interactive slider and media flyout on hardware and compatible external volume changes, Core Audio endpoint volume/mute changes filtered through event context, opt-in compact taskbar-adjacent mini player with edge-aware placement, session-switching context menu and configurable master/player-app volume wheel control, opt-in 24-band WASAPI output spectrum visualizer with silence hiding and optional baseline, Up Next notification, configurable corner/monitor, black dark surfaces with white text and borderless controls, fade animation, inactivity dismissal, fullscreen suppression and high-contrast colors | Direct taskbar embedding and edge-oriented widget layout; marquee/fixed-width widget options; clickable player header that reliably activates the exact player/browser tab; richer Fluent backdrop and animation settings; verify external device behavior across audio drivers and Windows builds |
-| Taskbar and shell | Own taskbar registry/API tweaks, seconds/date format, wheel volume, middle-click close, transparency/accent, tray visibility | Own version-tested shell engine for advanced XAML themes, taskbar geometry/placement, dock animations and Explorer/browser customization; these features are currently unavailable |
+| Taskbar and shell | Own taskbar registry/API tweaks, seconds/date format, wheel volume, middle-click close, transparency/accent, tray visibility; native shell integration for taskbar geometry/dock behavior, Explorer navigation/command bar and folder sizes; a separate Win32 window observer controls browser fullscreen hints | Maintain explicit Windows-build support gates, restore/reconnect behavior and live compatibility evidence; implementation does not imply validation on every Windows build |
 | Explorer and Start | Explorer tweaks, context-menu tools, Start/Search cleanup, bulk rename with persistent last-operation undo, image resize with metadata preservation/progress/cancellation, file-lock inspection with process/service details and post-termination rescan | Verify Explorer integration across supported Windows builds |
 | Themes and system | Theme switch with timed light/dark schedule, corners, UI tweaks, startup | Add reversible power/menu shortcuts |
 
@@ -145,8 +145,11 @@ No external process or third-party mod settings are needed for these features.
 
 - Build any future shell customization inside WinForge, with explicit Windows
   build support, reversible lifecycle and recovery after Explorer restarts.
-- Advanced XAML themes, taskbar dimensions/placement, dock animations, Explorer
-  folder sizes and browser mods are not currently implemented.
+- Native shell implementation now includes taskbar geometry/dock behavior,
+  Explorer navigation/command bar and folder sizes. Browser fullscreen hints use
+  a separate Win32 window observer.
+  Keep the supported Windows-build and verification limits in the feature-specific
+  documents; broader XAML theme parity remains separate work.
 - Do not reintroduce external mod runtimes, downloaded executables or bundled
   third-party hook libraries.
 ### 6. Verification and release readiness

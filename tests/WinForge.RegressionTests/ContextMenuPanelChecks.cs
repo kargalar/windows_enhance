@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Text;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -19,7 +20,7 @@ internal static class ContextMenuPanelChecks
         var logger = new FileLogger(Path.Combine(directory, "context-menu-panel.log"));
         var host = new ModuleHost(store, logger, new Hotkeys(), Path.Combine(AppContext.BaseDirectory, "modules"), _ => { }); host.Load();
         var module = host.Modules.Single(m => m.Id == "context-menu");
-        Set(app, nameof(ForgeApplication.Host), host); Set(app, nameof(ForgeApplication.Logger), logger);
+        Set(app, nameof(ForgeApplication.Host), host); Set(app, nameof(ForgeApplication.Logger), logger); Set(app, nameof(ForgeApplication.Store), store);
         var environment = CoreWebView2Environment.CreateAsync(null, Path.Combine(AppData.DirectoryPath, "WebView2"));
         var window = new MainWindow(environment);
         try
@@ -27,15 +28,31 @@ internal static class ContextMenuPanelChecks
             window.Show(); var web = (WebView2)window.FindName("UiWebView");
             Wait(() => web.CoreWebView2 is not null, "WebView initialization");
             Wait(() => Script("[...document.querySelectorAll('.tool-card h2, .module-card strong')].some(x => x.textContent === 'Sağ Tık Menüsü')") == "true", "Context menu card");
-            Script("(() => { if (document.querySelector('.context-menu-panel')) return; const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Sağ Tık Menüsü'); (card.querySelector('.tool-settings-button') || card).click(); })()");
+            Script("(() => { if (document.querySelector('.context-menu-panel')) return; const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Sağ Tık Menüsü'); (card.querySelector('.tool-card-open, .tool-settings-button') || card).click(); })()");
             Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Context menu editor");
+            // Both registered Windows commands and live menu labels contain
+            // this query in their source names, including native canonical IDs.
+            FilterMenu("m");
             check(Script("document.querySelectorAll('.context-entry-icon img').length > 0") == "true", "Real UI renders existing item icons");
             check(Script("!!document.querySelector('[data-entry-id=\"builtin:properties\"]') && !!document.querySelector('[data-entry-id=\"builtin:new-folder\"]')") == "true", "Real UI includes Properties and New Folder");
             check(Script("document.querySelector('[data-entry-id=\"builtin:properties\"]').querySelectorAll('.context-locations input[type=checkbox]').length === 8") == "true", "Real menu editor includes shortcut, application and virtual item checkboxes");
             check(Script("document.querySelectorAll('.context-options [role=switch]').length === 3") == "true", "Real menu editor exposes separator cleanup, separator visibility and unquoted path options");
+            Script("window.__contextPackets=[];window.chrome.webview.addEventListener('message',e=>{if(['state','state.patch'].includes(e.data.type))window.__contextPackets.push(e.data)});window.chrome.webview.postMessage({command:'ui.resync',payload:{},requestId:'context-baseline'});");
+            Wait(() => ContextPackets().Any(packet => packet.TryGetProperty("requestId", out var request) && request.GetString() == "context-baseline"), "Context baseline snapshot");
+            var baselinePacket = ContextPackets().Last(packet => packet.GetProperty("type").GetString() == "state");
             Script("document.querySelector('[aria-label=\"Yol olarak kopyala: Tırnak işaretlerini kaldır\"]').click()");
             Wait(() => host.SettingsOf(module).GetString("unquoted-copy-path").Length > 0 && !host.SettingsOf(module).GetBool("unquoted-copy-path", true), "Unquoted path preference persistence");
             check(true, "Real UI persists the path-copy preference without changing Explorer during the test");
+            Wait(() => ContextPackets().Any(packet => packet.GetProperty("type").GetString() == "state.patch" && packet.GetProperty("payload").GetProperty("moduleChanges").EnumerateArray().Any(delta => delta.GetProperty("id").GetString() == module.Id)), "Context field delta");
+            var optionPacket = ContextPackets().Last(packet => packet.GetProperty("type").GetString() == "state.patch");
+            check(Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(optionPacket)) < Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(baselinePacket)) / 2
+                && !optionPacket.GetRawText().Contains("iconPreview"), "A context-menu option change does not retransmit its icon catalog and cuts message bytes by more than half");
+            var contextReport = Path.GetFullPath(Path.Combine("artifacts", "performance", "context-bridge.json"));
+            Directory.CreateDirectory(Path.GetDirectoryName(contextReport)!);
+            File.WriteAllText(contextReport, JsonSerializer.Serialize(new { utc = DateTimeOffset.UtcNow,
+                fullSnapshotBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(baselinePacket)),
+                optionPatchBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(optionPacket)),
+                unchangedIconsRetransmitted = false, note = "One real ContextMenu option edit; canonicalized JSON. The test instance is inactive and does not change Explorer menus." }, new JsonSerializerOptions { WriteIndented = true }));
             Script("[...document.querySelectorAll('.context-groups button')].find(b => b.textContent === 'Grup oluştur').click()");
             Wait(() => Script("!!document.querySelector('.context-group-editor')") == "true", "Group creation form");
             Script("(() => { const input = document.querySelector('[aria-label=\"Grup adı\"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Diğer'); input.dispatchEvent(new Event('input', { bubbles: true })); })()");
@@ -58,12 +75,12 @@ internal static class ContextMenuPanelChecks
             Script("[...document.querySelectorAll('.context-toolbar button')].find(b => b.textContent === 'Tümünü kapat').click()");
             Wait(() => Script("[...document.querySelectorAll('.context-entry .context-locations input[type=checkbox]')].every(b => b.checked === false)") == "true", "Batch hide acknowledgement");
             using (var hidden = JsonDocument.Parse(host.SettingsOf(module).GetString("menu-rules")))
-                check(hidden.RootElement.EnumerateArray().All(r => !r.GetProperty("visible").GetBoolean() && r.GetProperty("contexts").EnumerateObject().All(scope => !scope.Value.GetBoolean())), "Batch hide persists every location through the native bridge");
+                check(hidden.RootElement.EnumerateArray().Where(r => r.GetProperty("id").GetString()!.StartsWith("builtin:")).All(r => !r.GetProperty("visible").GetBoolean() && r.GetProperty("contexts").EnumerateObject().All(scope => !scope.Value.GetBoolean())), "Filtered batch hide persists every Windows-item location through the native bridge");
             check(SavedGroup("builtin:properties") && SavedGroup("builtin:new-folder"), "Batch visibility preserves group membership");
             Script("[...document.querySelectorAll('.context-toolbar button')].find(b => b.textContent === 'Tümünü aç').click()");
             Wait(() => Script("[...document.querySelectorAll('.context-entry .context-locations input[type=checkbox]')].every(b => b.checked === true)") == "true", "Batch show acknowledgement");
             using (var shown = JsonDocument.Parse(host.SettingsOf(module).GetString("menu-rules")))
-                check(shown.RootElement.EnumerateArray().All(r => r.GetProperty("visible").GetBoolean() && r.GetProperty("contexts").EnumerateObject().All(scope => scope.Value.GetBoolean())), "Batch show persists every location through the native bridge");
+                check(shown.RootElement.EnumerateArray().Where(r => r.GetProperty("id").GetString()!.StartsWith("builtin:")).All(r => r.GetProperty("visible").GetBoolean() && r.GetProperty("contexts").EnumerateObject().All(scope => scope.Value.GetBoolean())), "Filtered batch show persists every Windows-item location through the native bridge");
             Script("document.querySelector('.context-preview summary').click()");
             check(Script("document.querySelector('.context-preview').textContent.includes('Diğer')") == "true", "Menu preview reflects group");
             check(Script("![...document.querySelectorAll('.context-menu-panel button')].some(b => b.textContent === 'Kaydet')") == "true", "No Save button required");
@@ -102,9 +119,11 @@ internal static class ContextMenuPanelChecks
                 "Real UI contains no retired module cards");
             check(Script("document.querySelectorAll('.module-family').length > 1") == "true", "Related modules appear in nested families");
             }
-            Script("(() => { if (document.querySelector('.context-menu-panel')) return; const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Sağ Tık Menüsü'); (card.querySelector('.tool-settings-button') || card).click(); })()");
+            Script("(() => { if (document.querySelector('.context-menu-panel')) return; const card = [...document.querySelectorAll('.tool-card, .module-card')].find(x => x.querySelector('h2, strong')?.textContent === 'Sağ Tık Menüsü'); (card.querySelector('.tool-card-open, .tool-settings-button') || card).click(); })()");
             Wait(() => Script("!!document.querySelector('.context-menu-panel')") == "true", "Return to context menu editor");
-            check(Script("[...document.querySelectorAll('[data-entry-id]')].filter(e => e.dataset.entryId.startsWith('prepared:')).length === 5") == "true", "All five prepared actions are available in real UI");
+            Script("(() => { const select=document.querySelector('[aria-label=\"Menü öğesi türü\"]');select.value='prepared';select.dispatchEvent(new Event('change',{bubbles:true}));})()");
+            FilterMenu("m", expectedRows: 5);
+            check(Script("document.querySelectorAll('.context-entry').length === 5") == "true", "All five prepared actions remain available through grouped native row identities");
             var panel = (IModulePanel)module;
             panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Icon test", previousName = "", ids = Array.Empty<string>(), icon = "shell32.dll,3" }));
             panel.HandlePanelCommand("save-group", JsonSerializer.SerializeToElement(new { name = "Icon renamed", previousName = "Icon test", ids = Array.Empty<string>() }));
@@ -127,6 +146,16 @@ internal static class ContextMenuPanelChecks
                 return data.RootElement.EnumerateArray().Any(r => r.GetProperty("id").GetString() == id && r.GetProperty("group").GetString() == "Diğer");
             }
             string Script(string code) { var task = web.ExecuteScriptAsync(code); Complete(task); return task.GetAwaiter().GetResult(); }
+            JsonElement[] ContextPackets()
+            {
+                using var packets = JsonDocument.Parse(JsonSerializer.Deserialize<string>(Script("JSON.stringify(window.__contextPackets||[])"))!);
+                return packets.RootElement.EnumerateArray().Select(packet => packet.Clone()).ToArray();
+            }
+            void FilterMenu(string query, int? expectedRows = null)
+            {
+                Script("(() => { const input=document.querySelector('[aria-label=\"Menü öğesi ara\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input," + JsonSerializer.Serialize(query) + ");input.dispatchEvent(new Event('input',{bubbles:true}));})()");
+                Wait(() => Script("document.querySelectorAll('.context-entry').length" + (expectedRows is { } count ? "===" + count : ">0")) == "true", "Search-filtered menu entries");
+            }
         }
         finally { var exiting = app.IsExiting; Set(app, nameof(ForgeApplication.IsExiting), true); window.Close(); Set(app, nameof(ForgeApplication.IsExiting), exiting); }
     }

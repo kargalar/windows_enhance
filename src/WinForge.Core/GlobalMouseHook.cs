@@ -35,6 +35,7 @@ public sealed class GlobalMouseHook : IDisposable
 
     private IntPtr Handle(int nCode, IntPtr wParam, IntPtr lParam)
     {
+        using var timing = PerformanceTrace.Measure("input.mouse.callback");
         if (nCode >= 0)
         {
             var message = wParam.ToInt64() & 0xffff;

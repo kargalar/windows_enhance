@@ -10,7 +10,7 @@ for (const name of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'No
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const { createElement: h, act, useState, StrictMode } = await import('react');
 const { createRoot } = await import('react-dom/client');
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
 const { ShortcutField } = await server.ssrLoadModule('/src/ShortcutField.tsx');
 const { ShortcutActionsPanel } = await server.ssrLoadModule('/src/ShortcutActionsPanel.tsx');
 const { AutomationPanel } = await server.ssrLoadModule('/src/AutomationPanel.tsx');
@@ -98,7 +98,7 @@ test('media shortcut volume amounts save independently for increase and decrease
 });
 
 test('every shortcut action panel automatically saves recorded and manually edited shortcuts', async () => {
-  for (const moduleId of ['media-shortcuts', 'window-shortcuts', 'desktop-shortcuts', 'text-shortcuts', 'program-shortcuts', 'monitor-shortcuts']) {
+  for (const moduleId of ['media-shortcuts', 'window-shortcuts', 'system-shortcuts', 'desktop-shortcuts', 'text-shortcuts', 'program-shortcuts', 'monitor-shortcuts']) {
     const sent = [];
     const rule = { id: 'test', name: 'Test', enabled: true, shortcut: 'Ctrl+Space', action: 'play', value: '', arguments: '', hasSecret: false };
     function Harness() {
@@ -129,6 +129,26 @@ test('every shortcut action panel automatically saves recorded and manually edit
       assert.equal(sent.findLast(c => c.action === 'save').data.rule.shortcut, 'Alt+WheelUp', moduleId + ' mouse edit');
     } finally { await view.close(); }
   }
+});
+
+test('system shortcuts save the selected power action and appear in keyboard navigation', async () => {
+  const { groupModules } = await server.ssrLoadModule('/src/moduleGroups.ts');
+  assert.equal(groupModules([{ id: 'system-shortcuts', category: 'Verimlilik' }])[0].name, 'Kısayollar ve Klavye');
+  const sent = [];
+  const rule = { id: 'shutdown', name: 'Bilgisayarı kapat', enabled: false, shortcut: 'Ctrl+Alt+End', action: 'shutdown', value: '', arguments: '', hasSecret: false };
+  const view = await mount(h(ShortcutActionsPanel, { moduleId: 'system-shortcuts', active: true,
+    state: { kind: 'shortcut-actions', capturing: false, actions: [{ id: 'shutdown', name: 'Bilgisayarı kapat' }, { id: 'restart', name: 'Bilgisayarı yeniden başlat' }], rules: [rule] },
+    command: (action, data) => sent.push({ action, data }) }));
+  try {
+    assert.match(view.container.textContent, /seçilen işlemi doğrudan başlatır/);
+    const select = view.container.querySelector('select');
+    await act(async () => { select.value = 'restart'; select.dispatchEvent(new window.Event('change', { bubbles: true })); });
+    await click(view.container.querySelector('input[type="checkbox"]'));
+    const saved = sent.findLast(c => c.action === 'save').data.rule;
+    assert.equal(saved.action, 'restart'); assert.equal(saved.enabled, true);
+    assert.equal(saved.shortcut, 'Ctrl+Alt+End');
+    assert.equal(sent.some(c => ['shutdown', 'restart'].includes(c.action)), false);
+  } finally { await view.close(); }
 });
 
 test('text expansion mode autosaves an abbreviation without shortcut capture', async () => {
@@ -240,6 +260,11 @@ test('context menu combines registrations and saves independent location switche
   const entries = [{ ...base, id: 'verb:Directory:git', scope: 'folder', source: 'Directory ? komut' }, { ...base, id: 'verb:Directory\\Background:git', scope: 'background', source: 'Directory\\Background ? komut' }, { ...base, id: 'menu:git', source: 'Ger?ek men? ??esi' }];
   const view = await mount(h(ContextMenuPanel, { state: { kind: 'context-menu', groups: [], entries }, command: (action, data) => sent.push({action, data}) }));
   try {
+    const search = view.container.querySelector('.context-toolbar input[type="search"]');
+    assert.equal(view.container.querySelectorAll('.context-entry').length, 0);
+    await type(search, '   ');
+    assert.equal(view.container.querySelectorAll('.context-entry').length, 0);
+    await type(search, '  git  ');
     assert.equal(view.container.querySelectorAll('.context-entry').length, 1);
     assert.equal(view.container.querySelectorAll('.context-entry .context-locations input[type="checkbox"]').length, 8);
     assert.equal(view.container.querySelector('input[aria-label$="grubu"]'), null);
@@ -259,6 +284,8 @@ test('context menu combines registrations and saves independent location switche
     await click([...view.container.querySelectorAll('button')].find(button => button.textContent === 'Simgeyi değiştir'));
     assert.equal(sent.at(-1).action, 'pick-icon');
     assert.equal(sent.at(-1).data.ids.length, 3);
+    await type(search, '');
+    assert.equal(view.container.querySelectorAll('.context-entry').length, 0);
   } finally { await view.close(); }
 });
 
@@ -280,6 +307,7 @@ test('context visibility supports row and filtered batch changes while preservin
     } });
   }
   const view = await mount(h(Harness));
+  await type(view.container.querySelector('.context-toolbar input[type="search"]'), 'Windows');
   const button = text => [...view.container.querySelectorAll('button')].find(button => button.textContent === text);
   const allSwitches = value => {
     const toggles = [...view.container.querySelectorAll('.context-entry .context-locations input[type="checkbox"]')];
@@ -320,6 +348,7 @@ test('context menu separates shortcuts and preserves separator placement and glo
   const separator = { ...entry, id: 'separator:ABC', identity: 'separator:ABC', originalName: 'Ayırıcı: Kopyala / Sil', name: 'Ayırıcı: Kopyala / Sil', isSeparator: true, contexts: undefined };
   const view = await mount(h(ContextMenuPanel, { state: { kind: 'context-menu', groups: [], entries: [entry, separator] }, command: (action, data) => sent.push({ action, data }) }));
   try {
+    await type(view.container.querySelector('.context-toolbar input[type="search"]'), 'Kopyala');
     const copy = view.container.querySelector('[data-entry-id="builtin:copy"]');
     const shortcut = copy.querySelector('[aria-label="Kopyala: Kısayolda"]');
     assert.equal(shortcut.checked, false, 'old file settings are inherited by shortcut scope');

@@ -31,23 +31,37 @@ public sealed class NetSpeedWindow
     private int _intervalMilliseconds = 1000;
     private int _running;
     private int _tickInProgress;
+    private int _stopped;
+    private int _placementQueued;
+    private int _restackRequested;
+    private IntPtr _taskbar;
+    private IntPtr _tray;
+    private WindowEventObserver? _locationObserver;
+    private WindowEventObserver? _visibilityObserver;
+    private WindowEventObserver? _foregroundObserver;
+    private bool _displayEventsSubscribed;
+    private Placement? _lastPlacement;
+    private readonly Func<Placement?>? _placementSource;
+    internal readonly record struct Placement(double Left, double Top, double Width, double Height);
 
     private double OverlayWidth => IsStacked ? StackedWidth : SideBySideWidth;
     private double OverlayHeight => IsStacked ? StackedHeight : SideBySideHeight;
     private bool IsStacked => string.Equals(_layout, Stacked, StringComparison.CurrentCultureIgnoreCase);
 
-    public NetSpeedWindow(IFeatureUiService? featureUi)
+    public NetSpeedWindow(IFeatureUiService? featureUi) : this(featureUi, null) { }
+
+    internal NetSpeedWindow(IFeatureUiService? featureUi, Func<Placement?>? placementSource)
     {
+        _placementSource = placementSource;
         _view = featureUi?.Open("net-speed-indicator", "net-speed-overlay", "Ağ hızı",
             new FeatureUiWindowOptions(OverlayWidth, OverlayHeight, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: true, ShowOnOpen: false));
         _timer = new Timer(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
-        // Taskbar animations and Start-menu activation must not wait for the
-        // network sampling interval (which can be as long as three seconds).
-        // Run placement on the UI thread, independently of network statistics.
+        // Native events track animations and stacking; this slower independent
+        // fallback also recovers from missed events and Explorer recreation.
         _placementTimer = new DispatcherTimer(DispatcherPriority.Normal)
         {
-            Interval = TimeSpan.FromMilliseconds(50)
+            Interval = TimeSpan.FromMilliseconds(250)
         };
         _placementTimer.Tick += OnPlacementTick;
         UpdateView(Format(0), Format(0));
@@ -72,19 +86,22 @@ public sealed class NetSpeedWindow
         UpdateView(Format(0), Format(0));
     }
 
-    private void Reposition()
+    internal void Reposition(bool restack = false)
     {
         if (_view is null) return;
+        PerformanceTrace.Record("netSpeed.placementCheck", 0);
         if (Volatile.Read(ref _running) == 0 || (!_showDownload && !_showUpload))
         {
-            _view.Hide();
+            HideView();
             return;
         }
+        if (_placementSource is not null) { ApplyPlacement(_placementSource(), restack); return; }
 
         var taskbar = Native.FindWindow("Shell_TrayWnd", null);
+        _taskbar = taskbar;
         if (taskbar == IntPtr.Zero || !Native.IsWindowVisible(taskbar) || !Native.GetWindowRect(taskbar, out var rect))
         {
-            _view.Hide();
+            HideView();
             return;
         }
 
@@ -100,11 +117,12 @@ public sealed class NetSpeedWindow
         if (width < 8 || height < 8 || rect.Bottom <= bounds.Top + 2 || rect.Top >= bounds.Bottom - 2 ||
             rect.Right <= bounds.Left + 2 || rect.Left >= bounds.Right - 2)
         {
-            _view.Hide();
+            HideView();
             return;
         }
 
         var tray = Native.FindWindowEx(taskbar, IntPtr.Zero, "TrayNotifyWnd", null);
+        _tray = tray;
         var trayRect = rect;
         if (tray != IntPtr.Zero) Native.GetWindowRect(tray, out trayRect);
 
@@ -135,18 +153,66 @@ public sealed class NetSpeedWindow
                 : trayRect.Top / scale - OverlayHeight - _trayGap;
         }
 
-        _view.SetBounds(Math.Clamp(left, bounds.Left / scale, Math.Max(bounds.Left / scale, bounds.Right / scale - OverlayWidth)),
-            Math.Clamp(top, bounds.Top / scale, Math.Max(bounds.Top / scale, bounds.Bottom / scale - OverlayHeight)), OverlayWidth, OverlayHeight);
-        _view.Show();
+        ApplyPlacement(new(Math.Clamp(left, bounds.Left / scale, Math.Max(bounds.Left / scale, bounds.Right / scale - OverlayWidth)),
+            Math.Clamp(top, bounds.Top / scale, Math.Max(bounds.Top / scale, bounds.Bottom / scale - OverlayHeight)), OverlayWidth, OverlayHeight), restack);
+    }
+
+    private void HideView() { if (_view?.IsVisible == true) _view.Hide(); }
+
+    private void ApplyPlacement(Placement? placement, bool restack)
+    {
+        if (placement is not { } bounds) { HideView(); return; }
+        if (_lastPlacement != bounds)
+        {
+            _view!.SetBounds(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+            _lastPlacement = bounds;
+            PerformanceTrace.Record("netSpeed.geometrySent", 0);
+        }
+        if (!_view!.IsVisible || restack) _view.Show();
+    }
+
+    private void OnWindowEvent(WindowEventObserver.WindowEvent change)
+    {
+        if (change.Kind == WindowEventObserver.Foreground) QueuePlacement(restack: true);
+        else if (change.Window == _taskbar || change.Window == _tray) QueuePlacement();
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs args) => QueuePlacement();
+
+    private void QueuePlacement(bool restack = false)
+    {
+        if (Volatile.Read(ref _running) == 0) return;
+        if (restack) Interlocked.Exchange(ref _restackRequested, 1);
+        if (Interlocked.Exchange(ref _placementQueued, 1) != 0) return;
+        _placementTimer.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            Interlocked.Exchange(ref _placementQueued, 0);
+            var raise = Interlocked.Exchange(ref _restackRequested, 0) != 0;
+            if (Volatile.Read(ref _running) != 0) Reposition(raise);
+        }), DispatcherPriority.Background);
     }
 
     private void OnPlacementTick(object? sender, EventArgs args) => Reposition();
 
     public void Start()
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _stopped) != 0, this);
+        if (Volatile.Read(ref _running) != 0) return;
         Sample();
         _lastSample = DateTime.UtcNow;
         Volatile.Write(ref _running, 1);
+        if (_placementSource is null)
+        {
+            try
+            {
+                _locationObserver = new(WindowEventObserver.ObjectLocationChange, WindowEventObserver.ObjectLocationChange, OnWindowEvent, _ => { });
+                _visibilityObserver = new(WindowEventObserver.ObjectShow, 0x8003, OnWindowEvent, _ => { });
+                _foregroundObserver = new(WindowEventObserver.Foreground, WindowEventObserver.Foreground, OnWindowEvent, _ => { });
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+                _displayEventsSubscribed = true;
+            }
+            catch { PerformanceTrace.Record("netSpeed.eventsUnavailable", 0); }
+        }
         _timer.Change(_intervalMilliseconds, _intervalMilliseconds);
         _placementTimer.Start();
         Reposition();
@@ -154,7 +220,12 @@ public sealed class NetSpeedWindow
 
     public void Stop()
     {
+        if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
         Volatile.Write(ref _running, 0);
+        if (_displayEventsSubscribed) Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+        foreach (var observer in new[] { _locationObserver, _visibilityObserver, _foregroundObserver })
+            try { observer?.Dispose(); } catch { }
+        _locationObserver = _visibilityObserver = _foregroundObserver = null;
         _placementTimer.Stop();
         _placementTimer.Tick -= OnPlacementTick;
         _timer.Change(Timeout.Infinite, Timeout.Infinite);

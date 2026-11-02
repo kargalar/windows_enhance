@@ -2,15 +2,12 @@
 
 <!--  -->
 
+"Windows açıldığında WinForge'u başlat" ayarı nedn sesle yazma modülünü içinde oradan kaldır.
 
-<!-- Check -->
-tarih ve saat kısmında varsayıalndan çıkarsam tarih ve saatin solunda kocamam br boşluk oluyor
 
-file explorer da şu üsttei bar kapatıalbilsin. hani şu kes yapıştır view butonlarını olduğu kısım
+kısayolları ayrı bir kategori altında topla
 
-Sağ Tık Menüsü özeliği ile bazı öğeleri gizleikçe bazen sadece çizgileri kalıyor arada bir şey olmasa bile o çizgileri de aç kapa yapabildim yenisini ekelyebiellim.
-dosya,klasör vs diye seçiyor ya orada temsil edilmeyenler de var mesela kısayollar gibi...
-ayrıca oradaki copy as path öğesinde kopyallanırken "path" olarak değil direkt path olrak kopyalasın isityorum.
+bana her modülün detaylar sayfası için alternatif bir tasarım görseli oluştur yani şuanki gibi değilde daha düzenli daha estetik ve daha kolay analaşılyor yönetebilmek için bir tasarım tercihi olarak
 
-context menüye gizli öğeleri göster/gizle seçeeği ekelyebilelim
-context menüde powermodu hızlı ayar yapabilelim performans ve güç tasarrufu için
+sesli yazma ve otomati düzeltme özellikleri iyileştirilmeli. bir test yap ve puan ber en az 9/10 olana kadar iyileştirdmeye devam et.
+<!-- Check -->  

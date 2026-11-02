@@ -43,6 +43,7 @@ public sealed class ModuleHost
 
     public void Load()
     {
+        using var loadTiming = PerformanceTrace.Measure("modules.load");
         _modules.Clear();
         _settings.Clear();
         _errors.Clear();
@@ -65,8 +66,9 @@ public sealed class ModuleHost
                     if (typeof(IModuleComponent).IsAssignableFrom(type)) continue;
                     if (type.GetConstructor(Type.EmptyTypes) is null) continue;
 
+                    using var moduleTiming = PerformanceTrace.Measure("module.initialize", type.Name);
                     var module = (ITweakModule)Activator.CreateInstance(type)!;
-                    var settings = new ModuleSettings(_store.For(module.Id), _store.Save);
+                    var settings = new ModuleSettings(_store.For(module.Id), _store.ScheduleSave, _store.SyncRoot);
                     _settings[module.Id] = settings;
                     module.Initialize(new ModuleContext(settings, _log, new ModuleHotkeyService(_hotkeys, module.Name), _notify, _quickActions, _showDisplayBrightness, _showAudioVolume, _featureUi,
                         TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag));
@@ -91,7 +93,7 @@ public sealed class ModuleHost
     {
         foreach (var module in _modules)
         {
-            if (!_store.Enabled.Contains(module.Id)) continue;
+            if (!_store.IsModuleEnabled(module.Id)) continue;
 
             try
             {
@@ -116,10 +118,11 @@ public sealed class ModuleHost
             try
             {
                 if (_stopping) return;
-                if (!_store.Enabled.Contains(module.Id) || module.IsActive) continue;
+                if (!_store.IsModuleEnabled(module.Id) || module.IsActive) continue;
                 try
                 {
                     _log.Info($"Modül başlatılıyor: {module.Id}");
+                    using var timing = PerformanceTrace.Measure("module.activate", module.Id);
                     if (module is IAsyncTweakModule asyncModule) await asyncModule.ActivateAsync();
                     else module.Activate();
                     _errors.Remove(module.Id);
@@ -147,7 +150,7 @@ public sealed class ModuleHost
         await _lifecycleGate.WaitAsync();
         try
         {
-            if (!enabled && !module.IsActive && _store.Enabled.Remove(module.Id))
+            if (!enabled && !module.IsActive && _store.SetModuleEnabled(module.Id, false))
             {
                 _store.Save();
                 return;
@@ -158,7 +161,7 @@ public sealed class ModuleHost
             {
                 if (enabled) await asyncModule.ActivateAsync();
                 else await asyncModule.DeactivateAsync();
-                if (module.IsActive) _store.Enabled.Add(module.Id); else _store.Enabled.Remove(module.Id);
+                if (module.IsActive) _store.SetModuleEnabled(module.Id, true); else _store.SetModuleEnabled(module.Id, false);
                 _errors.Remove(module.Id);
                 _store.Save();
             }
@@ -167,10 +170,62 @@ public sealed class ModuleHost
                 _errors[module.Id] = ex.Message;
                 _log.Error($"Modül değiştirilemedi: {module.Id}", ex);
                 if (enabled) { try { await asyncModule.DeactivateAsync(); } catch (Exception cleanup) { _log.Error($"Geri alma başarısız: {module.Id}", cleanup); } }
-                if (module.IsActive) _store.Enabled.Add(module.Id); else _store.Enabled.Remove(module.Id);
+                if (module.IsActive) _store.SetModuleEnabled(module.Id, true); else _store.SetModuleEnabled(module.Id, false);
                 _store.Save();
                 throw;
             }
+        }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    public async Task UpdateSettingAsync(ITweakModule module, SettingDescriptor descriptor, object value)
+    {
+        await _lifecycleGate.WaitAsync();
+        try
+        {
+            if (_stopping) throw new InvalidOperationException("Uygulama kapanıyor.");
+            var settings = SettingsOf(module);
+            object previous = descriptor.Kind switch
+            {
+                SettingKind.Toggle => settings.GetBool(descriptor.Key, descriptor.Default is true),
+                SettingKind.Number => settings.GetInt(descriptor.Key, Convert.ToInt32(descriptor.Default ?? 0)),
+                _ => settings.GetString(descriptor.Key, descriptor.Default as string ?? "")
+            };
+            async Task ApplyCurrent()
+            {
+                if (!module.IsActive) return;
+                if (module is IAsyncTweakModule asyncModule) await asyncModule.ApplyAsync();
+                else module.Apply();
+            }
+            IDisposable? batch = _store.BatchWrites();
+            try
+            {
+                settings.Set(descriptor.Key, value);
+                await ApplyCurrent();
+                batch.Dispose();
+                batch = null;
+                await _store.FlushAsync();
+                _errors.Remove(module.Id);
+            }
+            catch (Exception error)
+            {
+                // The lifecycle gate covers capture, apply and rollback. A later
+                // UI edit cannot be overwritten by this operation's failure.
+                _errors[module.Id] = error.Message;
+                var restored = true;
+                try
+                {
+                    batch ??= _store.BatchWrites();
+                    settings.Set(descriptor.Key, previous);
+                    await ApplyCurrent();
+                    batch.Dispose();
+                    batch = null;
+                    await _store.FlushAsync();
+                }
+                catch (Exception restore) { restored = false; _log.Error($"Ayar geri alma başarısız: {module.Id}", restore); }
+                throw new InvalidOperationException((restored ? "Ayar uygulanamadı; önceki değer geri yüklendi. " : "Ayar uygulanamadı ve geri alma tamamlanamadı; günlükleri kontrol edin. ") + error.Message, error);
+            }
+            finally { batch?.Dispose(); }
         }
         finally { _lifecycleGate.Release(); }
     }
@@ -217,13 +272,13 @@ public sealed class ModuleHost
             if (enabled)
             {
                 module.Activate();
-                _store.Enabled.Add(module.Id);
+                _store.SetModuleEnabled(module.Id, true);
                 _log.Info($"Etkin: {module.Id}");
             }
             else
             {
                 module.Deactivate();
-                _store.Enabled.Remove(module.Id);
+                _store.SetModuleEnabled(module.Id, false);
                 _log.Info($"Devre dışı: {module.Id}");
             }
 
@@ -237,8 +292,8 @@ public sealed class ModuleHost
 
             if (enabled) CleanupFailedActivation(module);
 
-            if (module.IsActive) _store.Enabled.Add(module.Id);
-            else _store.Enabled.Remove(module.Id);
+            if (module.IsActive) _store.SetModuleEnabled(module.Id, true);
+            else _store.SetModuleEnabled(module.Id, false);
 
             _store.Save();
             throw;

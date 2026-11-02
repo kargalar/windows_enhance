@@ -17,6 +17,7 @@ internal static class Program
             TestPaths(root);
             TestAssociations();
             TestPanels(root);
+            TestDeferredPanels(root);
             Console.WriteLine($"PASS: {_checks} default settings checks; no real Windows settings changed.");
         }
         finally
@@ -100,6 +101,50 @@ internal static class Program
             module.Deactivate();
             Check(!module.IsActive && context.Ui.Last is null, module.Id + " closes without opening a window.");
         }
+    }
+
+    private static void TestDeferredPanels(string root)
+    {
+        var context = new TestContext(root);
+        var module = new DeferredPanelFixture();
+        module.Initialize(context);
+        module.Activate();
+        module.Apply();
+        Check(module.Reads == 0, "Startup and activation defer Windows settings reads until a panel is requested.");
+        module.GetPanelState();
+        module.GetPanelState();
+        Check(module.Reads == 1, "Repeated snapshots reuse the initialized panel.");
+        module.HandlePanelCommand("defaults.reload", JsonSerializer.SerializeToElement(new { }));
+        module.GetPanelState();
+        Check(module.Reads == 2, "Explicit reload refreshes Windows settings exactly once.");
+        module.Initialize(context);
+        module.HandlePanelCommand("probe", JsonSerializer.SerializeToElement(new { }));
+        Check(module.Reads == 3 && module.ReadsAtCommand == 3, "A command arriving before a snapshot initializes its data first.");
+        module.Initialize(context);
+        module.FailRead = true;
+        Throws(() => module.GetPanelState(), "An initial read failure is visible to the panel caller.");
+        module.FailRead = false;
+        module.GetPanelState();
+        Check(module.Reads == 5, "A failed initial read can be retried without restarting the module.");
+        module.Deactivate();
+    }
+
+    private sealed class DeferredPanelFixture : DefaultSettingsModule
+    {
+        public override string Id => "deferred-fixture";
+        public override string Name => "Deferred fixture";
+        public override string Description => "Fixture";
+        public override string? Warning => null;
+        public int Reads { get; private set; }
+        public int ReadsAtCommand { get; private set; }
+        public bool FailRead { get; set; }
+        protected override void Refresh()
+        {
+            Reads++;
+            if (FailRead) throw new IOException("Simulated Windows settings read failure.");
+        }
+        protected override void PushState() => PublishState(new { reads = Reads });
+        protected override void OnMessage(string command, JsonElement payload) => ReadsAtCommand = Reads;
     }
 
     private static void Check(bool condition, string message)

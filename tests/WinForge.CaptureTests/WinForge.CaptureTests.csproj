@@ -10,6 +10,7 @@
     <ApplicationManifest>../../src/WinForge.App/app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Shared/BenchmarkMachineInfo.cs" Link="BenchmarkMachineInfo.cs" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <Page Include="../../src/WinForge.App/Theme.xaml" Link="TestTheme.xaml" />
     <Using Include="System.IO" />
