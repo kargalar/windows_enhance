@@ -26,7 +26,13 @@ test('dashboard keeps navigation, theme selection and module details available w
     assert.ok(document.querySelector('.dark-dashboard'));
     await click('.dashboard-actions .secondary-button');
     assert.ok(document.querySelector('.light-dashboard'));
-    await click('.tool-settings-button');
+    assert.equal(document.querySelector('.tool-card .tool-settings-button'), null);
+    await click('.tool-card .toggle');
+    assert.equal(document.querySelector('#module-details'), null);
+    await click('.tool-favorite');
+    assert.equal(document.querySelector('#module-details'), null);
+    await click('.tool-favorite');
+    await click('.tool-card-open');
     assert.ok(document.querySelector('.dashboard-workspace.with-details'));
     assert.ok(document.querySelector('#module-details .setting-copy strong'));
     await click('.dashboard-back');
