@@ -18,6 +18,8 @@ public static class OsdWindow
     private const double IndicatorWidth = 180;
     private const double IndicatorHeight = 38;
     private static Action<int>? _brightnessChanged;
+    private static Action<string, int>? _monitorBrightnessChanged;
+    private static List<BrightnessOverlayMonitor> _brightnessMonitors = new();
     private static int _brightnessHovered;
     private static bool _brightnessDragging;
     private static int _brightnessPercent;
@@ -70,9 +72,11 @@ public static class OsdWindow
         RestartTimer(ref _toastTimer, Math.Clamp(1400 + message.Length * 28, 1800, 6000), () => _toastView?.Hide());
     });
 
-    public static void ShowBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null) => OnUiThread(() =>
+    public static void ShowBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null, IReadOnlyList<BrightnessOverlayMonitor>? monitors = null, Action<string, int>? onMonitorBrightnessChanged = null) => OnUiThread(() =>
     {
         _brightnessChanged = onBrightnessChanged;
+        _monitorBrightnessChanged = onMonitorBrightnessChanged;
+        _brightnessMonitors = monitors?.ToList() ?? new();
         _brightnessPercent = Math.Clamp(percent, 0, 100);
         _brightnessDeviceName = deviceName;
         _brightnessStatus = status;
@@ -87,7 +91,8 @@ public static class OsdWindow
         if (window is null) return;
         window.MessageReceived -= OnBrightnessMessage;
         window.MessageReceived += OnBrightnessMessage;
-        PositionAtBottom(window, 240, 60, 56);
+        var height = Math.Min(Math.Max(1, CursorPanelPlacement.WorkArea.Height - 56), Math.Max(60, 24 + _brightnessMonitors.Count * 48 + (status is null ? 0 : 18)));
+        PositionAtBottom(window, 280, height, 56);
         UpdateBrightnessState(window);
         window.Show();
         RestartBrightnessTimer();
@@ -101,6 +106,17 @@ public static class OsdWindow
                 _brightnessPercent = Math.Clamp(payload.GetProperty("percent").GetInt32(), 0, 100);
                 _brightnessChanged?.Invoke(_brightnessPercent);
                 if (_brightnessView is not null) UpdateBrightnessState(_brightnessView);
+                break;
+            case "brightness.set-monitor":
+                var id = payload.GetProperty("id").GetString();
+                var target = Math.Clamp(payload.GetProperty("percent").GetInt32(), 0, 100);
+                var index = _brightnessMonitors.FindIndex(monitor => monitor.Id == id);
+                if (index >= 0 && id is not null)
+                {
+                    _brightnessMonitors[index] = _brightnessMonitors[index] with { Percent = target };
+                    _monitorBrightnessChanged?.Invoke(id, target);
+                    if (_brightnessView is not null) UpdateBrightnessState(_brightnessView);
+                }
                 break;
             case "brightness.hover":
                 Volatile.Write(ref _brightnessHovered, payload.GetProperty("value").GetBoolean() ? 1 : 0);
@@ -120,7 +136,7 @@ public static class OsdWindow
 
     private static void UpdateBrightnessState(IFeatureUiWindow window) => window.SetState(new
     {
-        kind = "brightness", percent = _brightnessPercent, deviceName = _brightnessDeviceName, status = _brightnessStatus
+        kind = "brightness", percent = _brightnessPercent, deviceName = _brightnessDeviceName, status = _brightnessStatus, monitors = _brightnessMonitors
     });
 
     private static void RestartBrightnessTimer() => RestartTimer(ref _brightnessTimer, 1500, () =>

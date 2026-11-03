@@ -328,19 +328,22 @@ public sealed class DisplayBrightnessModule : ITweakModule
                         if (ReferenceEquals(_hotkeyBrightnessDiscovery, discovery)) _hotkeyBrightnessDiscovery = null;
                 }
                 var outcome = session.AdjustBrightnessForAllDisplays(step * direction);
+                var monitors = OverlayMonitors(session);
                 if (outcome.Failed > 0 || outcome.Supported == 0)
                 {
                     session.Dispose();
                     _hotkeyBrightnessSession = null;
                 }
-                return outcome;
+                return (Outcome: outcome, Monitors: monitors);
             });
             if (!IsActive) return;
-            if (result.Supported == 0)
+            var monitors = result.Monitors;
+            var outcome = result.Outcome;
+            if (outcome.Supported == 0)
                 _context.Notify("Bağlı ekranlarda desteklenen bir parlaklık denetimi bulunamadı.");
-            else if (result.Failed > 0)
-                _context.Notify($"Ekran parlaklığı: {result.Applied}/{result.Supported} ekrana uygulandı; {result.Failed} hata.");
-            ShowBrightnessOutcome(result);
+            else if (outcome.Failed > 0)
+                _context.Notify($"Ekran parlaklığı: {outcome.Applied}/{outcome.Supported} ekrana uygulandı; {outcome.Failed} hata.");
+            ShowBrightnessOutcome(outcome, monitors);
         }
         catch (Exception exception)
         {
@@ -355,15 +358,19 @@ public sealed class DisplayBrightnessModule : ITweakModule
         }
     }
 
-    private int _overlayBrightnessRequest;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _overlayBrightnessRequests = new();
 
-    private async Task SetOverlayBrightnessAsync(int percent)
+    private static IReadOnlyList<BrightnessOverlayMonitor> OverlayMonitors(DisplayBrightnessSession session) =>
+        session.Monitors.Where(m => m.SupportsBrightness || m.VcpBrightness is not null)
+            .Select(m => new BrightnessOverlayMonitor(m.Id, m.Name, m.Percent)).ToArray();
+
+    private async Task SetOverlayBrightnessAsync(string id, int percent)
     {
-        var request = Interlocked.Increment(ref _overlayBrightnessRequest);
+        var request = _overlayBrightnessRequests.AddOrUpdate(id, 1, (_, previous) => previous + 1);
         await _brightnessAdjustmentGate.WaitAsync();
         try
         {
-            if (!IsActive || request != Volatile.Read(ref _overlayBrightnessRequest)) return;
+            if (!IsActive || _overlayBrightnessRequests[id] != request) return;
             var result = await Task.Run(() =>
             {
                 if (_hotkeyBrightnessSession is { } cached && cached.NeedsBrightnessRediscovery)
@@ -372,19 +379,26 @@ public sealed class DisplayBrightnessModule : ITweakModule
                     _hotkeyBrightnessSession = null;
                 }
                 var session = _hotkeyBrightnessSession ??= DisplayBrightnessSession.Discover();
-                var outcome = session.SetBrightnessForAllDisplays(percent);
-                if (outcome.Failed > 0 || outcome.Supported == 0)
+                var success = session.SetBrightness(id, percent, out _);
+                var monitors = OverlayMonitors(session);
+                if (!success)
                 {
                     session.Dispose();
                     _hotkeyBrightnessSession = null;
                 }
-                return outcome;
+                return (success, monitors);
             });
-            if (request == Volatile.Read(ref _overlayBrightnessRequest)) ShowBrightnessOutcome(result);
+            if (_overlayBrightnessRequests[id] == request)
+            {
+                var status = result.success ? null : "Parlakl?k de?i?tirilemedi";
+                if (_context is IDisplayBrightnessOverlayContext overlay)
+                    overlay.ShowDisplayBrightness(percent, "all-displays", status: status, monitors: result.monitors,
+                        onMonitorBrightnessChanged: (monitorId, value) => _ = SetOverlayBrightnessAsync(monitorId, value));
+            }
         }
         catch (Exception exception)
         {
-            _context?.Log.Error("Gösterge üzerinden parlaklık değiştirilemedi.", exception);
+            _context?.Log.Error("G?sterge ?zerinden parlakl?k de?i?tirilemedi.", exception);
         }
         finally
         {
@@ -393,18 +407,19 @@ public sealed class DisplayBrightnessModule : ITweakModule
         }
     }
 
-    private void ShowBrightnessOutcome((int Supported, int Applied, int Failed, int? Brightness) result)
+    private void ShowBrightnessOutcome((int Supported, int Applied, int Failed, int? Brightness) result,
+        IReadOnlyList<BrightnessOverlayMonitor> monitors)
     {
         if (!IsActive || _context is not IDisplayBrightnessOverlayContext overlay) return;
         var connected = DesktopDisplays.Enumerate().Count;
         var status = result.Supported == 1 && connected == 1 && result.Failed == 0 ? null
-            : $"{result.Applied}/{Math.Max(connected, result.Supported)} monitöre uygulandı";
-        if (result.Failed > 0) status += $" · {result.Failed} hata";
+            : $"{result.Applied}/{Math.Max(connected, result.Supported)} monit?re uyguland?";
+        if (result.Failed > 0) status += $" ? {result.Failed} hata";
         if (result.Supported > 0 && result.Supported < connected)
-            status += $" · {connected - result.Supported} monitörde denetim bulunamadı";
-        if (result.Supported == 0) status = "Parlaklık denetimi desteklenmiyor";
-        overlay.ShowDisplayBrightness(result.Brightness ?? 0, "all-displays",
-            percent => _ = SetOverlayBrightnessAsync(percent), status);
+            status += $" ? {connected - result.Supported} monit?rde denetim bulunamad?";
+        if (result.Supported == 0) status = "Parlakl?k denetimi desteklenmiyor";
+        overlay.ShowDisplayBrightness(result.Brightness ?? 0, "all-displays", status: status, monitors: monitors,
+            onMonitorBrightnessChanged: (id, value) => _ = SetOverlayBrightnessAsync(id, value));
     }
 
     private void DisposeHotkeyBrightnessSessionIfIdle()

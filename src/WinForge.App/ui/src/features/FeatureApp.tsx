@@ -26,6 +26,7 @@ type OsdState = {
   kind: 'toast' | 'brightness' | 'volume';
   message?: string;
   deviceName?: string;
+  monitors?: { id: string; name: string; percent: number }[];
   status?: string;
   percent?: number;
   isMuted?: boolean;
@@ -1032,7 +1033,7 @@ export function FeatureApp({ view }: { view: string }) {
     if (osd.kind === 'toast') return <div className="feature-root feature-root-osd">
       <div className="osd-card osd-toast"><span className="osd-status-dot" /><span>{osd.message}</span></div>
     </div>;
-    return <OsdControls kind={osd.kind} percent={osd.percent ?? 0} isMuted={osd.isMuted} status={osd.status} send={send} />;
+    return <OsdControls kind={osd.kind} percent={osd.percent ?? 0} isMuted={osd.isMuted} status={osd.status} monitors={osd.monitors} send={send} />;
   }
 
   if (view === 'media-flyout') {

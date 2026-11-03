@@ -5,10 +5,26 @@ type Props = {
   percent: number;
   isMuted?: boolean;
   status?: string;
+  monitors?: { id: string; name: string; percent: number }[];
   send: (command: string, payload?: Record<string, unknown>) => void;
 };
 
-export function OsdControls({ kind, percent, isMuted, status, send }: Props) {
+function MonitorRow({ monitor, send }: { monitor: { id: string; name: string; percent: number }; send: Props['send'] }) {
+  const [value, setValue] = useState(monitor.percent);
+  const dragging = useRef(false);
+  useEffect(() => { if (!dragging.current) setValue(monitor.percent); }, [monitor.percent]);
+  const endDrag = () => { if (dragging.current) { dragging.current = false; send('brightness.drag', { value: false }); } };
+  return <div className="osd-monitor-row">
+    <label htmlFor={`brightness-${monitor.id}`} title={monitor.name}>{monitor.name}</label>
+    <input id={`brightness-${monitor.id}`} className="osd-volume-range" type="range" min="0" max="100" value={value}
+      onPointerDown={event => { if (event.button !== 0) return; dragging.current = true; event.currentTarget.setPointerCapture(event.pointerId); send('brightness.drag', { value: true }); }}
+      onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag}
+      onChange={event => { const next = Number(event.target.value); setValue(next); send('brightness.set-monitor', { id: monitor.id, percent: next }); }} />
+    <strong className="osd-volume-value">{value}%</strong>
+  </div>;
+}
+
+export function OsdControls({ kind, percent, isMuted, status, monitors, send }: Props) {
   const [value, setValue] = useState(percent);
   const dragging = useRef(false);
   useEffect(() => { if (!dragging.current) setValue(percent); }, [percent, kind]);
@@ -17,6 +33,14 @@ export function OsdControls({ kind, percent, isMuted, status, send }: Props) {
     dragging.current = false;
     send(`${kind}.drag`, { value: false });
   };
+
+  if (kind === 'brightness' && monitors) return <div className="feature-root feature-root-osd">
+    <div className="osd-card osd-monitor-list" onPointerEnter={() => send('brightness.hover', { value: true })} onPointerLeave={() => send('brightness.hover', { value: false })}
+      onKeyDown={event => { if (event.key === 'Escape') send('brightness.dismiss'); }}>
+      {monitors.map(monitor => <MonitorRow key={monitor.id} monitor={monitor} send={send} />)}
+      {status && <small className="osd-brightness-status" role="status">{status}</small>}
+    </div>
+  </div>;
 
   return <div className="feature-root feature-root-osd">
     <div className={`osd-card osd-volume${kind === 'brightness' ? ' osd-brightness' : ''}`} onPointerEnter={() => send(`${kind}.hover`, { value: true })} onPointerLeave={() => send(`${kind}.hover`, { value: false })} onKeyDown={event => { if (event.key === 'Escape') { endDrag(); send(`${kind}.dismiss`); } }}>

@@ -111,9 +111,11 @@ public interface IFeatureUiContext
 }
 
 /// <summary>Shows a transient brightness indicator on the display being adjusted.</summary>
+public sealed record BrightnessOverlayMonitor(string Id, string Name, int Percent);
+
 public interface IDisplayBrightnessOverlayContext
 {
-    void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null);
+    void ShowDisplayBrightness(int percent, string deviceName, Action<int>? onBrightnessChanged = null, string? status = null, IReadOnlyList<BrightnessOverlayMonitor>? monitors = null, Action<string, int>? onMonitorBrightnessChanged = null);
 }
 
 /// <summary>Shows a transient audio volume indicator.</summary>

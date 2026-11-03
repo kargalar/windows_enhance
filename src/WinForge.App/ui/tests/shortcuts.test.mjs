@@ -465,6 +465,21 @@ for (const kind of ['volume', 'brightness']) {
   });
 }
 
+test('brightness overlay controls each monitor independently', async () => {
+  const messages = [];
+  const monitors = [{ id: 'display-a', name: 'Ekran A', percent: 30 }, { id: 'display-b', name: 'Ekran B', percent: 70 }];
+  const ui = await mount(h(OsdControls, { kind: 'brightness', percent: 50, monitors, send: (command, payload) => messages.push({ command, payload }) }));
+  try {
+    const sliders = ui.container.querySelectorAll('input');
+    assert.equal(sliders.length, 2);
+    assert.equal(sliders[0].value, '30');
+    assert.equal(sliders[1].value, '70');
+    await type(sliders[1], '85');
+    assert.equal(sliders[0].value, '30');
+    assert.deepEqual(messages.at(-1), { command: 'brightness.set-monitor', payload: { id: 'display-b', percent: 85 } });
+  } finally { await ui.close(); }
+});
+
 test('volume icon toggles mute and exposes the current state', async () => {
   const messages = [];
   const ui = await mount(h(OsdControls, { kind: 'volume', percent: 40, isMuted: true, send: command => messages.push(command) }));
