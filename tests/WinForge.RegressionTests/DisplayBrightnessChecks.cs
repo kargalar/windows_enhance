@@ -59,9 +59,17 @@ internal static class DisplayBrightnessChecks
         Func<string, int, int?> setter = (id, percent) => { requests.Add((id, percent)); return percent; };
         object?[] InvokeArgs(int? percent, int delta, Func<string, int, int?> write) => [monitors, percent, delta, write];
         var outcome = ((int Supported, int Applied, int Failed, int? Brightness))apply.Invoke(null, InvokeArgs(null, -5, setter))!;
-        check(outcome == (3, 3, 0, 38) && requests.Select(item => item.Percent).Distinct().Single() == 38 &&
+        check(outcome == (3, 3, 0, 38) && requests.Select(item => item.Percent).SequenceEqual([58, 36, 20]) &&
               requests.Select(item => item.Id).Distinct().Count() == 3,
-            "Shared brightness applies one target to every external and internal display with different starting levels");
+            "Relative brightness changes preserve each display's starting level");
+        requests.Clear();
+        outcome = ((int, int, int, int?))apply.Invoke(null, InvokeArgs(null, 40, setter))!;
+        check(requests.Select(item => item.Percent).SequenceEqual([100, 81, 65]),
+            "Relative brightness increases clamp each display independently");
+        requests.Clear();
+        outcome = ((int, int, int, int?))apply.Invoke(null, InvokeArgs(null, -40, setter))!;
+        check(requests.Select(item => item.Percent).SequenceEqual([23, 1, 0]),
+            "Relative brightness decreases clamp each display independently");
         requests.Clear();
         outcome = ((int, int, int, int?))apply.Invoke(null, InvokeArgs(120, 0, setter))!;
         check(outcome == (3, 3, 0, 100) && requests.All(item => item.Percent == 100),

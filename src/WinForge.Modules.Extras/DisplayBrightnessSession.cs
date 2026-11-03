@@ -209,18 +209,18 @@ internal sealed class DisplayBrightnessSession : IDisposable
             SetBrightness(id, target, out var applied) ? applied : null);
     }
 
-    // One shared slider must send one shared target, including monitors already at a limit.
+    // Absolute requests share a target; relative requests use each monitor's current value.
     internal static (int Supported, int Applied, int Failed, int? Brightness) ApplyBrightnessToMonitors(
         IEnumerable<DisplayBrightnessMonitor> monitors, int? percent, int delta, Func<string, int, int?> setBrightness)
     {
         var targets = monitors.Where(monitor => monitor.SupportsBrightness || monitor.VcpBrightness is not null).ToArray();
         if (targets.Length == 0) return (0, 0, 0, null);
-        var target = Math.Clamp(percent ?? (int)Math.Round(targets.Average(monitor => monitor.Percent)) + delta, 0, 100);
         var applied = 0;
         var total = 0;
         // Some drivers share a DDC/CI transport; serialize writes to avoid dropping a sibling display's command.
         foreach (var monitor in targets)
         {
+            var target = Math.Clamp(percent ?? monitor.Percent + delta, 0, 100);
             try
             {
                 if (setBrightness(monitor.Id, target) is not { } actual) continue;
