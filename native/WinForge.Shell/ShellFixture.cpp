@@ -10,6 +10,7 @@
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Data.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Markup.h>
 #include <cstdio>
 #include <cmath>
 
@@ -22,11 +23,34 @@ static Border fixture{nullptr};
 static Slider bindingSource{nullptr};
 static Button alignmentTarget{nullptr};
 static ColumnDefinition widthTarget{nullptr};
+static TextBlock clockText{nullptr};
+static ItemsControl overflowItems{nullptr};
+static WrapGrid FindOverflowGrid(DependencyObject const& parent) {
+    if (auto panel = parent.try_as<WrapGrid>()) return panel;
+    for (int index = 0; index < Media::VisualTreeHelper::GetChildrenCount(parent); ++index)
+        if (auto panel = FindOverflowGrid(Media::VisualTreeHelper::GetChild(parent, index))) return panel;
+    return nullptr;
+}
 static HWND parentWindow{};
 static LRESULT CALLBACK FixtureProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_USER + 1) return static_cast<LRESULT>(fixture.Width());
     if (message == WM_USER + 2) { bindingSource.Value(static_cast<double>(wParam)); return 1; }
     if (message == WM_USER + 7) return static_cast<LRESULT>(widthTarget.Width().Value);
+    if (message == WM_USER + 8) {
+        clockText.Text(L"Windows default");
+        // Read back before returning to the message loop: no polling can hide
+        // a temporary reversion from this assertion.
+        return clockText.Text() == L"14:05 custom";
+    }
+    if (message == WM_USER + 9) return clockText.Text() == L"Windows default";
+    if (message == WM_USER + 10 || message == WM_USER + 11) {
+        auto panel = FindOverflowGrid(overflowItems);
+        if (!panel) return 0;
+        if (message == WM_USER + 10) return panel.MaximumRowsOrColumns() == 3 && panel.Orientation() == Orientation::Horizontal &&
+            std::isnan(panel.ItemWidth()) && std::isnan(panel.ItemHeight());
+        return panel.MaximumRowsOrColumns() == 5 && panel.Orientation() == Orientation::Vertical &&
+            panel.ItemWidth() == 40 && panel.ItemHeight() == 40;
+    }
     if (message == WM_USER + 4) return fixture.VerticalAlignment() == VerticalAlignment::Center &&
         alignmentTarget.VerticalContentAlignment() == VerticalAlignment::Center &&
         fixture.HorizontalAlignment() == HorizontalAlignment::Center && alignmentTarget.HorizontalContentAlignment() == HorizontalAlignment::Center;
@@ -77,6 +101,8 @@ int wmain() {
         fixture.RenderTransform(originalTransform);
         fixture.RenderTransformOrigin({0.2f, 0.3f});
         TextBlock label;
+        clockText = label;
+        label.Name(L"TimeInnerTextBlock");
         label.Text(L"WinForge native XAML verification");
         alignmentTarget = Button();
         alignmentTarget.Name(L"WinForgeAlignmentTarget");
@@ -88,6 +114,9 @@ int wmain() {
         widthTarget.Width(GridLength{44, GridUnitType::Pixel});
         iconPanel.ColumnDefinitions().Append(widthTarget);
         iconPanel.Children().Append(label);
+        overflowItems = ItemsControl();
+        overflowItems.ItemsPanel(Markup::XamlReader::Load(L"<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><WrapGrid x:Name=\"WinForgeOverflowGrid\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" MaximumRowsOrColumns=\"5\" Orientation=\"Vertical\" ItemWidth=\"40\" ItemHeight=\"40\" /></ItemsPanelTemplate>").as<ItemsPanelTemplate>());
+        iconPanel.Children().Append(overflowItems);
         alignmentTarget.Content(iconPanel);
         fixture.Child(alignmentTarget);
         source.Content(fixture);

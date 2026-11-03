@@ -47,7 +47,7 @@ uygulama içinden tek tek açılır/kapatılır, ayarları kendi panelinden düz
 |---|---|
 | **Görev Çubuğu** | Tek panelde fare/ses kısayolları, Windows görev çubuğu tercihleri, Başlat ve sistem simgelerini gizleme (ses, ağ, pil, mikrofon, konum, Studio Effects, Recall, dil, bildirim zili), masaüstünü göster düğmesi görünürlüğü/genişliği, dock büyüme animasyonu, renk ve boyutlar, saat/tarih biçimleri ve uygulama tepsisi seçimleri. Önceki modüllerin ayarları ve açık/kapalı durumları otomatik aktarılır. |
 | **Bildirim Konumu** | Tanınan Windows bildirim pencerelerini ekran/köşe ayarına göre taşır ve kapatılınca özgün sınırlarını geri yükler; gerçek Windows bildirimi doğrulamasının durumu doğrulama belgesinde tutulur |
-| **Tarayıcı Tam Ekran İpucu** | Chromium tarayıcısının üst ortadaki etkileşimsiz tam ekran çıkış ipucunu gizler; gerçek Edge üzerinde gizleme/geri yükleme doğrulandı |
+| **Chrome Enhance** | Tam ekran çıkış uyarısını özellik anahtarıyla gizler; Chrome ve Chromium tabanlı seçili tarayıcılarda çalışır |
 | **İnternet Hızı** | Anlık indirme/yükleme hızı görev çubuğunun üstünde (isteğe bağlı olarak içinde), bildirim alanına hizalı; otomatik/MB/s/Mbit/s birim, ayarlanabilir yenileme aralığı, taskbar gizliyken otomatik gizlenme |
 | **Her Zaman Üstte** | `Alt+F` ile aktif pencereyi üste sabitler, aynı kısayol bırakır; sabitlenen pencerenin çevresine renkli çerçeve çizer |
 | **Ekrandan Metin Al** | `Alt+Q` ile bölge seçer, OCR ile metni panoya kopyalar |
@@ -396,10 +396,10 @@ YouTube tarayıcı özellikleri WinForge bileşenlerinden çıkarıldı ve Playl
 
 ## Mimari
 
-### Ekran geçmişi, sesle yazma ve ekran yakalama
+### PC geçmişi, sesle yazma ve ekran yakalama
 
 Üç yeni bağımsız modül **Verimlilik** kategorisindedir ve ilk kurulumda kapalıdır.
-**Ekran Geçmişi** yerel OCR araması, zaman sıralı görüntüler ve gerçek pencere geçişlerinden
+**PC Geçmişi** yerel OCR araması, zaman sıralı görüntüler ve gerçek pencere geçişlerinden
 ölçülen kullanım süreleri sunar. **Sesle Yazma**, `Shift+Space` ile yerel Whisper diktesini
 hedef alana yazar; basılı tutma, Turbo/Large, CPU/CUDA ve İngilizceye çeviri desteklenir.
 **Ekran Yakalama**, `Win+Alt+S` ile bölge seçimi; ayrıca pencere/monitör, kayan yakalama,

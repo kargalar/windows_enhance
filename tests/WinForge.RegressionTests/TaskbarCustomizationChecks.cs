@@ -28,6 +28,54 @@ internal static class TaskbarCustomizationChecks
         TestBackground(check);
         TestClock(module, check);
         TestTraySpacing(check);
+        TestOverflowLayout(module, check);
+    }
+
+    private static void TestOverflowLayout(ITweakModule module, Action<bool, string> check)
+    {
+        var settings = new Context().Settings;
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        IReadOnlyList<ShellStyleRule> Build() => (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, null])!;
+        const string overflow = "SystemTray.NotificationAreaOverflow";
+        var keys = new[] { "overflow-columns", "overflow-icon-size", "overflow-icon-padding", "overflow-icon-padding-x", "overflow-icon-padding-y", "overflow-icon-gap-x", "overflow-icon-gap-y", "overflow-panel-padding", "overflow-panel-radius", "tray-icon-padding-x", "tray-icon-padding-y" };
+        check(keys.All(key => module.Settings.Count(setting => setting.Key == key && setting.Kind == SettingKind.Number) == 1),
+            "The unified module exposes independent visible and hidden icon layout controls");
+        settings.Set("tray-icon-padding", 2);
+        settings.Set("tray-icon-padding-x", 5);
+        settings.Set("overflow-icon-padding", 4);
+        settings.Set("overflow-icon-padding-y", 7);
+        settings.Set("overflow-icon-size", 32);
+        settings.Set("overflow-icon-gap-x", 5);
+        settings.Set("overflow-icon-gap-y", 8);
+        var rules = Build();
+        check(rules.Single(rule => rule.Selector == "SystemTray.NotificationAreaIcons SystemTray.NotifyIconView").Properties["Padding"] == "5,2,5,2" &&
+              rules.Single(rule => rule.Selector == overflow + " SystemTray.NotifyIconView").Properties["Padding"] == "4,7,4,7",
+            "Visible and hidden icons have independent padding with per-axis overrides and common fallback");
+        var icon = rules.Single(rule => rule.Selector == overflow + " SystemTray.NotifyIconView");
+        check(icon.Properties["Width"] == "32" && icon.Properties["Height"] == "32" && icon.Properties["Margin"] == "2.5,4,2.5,4",
+            "Hidden icons apply cell size and independently split horizontal and vertical gaps");
+        settings.Set("overflow-columns", 3);
+        settings.Set("overflow-panel-padding", 10);
+        settings.Set("overflow-panel-radius", 12);
+        rules = Build();
+        check(rules.Single(rule => rule.Properties.ContainsKey("MaximumRowsOrColumns")).Properties["MaximumRowsOrColumns"] == "3" &&
+              rules.Single(rule => rule.Properties.ContainsKey("Orientation")).Properties["Orientation"] == "Horizontal" &&
+              rules.Any(rule => rule.Selector == overflow && rule.Properties.GetValueOrDefault("Width") == "Auto"),
+            "Custom columns fill rows horizontally and release the native fixed panel width");
+        check(rules.Any(rule => rule.Selector == overflow + " ItemsControl" && rule.Properties.GetValueOrDefault("Padding") == "10") &&
+              rules.Any(rule => rule.Selector == overflow + " Border#OverflowFlyoutBackgroundBorder" && rule.Properties.GetValueOrDefault("CornerRadius") == "12"),
+            "Overflow panel edge padding and corner radius are scoped to the hidden panel");
+        settings.Set("overflow-columns", 999);
+        settings.Set("overflow-icon-size", 999);
+        settings.Set("overflow-icon-padding-y", 999);
+        rules = Build();
+        check(rules.Single(rule => rule.Properties.ContainsKey("MaximumRowsOrColumns")).Properties["MaximumRowsOrColumns"] == "20" &&
+              rules.Single(rule => rule.Selector == overflow + " SystemTray.NotifyIconView").Properties["Width"] == "64" &&
+              rules.Single(rule => rule.Selector == overflow + " SystemTray.NotifyIconView").Properties["Padding"] == "4,24,4,24",
+            "Persisted overflow values are bounded before reaching native properties");
+        foreach (var key in keys.Append("tray-icon-padding"))
+            settings.Set(key, key is "overflow-columns" or "overflow-icon-size" ? 0 : -1);
+        check(Build().Count == 0, "Resetting visible and hidden tray controls releases every style for native restoration");
     }
 
     private static void TestTraySpacing(Action<bool, string> check)
@@ -59,8 +107,8 @@ internal static class TaskbarCustomizationChecks
         settings.Set("tray-group-gap", 200);
         settings.Set("clock-gap", 200);
         check(Build().Single(rule => rule.Selector == "SystemTray.NotificationAreaIcons").Properties["Margin"] == "12,0,12,0" &&
-              Build().Single(rule => rule.Selector == "SystemTray.OmniButton#NotificationCenterButton").Properties["Margin"] == "32,0,0,0",
-            "Group and clock spacing have independent bounded values");
+              Build().All(rule => !rule.Selector.Contains("NotificationCenterButton")),
+            "Group spacing is bounded and obsolete clock spacing cannot reserve a gap");
         foreach (var key in new[] { "tray-icon-gap", "system-icon-gap", "tray-group-gap", "clock-gap" }) settings.Set(key, -1);
         check(Build().Count == 0, "Resetting spacing removes all overrides for native restoration");
     }
@@ -87,17 +135,17 @@ internal static class TaskbarCustomizationChecks
             settings.Set(key, "");
         }
 
-        var widthSetting = module.Settings.Single(setting => setting.Key == "clock-width");
-        check(widthSetting.Default is 0 && widthSetting.Min == 0, "Clock width defaults to automatic content sizing");
+        check(module.Settings.All(setting => setting.Key is not ("clock-width" or "clock-gap")),
+            "Clock sizing is automatic without manual width or gap controls");
         settings.Set("time-format", "HH:mm");
-        check(Build().All(rule => rule.Selector != "SystemTray.DateTimeIconContent"),
-            "Custom clock formatting does not reserve an empty fixed-width tile");
+        check(Build().Count(rule => rule.Properties.GetValueOrDefault("Width") == "Auto" && rule.Properties.GetValueOrDefault("MinWidth") == "0") == 5,
+            "Custom clock formatting releases cached widths throughout the clock container");
         settings.Set("clock-width", 180);
-        check(Build().Single(rule => rule.Selector == "SystemTray.DateTimeIconContent").Properties["Width"] == "180",
-            "Explicit clock widths remain supported");
+        settings.Set("clock-gap", 32);
+        check(Build().Single(rule => rule.Selector == "SystemTray.OmniButton#NotificationCenterButton").Properties["Margin"] == "0" &&
+              Build().All(rule => !rule.Properties.Values.Contains("180")),
+            "Previously saved clock width and gap cannot override automatic sizing");
         settings.Set("clock-width", 0);
-        check(Build().All(rule => rule.Selector != "SystemTray.DateTimeIconContent"),
-            "Resetting clock width removes the override for native sizing");
 
         settings.Set("time-format", "HH:mm 'özel'");
         settings.Set("date-format", "yyyy 'yılı' MMMM");
@@ -120,7 +168,7 @@ internal static class TaskbarCustomizationChecks
         settings.Set("clock-display", "Yalnızca tarih");
         check(Rule("Date") is null && Rule("Time")?.Properties["Visibility"] == "Collapsed",
             "Date-only mode also works with the native Windows date format");
-        check(Build().All(rule => rule.Selector != "SystemTray.DateTimeIconContent"),
+        check(Build().Any(rule => rule.Selector.EndsWith(" SystemTray.DateTimeIconContent") && rule.Properties["Width"] == "Auto"),
             "Single-line clock display also keeps automatic content sizing");
     }
 
@@ -266,6 +314,43 @@ internal static class TaskbarCustomizationChecks
         styles = (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, DateTime.Now, tree])!;
         check(styles.All(rule => !rule.Properties.ContainsKey("HorizontalContentAlignment") && !rule.Properties.ContainsKey("HorizontalAlignment")),
             "Default button width releases horizontal alignment overrides");
+    }
+
+    internal static void RunClockLive(Action<bool, string> check)
+    {
+        Native.GetWindowThreadProcessId(Native.FindWindow("Shell_TrayWnd", null), out var processId);
+        using var session = ShellDiagnosticsSession.ConnectAsync(processId, Path.Combine(AppContext.BaseDirectory, "native")).GetAwaiter().GetResult();
+        WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "TimeInnerTextBlock"), "Clock enumeration");
+        var settings = new Context().Settings;
+        var catalog = ModuleAssembly.GetType("WinForge.Modules.Taskbar.TaskbarStyleCatalog")!.GetMethod("Build", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var now = new DateTime(2026, 11, 3, 14, 5, 9);
+        foreach (var (time, date, display) in new[] {
+            ("HH:mm", "dd.MM.yy", "Tarih ve saat"),
+            ("HH:mm:ss", "dddd, d MMMM yyyy", "Tarih ve saat"),
+            ("HH:mm", "dd.MM.yy", "Tarih ve saat"),
+            ("HH:mm", "dd.MM.yy", "Yalnızca saat"),
+            ("HH:mm", "dd.MM.yy", "Yalnızca tarih") })
+        {
+            settings.Set("time-format", time);
+            settings.Set("date-format", date);
+            settings.Set("clock-display", display);
+            session.Apply(true, (IReadOnlyList<ShellStyleRule>)catalog.Invoke(null, [settings, now, null])!);
+            try { WaitUntil(() =>
+            {
+                var tree = session.ReadVisualTree();
+                var texts = tree.Where(node => node.Name is "TimeInnerTextBlock" or "DateInnerTextBlock" && node.Visibility == "Visible").ToArray();
+                var clocks = tree.Where(node => node.Type == "SystemTray.DateTimeIconContent").ToArray();
+                return clocks.Length > 0 && texts.Length > 0 &&
+                    texts.All(node => node.Text == now.ToString(node.Name == "TimeInnerTextBlock" ? time : date, CultureInfo.CurrentCulture)) &&
+                    clocks.All(clock => clock.Width >= texts.Max(node => node.Width) && clock.Width <= texts.Max(node => node.Width) + 20);
+            }, "Automatic live clock width: " + display + " / " + date); }
+            catch
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { session.Status, Tree = session.ReadVisualTree().Where(node => node.Type == "SystemTray.DateTimeIconContent" || node.Name.Contains("InnerTextBlock") || node.Name == "DateTimeStackPanel") }));
+                throw;
+            }
+            check(session.Status.Errors == 0, "Live clock fits the visible formatted text: " + display + " / " + date);
+        }
     }
 
     internal static void RunBackgroundLive(Action<bool, string> check)

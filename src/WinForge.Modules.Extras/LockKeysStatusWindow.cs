@@ -41,9 +41,10 @@ internal static class LockKeysStatusWindow
         if (_featureUi is null) return;
         var bounds = CursorPanelPlacement.WorkArea;
         _instance = _featureUi.Open("lock-keys-status", "lock-keys-status", "Kilit tuşu durumu",
-            new FeatureUiWindowOptions(230, 76, Topmost: true, ActivateOnShow: false, Transparent: true));
+            new FeatureUiWindowOptions(230, 76, Topmost: true, ActivateOnShow: false, Transparent: true, ShowOnOpen: false));
         _instance.SetBounds(bounds.Left + (bounds.Width - 230) / 2, bounds.Top + 48, 230, 76);
         _instance.SetState(new { key, enabled });
+        _instance.Show();
         Timer.Stop();
         Timer.Start();
     }

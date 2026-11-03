@@ -16,7 +16,7 @@ public sealed record ContextUsageTotal(string App, string Type, string Context, 
 public sealed record ContextUsageDayTotal(string Date, string App, string Type, string Context, double Seconds);
 
 /// <summary>Each operation owns its connection; media is content addressed and shared safely.</summary>
-public sealed class HistoryStore
+public sealed partial class HistoryStore
 {
     // Legacy idle rows retain the foreground app in their original metadata.
     // Prefer measured usage wherever the old and new recorders overlap.
@@ -59,6 +59,8 @@ public sealed class HistoryStore
             CREATE TABLE IF NOT EXISTS context_usage(id INTEGER PRIMARY KEY,app TEXT NOT NULL,type TEXT NOT NULL,context TEXT NOT NULL,started TEXT NOT NULL,ended TEXT NOT NULL,seconds REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS context_usage_time ON context_usage(started,ended);
             CREATE INDEX IF NOT EXISTS context_usage_context ON context_usage(type,app,context);
+            CREATE TABLE IF NOT EXISTS network_usage(id INTEGER PRIMARY KEY,started TEXT NOT NULL,ended TEXT NOT NULL,received INTEGER NOT NULL,sent INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS network_usage_time ON network_usage(started,ended);
             CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(app,title,text,content=items,content_rowid=id,tokenize='unicode61 remove_diacritics 2');
             CREATE TRIGGER IF NOT EXISTS item_insert AFTER INSERT ON items BEGIN
               INSERT INTO search(rowid,app,title,text) VALUES(new.id,new.app,new.title,new.text); END;

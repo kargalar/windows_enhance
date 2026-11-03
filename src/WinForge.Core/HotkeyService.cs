@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Windows.Interop;
 using System.Windows.Input;
 using System.Runtime.InteropServices;
@@ -18,11 +19,13 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
     private readonly Dictionary<int, string> _owners = new();
     private readonly HashSet<int> _registered = new();
     private readonly HashSet<int> _fallback = new();
-    private readonly HashSet<uint> _heldFallbackKeys = new();
+    private readonly ConcurrentDictionary<uint, byte> _heldFallbackKeys = new();
+    private volatile FallbackBinding[] _fallbackBindings = [];
+    private sealed record FallbackBinding(int Id, uint Modifiers, uint Key);
     private Native.LowLevelKeyboardProc? _keyboardCallback;
-    private IntPtr _keyboardHook;
+    private KeyboardHookThread? _keyboardHook;
     private int _suspensions;
-    private bool _disposed;
+    private volatile bool _disposed;
     private int _nextId = 0x0F00;
 
     public HotkeyService()
@@ -76,6 +79,7 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         _shortcuts[id] = (modifiers, virtualKey);
         _owners[id] = owner;
         _actions[id] = callback;
+        PublishFallbackBindings();
         return new Registration(this, id);
     }
 
@@ -89,6 +93,7 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
             foreach (var id in _registered) Native.UnregisterHotKey(_source.Handle, id);
             _registered.Clear();
             _fallback.Clear();
+            PublishFallbackBindings();
             _heldFallbackKeys.Clear();
         }
         return new Suspension(this);
@@ -105,6 +110,7 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
             try { RegisterNativeOrFallback(id, shortcut.Modifiers, shortcut.Key); }
             catch (InvalidOperationException error) { failures.Add($"{_owners[id]}: {error.Message}"); }
         }
+        PublishFallbackBindings();
         if (failures.Count > 0) throw new InvalidOperationException("Kısayollar geri açılamadı: " + string.Join(", ", failures));
     }
 
@@ -114,6 +120,7 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         _shortcuts.Remove(id);
         _owners.Remove(id);
         _fallback.Remove(id);
+        PublishFallbackBindings();
         if (_registered.Remove(id)) Native.UnregisterHotKey(_source.Handle, id);
     }
 
@@ -132,12 +139,10 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         }
         var error = Marshal.GetLastWin32Error();
         if (error != 1409) throw RegistrationError(modifiers, key, error);
-        if (_keyboardHook == IntPtr.Zero)
+        if (_keyboardHook is null)
         {
             _keyboardCallback = HandleFallback;
-            _keyboardHook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _keyboardCallback, Native.GetModuleHandle(null), 0);
-            if (_keyboardHook == IntPtr.Zero)
-                throw new InvalidOperationException("Kısayol için klavye yakalama başlatılamadı.", new Win32Exception(Marshal.GetLastWin32Error()));
+            _keyboardHook = new KeyboardHookThread(_keyboardCallback);
         }
         _fallback.Add(id);
     }
@@ -158,22 +163,26 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
                 if (ProcessFallback(message.ToInt32(), input.vkCode, modifiers)) return new IntPtr(1);
             }
         }
-        return Native.CallNextHookEx(_keyboardHook, code, message, data);
+        return Native.CallNextHookEx(IntPtr.Zero, code, message, data);
     }
+
+    private void PublishFallbackBindings() =>
+        _fallbackBindings = _fallback.Select(id => new FallbackBinding(id, _shortcuts[id].Modifiers, _shortcuts[id].Key)).ToArray();
 
     private static bool Down(int key) => (Native.GetAsyncKeyState(key) & 0x8000) != 0;
 
     internal bool ProcessFallback(int message, uint key, uint modifiers)
     {
         if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP)
-            return _heldFallbackKeys.Remove(key);
+            return _heldFallbackKeys.TryRemove(key, out _);
         if (message is not (Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)) return false;
-        if (_heldFallbackKeys.Contains(key)) return true;
-        if (_disposed || _suspensions != 0 || IsCapturing) return false;
-        foreach (var id in _fallback)
+        if (_heldFallbackKeys.ContainsKey(key)) return true;
+        if (_disposed || Volatile.Read(ref _suspensions) != 0 || IsCapturing) return false;
+        foreach (var binding in _fallbackBindings)
         {
-            if (_shortcuts[id] != (modifiers, key)) continue;
-            _heldFallbackKeys.Add(key);
+            if ((binding.Modifiers, binding.Key) != (modifiers, key)) continue;
+            var id = binding.Id;
+            _heldFallbackKeys.TryAdd(key, 0);
             // Keep the native hook fast and do not let an action dispose it mid-callback.
             _source.Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -205,8 +214,8 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         Interlocked.Add(ref _captureScopes, -_suspensions);
         _suspensions = 0;
         foreach (var id in _actions.Keys.ToList()) Unregister(id);
-        if (_keyboardHook != IntPtr.Zero) Native.UnhookWindowsHookEx(_keyboardHook);
-        _keyboardHook = IntPtr.Zero;
+        _keyboardHook?.Dispose();
+        _keyboardHook = null;
         _keyboardCallback = null;
         _heldFallbackKeys.Clear();
         _source.RemoveHook(WndProc);

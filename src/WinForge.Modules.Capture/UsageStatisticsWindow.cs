@@ -22,7 +22,7 @@ internal sealed class UsageStatisticsWindow : Window
         fromText = from?.ToLocalTime().ToString("dd.MM.yyyy", TurkishCulture) ?? "";
         untilText = until?.AddDays(-1).ToLocalTime().ToString("dd.MM.yyyy", TurkishCulture) ?? "";
 
-        Title = "Kullanım istatistikleri";
+        Title = "PC Geçmişi · Kullanım istatistikleri";
         Width = 1080;
         Height = 700;
         MinWidth = 820;
@@ -86,6 +86,7 @@ internal sealed class UsageStatisticsWindow : Window
                 .ToArray();
             var contextTotals = store.ContextUsageByDay(Start, End);
             var tagTotals = store.TagUsage(Start, End);
+            var networkTotals = store.NetworkUsageByDay(Start, End);
 
             statusText = $"Aralık: {(Start?.ToLocalTime().ToString("dd.MM.yyyy") ?? "başlangıçtan beri")} – " +
                 $"{(End?.AddDays(-1).ToLocalTime().ToString("dd.MM.yyyy") ?? "bugün dahil")} · " +
@@ -97,6 +98,7 @@ internal sealed class UsageStatisticsWindow : Window
                 until = untilText,
                 status = statusText,
                 summary = summaryText,
+                network = networkTotals.Select(row => new { date = row.Date, received = row.Received, sent = row.Sent }).ToArray(),
                 applications = appTotals.Select(row => new
                 {
                     app = row.App,
@@ -139,6 +141,7 @@ internal sealed class UsageStatisticsWindow : Window
                 status = statusText,
                 summary = summaryText,
                 applications = Array.Empty<object>(),
+                network = Array.Empty<object>(),
                 days = Array.Empty<object>(),
                 dayApplications = Array.Empty<object>(),
                 contexts = Array.Empty<object>(),

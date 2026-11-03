@@ -30,7 +30,8 @@ internal sealed class LockKeysFlyoutHook : IDisposable
     private readonly bool _showCapsLock;
     private readonly bool _showNumLock;
     private readonly bool _showScrollLock;
-    private readonly IntPtr _hook;
+    private readonly KeyboardHookThread _hook;
+    private int _disposed;
 
     public LockKeysFlyoutHook(bool showCapsLock, bool showNumLock, bool showScrollLock, Action? showMediaFlyout,
         Action<int>? handleVolumeKey)
@@ -41,19 +42,18 @@ internal sealed class LockKeysFlyoutHook : IDisposable
         _showMediaFlyout = showMediaFlyout;
         _handleVolumeKey = handleVolumeKey;
         _callback = HandleKeyboardEvent;
-        _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
-        if (_hook == IntPtr.Zero)
-            throw new InvalidOperationException("Kilit tuşları klavye izleyicisi başlatılamadı.");
+        _hook = new KeyboardHookThread(_callback);
     }
 
     public void Dispose()
     {
-        if (_hook != IntPtr.Zero) Native.UnhookWindowsHookEx(_hook);
+        Interlocked.Exchange(ref _disposed, 1);
+        _hook.Dispose();
     }
 
     private IntPtr HandleKeyboardEvent(int code, IntPtr message, IntPtr data)
     {
-        if (code >= 0)
+        if (code >= 0 && Volatile.Read(ref _disposed) == 0)
         {
             var isKeyUp = message == (IntPtr)Native.WM_KEYUP || message == (IntPtr)Native.WM_SYSKEYUP;
             var isKeyDown = message == (IntPtr)Native.WM_KEYDOWN || message == (IntPtr)Native.WM_SYSKEYDOWN;
@@ -66,7 +66,7 @@ internal sealed class LockKeysFlyoutHook : IDisposable
                     // Consume both edges so Windows cannot open its own volume OSD.
                     // Repeated volume presses still adjust the level; mute toggles once per press.
                     if (isKeyDown && (key != VolumeMuteKey || !_muteKeyDown))
-                        dispatcher.BeginInvoke(() => _handleVolumeKey(key));
+                        dispatcher.BeginInvoke(() => { if (Volatile.Read(ref _disposed) == 0) _handleVolumeKey(key); });
                     if (key == VolumeMuteKey) _muteKeyDown = isKeyDown;
                     return (IntPtr)1;
                 }
@@ -75,12 +75,16 @@ internal sealed class LockKeysFlyoutHook : IDisposable
                     var label = GetEnabledLockKeyLabel(key, _showCapsLock, _showNumLock, _showScrollLock);
                     if (label is not null)
                     {
-                        var enabled = (GetKeyState(key) & 1) != 0;
-                        Application.Current?.Dispatcher.BeginInvoke(() => LockKeysStatusWindow.Show(label, enabled));
+                        // Read toggle state on the UI queue, after Windows processes the key.
+                        Application.Current?.Dispatcher.BeginInvoke(() =>
+                        {
+                            if (Volatile.Read(ref _disposed) == 0)
+                                LockKeysStatusWindow.Show(label, (GetKeyState(key) & 1) != 0);
+                        });
                     }
                 }
                 if (isKeyUp && IsMediaFlyoutKey(key) && !IsVolumeHardwareKey(key) && _showMediaFlyout is not null)
-                    Application.Current?.Dispatcher.BeginInvoke(_showMediaFlyout);
+                    Application.Current?.Dispatcher.BeginInvoke(() => { if (Volatile.Read(ref _disposed) == 0) _showMediaFlyout(); });
             }
         }
         return Native.CallNextHookEx(IntPtr.Zero, code, message, data);

@@ -141,7 +141,7 @@ public static class CaptureServices
     }
     internal static (CaptureArea? Area, CaptureAnnotations Annotations, FrozenDesktop? Snapshot) SelectAnnotatedArea()
     {
-        var selection = new RegionPicker(quickCapture: false, allowDrawing: true);
+        var selection = new RegionPicker(quickCapture: true, allowDrawing: true);
         selection.ShowDialog(); return (selection.Result, selection.Annotations!, selection.Snapshot);
     }
     public static IReadOnlyList<CaptureArea> SelectMultipleAreas()
@@ -413,12 +413,14 @@ internal sealed class RegionPicker : Window
             var tools = new[] {
                 (DrawingTool.Select, "Alan seç", "M3,8 L3,3 8,3 M16,3 L21,3 21,8 M21,16 L21,21 16,21 M8,21 L3,21 3,16 M7,7 L17,7 17,17 7,17 Z"),
                 (DrawingTool.Freehand, "Kalem", "M4,16 L15,5 19,9 8,20 3,21 Z M13,7 L17,11"),
-                (DrawingTool.Rectangle, "Geometri", "M3,4 L14,4 14,15 3,15 Z M17,10 A6,6 0 1 1 10,17"),
+                (DrawingTool.Rectangle, "Şekil", "M3,4 L14,4 14,15 3,15 Z M17,10 A6,6 0 1 1 10,17"),
+                (DrawingTool.Line, "Çizgi", "M3,19 L19,5 M14,5 L19,5 19,10"),
                 (DrawingTool.Text, "Metin", "M4,5 L20,5 M12,5 L12,21 M8,21 L16,21") };
             foreach (var (tool, label, path) in tools)
             {
                 var button = CaptureUi.Button("", () => {
-                    annotations!.Tool = tool == DrawingTool.Rectangle ? (DrawingTool)(geometryPicker?.SelectedValue ?? DrawingTool.Rectangle) : tool;
+                    if (tool is DrawingTool.Rectangle or DrawingTool.Line && geometryPicker is not null) geometryPicker.SelectedValue = tool;
+                    else annotations!.Tool = tool;
                     refreshAnnotations();
                     if (tool == DrawingTool.Text) annotationText?.Focus();
                 });
@@ -454,12 +456,10 @@ internal sealed class RegionPicker : Window
             lineWidthPicker = width; options.Children.Add(width);
             panel.Children.Add(CaptureUi.Button("Geri al", () => { annotations!.Undo(); refreshAnnotations(); }));
             panel.Children.Add(CaptureUi.Button("Temizle", () => { annotations!.Clear(); refreshAnnotations(); }));
-            var capture = CaptureUi.Button("Yakala ↵", CaptureSelection);
-            capture.Background = new SolidColorBrush(Color.FromRgb(35, 93, 149)); panel.Children.Add(capture);
             panel.Children.Add(CaptureUi.Button("İptal", () => finish(null)));
             foreach (var button in panel.Children.OfType<Button>()) button.Foreground = Brushes.White;
             var stack = new StackPanel(); stack.Children.Add(panel); stack.Children.Add(options);
-            stack.Children.Add(new TextBlock { Text = "Alan seç · Kalem / Geometri / Metin ile ekrana ekle · Enter yakala · Esc iptal", Foreground = Brushes.White, Margin = new Thickness(8, 2, 8, 6) });
+            stack.Children.Add(new TextBlock { Text = "Önce işaretleyin, ardından alanı seçin · Esc iptal", Foreground = Brushes.White, Margin = new Thickness(8, 2, 8, 6) });
             return new Border { Background = new SolidColorBrush(Color.FromArgb(245, 20, 24, 32)), CornerRadius = new CornerRadius(8), Child = stack };
         }
         private void CaptureSelection()

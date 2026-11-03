@@ -57,6 +57,20 @@ inline bool MatchesExtensions(std::wstring const& filter, std::vector<std::wstri
     });
 }
 struct Options { bool cleanSeparators{true}, showSeparators{true}, unquotedCopyPath{true}; };
+inline bool IsArchiveExtraction(std::wstring const& text) {
+    auto name = Normalize(text);
+    if (name == L"extract" || name == L"unzip" || name == L"extract all" || name == L"extract here" || name == L"extract files") return true;
+    for (auto prefix : {L"extract to ", L"extract all ", L"unzip to ",
+        L"buraya \u00e7\u0131kar", L"dosyalar\u0131 \u00e7\u0131kar", L"t\u00fcm\u00fcn\u00fc ay\u0131kla",
+        L"klas\u00f6re \u00e7\u0131kar", L"ar\u015fivi \u00e7\u0131kar", L"ar\u015fivi ay\u0131kla"})
+        if (name.starts_with(prefix)) return true;
+    // WinRAR uses the destination name before the Turkish extraction verb.
+    return name.find_first_of(L"\"\u201c") != std::wstring::npos &&
+        (name.ends_with(L"\u00e7\u0131kar") || name.ends_with(L"\u00e7\u0131kart"));
+}
+inline bool CanExtractSelection(unsigned context, std::vector<std::wstring> const& paths) {
+    return context == 1u && MatchesExtensions(L".zip,.rar,.7z,.tar,.gz,.gzip,.tgz,.bz2,.bzip2,.tbz,.tbz2,.xz,.txz,.zst,.zstd,.tzst,.lz,.lzma,.lzo,.z,.cab,.iso,.arj,.lzh,.lha,.wim,.swm,.esd", paths);
+}
 inline unsigned SelectionScope(std::wstring const& path, bool folder, bool link, bool filesystem) {
     if (!filesystem) return 128u;
     if (path.size() == 3 && path[1] == L':' && path[2] == L'\\') return 16u;
@@ -195,6 +209,12 @@ public:
             if (item.text.empty() && !separator) continue;
             auto canonical = separator ? SeparatorIdentity(items, item) : Canonical(item.text, item.parent), normalized = Normalize(item.text);
             auto found = std::find_if(rules.begin(), rules.end(), [&](auto const& rule) { return rule.match == normalized || (!canonical.empty() && rule.match == canonical); });
+            // Apply this restriction even when the item has no customization rule.
+            // Inspect the original label so renaming/grouping cannot bypass it.
+            if (!separator && IsArchiveExtraction(item.text) && !CanExtractSelection(context, paths)) {
+                if (RemoveMenu(item.menu, item.position, MF_BYPOSITION)) changes.push_back({item, true});
+                continue;
+            }
             if (found == rules.end()) continue;
             auto data = item.Data();
             bool visible = context ? (found->contexts & context) == context : found->visible;

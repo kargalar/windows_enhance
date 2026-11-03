@@ -53,7 +53,7 @@ internal static class ContextMenuQuickSettings
             _ => throw new ArgumentException("Geçersiz güç modu.")
         };
         uint result;
-        try { result = (setOverlay ?? PowerSetActiveOverlayScheme)(overlay); }
+        try { result = setOverlay is null ? PowerSetActiveOverlayScheme(ref overlay) : setOverlay(overlay); }
         catch (EntryPointNotFoundException) { result = 50; }
         // Older devices may expose only the traditional power plans.
         if (result != 0) result = (setPlan ?? (value => PowerSetActiveScheme(IntPtr.Zero, ref value)))(plan);
@@ -68,7 +68,7 @@ internal static class ContextMenuQuickSettings
     [DllImport("shell32.dll", ExactSpelling = true)]
     private static extern void SHChangeNotify(uint eventId, uint flags, IntPtr item, IntPtr other);
     [DllImport("powrprof.dll", ExactSpelling = true)]
-    private static extern uint PowerSetActiveOverlayScheme(Guid scheme);
+    private static extern uint PowerSetActiveOverlayScheme(ref Guid scheme);
     [DllImport("powrprof.dll", ExactSpelling = true)]
     private static extern uint PowerSetActiveScheme(IntPtr root, ref Guid scheme);
 }

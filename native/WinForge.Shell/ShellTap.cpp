@@ -23,6 +23,7 @@
 #include <atomic>
 #include <cmath>
 #include <map>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -44,12 +45,18 @@ using XamlValue = winrt::Windows::Foundation::IInspectable;
 }
 #include "TaskbarDockAnimation.h"
 namespace winforge::shell {
+struct PropertyOverride {
+    XamlValue value{nullptr};
+    bool updating{};
+};
 struct SavedProperty {
     DependencyProperty property{nullptr};
     XamlValue value{nullptr};
     Data::BindingBase binding{nullptr};
     std::wstring name;
     std::wstring desired;
+    std::shared_ptr<PropertyOverride> overrideValue;
+    int64_t callbackToken{};
 };
 struct Node {
     std::unique_ptr<ExplorerCommandBarState> explorer;
@@ -171,6 +178,7 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
     }
 
     void RestoreProperty(FrameworkElement const& element, SavedProperty const& saved) {
+        if (saved.overrideValue) element.UnregisterPropertyChangedCallback(saved.property, saved.callbackToken);
         if (saved.binding) element.SetBinding(saved.property, saved.binding);
         else if (saved.value == DependencyProperty::UnsetValue()) element.ClearValue(saved.property);
         else element.SetValue(saved.property, saved.value);
@@ -307,6 +315,8 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
         else if (name == L"MaxHeight") property = FrameworkElement::MaxHeightProperty();
         else if (name == L"Opacity") property = UIElement::OpacityProperty();
         if (property) {
+            if (name == L"Width" && text == L"Auto")
+                return {property, box_value(std::numeric_limits<double>::quiet_NaN())};
             wchar_t* end{};
             auto number = wcstod(text.c_str(), &end);
             if (end == text.c_str() || *end || !std::isfinite(number)) throw hresult_invalid_argument();
@@ -351,6 +361,20 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
             value = Brush(text);
         } else if (name == L"Text" && element.try_as<TextBlock>()) {
             property = TextBlock::TextProperty(); value = box_value(hstring(text));
+        } else if ((name == L"ItemWidth" || name == L"ItemHeight") && element.try_as<WrapGrid>()) {
+            property = name == L"ItemWidth" ? WrapGrid::ItemWidthProperty() : WrapGrid::ItemHeightProperty();
+            if (text != L"NaN") throw hresult_invalid_argument();
+            value = box_value(std::numeric_limits<double>::quiet_NaN());
+        } else if (name == L"MaximumRowsOrColumns" && element.try_as<WrapGrid>()) {
+            property = WrapGrid::MaximumRowsOrColumnsProperty();
+            size_t consumed{};
+            auto count = std::stoi(text, &consumed);
+            if (consumed != text.size() || count < 1 || count > 20) throw hresult_invalid_argument();
+            value = box_value(count);
+        } else if (name == L"Orientation" && element.try_as<WrapGrid>()) {
+            property = WrapGrid::OrientationProperty();
+            if (text != L"Horizontal" && text != L"Vertical") throw hresult_invalid_argument();
+            value = box_value(text == L"Horizontal" ? Orientation::Horizontal : Orientation::Vertical);
         } else if (name == L"ItemsPanel" && element.try_as<ItemsControl>()) {
             property = ItemsControl::ItemsPanelProperty(); value = Markup::XamlReader::Load(text);
         } else if (name == L"CornerRadius") {
@@ -452,8 +476,28 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
                 if (!property) { RecordError(E_NOTIMPL); continue; }
                 if (saved == node.saved.end()) {
                     auto expression = element.GetBindingExpression(property);
-                    node.saved.push_back({property, element.ReadLocalValue(property), expression ? expression.ParentBinding() : nullptr, name, text});
+                    node.saved.push_back({property, element.ReadLocalValue(property), expression ? expression.ParentBinding() : nullptr, name, text, nullptr, 0});
+                    saved = std::prev(node.saved.end());
                 } else saved->desired = text;
+                // The shell writes clock text and cached widths again on every
+                // refresh. Keep the override in that same UI transaction so a
+                // native clock update cannot flash the default format.
+                if (name == L"Text" || name == L"Width" || name == L"MinWidth") {
+                    if (!saved->overrideValue) {
+                        auto state = std::make_shared<PropertyOverride>();
+                        auto owner = get_weak();
+                        saved->overrideValue = state;
+                        saved->callbackToken = element.RegisterPropertyChangedCallback(property,
+                            [state, owner](DependencyObject const& sender, DependencyProperty const& changed) noexcept {
+                                if (state->updating) return;
+                                state->updating = true;
+                                try { sender.SetValue(changed, state->value); }
+                                catch (...) { if (auto tap = owner.get()) tap->RecordError(to_hresult()); }
+                                state->updating = false;
+                            });
+                    }
+                    saved->overrideValue->value = value;
+                }
                 element.SetValue(property, value);
                 InterlockedIncrement(&session_.Get()->changed);
             }

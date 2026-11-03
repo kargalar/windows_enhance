@@ -37,7 +37,7 @@ internal static class DesktopGeometry
     {
         var monitor=MonitorFromPoint(new(){X=x,Y=y},2);var info=new MonitorInfo{Size=Marshal.SizeOf<MonitorInfo>()};if(!GetMonitorInfo(monitor,ref info))return;
         var dpi=96u;try{if(GetDpiForMonitor(monitor,0,out var actual,out _)==0)dpi=actual;}catch(DllNotFoundException){}var size=(int)Math.Round(logicalSize*dpi/96d);size=Math.Min(size,Math.Min(info.Work.Right-info.Work.Left,info.Work.Bottom-info.Work.Top));
-        var left=Math.Clamp(x-size/2,info.Work.Left,info.Work.Right-size);var top=Math.Clamp(y-size/2,info.Work.Top,info.Work.Bottom-size);SetWindowPos(new WindowInteropHelper(window).Handle,IntPtr.Zero,left,top,size,size,0x14);
+        var left=Math.Clamp(x-size/2,info.Work.Left,info.Work.Right-size);var top=Math.Clamp(y-size/2,info.Work.Top,info.Work.Bottom-size);window.WindowStartupLocation=WindowStartupLocation.Manual;SetWindowPos(new WindowInteropHelper(window).EnsureHandle(),IntPtr.Zero,left,top,size,size,0x14);
     }
     internal static string? Snap(Window window,string? edge,bool detect=false)
     {

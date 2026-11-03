@@ -58,7 +58,11 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     private GlobalMouseHook? _mouseHook;
     private AutoCorrectSuggestionWindow? _suggestionWindow;
     private IModuleContext? _context;
-    private IntPtr _hook;
+    private KeyboardHookThread? _hook;
+    private int _hookGeneration;
+    private long _observedInput;
+    private long _processedInput;
+    private bool InputIsCurrent => Volatile.Read(ref _observedInput) == _processedInput;
     private IntPtr _wordWindow;
     private bool _isWordSkipped;
     private long _inputSequence;
@@ -231,24 +235,25 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     {
         _spellChecker = SpellEngine.Instance;
         _suggestionWindow = new AutoCorrectSuggestionWindow(AcceptSuggestion, (_context as IFeatureUiContext)?.FeatureUi);
-        _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
-        if (_hook == IntPtr.Zero)
+        ++_hookGeneration;
+        try { _hook = new KeyboardHookThread(_callback); }
+        catch
         {
             _suggestionWindow.Close();
             _suggestionWindow = null;
-            throw new InvalidOperationException("Otomatik düzeltme klavye kancası kurulamadı.");
+            throw;
         }
         _mouseHook = new GlobalMouseHook();
         _mouseHook.LeftButtonDown += point =>
         {
-            if (_suggestionWindow?.ContainsScreenPoint(point) != true) InvalidateInput();
+            if (_suggestionWindow?.ContainsScreenPoint(point) != true) InvalidateQueuedInput();
         };
-        _mouseHook.RightButtonDown += _ => InvalidateInput();
+        _mouseHook.RightButtonDown += _ => InvalidateQueuedInput();
         try { _mouseHook.Install(); }
         catch
         {
-            Native.UnhookWindowsHookEx(_hook);
-            _hook = IntPtr.Zero;
+            _hook?.Dispose();
+            _hook = null;
             _mouseHook.Dispose();
             _mouseHook = null;
             _suggestionWindow.Close();
@@ -261,16 +266,17 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     public void Deactivate()
     {
         IsActive = false;
+        ++_hookGeneration;
         InvalidateInput();
         _sessionIgnoredWords.Clear();
         _mouseHook?.Dispose();
         _mouseHook = null;
         _suggestionWindow?.Close();
         _suggestionWindow = null;
-        if (_hook != IntPtr.Zero)
+        if (_hook is not null)
         {
-            Native.UnhookWindowsHookEx(_hook);
-            _hook = IntPtr.Zero;
+            _hook?.Dispose();
+            _hook = null;
         }
         _spellChecker = null;
         UserFrequencyTracker.Instance.SaveImmediate();
@@ -279,7 +285,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     public void Apply()
     {
         if (!IsActive) return;
-        InvalidateInput();
+        InvalidateQueuedInput();
         ReadSettings();
     }
 
@@ -327,6 +333,14 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
         _previousWordWindow = IntPtr.Zero;
     }
 
+    private void InvalidateQueuedInput()
+    {
+        // A click or settings change must also discard keyboard events queued
+        // before it, otherwise delayed events could recreate an obsolete word.
+        Interlocked.Increment(ref _hookGeneration);
+        InvalidateInput();
+    }
+
     private void InvalidateInput()
     {
         _inputSequence++;
@@ -367,26 +381,40 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
 
     private IntPtr HandleKeyboard(int code, IntPtr messagePointer, IntPtr dataPointer)
     {
-        if (code >= 0 && IsActive)
+        if (code >= 0 && messagePointer.ToInt32() is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
         {
-            try { TrackKey(messagePointer.ToInt32(), Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(dataPointer)); }
-            catch (Exception exception) { _context?.Log.Error("Otomatik düzeltme klavye girdisi işlenemedi.", exception); }
+            var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(dataPointer);
+            if ((info.flags & InjectedFlag) == 0)
+            {
+                // Capture transient key state before returning to Windows. All UI,
+                // spell checking and process lookups run outside the native hook.
+                var observed = Interlocked.Increment(ref _observedInput);
+                var generation = Volatile.Read(ref _hookGeneration);
+                var window = Native.GetForegroundWindow();
+                var key = (int)info.vkCode;
+                var shortcut = HasShortcutModifiers() || HotkeyService.IsCapturing;
+                var character = shortcut || IsModifierKey(key) || key is KeySpace or KeyBackspace
+                    ? '\0' : TranslateCharacter(key, info.scanCode, window);
+                _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+                {
+                    if (!IsActive || generation != _hookGeneration) return;
+                    _processedInput = observed;
+                    try { TrackKey(key, window, shortcut, character); }
+                    catch (Exception exception) { _context?.Log.Error("Otomatik düzeltme klavye girdisi işlenemedi.", exception); }
+                }));
+            }
         }
-        return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+        return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
     }
 
-    private void TrackKey(int message, KBDLLHOOKSTRUCT info)
+    private void TrackKey(int key, IntPtr window, bool shortcut, char character)
     {
-        if (message is not (Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)) return;
-        if ((info.flags & InjectedFlag) != 0) return;
         _inputSequence++;
-        var key = (int)info.vkCode;
         if (IsModifierKey(key)) return;
 
-        var window = Native.GetForegroundWindow();
         if ((_wordWindow != IntPtr.Zero && window != _wordWindow) ||
             (_previousWordWindow != IntPtr.Zero && window != _previousWordWindow)) InvalidateInput();
-        if (HasShortcutModifiers()) { InvalidateInput(); return; }
+        if (shortcut || HotkeyService.IsCapturing) { InvalidateInput(); return; }
 
         if (key == KeyBackspace)
         {
@@ -405,7 +433,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
                 ClearPreviousWord();
                 _dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
                 {
-                    if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+                    if (!IsActive || sequence != _inputSequence || !InputIsCurrent || Native.GetForegroundWindow() != window) return;
                     UndoCorrection(correction);
                     _word.Append(correction.OriginalWord);
                     _wordWindow = window;
@@ -426,7 +454,6 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
             return;
         }
 
-        var character = TranslateCharacter(key, info.scanCode, window);
         if (IsPunctuationTrigger(character))
         {
             HandleWordEnd(window, character);
@@ -509,7 +536,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     {
         try
         {
-            if (!IsActive || _spellChecker is null || sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+            if (!IsActive || _spellChecker is null || sequence != _inputSequence || !InputIsCurrent || Native.GetForegroundWindow() != window) return;
             if (_sessionIgnoredWords.Contains(word) || word.Length < _minimumWordLength)
             {
                 return;
@@ -547,7 +574,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
 
                 return (Known: isKnown, Tag: result.Tag ?? preferredTag, Correction: result.Correction);
             });
-            if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+            if (!IsActive || sequence != _inputSequence || !InputIsCurrent || Native.GetForegroundWindow() != window) return;
             var isKnown = analysis.Known;
             var result = (Tag: analysis.Tag, Correction: analysis.Correction);
 
@@ -560,7 +587,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
             {
                 return;
             }
-            if (sequence != _inputSequence || Native.GetForegroundWindow() != window) return;
+            if (sequence != _inputSequence || !InputIsCurrent || Native.GetForegroundWindow() != window) return;
 
             var culture = SpellEngine.GetCulture(result.Tag);
             var replacement = MatchCase(word, result.Correction, culture);
@@ -604,7 +631,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
         _dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
         {
             var engine = _spellChecker;
-            if (!IsActive || sequence != _inputSequence || Native.GetForegroundWindow() != window || engine is null) return;
+            if (!IsActive || sequence != _inputSequence || !InputIsCurrent || Native.GetForegroundWindow() != window || engine is null) return;
 
             var language = _language;
             var contextAnalysis = _contextAnalysis;
@@ -630,7 +657,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
                         .ToArray();
                 return suggestions;
                 });
-                if (IsActive && sequence == _inputSequence && Native.GetForegroundWindow() == window)
+                if (IsActive && sequence == _inputSequence && InputIsCurrent && Native.GetForegroundWindow() == window)
                     ShowSuggestions(suggestions, window, sequence, word.Length, keyboardTag, previous);
             }
             catch (OperationCanceledException) { }
@@ -640,7 +667,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
 
     private async void QueueNextWordPredictions(IntPtr window, long sequence, string keyboardTag)
     {
-        if (!_showSuggestions || !IsActive || sequence != _inputSequence ||
+        if (!_showSuggestions || !IsActive || sequence != _inputSequence || !InputIsCurrent ||
             Native.GetForegroundWindow() != window || !_contextAnalysis)
             return;
 
@@ -669,7 +696,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
                     .ToArray();
             return suggestions;
             });
-            if (IsActive && sequence == _inputSequence && Native.GetForegroundWindow() == window)
+            if (IsActive && sequence == _inputSequence && InputIsCurrent && Native.GetForegroundWindow() == window)
                 ShowSuggestions(suggestions, window, sequence, 0, keyboardTag, history);
         }
         catch (OperationCanceledException) { }
@@ -683,7 +710,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
         await _analysisGate.WaitAsync();
         try
         {
-            if (sequence != _inputSequence) throw new OperationCanceledException();
+            if (sequence != _inputSequence || !InputIsCurrent) throw new OperationCanceledException();
             return await Task.Run(analyze);
         }
         finally { _analysisGate.Release(); }
@@ -714,7 +741,7 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     private void AcceptSuggestion(string suggestion)
     {
         var window = _suggestionTargetWindow;
-        if (!IsActive || _suggestionSequence != _inputSequence || window == IntPtr.Zero ||
+        if (!IsActive || _suggestionSequence != _inputSequence || !InputIsCurrent || window == IntPtr.Zero ||
             Native.GetForegroundWindow() != window || string.IsNullOrWhiteSpace(suggestion)) return;
 
         var accepted = _suggestionReplaceLength > 0

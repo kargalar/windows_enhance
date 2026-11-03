@@ -82,8 +82,12 @@ internal static class NotificationsPlacementChecks
             check(Native.GetForegroundWindow() == foreground, "Notification placement preserves foreground focus while moving the owned fixture");
             context.Settings.Set("position", "Sağ alt");
             module.Apply();
+            Native.GetWindowRect(handle, out var expected);
             Native.SetWindowPos(handle, IntPtr.Zero, moved.Left + 25, moved.Top + 25, 0, 0, Native.SWP_NOSIZE | Native.SWP_NOACTIVATE | 4);
-            module.Apply();
+            type.GetMethod("OnWindowEvent", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(module,
+                [new WindowEventObserver.WindowEvent(WindowEventObserver.ObjectLocationChange, handle)]);
+            Native.GetWindowRect(handle, out var immediate);
+            check(Equal(expected, immediate), "The observer corrects an external toast move in the event callback without a timer or dispatcher wait");
             module.Deactivate();
             Native.GetWindowRect(handle, out var restored);
             check(Equal(original, restored), "Notification disable restores exact first native bounds after settings changes and external shell-style repositioning");

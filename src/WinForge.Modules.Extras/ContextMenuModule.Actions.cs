@@ -18,6 +18,7 @@ public sealed partial class ContextMenuModule
         {
             var path = classesRoot + @"\" + root + @"\WinForge.Prepared." + action;
             Registry.CurrentUser.DeleteSubKeyTree(path, false);
+            if (action == "power-mode" && scope != "desktop") continue;
             if (action == "folder-icon" && scope != "folder") continue;
             if (action is "desktop-shortcut" or "toggle-hidden" && scope is "background" or "desktop" or "drive") continue;
             var rule = rules.FirstOrDefault(r => r.Id == "prepared:" + action);
@@ -62,6 +63,7 @@ public sealed partial class ContextMenuModule
         }
         if (action == "power-mode")
         {
+            if (!ContextMenuCatalog.VisibleIn(rule, "desktop")) throw new InvalidOperationException("Güç modu yalnızca masaüstü için etkin.");
             if (arguments.Count != 1) throw new ArgumentException("Bir güç modu seçin.");
             ContextMenuQuickSettings.SetPowerMode(arguments[0]);
             _context?.Notify("Güç modu: " + ContextMenuQuickSettings.PowerModes.Single(mode => mode.Id == arguments[0]).Label);

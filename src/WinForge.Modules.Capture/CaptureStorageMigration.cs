@@ -16,7 +16,7 @@ internal static class CaptureStorageMigration
             from.StartsWith(to + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Kaynak ve hedef klasörler iç içe olamaz.");
         if (File.Exists(to) || (Directory.Exists(to) && Directory.EnumerateFileSystemEntries(to).Any()))
-            throw new IOException("Ekran geçmişi için boş bir hedef klasör seçin; mevcut dosyaların üzerine yazılmaz.");
+            throw new IOException("PC geçmişi için boş bir hedef klasör seçin; mevcut dosyaların üzerine yazılmaz.");
         var parent = Path.GetDirectoryName(to) ?? throw new IOException("Geçersiz hedef klasör.");
         Directory.CreateDirectory(parent);
         var staging = Path.Combine(parent, ".winforge-transfer-" + Guid.NewGuid().ToString("N"));

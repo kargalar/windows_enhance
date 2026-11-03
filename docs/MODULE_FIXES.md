@@ -7,7 +7,7 @@
 - Görev çubuğu yüksekliği 24–96 mantıksal piksel arasında uygulanır. Küçük yüksekliklerde düğmelerin alt sınırları ve varsayılan simge boyutu da küçülür. `0` Windows boyutunu geri yükler.
 - İnternet Hızı, negatif ekran koordinatlarında ve görev çubuğu ekran kenarından hafif taşarken görünür kalır; başlangıçta sıfır hızlarını gösterir ve üstteki konumunu yeniler.
 - Ekran Yakalama → **Yakalanan görseller için klasör seç** PNG çıktılarının konumunu belirler. Sağ alttaki önizlemeye tıklamak görüntüyü kaydeder ve Dosya Gezgini’nde seçer. Aynı görüntü yeniden dışa aktarılırken çoğaltılmaz.
-- Ekran Geçmişi → **Görseller ve geçmiş için klasör seç** veritabanının konumunu belirler; görseller bu klasördeki `media` alt klasörüne yazılır. Eski klasörün içeriği taşınmaz veya silinmez. Önceki klasörü yeniden seçerek eski kayıtlara erişebilirsiniz.
+- PC Geçmişi → **Görseller ve geçmiş için klasör seç** veritabanının konumunu belirler; görseller bu klasördeki `media` alt klasörüne yazılır. Eski klasörün içeriği taşınmaz veya silinmez. Önceki klasörü yeniden seçerek eski kayıtlara erişebilirsiniz.
 - Mikrofon adında dost ad bulunmuyorsa mikrofon türü ve ses aygıtı adı birlikte gösterilir; teknik aygıt kimliği ad olarak kullanılmaz.
 - Etkileşimli saydam pencereler fare girdisini alacak yerel arka plan piksellerine sahiptir. Ses/parlaklık kaydırıcıları ve ses simgesine tıklayarak sessize alma bu pencere üzerinden çalışır.
 - Medya Kısayolları kartlarında ses artırma/azaltma miktarı ayrı ayrı 1–100 yüzde puan olarak ayarlanır. Eski boş değerler 2 puanlık adımı, eski “Sesi 5 azalt” kartı 5 puanlık adımı korur.

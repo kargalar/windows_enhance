@@ -25,9 +25,10 @@ internal sealed class WindowControlEngine : IDisposable
     private Native.LowLevelMouseProc? _callback;
     private Native.LowLevelKeyboardProc? _keyboardCallback;
     private IntPtr _hook;
-    private IntPtr _keyboardHook;
+    private KeyboardHookThread? _keyboardHook;
+    private bool _nativeSpaceDown;
     private WindowControlOptions _options;
-    private Gesture? _gesture;
+    private volatile Gesture? _gesture;
     private POINT _cursor;
     private int _generation;
     private int _dragButton;
@@ -60,13 +61,12 @@ internal sealed class WindowControlEngine : IDisposable
         _hook = Native.SetWindowsHookEx(Native.WH_MOUSE_LL, _callback, Native.GetModuleHandle(null), 0);
         if (_hook == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Pencere kontrolü fare kancası kurulamadı.");
         _keyboardCallback = KeyboardHook;
-        _keyboardHook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _keyboardCallback, Native.GetModuleHandle(null), 0);
-        if (_keyboardHook == IntPtr.Zero)
+        try { _keyboardHook = new KeyboardHookThread(_keyboardCallback); }
+        catch
         {
-            var error = Marshal.GetLastWin32Error();
             Native.UnhookWindowsHookEx(_hook);
             _hook = IntPtr.Zero;
-            throw new System.ComponentModel.Win32Exception(error, "Pencere kontrolü klavye kancası kurulamadı.");
+            throw;
         }
     }
 
@@ -217,12 +217,17 @@ internal sealed class WindowControlEngine : IDisposable
                 if (info.vkCode == 0x20)
                 {
                     var down = (int)wParam is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN;
-                    if (HandleSnapKey(down, (info.flags & 0x10) != 0)) return new IntPtr(1);
+                    if ((info.flags & 0x10) == 0 && (down ? _gesture is not null || _nativeSpaceDown : _nativeSpaceDown))
+                    {
+                        _nativeSpaceDown = down;
+                        Queue(() => HandleSnapKey(down, false));
+                        return new IntPtr(1);
+                    }
                 }
             }
             catch (Exception exception) { Queue(() => _report(exception)); }
         }
-        return Native.CallNextHookEx(_keyboardHook, code, wParam, lParam);
+        return Native.CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
     }
 
     internal bool HandleSnapKey(bool down, bool injected)
@@ -663,7 +668,8 @@ internal sealed class WindowControlEngine : IDisposable
         _generation++;
         CancelGesture();
         if (_hook != IntPtr.Zero) { Native.UnhookWindowsHookEx(_hook); _hook = IntPtr.Zero; }
-        if (_keyboardHook != IntPtr.Zero) { Native.UnhookWindowsHookEx(_keyboardHook); _keyboardHook = IntPtr.Zero; }
+        _keyboardHook?.Dispose();
+        _keyboardHook = null;
         _callback = null;
         _keyboardCallback = null;
         _swallowedButtons.Clear();

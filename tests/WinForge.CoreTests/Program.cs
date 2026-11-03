@@ -42,6 +42,7 @@ internal static class Program
             LoggingChecks.Run(root, Check);
             NetworkPlacementChecks.Run(Check);
             InputObserverChecks.Run(Check);
+            KeyboardHookThreadChecks.Run(Check);
             JsonStateDeltaChecks.Run(Check);
             Console.WriteLine($"PASS: {checks} core checks.");
             return 0;

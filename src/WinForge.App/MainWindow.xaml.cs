@@ -206,26 +206,7 @@ public partial class MainWindow : Window
 
     private void ApplyLanguage()
     {
-        var lang = Appearance.Language;
-        var minText = WinForge.Core.Localization.Get("Simge durumuna küçült", lang);
-        var maxText = WinForge.Core.Localization.Get("Ekranı kapla", lang);
-        var closeText = WinForge.Core.Localization.Get("Kapat", lang);
-
-        if (MinimizeButton != null)
-        {
-            MinimizeButton.ToolTip = minText;
-            System.Windows.Automation.AutomationProperties.SetName(MinimizeButton, minText);
-        }
-        if (MaximizeButton != null)
-        {
-            MaximizeButton.ToolTip = maxText;
-            System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, maxText);
-        }
-        if (CloseButton != null)
-        {
-            CloseButton.ToolTip = closeText;
-            System.Windows.Automation.AutomationProperties.SetName(CloseButton, closeText);
-        }
+        UpdateWindowControlLabels();
         App.Instance.UpdateTrayLanguage();
     }
 
@@ -297,11 +278,29 @@ public partial class MainWindow : Window
     protected override void OnStateChanged(EventArgs e)
     {
         base.OnStateChanged(e);
+        UpdateWindowControlLabels();
+    }
+
+    private void UpdateWindowControlLabels()
+    {
+        if (MinimizeButton is null || MaximizeButton is null || CloseButton is null) return;
+
+        var language = Appearance.Language;
         var maximized = WindowState == WindowState.Maximized;
+        TitleBarSubtitle.Text = language == "tr" ? "KONTROL MERKEZ\u0130" : "CONTROL CENTER";
+        var minText = WinForge.Core.Localization.Get("Simge durumuna k\u00fc\u00e7\u00fclt", language);
+        var maxText = maximized
+            ? (language == "tr" ? "\u00d6nceki boyuta getir" : "Restore")
+            : WinForge.Core.Localization.Get("Ekran\u0131 kapla", language);
+        var closeText = WinForge.Core.Localization.Get("Kapat", language);
+
+        MinimizeButton.ToolTip = minText;
+        System.Windows.Automation.AutomationProperties.SetName(MinimizeButton, minText);
         MaximizeButton.Content = maximized ? "\uE923" : "\uE922";
-        var label = maximized ? "?nceki boyuta getir" : "Ekran? kapla";
-        MaximizeButton.ToolTip = label;
-        System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, label);
+        MaximizeButton.ToolTip = maxText;
+        System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, maxText);
+        CloseButton.ToolTip = closeText;
+        System.Windows.Automation.AutomationProperties.SetName(CloseButton, closeText);
     }
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)

@@ -22,6 +22,8 @@ Gruplama ve öğe simgesi düzenlemeleri klasik Win32 Gezgin menüsünde ve Wind
 
 ## Doğrulama
 
+Arşiv çıkarma komutları (Extract Here / Extract to / Tümünü ayıkla / Buraya çıkart) yalnızca ZIP, RAR, 7z ve diğer arşiv uzantılarındaki dosyalar seçildiğinde gösterilir. EXE, normal belge, klasör veya arşiv dışı dosya içeren karma seçimlerde gizlenir. Bu sınır, öğe yeniden adlandırıldığında veya gruba taşındığında da uygulanır; arşiv oluşturma komutları kullanılabilir kalır.
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1
 native/WinForge.Shell/bin/x64/Release/WinForge.ContextMenuFixture.exe --shell

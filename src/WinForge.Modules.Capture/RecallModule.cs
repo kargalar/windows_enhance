@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Net.NetworkInformation;
 using System.Windows.Threading;
 using WinForge.Core;
 using WinForge.History;
@@ -11,6 +12,8 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     private readonly object recordingGate = new();
     private HistoryStore? store;
     private UsageTracker? usage;
+    private NetworkUsageTracker? networkUsage;
+    private long lastNetworkRead;
     private UsageTracker? idleUsage;
     private ContextUsageTracker? contextUsage;
     private WindowEventObserver? foregroundObserver;
@@ -25,16 +28,18 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     private ActivityContext? currentContext;
     private Task<ActivityContext?>? contextRead;
     public override string Id => "screen-history";
-    public override string Name => "Ekran Geçmişi";
-    public override string Description => "Yerel ekran geçmişi, OCR araması, uygulama süreleri ve RecallClone kayıt aktarımı.";
+    public override string Name => "PC Geçmişi";
+    public override string Description => "Uygulama, web sitesi ve klasör süreleri, internet kullanımı, ekran geçmişi ve OCR araması.";
     protected override string Kind => "recall";
     protected override IEnumerable<SettingDescriptor> ModuleSettings =>
     [
+        new() { Key = "statistics", Label = "Kullanım istatistiklerini aç", Kind = SettingKind.Action,
+            Execute = () => new UsageStatisticsWindow(Store, null, null, (Context as IFeatureUiContext)?.FeatureUi).Show() },
         new() { Key = "storage-directory", Label = "Görseller ve geçmiş klasörü", Kind = SettingKind.Text, Default = "",
             Description = "Görseller seçilen klasörün media alt klasörüne kaydedilir. Boş: varsayılan konum. Eski kayıtlar önceki klasörde korunur." },
         new() { Key = "choose-storage", Label = "Görseller ve geçmiş için klasör seç", Kind = SettingKind.Action, Execute = () =>
         {
-            var picker = new OpenFolderDialog { Title = "Ekran geçmişi klasörünü seç", InitialDirectory = Store.DirectoryPath };
+            var picker = new OpenFolderDialog { Title = "PC geçmişi klasörünü seç", InitialDirectory = Store.DirectoryPath };
             if (picker.ShowDialog() != true) return;
             try
             {
@@ -44,6 +49,8 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             }
             catch (Exception error) { Report(error); }
         } },
+        new() { Key = "capture-screens", Label = "Ekran görüntülerini kaydet", Default = true, Description = "Kapalıyken uygulama, web sitesi, klasör ve internet kullanımı takibi devam eder." },
+        new() { Key = "track-network", Label = "İnternet kullanım miktarını kaydet", Default = true, Description = "Bilgisayar genelinde günlük indirme/yükleme miktarını ölçer. Yerel ağ ve VPN trafiği dahil olabilir; uygulama veya site başına veri miktarı ölçülmez. Boştayken devam eder; duraklatma, kilit ve uykuda durur." },
         new() { Key = "interval", Label = "Kayıt aralığı (saniye)", Kind = SettingKind.Number, Min = 1, Max = 3600, Default = 60 },
         new() { Key = "idle-seconds", Label = "Boşta kalınca dur (saniye)", Kind = SettingKind.Number, Min = 10, Max = 3600, Default = 60 },
         new() { Key = "image-format", Label = "Görsel biçimi", Kind = SettingKind.Choice, Default = "webp", Options = ["webp", "png"] },
@@ -54,7 +61,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
         new() { Key = "retention-days", Label = "Saklama süresi (gün; 0 = silme yok)", Kind = SettingKind.Number, Min = 0, Max = 3650, Default = 0 },
         new() { Key = "limit-gb", Label = "Depolama sınırı (GB; 0 = sınırsız)", Kind = SettingKind.Number, Min = 0, Max = 2000, Default = 0 },
         new() { Key = "pause-hotkey", Label = "Duraklatma kısayolu (isteğe bağlı)", Kind = SettingKind.Text, Default = "",
-            Description = "Dolu olduğunda bu kısayol ekran geçmişi kaydını duraklatır veya sürdürür. Boş bırakarak devre dışı bırakın." },
+            Description = "Dolu olduğunda bu kısayol PC geçmişi kaydını duraklatır veya sürdürür. Boş bırakarak devre dışı bırakın." },
         new() { Key = "pause", Label = "Kaydı duraklat / sürdür", Kind = SettingKind.Action, Execute = TogglePause }
     ];
     public void PrepareSettingChange(string key, object previous, object next)
@@ -69,6 +76,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     {
         if (IsActive) return;
         store = Store; lifetime = new(); usage = new(store.AddUsage); idleUsage = new(store.AddUsage);
+        networkUsage = new(store.AddNetworkUsage); lastNetworkRead = 0;
         contextUsage = new(store.AddContextUsage); previous = ""; lastCapture = 0;
         contextWindow = contextReadWindow = 0; lastContextRead = 0; currentContext = null; contextRead = null;
         paused = Context.Settings.GetBool("paused");
@@ -86,6 +94,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     }
     public override void Deactivate()
     {
+        ObserveNetwork(force: true); networkUsage?.Reset(); networkUsage = null;
         IsActive = false;
         pauseHotkey?.Dispose(); pauseHotkey = null;
         timer.Stop(); timer.Tick -= Tick; SystemEvents.SessionSwitch -= SessionChanged; SystemEvents.PowerModeChanged -= PowerChanged;
@@ -103,7 +112,11 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
         {
             Deactivate(); Activate(); return;
         }
-        if (IsActive) RegisterPauseHotkey();
+        if (IsActive)
+        {
+            RegisterPauseHotkey();
+            if (!Context.Settings.GetBool("track-network", true)) networkUsage?.Reset();
+        }
     }
     private void RegisterPauseHotkey()
     {
@@ -115,7 +128,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             var (modifiers, key) = ModuleShortcut.Parse(configured);
             pauseHotkey = Context.Hotkeys.Register(modifiers, key, TogglePause);
         }
-        catch (Exception error) { Report(new InvalidOperationException("Ekran geçmişi duraklatma kısayolu kaydedilemedi.", error)); }
+        catch (Exception error) { Report(new InvalidOperationException("PC geçmişi duraklatma kısayolu kaydedilemedi.", error)); }
     }
     private async Task FinishOcrAsync(Task? stoppedOcr, CancellationTokenSource? stoppedLifetime)
     {
@@ -126,13 +139,14 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     }
     private void TogglePause()
     {
+        ObserveNetwork(force: true); networkUsage?.Reset();
         paused = !paused; Context.Settings.Set("paused", paused);
         if (paused)
         {
             var now = DateTimeOffset.UtcNow; var tick = Environment.TickCount64;
             usage?.Observe(null, now, tick); idleUsage?.Observe(null, now, tick); contextUsage?.Observe(null, null, null, now, tick);
         }
-        Context.Notify(paused ? "Ekran geçmişi duraklatıldı." : "Ekran geçmişi sürdürülüyor.");
+        Context.Notify(paused ? "PC geçmişi duraklatıldı." : "PC geçmişi sürdürülüyor.");
     }
     private string? ActiveApplication(ForegroundInfo foreground) =>
         paused || locked || suspended || !CaptureServices.IsDefaultInputDesktop ||
@@ -146,6 +160,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             else if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon or SessionSwitchReason.RemoteConnect or SessionSwitchReason.ConsoleConnect) locked = false;
             if (locked)
             {
+                networkUsage?.Reset();
                 var now = DateTimeOffset.UtcNow; var tick = Environment.TickCount64;
                 usage?.Observe(null, now, tick); idleUsage?.Observe(null, now, tick); contextUsage?.Observe(null, null, null, now, tick);
             }
@@ -159,6 +174,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             else if (e.Mode == PowerModes.Resume) suspended = false;
             if (suspended)
             {
+                networkUsage?.Reset();
                 var now = DateTimeOffset.UtcNow; var tick = Environment.TickCount64;
                 usage?.Observe(null, now, tick); idleUsage?.Observe(null, now, tick); contextUsage?.Observe(null, null, null, now, tick);
             }
@@ -166,6 +182,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     }
     private async void Tick(object? sender, EventArgs e)
     {
+        ObserveNetwork();
         if (busy || store is null || lifetime is null) return;
         var currentStore = store; var token = lifetime.Token; var now = DateTimeOffset.UtcNow; var tick = Environment.TickCount64;
         try
@@ -190,12 +207,14 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             }
             usage?.Flush(now, tick);
             UpdateContext(foreground, activeApp, now, tick);
+            contextUsage?.Flush(now, tick);
+            if (!Context.Settings.GetBool("capture-screens", true)) return;
             var identity = foreground.Window + "|" + foreground.Title;
             var elapsed = tick - lastCapture;
             var interval = Math.Clamp(Context.Settings.GetInt("interval", 60), 1, 3600) * 1000L;
             if (elapsed < Math.Min(2000, interval) || (identity == previous && elapsed < interval)) return;
             busy = true;
-            if (!CaptureServices.HasSpace(currentStore.DirectoryPath)) { paused = true; Context.Notify("Disk alanı az; ekran geçmişi durduruldu. Eski kayıtlar korunuyor."); return; }
+            if (!CaptureServices.HasSpace(currentStore.DirectoryPath)) { paused = true; Context.Notify("Disk alanı az; PC geçmişi durduruldu. Eski kayıtlar korunuyor."); return; }
             var area = CaptureServices.Monitor(Context.Settings.GetString("monitor", "cursor"));
             Native.GetCursorPos(out var cursor);
             var cursorMetadata = cursor.X >= area.X && cursor.X < area.X + area.Width && cursor.Y >= area.Y && cursor.Y < area.Y + area.Height
@@ -222,6 +241,37 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
         catch (OperationCanceledException) { }
         catch (Exception error) { paused = true; Report(error); }
         finally { busy = false; }
+    }
+    private void ObserveNetwork(bool force = false)
+    {
+        if (networkUsage is null) return;
+        if (!IsActive || paused || locked || suspended || !Context.Settings.GetBool("track-network", true) || !CaptureServices.IsDefaultInputDesktop)
+        {
+            networkUsage.Reset(); return;
+        }
+        var tick = Environment.TickCount64;
+        if (!force && tick - lastNetworkRead < 5000) return;
+        lastNetworkRead = tick;
+        try
+        {
+            var counters = new List<NetworkCounters>();
+            foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (adapter.OperationalStatus != OperationalStatus.Up ||
+                    adapter.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+                try
+                {
+                    var stats = adapter.GetIPStatistics();
+                    counters.Add(new(adapter.Id, stats.BytesReceived, stats.BytesSent));
+                }
+                catch (NetworkInformationException) { } // Disconnected during enumeration; rebaseline on reconnect.
+            }
+            networkUsage.Observe(counters, DateTimeOffset.UtcNow, tick);
+        }
+        catch (Exception error)
+        {
+            networkUsage.Reset(); Context.Log.Error("İnternet kullanımı okunamadı", error);
+        }
     }
     private void UpdateContext(ForegroundInfo foreground, string activeApp, DateTimeOffset now, long tick)
     {
@@ -266,7 +316,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
                         token.ThrowIfCancellationRequested(); currentStore.CompleteOcr(row.Id, text);
                     }
                     catch (OperationCanceledException) { throw; }
-                    catch (Exception error) { currentStore.CompleteOcr(row.Id, "", true); Context.Log.Error("Ekran geçmişi OCR", error); }
+                    catch (Exception error) { currentStore.CompleteOcr(row.Id, "", true); Context.Log.Error("PC geçmişi OCR", error); }
                 }
             }
             catch (OperationCanceledException) { throw; }
@@ -274,5 +324,5 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             await Task.Delay(1000, token);
         }
     }
-    public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Append(new(Id + ".pause", "Ekran geçmişini duraklat / sürdür", "recall kayıt", TogglePause));
+    public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Append(new(Id + ".pause", "PC geçmişini duraklat / sürdür", "recall kayıt", TogglePause));
 }

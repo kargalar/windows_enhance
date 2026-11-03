@@ -167,6 +167,30 @@ int wmain(int argc, wchar_t** argv) {
         Check(!WinForgeMenu::MatchesExtensions(L".zip", {L"C:\\test.zip", L"C:\\test.txt"}), "Extension filter rejects mixed selections");
         Check(!WinForgeMenu::MatchesExtensions(L".zip", {}), "Extension filter rejects an unknown selection");
         Check(WinForgeMenu::MatchesExtensions(L"", {}), "Empty extension filter accepts all selections");
+        Check(WinForgeMenu::IsArchiveExtraction(L"&Extract Here") && WinForgeMenu::IsArchiveExtraction(L"Extract to \"sample\\\"") &&
+            WinForgeMenu::IsArchiveExtraction(L"Buraya \u00e7\u0131kart") && WinForgeMenu::IsArchiveExtraction(L"T\u00fcm\u00fcn\u00fc ay\u0131kla..."), "English and Turkish extraction commands are recognized");
+        Check(!WinForgeMenu::IsArchiveExtraction(L"Extract text") && !WinForgeMenu::IsArchiveExtraction(L"Add to archive...") &&
+            !WinForgeMenu::IsArchiveExtraction(L"Listeden \u00e7\u0131kar"), "Text extraction, compression and unrelated removal commands remain available");
+        for (auto const& selection : std::vector<std::pair<unsigned, std::vector<std::wstring>>>{
+            {1, {L"C:\\sample.ZIP", L"C:\\sample.rar", L"C:\\sample.7z", L"C:\\sample.tar.gz"}},
+            {64, {L"C:\\sample.zip.exe"}}, {1, {L"C:\\sample.txt"}},
+            {1, {L"C:\\sample.zip", L"C:\\sample.txt"}},
+            {65, {L"C:\\sample.zip", L"C:\\sample.exe"}}, {2, {L"C:\\folder.zip"}}, {1, {}}}) {
+            auto extractionMenu = CreatePopupMenu();
+            AppendMenuW(extractionMenu, MF_STRING, 301, L"Extract Here");
+            AppendMenuW(extractionMenu, MF_STRING, 302, L"Add to archive...");
+            bool allowed = selection.second.size() == 4;
+            for (bool configured : {false, true}) {
+                WinForgeMenu::Rule extractionRule{L"extract here", L"Renamed extraction", L"Archive tools", L"", true};
+                WinForgeMenu::Transaction extraction;
+                extraction.Apply(extractionMenu, WinForgeMenu::ReadItems(nullptr, extractionMenu, false),
+                    configured ? std::vector<WinForgeMenu::Rule>{extractionRule} : std::vector<WinForgeMenu::Rule>{}, selection.first, {}, selection.second);
+                Check(GetMenuItemCount(extractionMenu) == (allowed ? 2 : 1), "Extraction is restricted to archive-only selections with or without a grouping rule");
+                extraction.Restore();
+                Check(GetMenuItemCount(extractionMenu) == 2 && GetMenuItemID(extractionMenu, 0) == 301, "Extraction filtering restores the original menu and command ID");
+            }
+            DestroyMenu(extractionMenu);
+        }
 
         AppendMenuW(root, MF_STRING | MF_CHECKED, 101, L"&Properties");
         AppendMenuW(create, MF_STRING, 201, L"&Folder"); AppendMenuW(create, MF_STRING, 202, L"Shortcut");

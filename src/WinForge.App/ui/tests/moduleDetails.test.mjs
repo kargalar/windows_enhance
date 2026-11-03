@@ -35,6 +35,35 @@ async function type(element, value) {
   });
 }
 
+test('visible and hidden tray controls stay in separate groups and save independent values', async () => {
+  const writes = [];
+  const tray = { ...module, settings: [
+    setting('tray-icon-padding-x', 'number', -1, 'Tray', { min: -1, max: 16 }),
+    setting('tray-icon-padding-y', 'number', -1, 'Tray', { min: -1, max: 16 }),
+    setting('overflow-icon-padding-x', 'number', -1, 'Hidden', { min: -1, max: 24 }),
+    setting('overflow-columns', 'number', 0, 'Hidden', { min: 0, max: 20 }),
+    setting('tray-example', 'toggle', true),
+  ] };
+  const view = await mount(h(ModuleDetails, { module: tray, onToggle() {}, onUpdate: (...args) => writes.push(args), onExecute() {} }));
+  try {
+    const groups = [...view.container.querySelectorAll('.settings-section')];
+    const visible = groups.find(group => group.querySelector('h3')?.textContent === 'Notification area layout');
+    const hidden = groups.find(group => group.querySelector('h3')?.textContent === 'Hidden icons panel');
+    const apps = groups.find(group => group.querySelector('h3')?.textContent === 'Application icons');
+    assert.equal(visible.querySelectorAll('input[type=number]').length, 2);
+    assert.equal(hidden.querySelectorAll('input[type=number]').length, 2);
+    assert.equal(apps.querySelectorAll('input[type=number]').length, 0);
+    const input = key => view.container.querySelector(`input[type=range][aria-label="${key}"]`).closest('.numeric-control').querySelector('input[type=number]');
+    await type(input('tray-icon-padding-x'), '3');
+    await type(input('overflow-icon-padding-x'), '9');
+    await type(input('overflow-columns'), '4');
+    await view.close();
+    assert.deepEqual(writes.sort(([a], [b]) => a.localeCompare(b)), [
+      ['overflow-columns', 4], ['overflow-icon-padding-x', 9], ['tray-icon-padding-x', 3],
+    ]);
+  } catch (error) { await view.close(); throw error; }
+});
+
 test('module sections show only their settings and search finds labels, descriptions and sections', async () => {
   const writes = [];
   const view = await mount(h(ModuleDetails, { module, onToggle() {}, onUpdate: (...args) => writes.push(args), onExecute() {} }));

@@ -121,6 +121,13 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} volume overlay checks.");
                 return 0;
             }
+            if (args.Contains("--keyboard-latency-only"))
+            {
+                KeyboardLatencyChecks.Run(Check);
+                VolumeKeyChecks.Run(Check);
+                Console.WriteLine($"PASS: {_passed} keyboard latency and volume key checks.");
+                return 0;
+            }
             if (args.Contains("--volume-keys-only"))
             {
                 VolumeKeyChecks.Run(Check);
@@ -278,6 +285,12 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} live taskbar background checks.");
                 return 0;
             }
+            if (args.Contains("--taskbar-clock-live"))
+            {
+                TaskbarCustomizationChecks.RunClockLive(Check);
+                Console.WriteLine($"PASS: {_passed} live clock checks.");
+                return 0;
+            }
             if (args.Contains("--taskbar-customization-live"))
             {
                 TaskbarCustomizationChecks.RunLive(Check);
@@ -343,6 +356,13 @@ internal static class Program
             {
                 FeatureVerificationChecks.Run(TestDirectory, Check, args.Contains("--native-smoke"));
                 Console.WriteLine($"PASS: {_passed} feature verification checks.");
+                return 0;
+            }
+            if (args.Contains("--notifications-placement-only"))
+            {
+                var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+                NotificationsPlacementChecks.Run(extras, TestDirectory, Check, nativeSmoke: true);
+                Console.WriteLine($"PASS: {_passed} notification placement checks.");
                 return 0;
             }
             if (args.Contains("--window-only"))

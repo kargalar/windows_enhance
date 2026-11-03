@@ -1,0 +1,4 @@
+LIBRARY WinForge.NotificationsPlacementTap.dll
+EXPORTS
+    InstallNotificationsHook
+    InstallNotificationsFixtureHook

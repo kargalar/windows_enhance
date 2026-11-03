@@ -29,7 +29,7 @@ public sealed class ExplorerNavigationModule : ITweakModule
         ("libraries", "Kitaplıklar", "{031E4825-7B94-4dc3-B131-E946B44C8DD5}"),
         ("network", "Ağ", "{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}")
     ];
-    private readonly Dictionary<uint, nint> _hooks = [];
+    private nint _hook;
     private IModuleContext? _context;
     private DispatcherTimer? _timer;
     private InstallHook? _install;
@@ -208,8 +208,8 @@ public sealed class ExplorerNavigationModule : ITweakModule
         if (_timer is not null) _timer.Tick -= OnTick;
         _timer = null;
         Reg.WriteDword(RuntimeKey, "active", 0);
-        foreach (var hook in _hooks.Values) UnhookWindowsHookEx(hook);
-        _hooks.Clear();
+        if (_hook != 0) UnhookWindowsHookEx(_hook);
+        _hook = 0;
         foreach (var original in ReadOriginals()) Restore(original);
         _context!.Settings.Set(BackupSetting, null);
         IsActive = false;
@@ -238,19 +238,27 @@ public sealed class ExplorerNavigationModule : ITweakModule
         {
             using var runtime = Registry.CurrentUser.CreateSubKey(RuntimeKey);
             runtime.SetValue("heartbeat", Environment.TickCount64, RegistryValueKind.QWord);
-            RefreshHooks();
         }
         catch (Exception error) { _error = "Sol panel bağlantısı: " + error.Message; _context?.Log.Error(_error, error); }
     }
     private void RefreshHooks()
     {
-        if (_install is null || !_context!.Settings.GetBool("style-enabled", true)) return;
+        if (_install is null || !_context!.Settings.GetBool("style-enabled", true))
+        {
+            if (_hook != 0) UnhookWindowsHookEx(_hook);
+            _hook = 0;
+            return;
+        }
+        if (_hook == 0)
+        {
+            _hook = _install(0);
+            if (_hook == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "Explorer gezinme kancası kurulamadı.");
+        }
         var explorerProcesses = new HashSet<uint>();
         foreach (var process in Process.GetProcessesByName("explorer"))
         {
             using (process) explorerProcesses.Add((uint)process.Id);
         }
-        var threads = new HashSet<uint>();
         var windows = new List<nint>();
         EnumWindows((window, _) =>
         {
@@ -264,27 +272,15 @@ public sealed class ExplorerNavigationModule : ITweakModule
                     var childName = new StringBuilder(128);
                     GetClassName(child, childName, childName.Capacity);
                     if (childName.ToString() != "SysTreeView32") return true;
-                    var childThread = GetWindowThreadProcessId(child, out var childProcess);
+                    GetWindowThreadProcessId(child, out var childProcess);
                     if (!explorerProcesses.Contains(childProcess)) return true;
-                    threads.Add(childThread);
                     windows.Add(child);
                     return true;
                 }, 0);
             }
             return true;
         }, 0);
-        foreach (var thread in _hooks.Keys.Where(thread => !threads.Contains(thread)).ToArray())
-        {
-            UnhookWindowsHookEx(_hooks[thread]);
-            _hooks.Remove(thread);
-        }
-        foreach (var thread in threads.Where(thread => !_hooks.ContainsKey(thread)))
-        {
-            var hook = _install(thread);
-            if (hook == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), $"Explorer gezinme kancası kurulamadı (iş parçacığı {thread}).");
-            _hooks.Add(thread, hook);
-        }
-        foreach (var window in windows) PostMessage(window, 0, 0, 0);
+        foreach (var window in windows) SendMessageTimeout(window, 0, 0, 0, 2, 100, out _);
         _error = null;
     }
 
@@ -295,6 +291,6 @@ public sealed class ExplorerNavigationModule : ITweakModule
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(nint window, EnumWindow callback, nint parameter);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(nint window, StringBuilder name, int count);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint process);
-    [DllImport("user32.dll")] private static extern bool PostMessage(nint window, uint message, nint wparam, nint lparam);
+    [DllImport("user32.dll")] private static extern nint SendMessageTimeout(nint window, uint message, nint wparam, nint lparam, uint flags, uint timeout, out nint result);
     [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
 }

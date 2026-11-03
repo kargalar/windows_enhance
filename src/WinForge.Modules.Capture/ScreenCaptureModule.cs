@@ -138,9 +138,15 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
                 _ => (DrawingTool?)null
             };
             FrozenDesktop? snapshot = null;
-            CaptureArea? area = annotationTool is not null ? DesktopArea() : mode switch
+            CaptureAnnotations? annotations = null;
+            CaptureArea? area;
+            if (mode == "region")
             {
-                "region" => CaptureServices.SelectArea(true, out snapshot),
+                var selection = CaptureServices.SelectAnnotatedArea();
+                area = selection.Area; annotations = selection.Annotations; snapshot = selection.Snapshot;
+            }
+            else area = annotationTool is not null ? DesktopArea() : mode switch
+            {
                 "last" => lastArea,
                 "monitor" => CaptureServices.Monitor(),
                 "window" => CaptureServices.SelectWindow(out snapshot),
@@ -163,6 +169,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
                 ShowRecordingControls(mode == "gif", store); return;
             }
             var image = mode == "scroll" ? null : snapshot?.Crop(selected) ?? CaptureServices.Capture(selected);
+            if (image is not null && annotations is { HasMarks: true }) image = annotations.Apply(image, selected);
             var title = "Ekran görüntüsü";
             if (mode == "scroll")
             {

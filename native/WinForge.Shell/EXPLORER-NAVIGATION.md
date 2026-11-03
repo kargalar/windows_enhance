@@ -14,6 +14,12 @@ atışı altı saniye boyunca yenilenmezse yerel zamanlayıcı görünümü geri
 Callback kodu Explorer kapanana kadar bellekte kalır; sürüm özetine göre
 önbelleğe alınması sonraki derlemelerin dosyalarını kilitlemesini önler.
 
+Yeni ağaçlar `WM_CREATE` tamamlandığında, ilk çizimden önce biçimlendirilir.
+Masaüstü kapsamındaki `WH_CALLWNDPROCRET` kancası yalnız Explorer içinde çalışır;
+yeni pencere veya UI iş parçacığı için iki saniyelik tarama beklenmez. Mevcut
+ağaçlar etkinleştirmede zaman aşımı sınırlı mesajla eşzamanlı bağlanır. İki
+saniyelik yönetilen zamanlayıcı yalnız kalp atışını yeniler.
+
 Görünürlük seçenekleri mevcut kullanıcı için CLSID
 `System.IsPinnedToNameSpaceTree` değerini değiştirir. Home/Galeri davranışı Windows
 sürümüne bağlıdır; açık pencereleri yeniden açmak gerekebilir. Dosyalar, klasörler
@@ -43,4 +49,6 @@ Yerel fixture satır ölçülerini, gerçek arka plan/metin çizimini, kapatma/g
 yeniden bağlanma ve kalp atışı kesilmesini doğrular. `--live` gerçek Explorer
 pencerelerinde renk ve padding uygulamasını ve önceki renge dönüşü denetler.
 Home/Galeri gizlemenin her Windows sürümündeki görünür sonucu bu test kapsamında
-doğrulanmaz. Testleri çalıştırırken sol panel modülünü kapalı tutun.
+doğrulanmaz. Yerel fixture ayrı bir kayıt anahtarı kullanır ve yeni ağacın
+oluşturma çağrısı döndüğünde biçimlendirilmiş olduğunu da denetler. Yönetilen
+`NavigationTests` ve `--live` için sol panel modülünü kapalı tutun.

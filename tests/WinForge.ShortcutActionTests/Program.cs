@@ -247,8 +247,11 @@ internal static class Program
         var context = new Context();
         var module = new ContextMenuModule(); module.Initialize(context);
         var registryRoot = @"Software\WinForge.Tests\QuickSettings\" + Guid.NewGuid().ToString("N");
-        var rules = new[] { "prepared:hidden-items", "prepared:power-mode" }.Select(id => new ContextMenuRule(id,
-            Contexts: ContextMenuCatalog.Contexts.ToDictionary(scope => scope, scope => scope is "desktop" or "background"))).ToList();
+        var rules = new[] {
+            new ContextMenuRule("prepared:hidden-items", Contexts: ContextMenuCatalog.Contexts.ToDictionary(scope => scope, scope => scope is "desktop" or "background")),
+            // Simulate an older/saved rule that enabled both empty backgrounds; power mode must still be desktop-only.
+            new ContextMenuRule("prepared:power-mode", Contexts: ContextMenuCatalog.Contexts.ToDictionary(scope => scope, scope => scope is "desktop" or "background"))
+        }.ToList();
         try
         {
             module.ApplyPreparedActions(rules, registryRoot);
@@ -257,7 +260,10 @@ internal static class Program
                 using var hidden = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.hidden-items\command");
                 Check((hidden?.GetValue("") as string)?.EndsWith("--context-hidden-items toggle") == true, "Hidden items action works without a selected file: " + location);
                 using var power = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(registryRoot + @"\" + location + @"\WinForge.Prepared.power-mode");
-                Check(power?.GetValue("") is null && power?.GetValue("MUIVerb") is string, "Power submenu uses the documented inline cascade registration: " + location);
+                Check(location == @"DesktopBackground\Shell"
+                    ? power?.GetValue("") is null && power?.GetValue("MUIVerb") is string
+                    : power is null, "Power submenu is registered only on the desktop background: " + location);
+                if (power is not null)
                 foreach (var mode in ContextMenuQuickSettings.PowerModes)
                 {
                     using var child = power?.OpenSubKey(@"ExtendedSubCommandsKey\shell\" + mode.Id + @"\command");

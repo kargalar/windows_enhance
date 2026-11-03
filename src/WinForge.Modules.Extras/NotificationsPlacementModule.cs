@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Windows.Threading;
 using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
@@ -20,8 +22,15 @@ public sealed class NotificationsPlacementModule : ITweakModule
     private DispatcherTimer? _timer;
     private IModuleContext? _context;
     private bool _positioning;
+    internal const string RuntimeKey = @"Software\WinForge\NotificationsPlacement\Runtime";
+    private readonly bool _useNative;
+    private nint _library, _hook;
+    private int _lastNativeError;
+    private InstallHook? _install;
+    private readonly Dictionary<uint, nint> _threadHooks = [];
+    private const string NativeProperty = "WinForge.ToastPlacement.Native", ObserverProperty = "WinForge.ToastPlacement.Observer";
 
-    public NotificationsPlacementModule() : this(IsWindowsToast) { }
+    public NotificationsPlacementModule() : this(IsWindowsToast) { _useNative = true; }
     internal NotificationsPlacementModule(Func<IntPtr, bool> isToast)
     {
         _isToast = isToast;
@@ -58,8 +67,14 @@ public sealed class NotificationsPlacementModule : ITweakModule
         if (_context is null) throw new InvalidOperationException("Modül başlatılmadı.");
         try
         {
-            _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
-            _timer.Tick += OnTimer;
+            if (_useNative)
+            {
+                IsActive = true;
+                ApplyNative();
+                _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                _timer.Tick += OnNativeHeartbeat;
+                _timer.Start();
+            }
             _observer = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectLocationChange, OnWindowEvent, Report);
             IsActive = true;
             Apply();
@@ -70,6 +85,7 @@ public sealed class NotificationsPlacementModule : ITweakModule
     public void Apply()
     {
         if (!IsActive) return;
+        if (_useNative) ApplyNative();
         Native.EnumWindows((window, _) => { Track(window); return true; }, IntPtr.Zero);
         foreach (var placement in _placements.Values)
         {
@@ -84,8 +100,17 @@ public sealed class NotificationsPlacementModule : ITweakModule
     {
         IsActive = false;
         _timer?.Stop();
-        if (_timer is not null) _timer.Tick -= OnTimer;
+        if (_timer is not null) _timer.Tick -= OnNativeHeartbeat;
         _timer = null;
+        if (_useNative)
+        {
+            using (var runtime = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RuntimeKey)) runtime.SetValue("active", 0);
+            if (_hook != 0) UnhookWindowsHookEx(_hook);
+            _hook = 0;
+            foreach (var hook in _threadHooks.Values) UnhookWindowsHookEx(hook);
+            _threadHooks.Clear();
+            WakeNativeWindows();
+        }
         try { _observer?.Dispose(); }
         finally
         {
@@ -93,9 +118,10 @@ public sealed class NotificationsPlacementModule : ITweakModule
             List<Exception> errors = [];
             foreach (var pair in _placements.ToArray())
             {
-                if (!SameProcess(pair.Key, pair.Value) || !_isToast(pair.Key)) { _placements.Remove(pair.Key); continue; }
+                if (!SameProcess(pair.Key, pair.Value) || !_isToast(pair.Key)) { Forget(pair.Key, pair.Value); continue; }
                 try { MoveVerified(pair.Key, pair.Value.Original); _placements.Remove(pair.Key); }
                 catch (Exception exception) { errors.Add(exception); }
+                finally { if (_useNative) RemoveProp(pair.Key, ObserverProperty); }
             }
             if (errors.Count != 0) throw new AggregateException("Bildirimlerin özgün konumu geri yüklenemedi.", errors);
         }
@@ -104,28 +130,129 @@ public sealed class NotificationsPlacementModule : ITweakModule
     private void OnWindowEvent(WindowEventObserver.WindowEvent change)
     {
         if (!IsActive) return;
-        if (change.Kind == WindowEventObserver.ObjectDestroy) { if (_placements.Remove(change.Window)) _timer?.Start(); return; }
+        if (change.Kind == WindowEventObserver.ObjectDestroy) { if (_placements.Remove(change.Window)) PositionAll(); return; }
         if (_positioning) return;
         if (!_placements.ContainsKey(change.Window) && !Track(change.Window)) return;
-        _timer?.Start();
+        // Accessibility events are already delivered after the window changes.
+        // Do not add another frame of delay in the observer/test engine.
+        PositionAll();
     }
 
-    private void OnTimer(object? sender, EventArgs args)
+    private void ApplyNative()
     {
-        _timer?.Stop();
-        try { PositionAll(); }
+        if (_library == 0)
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "native", "WinForge.NotificationsPlacementTap.dll");
+            using var source = File.OpenRead(path);
+            var digest = SHA256.HashData(source);
+            var directory = Path.Combine(AppData.DirectoryPath, "Notifications", Convert.ToHexString(digest)[..16]);
+            Directory.CreateDirectory(directory);
+            var cachedPath = Path.Combine(directory, Path.GetFileName(path));
+            if (!File.Exists(cachedPath)) File.Copy(path, cachedPath);
+            using var cached = File.OpenRead(cachedPath);
+            if (!CryptographicOperations.FixedTimeEquals(digest, SHA256.HashData(cached))) throw new InvalidDataException("Bildirim bileşeninin önbellek doğrulaması başarısız.");
+            _library = NativeLibrary.Load(cachedPath);
+        }
+        using (var runtime = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RuntimeKey))
+        {
+            runtime.SetValue("anchor", Math.Max(0, Array.IndexOf(Positions, _context!.Settings.GetString("position", Positions[0]))));
+            runtime.SetValue("monitor", Math.Clamp(_context.Settings.GetInt("monitor", 0), 0, 16));
+            runtime.SetValue("gap", Math.Clamp(_context.Settings.GetInt("gap", DefaultGap), 0, 200));
+            runtime.SetValue("heartbeat", Environment.TickCount64, Microsoft.Win32.RegistryValueKind.QWord);
+            runtime.SetValue("last-error", 0);
+            runtime.SetValue("active", 1);
+        }
+        _lastNativeError = 0;
+        if (_hook == 0)
+        {
+            _install = Marshal.GetDelegateForFunctionPointer<InstallHook>(NativeLibrary.GetExport(_library, "InstallNotificationsHook"));
+            _hook = _install(0);
+            if (_hook == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "Bildirim yerleşim kancası kurulamadı.");
+        }
+        RefreshNativeThreads();
+        WakeNativeWindows();
+    }
+
+    private void RefreshNativeThreads()
+    {
+        // Packaged shell hosts may reject desktop-wide DLL hooks. Install on
+        // their existing GUI threads as well, before a toast HWND is created.
+        var live = new HashSet<uint>();
+        foreach (var process in Process.GetProcessesByName("ShellExperienceHost"))
+        using (process)
+        {
+            try
+            {
+                if (!IsSystemHostPath(process.MainModule?.FileName ?? "")) continue;
+                foreach (ProcessThread thread in process.Threads)
+                using (thread)
+                {
+                    var id = (uint)thread.Id;
+                    var info = new GuiThreadInfo { Size = Marshal.SizeOf<GuiThreadInfo>() };
+                    if (!GetGUIThreadInfo(id, ref info)) continue;
+                    live.Add(id);
+                    if (_threadHooks.ContainsKey(id)) continue;
+                    var hook = _install!(id);
+                    if (hook != 0) _threadHooks.Add(id, hook);
+                }
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception) { }
+        }
+        foreach (var id in _threadHooks.Keys.Where(id => !live.Contains(id)).ToArray())
+        {
+            UnhookWindowsHookEx(_threadHooks[id]);
+            _threadHooks.Remove(id);
+        }
+    }
+
+    private void OnNativeHeartbeat(object? sender, EventArgs args)
+    {
+        try
+        {
+            using var runtime = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RuntimeKey);
+            runtime.SetValue("heartbeat", Environment.TickCount64, Microsoft.Win32.RegistryValueKind.QWord);
+            var error = runtime.GetValue("last-error") is int value ? value : 0;
+            if (error != 0 && error != _lastNativeError) { _lastNativeError = error; Report(new Win32Exception(error)); }
+            RefreshNativeThreads();
+        }
         catch (Exception exception) { Report(exception); }
     }
+
+    private void WakeNativeWindows() => Native.EnumWindows((window, _) =>
+    {
+        if (_isToast(window)) SendMessageTimeout(window, 0, 0, 0, 2, 100, out _);
+        return true;
+    }, IntPtr.Zero);
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi, SetLastError = true)]
+    private delegate nint InstallHook(uint thread);
+    [DllImport("user32.dll")] private static extern nint SendMessageTimeout(nint window, uint message, nint wparam, nint lparam, uint flags, uint timeout, out nint result);
+    [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint GetProp(nint window, string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetProp(nint window, string name, nint value);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint RemoveProp(nint window, string name);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public int Size;
+        public uint Flags;
+        public nint Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public RECT CaretBounds;
+    }
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
 
     private bool Track(IntPtr window)
     {
         if (_placements.ContainsKey(window)) return true;
+        if (_useNative && GetProp(window, NativeProperty) != 0) return false;
         if (!Native.IsWindowVisible(window) || !_isToast(window) || !Native.GetWindowRect(window, out var bounds)) return false;
         Native.GetWindowThreadProcessId(window, out var pid);
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            _placements.Add(window, new(pid, process.StartTime.ToUniversalTime().Ticks, bounds));
+            var placement = new Placement(pid, process.StartTime.ToUniversalTime().Ticks, bounds);
+            if (_useNative) SetProp(window, ObserverProperty, 1);
+            _placements.Add(window, placement);
             return true;
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
@@ -148,7 +275,7 @@ public sealed class NotificationsPlacementModule : ITweakModule
             {
                 var window = pair.Key;
                 var placement = pair.Value;
-                if (!SameProcess(window, placement) || !_isToast(window)) { _placements.Remove(window); continue; }
+                if (!SameProcess(window, placement) || !_isToast(window)) { Forget(window, placement); continue; }
                 if (!Native.IsWindowVisible(window) || placement.Blocked || !Native.GetWindowRect(window, out var current)) continue;
                 try
                 {
@@ -194,6 +321,12 @@ public sealed class NotificationsPlacementModule : ITweakModule
 
     private static bool Equal(RECT a, RECT b) => a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
 
+    private void Forget(nint window, Placement placement)
+    {
+        if (_useNative && SameProcess(window, placement)) RemoveProp(window, ObserverProperty);
+        _placements.Remove(window);
+    }
+
     private static bool SameProcess(IntPtr window, Placement placement)
     {
         if (!Native.IsWindow(window)) return false;
@@ -205,19 +338,24 @@ public sealed class NotificationsPlacementModule : ITweakModule
 
     internal static bool MatchesToastIdentity(string className, string title, string executablePath)
     {
-        var systemHost = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SystemApps", "ShellExperienceHost_cw5n1h2txyewy", "ShellExperienceHost.exe");
         return className == "Windows.UI.Core.CoreWindow" && title is "Yeni bildirim" or "New notification" &&
-               string.Equals(executablePath, systemHost, StringComparison.OrdinalIgnoreCase);
+               IsSystemHostPath(executablePath);
     }
+
+    private static bool IsSystemHostPath(string path) => string.Equals(path,
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SystemApps", "ShellExperienceHost_cw5n1h2txyewy", "ShellExperienceHost.exe"),
+        StringComparison.OrdinalIgnoreCase);
 
     private static bool IsWindowsToast(IntPtr window)
     {
-        if (Native.GetAncestor(window, Native.GA_ROOT) != window) return false;
+        if (Native.GetAncestor(window, Native.GA_ROOT) != window || Native.ClassNameOf(window) != "Windows.UI.Core.CoreWindow") return false;
         Native.GetWindowThreadProcessId(window, out var pid);
         try
         {
             using var process = Process.GetProcessById((int)pid);
-            return MatchesToastIdentity(Native.ClassNameOf(window), Native.TitleOf(window), process.MainModule?.FileName ?? "");
+            // Never synchronously ask unrelated (including hidden own-process)
+            // windows for their text while their UI thread may be starting.
+            return IsSystemHostPath(process.MainModule?.FileName ?? "") && Native.TitleOf(window) is "Yeni bildirim" or "New notification";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
     }

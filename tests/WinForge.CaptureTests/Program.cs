@@ -80,7 +80,14 @@ internal static class Program
             if (args.Length == 1 && args[0] == "--audit") { Audit(); return 0; }
             if (args.Length == 1 && args[0] == "--scrolling") return Scrolling();
             var root = Path.Combine(Path.GetTempPath(), "WinForge-CaptureTests", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
-            try { HistoryRefreshChecks.Run(root, Check); CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); }
+            try
+            {
+                NetworkUsageChecks.Run(root, Check);
+                if (!args.Contains("--network"))
+                {
+                    HistoryRefreshChecks.Run(root, Check); CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult();
+                }
+            }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
             Console.WriteLine($"PASS: {checks} capture/history checks."); return 0;
         }
@@ -115,7 +122,7 @@ internal static class Program
     private static async Task Storage(string root)
     {
         var store = new HistoryStore(Path.Combine(root, "history")); var now = DateTimeOffset.UtcNow;
-        var id = store.Add("recall", now, "Code.exe", "İstanbul geliştirme", "Türkçe ekran geçmişi", ocrState: "pending");
+        var id = store.Add("recall", now, "Code.exe", "İstanbul geliştirme", "Türkçe PC geçmişi", ocrState: "pending");
         Check(store.Search(new("recall", "geçmişi")).Single().Id == id, "Unicode FTS search");
         Check(store.Search(new("dictation")).Count == 0, "Module histories isolated");
         Check(store.Search(new("recall", "\" OR *")).Count == 0, "Search input remains literal");
@@ -325,7 +332,7 @@ internal static class Program
             if (voice is not null)
             {
             synth.Voice = voice; synthesized = true;
-            using var speech = await synth.SynthesizeTextToStreamAsync("Merhaba dünya. İstanbul güzel bir şehir. Bu bir ekran geçmişi ve sesli yazma denemesidir.");
+            using var speech = await synth.SynthesizeTextToStreamAsync("Merhaba dünya. İstanbul güzel bir şehir. Bu bir PC geçmişi ve sesli yazma denemesidir.");
             await using var output = File.Create(wav); await speech.AsStreamForRead().CopyToAsync(output);
             }
             else if (!File.Exists(wav)) throw new InvalidOperationException("Install a Turkish speech voice or provide artifacts/capture-verification/turkish.wav.");
@@ -399,7 +406,7 @@ internal static class Program
                     "ShareX-style capture modes are directly searchable quick actions");
             if (module is RecallModule recall)
             {
-                Check(recall.GetQuickActions("").Any(action => action.Name == "Ekran geçmişini duraklat / sürdür"),
+                Check(recall.GetQuickActions("").Any(action => action.Name == "PC geçmişini duraklat / sürdür"),
                     "Recall exposes its privacy pause action");
                 Check(recall.Settings.Any(setting => setting.Key == "pause-hotkey"),
                     "Recall exposes an optional privacy pause hotkey");
@@ -495,7 +502,7 @@ internal static class Program
             }),
             ("capture-history", "history.png", 1180, 780, new
             {
-                title = "Ekran Geçmişi", kind = "recall", search = "", app = "", tag = "", from = "", until = "", offset = 0,
+                title = "PC Geçmişi", kind = "recall", search = "", app = "", tag = "", from = "", until = "", offset = 0,
                 status = "Örnek kayıtlar", selectedId = 1L, selectedText = "Türkçe OCR önizlemesi", selectedTags = "örnek, ekran",
                 preview = imageData, cursor = new { x = 140, y = 110, width = 16, height = 16 }, mediaType = "image", confirmDelete = false,
                 confirmDeleteRange = false, confirmDeleteAll = false,

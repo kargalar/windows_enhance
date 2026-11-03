@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Windows.Threading;
 using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
@@ -21,17 +20,18 @@ public sealed class BrowserFullscreenModule : ITweakModule
     private readonly Dictionary<IntPtr, uint> _hidden = [];
     private HashSet<string> _processes = new(StringComparer.OrdinalIgnoreCase);
     private string? _error;
-    private int _generation;
 
     public string Id => "browser-fullscreen";
-    public string Name => "Tarayıcı Tam Ekran İpucu";
+    public string Name => "Chrome Enhance";
     public string Category => "Verimlilik";
-    public string Description => "Chromium tarayıcılarının tam ekrandan çıkış ipucunu gizler.";
+    public string Description => "Chrome ve Chromium tabanlı tarayıcılar için geliştirmeler.";
     public string? Warning => _error;
     public bool IsActive { get; private set; }
     public IReadOnlyList<SettingDescriptor> Settings { get; } =
-    [new() { Key = "processes", Label = "Tarayıcı işlem adları", Kind = SettingKind.Text, Default = DefaultProcesses,
-        Description = "Noktalı virgülle ayırın. Yalnızca tam ekran tarayıcının üst ortasındaki etkileşimsiz çıkış ipucu hedeflenir." }];
+    [new() { Key = "hide-fullscreen-hint", Label = "Tam ekran çıkış uyarısını gizle", Kind = SettingKind.Toggle, Default = true,
+        Section = "Tam ekran", Description = "Chrome tam ekrana geçtiğinde Esc ile çıkış uyarısını gizler." },
+     new() { Key = "processes", Label = "Tarayıcı işlem adları", Kind = SettingKind.Text, Default = DefaultProcesses,
+        Section = "Tam ekran", Description = "Noktalı virgülle ayırın. Uyarı gizleme bu işlemlere uygulanır." }];
 
     public void Initialize(IModuleContext context) => _context = context;
     public void Activate()
@@ -45,61 +45,58 @@ public sealed class BrowserFullscreenModule : ITweakModule
     }
     public void Apply()
     {
-        _generation++;
-        RestoreHidden();
         _pending.Clear();
         _error = null;
         _processes = new((_context?.Settings.GetString("processes", DefaultProcesses) ?? DefaultProcesses)
             .Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(name => name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name), StringComparer.OrdinalIgnoreCase);
-        if (IsActive) Native.EnumWindows((window, _) => { QueueWindow(new(WindowEventObserver.ObjectShow, window)); return true; }, IntPtr.Zero);
+        RestoreHidden(keepMatchingTargets: IsFeatureEnabled);
+        if (IsActive && IsFeatureEnabled) Native.EnumWindows((window, _) => { QueueWindow(new(WindowEventObserver.ObjectShow, window)); return true; }, IntPtr.Zero);
     }
+
+    private bool IsFeatureEnabled => _context?.Settings.GetBool("hide-fullscreen-hint", true) ?? true;
 
     private void QueueWindow(WindowEventObserver.WindowEvent observed)
     {
         var window = observed.Window;
         if (observed.Kind == WindowEventObserver.ObjectDestroy) { _pending.Remove(window); _hidden.Remove(window); return; }
-        if (!IsActive || Native.ClassNameOf(window) != BrowserWindowClass || _pending.Count >= 128 || !_pending.Add(window)) return;
-        var generation = _generation;
-        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(async () =>
+        if (!IsActive || !IsFeatureEnabled || Native.ClassNameOf(window) != BrowserWindowClass || _pending.Count >= 128 || !_pending.Add(window)) return;
+        try { TryHide(window); }
+        catch (Exception exception)
         {
-            try { if (IsActive && generation == _generation) await TryHideAsync(window, generation); }
-            catch (Exception exception)
-            {
-                _error = exception.Message;
-                _context?.Log.Error("Tarayıcı çıkış ipucu gizlenemedi.", exception);
-            }
-            finally { if (generation == _generation) _pending.Remove(window); }
-        }));
+            _error = exception.Message;
+            _context?.Log.Error("Tarayıcı çıkış ipucu gizlenemedi.", exception);
+        }
+        finally { _pending.Remove(window); }
     }
 
-    private async Task<bool> TryHideAsync(IntPtr window, int generation)
+    private bool TryHide(IntPtr window)
     {
         if (!Native.IsWindowVisible(window) || !IsExitBubble(window)) return false;
         Native.GetWindowThreadProcessId(window, out var processId);
         _hidden[window] = processId;
-        var deadline = Environment.TickCount64 + 500;
-        do
-        {
-            if (!IsActive || generation != _generation || !Native.IsWindow(window)) return false;
-            Native.GetWindowThreadProcessId(window, out var currentProcess);
-            if (currentProcess != processId || !IsExitBubble(window)) return false;
-            if (!ShowWindowAsync(window, Hide)) throw new InvalidOperationException("Tarayıcı gizleme isteğini kabul etmedi.");
-            await Task.Delay(20);
-            if (!Native.IsWindowVisible(window)) return true;
-        } while (Environment.TickCount64 < deadline);
-        throw new InvalidOperationException("Tam ekran çıkış ipucunun gizlendiği doğrulanamadı.");
+        Native.GetWindowThreadProcessId(window, out var currentProcess);
+        if (!IsActive || currentProcess != processId || !IsExitBubble(window)) return false;
+        if (!ShowWindow(window, Hide)) throw new InvalidOperationException("Tarayıcı uyarı penceresini gizleyemedi.");
+        if (Native.IsWindowVisible(window)) throw new InvalidOperationException("Tam ekran uyarı penceresi gizlenemedi.");
+        return true;
     }
 
     private bool IsExitBubble(IntPtr window)
+    {
+        if (!IsExitBubbleShape(window)) return false;
+        Native.GetWindowThreadProcessId(window, out var processId);
+        try { using var process = Process.GetProcessById((int)processId); return _processes.Contains(process.ProcessName); }
+        catch (ArgumentException) { return false; }
+    }
+
+    private bool IsExitBubbleShape(IntPtr window)
     {
         if (Native.ClassNameOf(window) != BrowserWindowClass || !Native.GetWindowRect(window, out var bubble)) return false;
         var style = Native.GetWindowLongPtr(window, StyleIndex).ToInt64();
         var extended = Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64();
         if ((style & PopupStyle) == 0 || (style & SystemMenuStyle) != 0 || (extended & PopupExtendedStyles) != PopupExtendedStyles) return false;
         Native.GetWindowThreadProcessId(window, out var processId);
-        try { using var process = Process.GetProcessById((int)processId); if (!_processes.Contains(process.ProcessName)) return false; }
-        catch (ArgumentException) { return false; }
         var found = false;
         Native.EnumWindows((candidate, _) =>
         {
@@ -126,22 +123,33 @@ public sealed class BrowserFullscreenModule : ITweakModule
     public void Deactivate()
     {
         IsActive = false;
-        _generation++;
         _events?.Dispose();
         _events = null;
         _pending.Clear();
         RestoreHidden();
     }
 
-    private void RestoreHidden()
+    private void RestoreHidden(bool keepMatchingTargets = false)
     {
+        var stillHidden = new Dictionary<IntPtr, uint>();
         foreach (var (window, processId) in _hidden)
         {
             Native.GetWindowThreadProcessId(window, out var currentProcess);
-            if (Native.IsWindow(window) && currentProcess == processId && IsExitBubble(window)) ShowWindowAsync(window, ShowWithoutActivation);
+            if (!Native.IsWindow(window) || currentProcess != processId || !IsExitBubbleShape(window)) continue;
+            if (keepMatchingTargets)
+            {
+                try
+                {
+                    using var process = Process.GetProcessById((int)processId);
+                    if (_processes.Contains(process.ProcessName)) { stillHidden[window] = processId; continue; }
+                }
+                catch (ArgumentException) { continue; }
+            }
+            ShowWindow(window, ShowWithoutActivation);
         }
         _hidden.Clear();
+        foreach (var pair in stillHidden) _hidden[pair.Key] = pair.Value;
     }
 
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ShowWindowAsync(IntPtr window, int command);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ShowWindow(IntPtr window, int command);
 }

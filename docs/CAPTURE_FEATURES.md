@@ -2,12 +2,12 @@
 
 ## Kullanım
 
-**Verimlilik** kategorisinde Ekran Geçmişi, Sesle Yazma ve Ekran Yakalama ayrı ayrı etkinleştirilir.
+**Verimlilik** kategorisinde PC Geçmişi, Sesle Yazma ve Ekran Yakalama ayrı ayrı etkinleştirilir.
 Yeni kurulumda üçü de kapalıdır. Geçmiş görüntülemek veya eski kayıtları aktarmak kayıt başlatmaz.
 
 | Modül | İş akışı |
 |---|---|
-| Ekran Geçmişi | Varsayılan 60 saniye ve etkin pencere değişiklikleri; imlecin monitörü; WebP kalite 80 veya PNG; boşta/kilit/uyku duraklatması; uygulama/pencere dışlama; arama, tarih, uygulama ve etiket filtreleri; uygulama, web sayfası ve klasör süreleri |
+| PC Geçmişi | Varsayılan 60 saniye ve etkin pencere değişiklikleri; imlecin monitörü; WebP kalite 80 veya PNG; boşta/kilit/uyku duraklatması; uygulama/pencere dışlama; arama, tarih, uygulama ve etiket filtreleri; uygulama, web sayfası ve klasör süreleri |
 | Sesle Yazma | `Shift+Space` kısa basışla başlat/durdur, 300 ms veya daha uzun basılı tutup bırakınca durdur; Esc ile iptal; mikrofon, dil, Turbo/Large ve CPU/otomatik seçim; İngilizce çeviri için Large |
 | Ekran Yakalama | `Win+Alt+S` bölge seçimi; panelden monitör, pencere, masaüstü, son bölge, kayan yakalama, video/GIF; pencereye gelince kenarlıkla mıknatıslı seçim, tıklamayla pencere veya sürüklemeyle serbest bölge |
 
@@ -23,12 +23,22 @@ bulanıklaştırma, pikselleştirme ve opak kapatma sunar. Geri al/ileri al, PNG
 OCR ve ekrana sabitleme vardır. Yakalama sonrası düzenleme, kopyalama ve geçmişe kaydetme
 ayrı ayarlanır. Video/GIF kontrollerinden duraklatma, devam, bitirme ve iptal yapılır.
 Video mikrofonu ve sistem sesi birlikte kullanılabilir; GIF sessizdir.
-Ekran Geçmişi açıkken aktif uygulama kullanımı bir saniyelik gözlemlerden ölçülür; ekran
+PC Geçmişi açıkken aktif uygulama kullanımı bir saniyelik gözlemlerden ölçülür; ekran
 görüntüsü aralığından bağımsızdır. Açık olan tarayıcının erişilebilir adres çubuğundan URL,
 Dosya Gezgini'nden klasör yolu okunur. Arama sorguları ve URL sorgu/kimlik bilgileri
 saklanmaz. Kullanım istatistikleri uygulama toplamlarını, yerel takvim günlerine göre
 uygulama sürelerini, web sayfalarını ve klasörleri tarih aralığıyla gösterir. Bu ek takip
-Ekran Geçmişi ayarından kapatılabilir; modül ilk kurulumda kapalıdır.
+PC Geçmişi ayarından kapatılabilir; modül ilk kurulumda kapalıdır.
+
+PC Geçmişi → **İnternet kullanım miktarını kaydet** günlük indirme, yükleme ve toplam ağ
+trafiğini kullanım istatistiklerindeki **İnternet kullanımı** sekmesine ekler. Ölçüm beş
+saniyede bir bağdaştırıcı sayaçlarının farkından yapılır; eski sayaç toplamları ilk açılışta
+geçmişe yazılmaz. Yerel ağ ve VPN trafiği dahil olabilir; site/uygulama başına veri miktarı
+ölçülmez. Boşta arka plan indirmeleri takip edilir; modül kapalıyken, duraklatılmışken,
+kilitliyken veya uykudayken ölçüm yapılmaz. Tarih aralığı ve yerel gece yarısı sınırlarındaki
+örneklerin veri miktarı süreye oranlanır. Önceki günlerin internet miktarı geriye dönük çıkarılmaz.
+**Ekran görüntülerini kaydet** kapatılarak yalnız kullanım takibi yapılabilir. Modül kimliği
+`screen-history` olarak korunur; mevcut ayarlar ve kayıtlar kullanılmaya devam eder.
 
 ## Depolama ve aktarım
 

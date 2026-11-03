@@ -60,7 +60,12 @@ internal static class PanelPlacementChecks
     private sealed class PanelUi : IFeatureUiService
     {
         internal Dictionary<string, PanelWindow> Windows { get; } = new();
-        public IFeatureUiWindow Open(string key, string view, string title, FeatureUiWindowOptions options) => Windows[key] = new();
+        public IFeatureUiWindow Open(string key, string view, string title, FeatureUiWindowOptions options)
+        {
+            var window = Windows[key] = new();
+            if (options.ShowOnOpen) window.Show();
+            return window;
+        }
         public IFeatureUiSurface CreateSurface(string view) => throw new NotSupportedException();
         public Task<bool> ConfirmAsync(string title, string message, string confirmLabel = "Continue", string cancelLabel = "Cancel") => throw new NotSupportedException();
         public Task ShowMessageAsync(string title, string message, string closeLabel = "Close") => throw new NotSupportedException();
@@ -71,11 +76,17 @@ internal static class PanelPlacementChecks
         public bool IsVisible { get; private set; }
         public event Action<string, JsonElement>? MessageReceived { add { } remove { } }
         public event Action? ClosedByHost { add { } remove { } }
-        public void Show() => IsVisible = true;
+        public void Show()
+        {
+            if (Bounds.IsEmpty || Bounds.Width <= 0 || Bounds.Height <= 0 || !_hasState)
+                throw new InvalidOperationException("A panel must receive its bounds and content before its first visible frame.");
+            IsVisible = true;
+        }
         public void Hide() => IsVisible = false;
         public void Close() => Hide();
         public void Dispose() => Close();
         public void SetBounds(double left, double top, double width, double height) => Bounds = new(left, top, width, height);
-        public void SetState(object state) { }
+        private bool _hasState;
+        public void SetState(object state) => _hasState = true;
     }
 }

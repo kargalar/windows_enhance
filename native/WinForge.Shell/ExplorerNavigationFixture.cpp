@@ -8,7 +8,7 @@
 #include <thread>
 
 namespace {
-constexpr wchar_t RuntimeKey[] = L"Software\\WinForge\\ExplorerNavigation\\Runtime";
+constexpr wchar_t RuntimeKey[] = L"Software\\WinForge\\ExplorerNavigation\\Fixture";
 struct SavedValue { std::wstring name; DWORD kind{}; std::vector<BYTE> bytes; bool exists{}; };
 struct RegistryScope {
     HKEY key{};
@@ -82,7 +82,12 @@ int wmain(int argc, wchar_t** argv) {
         auto install = reinterpret_cast<HHOOK(WINAPI*)(DWORD)>(GetProcAddress(library, "InstallNavigationHook"));
         Require(install != nullptr, "Hook export missing.");
         auto hook = install(GetCurrentThreadId()); Require(hook != nullptr, "Hook installation failed.");
-        PostMessageW(window, WM_NULL, 0, 0); Pump(200);
+        SendMessageW(tree, WM_NULL, 0, 0);
+        // This control did not exist when the hook was installed. Its completed
+        // creation must already carry the style, without pumping or a timer tick.
+        auto freshTree = CreateWindowW(WC_TREEVIEWW, L"", WS_CHILD | WS_VISIBLE, 0, 0, 100, 100, window, nullptr, wc.hInstance, nullptr);
+        Require(TreeView_GetBkColor(freshTree) == RGB(12,34,56), "A new navigation tree retained the default style until a later frame.");
+        DestroyWindow(freshTree);
         auto dpi = GetDpiForWindow(tree);
         Require(TreeView_GetItemHeight(tree) >= MulDiv(40, static_cast<int>(dpi), 96), "Vertical padding/font size not applied.");
         Require(TreeView_GetIndent(tree) == static_cast<UINT>(MulDiv(31, static_cast<int>(dpi), 96)), "Indent not applied.");
@@ -141,7 +146,7 @@ int wmain(int argc, wchar_t** argv) {
         Require(TreeView_GetItemHeight(tree) == originalHeight && TreeView_GetIndent(tree) == originalIndent &&
             TreeView_GetBkColor(tree) == originalBackground && SendMessageW(tree, WM_GETFONT, 0, 0) == originalFont, "Original style was not restored.");
         registry.Number(L"active", 1); registry.Heartbeat(GetTickCount64());
-        for (int i = 0; i < 13; ++i) { PostMessageW(window, WM_NULL, 0, 0); Pump(100); }
+        SendMessageW(tree, WM_NULL, 0, 0);
         Require(TreeView_GetBkColor(tree) == RGB(12,34,56), "Style could not be reattached.");
         registry.Heartbeat(GetTickCount64() - 10000); Pump(1200);
         Require(TreeView_GetBkColor(tree) == originalBackground, "Expired owner heartbeat did not restore Explorer.");

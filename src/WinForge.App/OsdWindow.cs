@@ -62,10 +62,11 @@ public static class OsdWindow
     {
         var window = EnsureWindow(ref _toastView, ToastKey, "system-osd", "WinForge bildirimi",
             new FeatureUiWindowOptions(520, 64, Topmost: true, ActivateOnShow: false,
-                Transparent: true, ClickThrough: true));
+                Transparent: true, ClickThrough: true, ShowOnOpen: false));
         if (window is null) return;
         PositionAtBottom(window, 520, 64, 72);
         window.SetState(new { kind = "toast", message });
+        window.Show();
         RestartTimer(ref _toastTimer, Math.Clamp(1400 + message.Length * 28, 1800, 6000), () => _toastView?.Hide());
     });
 
@@ -82,12 +83,13 @@ public static class OsdWindow
         }
         var window = EnsureWindow(ref _brightnessView, BrightnessKey, "system-osd", "Ekran parlaklığı",
             new FeatureUiWindowOptions(240, 60, Topmost: true, ActivateOnShow: false,
-                Transparent: true, ClickThrough: false));
+                Transparent: true, ClickThrough: false, ShowOnOpen: false));
         if (window is null) return;
         window.MessageReceived -= OnBrightnessMessage;
         window.MessageReceived += OnBrightnessMessage;
         PositionAtBottom(window, 240, 60, 56);
         UpdateBrightnessState(window);
+        window.Show();
         RestartBrightnessTimer();
     });
 
@@ -141,12 +143,13 @@ public static class OsdWindow
         }
         var window = EnsureWindow(ref _volumeView, VolumeKey, "system-osd", "Ses düzeyi",
             new FeatureUiWindowOptions(IndicatorWidth, IndicatorHeight, Topmost: true, ActivateOnShow: false,
-                Transparent: true, ClickThrough: false));
+                Transparent: true, ClickThrough: false, ShowOnOpen: false));
         if (window is null) return;
         window.MessageReceived -= OnVolumeMessage;
         window.MessageReceived += OnVolumeMessage;
         PositionAtBottom(window, IndicatorWidth, IndicatorHeight, 56);
         UpdateVolumeState(window);
+        window.Show();
         AudioVolumeOverlayLifecycle.NotifyShown();
         RestartVolumeTimer();
     });
@@ -156,7 +159,6 @@ public static class OsdWindow
     {
         if (_featureUi is null) return null;
         window ??= _featureUi.Open(key, view, title, options);
-        window.Show();
         return window;
     }
 

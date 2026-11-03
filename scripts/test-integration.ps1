@@ -33,6 +33,10 @@ if ($NativeSmoke) {
     & (Join-Path $PSScriptRoot 'build-native.ps1') -Configuration $Configuration
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $folderDialogNative = Join-Path $root "native\WinForge.Shell\bin\x64\$Configuration"
+    & (Join-Path $folderDialogNative 'WinForge.ExplorerNavigationFixture.exe') (Join-Path $folderDialogNative 'WinForge.ExplorerNavigationTap.dll')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & (Join-Path $folderDialogNative 'WinForge.NotificationsPlacementFixture.exe') (Join-Path $folderDialogNative 'WinForge.NotificationsPlacementTap.dll')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & (Join-Path $folderDialogNative 'WinForge.FolderDialogFixture.exe') (Join-Path $folderDialogNative 'WinForge.FolderDialogTap.dll')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     dotnet run --project (Join-Path $root 'tests\WinForge.NavigationTests\WinForge.NavigationTests.csproj') -c $Configuration -p:Platform=x64 --artifacts-path $buildArtifacts -- --folder-dialog

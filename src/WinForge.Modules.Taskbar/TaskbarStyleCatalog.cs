@@ -93,8 +93,8 @@ internal static class TaskbarStyleCatalog
         var traySize = settings.GetInt("tray-icon-size", 0);
         if (twoRows)
             Add("SystemTray.NotificationAreaIcons", ("ItemsPanel", TrayPanel), ("Height", (2 * (traySize > 0 ? Math.Clamp(traySize, 12, 48) : 20)).ToString(CultureInfo.InvariantCulture)));
-        var trayPadding = settings.GetInt("tray-icon-padding", -1);
-        if (traySize > 0 || trayPadding >= 0 || twoRows)
+        var trayPadding = TaskbarTrayLayout.Padding(settings, "tray-icon");
+        if (traySize > 0 || trayPadding is not null || twoRows)
         {
             var properties = new List<(string Name, string Value)>();
             if (traySize > 0 || twoRows)
@@ -102,19 +102,17 @@ internal static class TaskbarStyleCatalog
                 var size = (traySize > 0 ? Math.Clamp(traySize, 12, 48) : 20).ToString(CultureInfo.InvariantCulture);
                 properties.AddRange([("MinWidth", "0"), ("MinHeight", "0"), ("Width", size), ("Height", size)]);
             }
-            if (trayPadding >= 0 || twoRows)
-                properties.Add(("Padding", (trayPadding >= 0 ? Math.Clamp(trayPadding, 0, 16) : 0).ToString(CultureInfo.InvariantCulture)));
+            if (trayPadding is not null || twoRows)
+                properties.Add(("Padding", trayPadding ?? "0"));
             Add("SystemTray.NotificationAreaIcons SystemTray.NotifyIconView", properties.ToArray());
         }
+        rules.AddRange(TaskbarTrayLayout.Build(settings));
         var time = settings.GetString("time-format").Trim();
         AddGap("tray-icon-gap", "SystemTray.NotificationAreaIcons SystemTray.NotifyIconView");
         foreach (var selector in new[] { "SystemTray.OmniButton#ControlCenterButton SystemTray.IconView", "SystemTray.Stack#MainStack SystemTray.IconView", "SystemTray.Stack#NonActivatableStack SystemTray.IconView" })
             AddGap("system-icon-gap", selector);
         foreach (var selector in new[] { "SystemTray.Stack#NotifyIconStack", "SystemTray.NotificationAreaIcons", "SystemTray.OmniButton#ControlCenterButton", "SystemTray.Stack#MainStack", "SystemTray.Stack#NonActivatableStack" })
             AddGap("tray-group-gap", selector);
-        var clockGap = settings.GetInt("clock-gap", -1);
-        if (clockGap >= 0)
-            Add("SystemTray.OmniButton#NotificationCenterButton", ("Margin", $"{Math.Clamp(clockGap, 0, 32)},0,0,0"), ("Padding", "0"));
         var date = settings.GetString("date-format").Trim();
         var display = settings.GetString("clock-display", ClockDisplays[0]);
         var hideTime = display == ClockDisplays[1];
@@ -123,11 +121,15 @@ internal static class TaskbarStyleCatalog
         else if (time.Length > 0) Add("TextBlock#TimeInnerTextBlock", ("Text", Format(now, time)));
         if (hideDate) Add("TextBlock#DateInnerTextBlock", ("Visibility", "Collapsed"));
         else if (date.Length > 0) Add("TextBlock#DateInnerTextBlock", ("Text", Format(now, date)));
-        // Formatting must not reserve a fixed-width tile beside the tray.
-        // Keep native content sizing unless the user explicitly requests a width.
-        var clockWidth = settings.GetInt("clock-width", 0);
-        if (clockWidth > 0 && (time.Length > 0 || date.Length > 0 || hideTime || hideDate))
-            Add("SystemTray.DateTimeIconContent", ("Width", Math.Clamp(clockWidth, 60, 360).ToString(CultureInfo.InvariantCulture)));
+        if (time.Length > 0 || date.Length > 0 || hideTime || hideDate)
+        {
+            // Windows caches the native clock's width on both the content and
+            // its inner panel. Release every layer to measure the visible text.
+            const string clock = "SystemTray.OmniButton#NotificationCenterButton";
+            Add(clock, ("Width", "Auto"), ("MinWidth", "0"), ("Margin", "0"), ("Padding", "0"));
+            foreach (var selector in new[] { "SystemTray.DateTimeIconContent", "SystemTray.IconView", "Grid", "StackPanel" })
+                Add($"{clock} {selector}", ("Width", "Auto"), ("MinWidth", "0"));
+        }
         if (tree is not null) rules.AddRange(TaskbarSystemIcons.Build(settings, tree));
         if (TaskbarDockSettings.Build(settings) is { } dockRule) rules.Add(dockRule);
         return rules;

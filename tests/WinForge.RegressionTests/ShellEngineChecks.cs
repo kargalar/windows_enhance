@@ -48,12 +48,29 @@ internal static class ShellEngineChecks
             session.Apply(false, []);
             WaitUntil(() => SendMessageTimeout(window, 0x0405, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Vertical alignment restoration");
             check(true, "Disabling alignment restores the original horizontal and vertical alignments");
+            session.Apply(true, [new ShellStyleRule("#WinForgeOverflowGrid", new Dictionary<string, string>
+                { ["MaximumRowsOrColumns"] = "3", ["Orientation"] = "Horizontal", ["ItemWidth"] = "NaN", ["ItemHeight"] = "NaN" })]);
+            WaitUntil(() => SendMessageTimeout(window, 0x040A, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Overflow columns application");
+            check(session.Status.Errors == 0, "Native WrapGrid properties apply the selected column count and fill direction");
+            session.Apply(false, []);
+            WaitUntil(() => SendMessageTimeout(window, 0x040B, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result != IntPtr.Zero, "Overflow columns restoration");
+            check(true, "Disabling custom columns restores the original WrapGrid count and orientation");
             session.Apply(true, [new ShellStyleRule("#WinForgeColumnTarget", new Dictionary<string, string> { ["IconColumnWidth"] = "28" })]);
             WaitUntil(() => SendMessageTimeout(window, 0x0407, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result.ToInt32() == 28, "Icon column width application");
             check(session.Status.Errors == 0, "Native bridge shrinks the fixed icon column inside a button template");
             session.Apply(false, []);
             WaitUntil(() => SendMessageTimeout(window, 0x0407, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var result) != IntPtr.Zero && result.ToInt32() == 44, "Icon column width restoration");
             check(true, "Disabling custom button width restores the exact original icon column width");
+            session.Apply(true, [new ShellStyleRule("TextBlock#TimeInnerTextBlock", new Dictionary<string, string> { ["Text"] = "14:05 custom" })]);
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "TimeInnerTextBlock" && node.Text == "14:05 custom"), "Clock format application");
+            for (var refresh = 0; refresh < 20; refresh++)
+                check(SendMessageTimeout(window, 0x0408, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var textResult) != IntPtr.Zero && textResult != IntPtr.Zero,
+                    "Clock format survives a synchronous native text refresh");
+            session.Apply(false, []);
+            WaitUntil(() => session.ReadVisualTree().Any(node => node.Name == "TimeInnerTextBlock" && node.Text == "WinForge native XAML verification"), "Clock format restoration");
+            check(SendMessageTimeout(window, 0x0408, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var releasedText) != IntPtr.Zero && releasedText == IntPtr.Zero &&
+                SendMessageTimeout(window, 0x0409, IntPtr.Zero, IntPtr.Zero, 2, 1000, out var nativeText) != IntPtr.Zero && nativeText != IntPtr.Zero,
+                "Disabling clock formatting removes its property callback and permits native text updates");
             var targetHandle = session.ReadVisualTree().Single(node => node.Name == "WinForgeVerificationTarget").Handle;
             session.Apply(true, [new ShellStyleRule("@" + targetHandle.ToString(CultureInfo.InvariantCulture), new Dictionary<string, string> { ["Width"] = "280", ["DockAnimation"] = "125,160" })]);
             WaitUntil(() => ReadWidth(window) == 280, "Repeated XAML style application");

@@ -116,18 +116,18 @@ internal sealed class WindowManagement:IDisposable
             preview.Content=new Border{Background=new SolidColorBrush(Color.FromArgb(35,225,189,99)),BorderBrush=Theme.Brush("Gold"),BorderThickness=new(2),CornerRadius=new(14),Margin=new(4)};
             PassThrough(preview);
         }
-        if(!preview.IsVisible)preview.Show();Position(preview,frame);
+        Position(preview,frame);if(!preview.IsVisible)preview.Show();
         _=Native.SetWindowPos(new WindowInteropHelper(wheel).Handle,new nint(-1),0,0,0,0,0x10|0x1|0x2);
     }
     private void ShowWheel(Native.Point point)
     {
         wheel=new WheelWindow(null,placements.Select(p=>new ToolChoice(p.ToString(),p.Title(),"",p)).ToArray(),_=>{},externalDrag:true,featureUi:featureUi);
-        PassThrough(wheel);wheel.Show();
+        PassThrough(wheel);
         var dpi=Native.GetDpiForWindow(target);var size=(int)Math.Round(WheelPresentation.Diameter*(dpi>0?dpi:96)/96d);
         var work=WorkArea(point);
         var x=Math.Clamp(point.X-size/2,work.X+4,Math.Max(work.X+4,work.Right-size-4));
         var y=Math.Clamp(point.Y-size/2,work.Y+4,Math.Max(work.Y+4,work.Bottom-size-4));
-        Position(wheel,new(x,y,size,size));wheelReady=true;Trace?.Invoke($"wheel desired={x},{y},{size} actual={Bounds(new WindowInteropHelper(wheel).Handle)}");
+        Position(wheel,new(x,y,size,size));wheel.Show();wheelReady=true;Trace?.Invoke($"wheel desired={x},{y},{size} actual={Bounds(new WindowInteropHelper(wheel).Handle)}");
     }
     private static void PassThrough(Window window)
     {
@@ -139,7 +139,10 @@ internal sealed class WindowManagement:IDisposable
         };
     }
     private static void Position(Window window,WindowFrame frame)
-        =>Native.SetWindowPos(new WindowInteropHelper(window).Handle,new nint(-1),frame.X,frame.Y,frame.Width,frame.Height,0x10|0x40);
+    {
+        window.WindowStartupLocation=WindowStartupLocation.Manual;
+        Native.SetWindowPos(new WindowInteropHelper(window).EnsureHandle(),new nint(-1),frame.X,frame.Y,frame.Width,frame.Height,0x10);
+    }
     private void HideOverlays(){wheelReady=false;wheel?.Close();wheel=null;preview?.Close();preview=null;}
     private void Clear(){timer.Stop();HideOverlays();target=0;cancelled=false;}
     public void Dispose(){if(disposed)return;disposed=true;pendingPlacement?.Cancel();Clear();if(hook!=0)Native.UnhookWinEvent(hook);}

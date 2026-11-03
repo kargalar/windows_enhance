@@ -12,7 +12,7 @@ Görev çubuğu, Başlat, Gezgin paneli, pencere bölgeleri, fare vurgusu, üste
 - **Görev Çubuğu:** bileşen kartları, görünüm/dock, simgeler/tepsi, saat ve fare davranışı ayrı sayfalardır. Bilgisayarda keşfedilen uygulama simgeleri dinamik listeye eklenir.
 - **Başlat / Fare / Gezgin:** görünüm, içerik ve davranışlara göre ayrı gruplar; renkler, ölçüler ve bileşen anahtarları ilişkili alanlarda tutulur.
 - **Ekran Yakalama:** başlatma, çıktı akışı, video/ses ve kayıt konumu ayrıdır. İşlem sırası 24 ham metin seçeneği yerine yukarı/aşağı taşınan dört adımla düzenlenir; native seçenekler dışına çıkılmaz.
-- **Ekran Geçmişi / Sesle Yazma:** kayıt girişleri, çıktı, model/dil, dışlamalar ve depolama birbirinden ayrıdır. Teknik bir araç açma eylemi ilgili alanda kalır.
+- **PC Geçmişi / Sesle Yazma:** kayıt girişleri, çıktı, model/dil, dışlamalar ve depolama birbirinden ayrıdır. Teknik bir araç açma eylemi ilgili alanda kalır.
 - **Tema / Ekran Parlaklığı:** gündüz ve gece ayrı kartlardır; saat alanları HH:mm seçici kullanır.
 - **Bildirim / Flyout:** ekrandaki konum bir yerleşim haritasından seçilir. Native konum değerleri değiştirilmez.
 - **FancyZones / Otomatik Yerleşim:** düzenler görsel seçeneklerle seçilir. Monitör profilleri ekran kimliği ve ızgara boyutlarından oluşan tabloyla düzenlenir.

@@ -7,12 +7,22 @@
 
 namespace {
 constexpr wchar_t RuntimeKey[] = L"Software\\WinForge\\ExplorerNavigation\\Runtime";
+constexpr wchar_t FixtureKey[] = L"Software\\WinForge\\ExplorerNavigation\\Fixture";
 constexpr UINT_PTR SubclassId = 0x57464E41;
 constexpr UINT_PTR TimerId = 0x57464E42;
 constexpr ULONGLONG LeaseMilliseconds = 6000;
 HMODULE Library{};
 thread_local bool Discovering{};
-thread_local ULONGLONG LastDiscovery{};
+bool LocalFixture{};
+bool IsExplorer() {
+    static const bool explorer = [] {
+        wchar_t path[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, path, MAX_PATH);
+        auto name = wcsrchr(path, L'\\');
+        return _wcsicmp(name ? name + 1 : path, L"explorer.exe") == 0;
+    }();
+    return explorer;
+}
 
 DWORD Number(HKEY key, wchar_t const* name, DWORD fallback) {
     DWORD value{}, bytes = sizeof(value);
@@ -27,7 +37,7 @@ struct Options {
 };
 bool ReadOptions(Options& value) {
     HKEY key{};
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, RuntimeKey, 0, KEY_READ, &key) != ERROR_SUCCESS) return false;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, LocalFixture ? FixtureKey : RuntimeKey, 0, KEY_READ, &key) != ERROR_SUCCESS) return false;
     ULONGLONG beat{};
     DWORD bytes = sizeof(beat);
     auto live = Number(key, L"active", 0) != 0 &&
@@ -272,18 +282,16 @@ BOOL CALLBACK FindTree(HWND window, LPARAM) {
     SetTimer(window, TimerId, 1000, nullptr);
     return TRUE;
 }
-BOOL CALLBACK FindWindowOnThread(HWND window, LPARAM) {
-    DWORD process{};
-    GetWindowThreadProcessId(window, &process);
-    if (process == GetCurrentProcessId()) EnumChildWindows(window, FindTree, 0);
-    return TRUE;
-}
 LRESULT CALLBACK Hook(int code, WPARAM wparam, LPARAM lparam) {
-    if (code >= 0 && !Discovering && GetTickCount64() - LastDiscovery >= 1000) {
-        Discovering = true;
-        LastDiscovery = GetTickCount64();
-        EnumWindows(FindWindowOnThread, 0);
-        Discovering = false;
+    // Inspect completed creation, before the control can paint. A desktop hook
+    // also covers Explorer threads/windows that do not exist at activation time.
+    if (code >= 0 && !Discovering && (LocalFixture || IsExplorer())) {
+        auto message = reinterpret_cast<CWPRETSTRUCT const*>(lparam);
+        if (message->message == WM_CREATE || message->message == WM_NULL) {
+            Discovering = true;
+            FindTree(message->hwnd, 0);
+            Discovering = false;
+        }
     }
     return CallNextHookEx(nullptr, code, wparam, lparam);
 }
@@ -292,6 +300,7 @@ extern "C" __declspec(dllexport) HHOOK WINAPI InstallNavigationHook(DWORD thread
     HMODULE module = Library;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
         reinterpret_cast<LPCWSTR>(&Hook), &module)) return nullptr;
-    return SetWindowsHookExW(WH_GETMESSAGE, Hook, module, thread);
+    LocalFixture = thread != 0;
+    return SetWindowsHookExW(WH_CALLWNDPROCRET, Hook, module, thread);
 }
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) { if (reason == DLL_PROCESS_ATTACH) Library = instance; return TRUE; }

@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
+using System.Windows.Threading;
 
 namespace WinForge.Core;
 
@@ -9,8 +10,8 @@ public sealed class GlobalKeyboardHook : IDisposable
     private const int VkRightControl = 0xA3;
     private const int DoublePressWindowMs = 450;
 
-    private Native.LowLevelKeyboardProc? _callback;
-    private IntPtr _hook;
+    private KeyboardHookThread? _hook;
+    private int _generation;
     private bool _controlDown;
     private long _lastControlUp = -DoublePressWindowMs;
 
@@ -18,75 +19,80 @@ public sealed class GlobalKeyboardHook : IDisposable
     public event Action<uint, bool>? KeyStateChanged;
     public Action<Exception>? ErrorHandler { get; set; }
 
-    public bool IsInstalled => _hook != IntPtr.Zero;
+    public bool IsInstalled => _hook is not null;
 
     public void Install()
     {
-        if (_hook != IntPtr.Zero) return;
-
-        _callback = Handle;
-        _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
-        if (_hook == IntPtr.Zero)
-            throw new InvalidOperationException("Klavye kancasÄ± kurulamadÄ±.");
+        if (_hook is not null) return;
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var generation = ++_generation;
+        _hook = new KeyboardHookThread((code, message, pointer) =>
+        {
+            if (code >= 0)
+            {
+                // The native pointer is valid only for the duration of this callback.
+                var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(pointer);
+                var timestamp = Environment.TickCount64;
+                var capturing = HotkeyService.IsCapturing;
+                dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+                {
+                    if (generation == _generation && IsInstalled)
+                        ProcessKey(message.ToInt64(), info, timestamp, capturing);
+                }));
+            }
+            return Native.CallNextHookEx(IntPtr.Zero, code, message, pointer);
+        });
     }
 
-    private IntPtr Handle(int nCode, IntPtr wParam, IntPtr lParam)
+    private void ProcessKey(long message, KBDLLHOOKSTRUCT info, long timestamp, bool capturing)
     {
-        using var timing = PerformanceTrace.Measure("input.keyboard.callback");
-        if (nCode >= 0)
+        if (capturing)
         {
-            var message = wParam.ToInt64();
-            var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-            if (HotkeyService.IsCapturing)
+            // Keep releases observable so recording/drag state can finish safely.
+            if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
+            _controlDown = false;
+            _lastControlUp = -DoublePressWindowMs;
+            return;
+        }
+        if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN) NotifyKeyStateChanged(info.vkCode, isDown: true);
+        else if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
+
+        if (info.vkCode is VkControl or VkLeftControl or VkRightControl)
+        {
+            if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
             {
-                // Keep releases observable so recording/drag state can finish safely.
-                if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
+                _controlDown = true;
+            }
+            else if ((message is Native.WM_KEYUP or Native.WM_SYSKEYUP) && _controlDown)
+            {
                 _controlDown = false;
-                _lastControlUp = -DoublePressWindowMs;
-                return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
-            }
-            if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN) NotifyKeyStateChanged(info.vkCode, isDown: true);
-            else if (message is Native.WM_KEYUP or Native.WM_SYSKEYUP) NotifyKeyStateChanged(info.vkCode, isDown: false);
+                var now = timestamp;
 
-            if (info.vkCode is VkControl or VkLeftControl or VkRightControl)
-            {
-                if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
+                if (now - _lastControlUp <= DoublePressWindowMs)
                 {
-                    _controlDown = true;
-                }
-                else if ((message is Native.WM_KEYUP or Native.WM_SYSKEYUP) && _controlDown)
-                {
-                    _controlDown = false;
-                    var now = Environment.TickCount64;
-
-                    if (now - _lastControlUp <= DoublePressWindowMs)
+                    _lastControlUp = -DoublePressWindowMs;
+                    try
                     {
-                        _lastControlUp = -DoublePressWindowMs;
-                        try
-                        {
-                            if (DoubleControlPressed is { } observers)
-                                foreach (Action observer in observers.GetInvocationList())
-                                    try { observer(); } catch (Exception error) { ReportError(error); }
-                        }
-                        catch
-                        {
-                            // A hook callback must never take the message loop down.
-                        }
+                        if (DoubleControlPressed is { } observers)
+                            foreach (Action observer in observers.GetInvocationList())
+                                try { observer(); } catch (Exception error) { ReportError(error); }
                     }
-                    else
+                    catch
                     {
-                        _lastControlUp = now;
+                        // A hook callback must never take the message loop down.
                     }
                 }
-            }
-            else if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
-            {
-                // BaÅŸka bir tuÅŸa basÄ±ldÄ±ysa Ã¶nceki Ctrl dokunuÅŸu sayÄ±lmaz.
-                _lastControlUp = -DoublePressWindowMs;
+                else
+                {
+                    _lastControlUp = now;
+                }
             }
         }
-
-        return Native.CallNextHookEx(_hook, nCode, wParam, lParam);
+        else if (message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
+        {
+            // BaÅŸka bir tuÅŸa basÄ±ldÄ±ysa Ã¶nceki Ctrl dokunuÅŸu sayÄ±lmaz.
+            _lastControlUp = -DoublePressWindowMs;
+        }
     }
 
     internal void NotifyKeyStateChanged(uint virtualKey, bool isDown)
@@ -100,14 +106,10 @@ public sealed class GlobalKeyboardHook : IDisposable
 
     public void Dispose()
     {
-        if (_hook != IntPtr.Zero)
-        {
-            Native.UnhookWindowsHookEx(_hook);
-            _hook = IntPtr.Zero;
-        }
-
-        _callback = null;
+        ++_generation;
+        _hook?.Dispose();
+        _hook = null;
+        _controlDown = false;
+        _lastControlUp = -DoublePressWindowMs;
     }
 }
-
-
