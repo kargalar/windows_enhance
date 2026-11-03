@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using WinForge.Core;
 
 namespace WinForge.Modules.Capture;
 
@@ -43,7 +44,7 @@ internal sealed class PlaybackMuteScope : IDisposable
             if (device.Activate(ref id, 1, IntPtr.Zero, out instance) < 0 || instance is not IAudioEndpointVolume endpoint) return;
             volume = endpoint;
             if (volume.GetMute(out var wasMuted) < 0 || wasMuted) return;
-            var context = Guid.Empty;
+            var context = VolumeService.DictationPlaybackMuteContext;
             if (volume.SetMute(true, ref context) >= 0)
             {
                 changedEndpoints!.Add(volume);
@@ -65,7 +66,7 @@ internal sealed class PlaybackMuteScope : IDisposable
         if (endpoints is null) return;
         foreach (var endpoint in endpoints)
         {
-            try { var context = Guid.Empty; endpoint.SetMute(false, ref context); }
+            try { var context = VolumeService.DictationPlaybackMuteContext; endpoint.SetMute(false, ref context); }
             catch (Exception error) when (error is COMException or InvalidOperationException) { }
             finally { Release(endpoint); }
         }

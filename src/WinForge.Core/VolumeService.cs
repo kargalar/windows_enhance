@@ -6,11 +6,12 @@ public static class VolumeService
 {
     private static readonly Guid IidAudioEndpointVolume = new("5CDF2C82-841E-4546-9722-0CF74078229A");
     private static readonly Guid WinForgeVolumeChangeContext = new("67C789EC-48D1-4B1C-A056-B84F832D7A1B");
+    public static readonly Guid DictationPlaybackMuteContext = new("D58F6D50-3D9B-4C5A-9B83-3D5AC4F3289B");
 
     public sealed record EndpointVolumeChange(int VolumePercent, bool IsMuted, Guid EventContext);
 
     public static bool IsWinForgeChange(EndpointVolumeChange change) =>
-        change.EventContext == WinForgeVolumeChangeContext;
+        change.EventContext == WinForgeVolumeChangeContext || change.EventContext == DictationPlaybackMuteContext;
 
     /// <summary>Observes software-visible volume and mute changes on the current default render endpoint.</summary>
     public static IDisposable WatchDefaultEndpoint(Action<EndpointVolumeChange> onChanged)

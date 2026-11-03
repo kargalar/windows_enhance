@@ -450,10 +450,10 @@ public sealed class MediaFlyoutModule : ITweakModule
             _lastObservedMuted = TryReadCurrentMuted();
             _externalVolumeWatcher = VolumeService.WatchDefaultEndpoint(change =>
             {
-                if (VolumeService.IsWinForgeChange(change)) return;
                 if (_lastObservedVolume == change.VolumePercent && _lastObservedMuted == change.IsMuted) return;
                 _lastObservedVolume = change.VolumePercent;
                 _lastObservedMuted = change.IsMuted;
+                if (VolumeService.IsWinForgeChange(change)) return;
                 Application.Current?.Dispatcher.BeginInvoke(() =>
                 {
                     if (!IsActive) return;
