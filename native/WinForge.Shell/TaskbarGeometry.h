@@ -100,7 +100,7 @@ private:
                     if (position->flags & SWP_NOSIZE) {
                         auto nativeHeight = MulDiv(self->original_.bottom - self->original_.top,
                             static_cast<int>(GetDpiForWindow(window)), static_cast<int>(self->originalDpi_));
-                        proposed.bottom = proposed.top + nativeHeight;
+                        proposed = MoveOnlyProposal(proposed, information.rcMonitor, targetHeight, nativeHeight);
                     }
                     auto desired = ResizeBottom(proposed, information.rcMonitor, targetHeight);
                     position->y = desired.top;
@@ -228,6 +228,15 @@ public:
 
     bool Refresh() noexcept {
         return !window_ || Update(window_, heightDips_);
+    }
+
+    // Explorer can reveal an auto-hidden bar using either its native height
+    // or the already customized height. Do not treat the latter as an
+    // intermediate animation frame when the customized bar is shorter.
+    static RECT MoveOnlyProposal(RECT rectangle, RECT const& monitor, int targetHeight, int nativeHeight) noexcept {
+        rectangle.bottom = rectangle.top +
+            (rectangle.top == monitor.bottom - targetHeight ? targetHeight : nativeHeight);
+        return rectangle;
     }
 
     // Keep the two-pixel autohide reveal strip unchanged. During animation,

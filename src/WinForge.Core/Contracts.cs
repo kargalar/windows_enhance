@@ -75,6 +75,8 @@ public interface IFeatureUiWindow : IDisposable
     event Action<string, System.Text.Json.JsonElement>? MessageReceived;
     event Action? ClosedByHost;
     void Show();
+    // Keep an overlay above a specific window without covering other popups.
+    void KeepAbove(IntPtr window, bool placeImmediately = false) { }
     void Hide();
     void Close();
     void SetBounds(double left, double top, double width, double height);

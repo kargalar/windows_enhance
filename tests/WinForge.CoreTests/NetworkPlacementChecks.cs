@@ -32,7 +32,7 @@ internal static class NetworkPlacementChecks
             check(ui.Window.IsVisible && ui.Window.BoundsWrites == 2 && ui.Window.Bounds == placement, "Changed placement restores the overlay with the latest geometry");
             var shows = ui.Window.Shows;
             indicator.Reposition(restack: true);
-            check(ui.Window.Shows == shows + 1 && ui.Window.BoundsWrites == 2, "Foreground changes can restore stacking without resending geometry");
+            check(ui.Window.Shows == shows && ui.Window.BoundsWrites == 2, "Foreground changes do not raise the indicator over shell popups or resend geometry");
             indicator.ApplyOptions(11, false, false, 10, "Otomatik", 3000, NetSpeedWindow.InsideTaskbar, NetSpeedWindow.SideBySide);
             check(!ui.Window.IsVisible, "Disabling both rows hides the overlay immediately");
         }

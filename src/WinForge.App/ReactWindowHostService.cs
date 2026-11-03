@@ -281,6 +281,28 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             if (IsVisible) base.Hide();
         }
 
+        public void KeepAbove(IntPtr window, bool placeImmediately = false)
+        {
+            if (_disposed || window == IntPtr.Zero) return;
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => KeepAbove(window, placeImmediately));
+                return;
+            }
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero || !IsVisible || !Native.IsWindow(window)) return;
+            const uint previousWindow = 3; // GW_HWNDPREV
+            var previous = Native.GetWindow(window, previousWindow);
+            if (previous == handle) return;
+            if (!placeImmediately)
+            {
+                for (var current = previous; current != IntPtr.Zero; current = Native.GetWindow(current, previousWindow))
+                    if (current == handle) return;
+            }
+            Native.SetWindowPos(handle, previous == IntPtr.Zero ? Native.HWND_TOPMOST : previous, 0, 0, 0, 0,
+                Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        }
+
         public new void Close()
         {
             if (_disposed) return;

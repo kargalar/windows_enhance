@@ -168,7 +168,11 @@ public sealed class NetSpeedWindow
             _lastPlacement = bounds;
             PerformanceTrace.Record("netSpeed.geometrySent", 0);
         }
-        if (!_view!.IsVisible || restack) _view.Show();
+        var showing = !_view!.IsVisible;
+        if (showing) _view.Show();
+        // Explorer can raise the taskbar independently. Repair only that order;
+        // raising to HWND_TOPMOST on every foreground event covers shell menus.
+        if (_taskbar != IntPtr.Zero) _view.KeepAbove(_taskbar, showing);
     }
 
     private void OnWindowEvent(WindowEventObserver.WindowEvent change)

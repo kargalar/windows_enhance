@@ -34,6 +34,14 @@ int wmain() {
     RECT partial{0, 1055, 1920, 1103};
     resized = TaskbarGeometry::ResizeBottom(partial, monitor, 52);
     check(resized.top == 1053 && resized.bottom == 1105, "autohide animation progress");
+    RECT startReveal{0, 1040, 1920, 1080};
+    auto startProposal = TaskbarGeometry::MoveOnlyProposal(startReveal, monitor, 40, 48);
+    resized = TaskbarGeometry::ResizeBottom(startProposal, monitor, 40);
+    check(resized.top == 1040 && resized.bottom == 1080, "Start reveal using shortened height stays anchored");
+    RECT mouseReveal{0, 1032, 1920, 1080};
+    auto mouseProposal = TaskbarGeometry::MoveOnlyProposal(mouseReveal, monitor, 40, 48);
+    resized = TaskbarGeometry::ResizeBottom(mouseProposal, monitor, 40);
+    check(resized.top == 1040 && resized.bottom == 1080, "native-height mouse reveal stays anchored");
 
     WNDCLASSW definition{};
     definition.lpfnWndProc = FixtureProc;
