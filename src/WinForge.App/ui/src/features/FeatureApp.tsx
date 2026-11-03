@@ -280,19 +280,14 @@ function WheelView({ state }: { state: WheelState }) {
 }
 
 function DictationStatusView({ state }: { state: DictationStatusState }) {
-  const send = (command: string) => window.chrome?.webview?.postMessage({ command, payload: {} });
-  return <div className={`feature-root feature-root-dictation ${state.result ? 'has-result' : ''}`}>
-    <section className="osd-card dictation-card">
-      <div className="dictation-status-row">
-        <span className={`dictation-microphone ${state.recording ? 'recording' : ''}`} aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" /></svg>
-        </span>
-        <div className="dictation-status-text"><strong>{state.recording ? 'Dinleniyor' : state.result ? 'Metin hazır' : 'Sesle yazma'}</strong><p role="status">{state.message}</p></div>
-        {!state.result && <kbd>Esc</kbd>}
-      </div>
-      {state.recording && <div className="dictation-level"><i style={{ width: `${Math.max(3, Math.min(100, state.audioLevel))}%` }} /></div>}
-      {state.result && <><pre>{state.result}</pre><button className="dictation-copy" onClick={() => send('dictation.copy')}>Metni kopyala</button></>}
-    </section>
+  const level = Math.max(0, Math.min(100, state.audioLevel));
+  return <div className="feature-root feature-root-dictation" role="status" aria-label={state.recording ? 'Dinleniyor' : 'Konuşma çözümleniyor'}>
+    <div className={`dictation-orb ${state.recording ? 'recording' : 'processing'}`}>
+      {state.recording
+        ? <div className="dictation-waves" aria-hidden="true">{[0.38, 0.7, 1, 0.7, 0.38].map((factor, index) =>
+          <i key={index} style={{ height: `${4 + level * factor * 0.28}px` }} />)}</div>
+        : <span className="dictation-spinner" aria-hidden="true" />}
+    </div>
   </div>;
 }
 

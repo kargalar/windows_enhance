@@ -46,7 +46,6 @@ public sealed class DictationModule : CaptureModuleBase
                 new() { Key = "cpu", Label = "Yalnız CPU kullan", Default = false },
                 new() { Key = "microphone", Label = "Mikrofon", Kind = SettingKind.Choice, Default = "", Options = devices.Select(d => d.Id).ToArray(), OptionLabels = devices.ToDictionary(d => d.Id, d => d.Name) },
                 new() { Key = "mute-playback", Label = "Dikte sırasında etkin ses çıkışlarını sessize al", Default = true },
-                new() { Key = "result-duration", Label = "Sonuç bildirimi süresi (saniye; 0 = sürekli)", Kind = SettingKind.Number, Min = 0, Max = 120, Default = 5 },
                 new() { Key = "overlay-position", Label = "Dikte bildiriminin konumu", Kind = SettingKind.Choice, Default = "bottom-center",
                     Options = ["bottom-center", "top-left", "top-right", "bottom-left", "bottom-right", "center"],
                     OptionLabels = new Dictionary<string, string> { ["bottom-center"] = "Alt orta", ["top-left"] = "Sol üst", ["top-right"] = "Sağ üst", ["bottom-left"] = "Sol alt", ["bottom-right"] = "Sağ alt", ["center"] = "Ekran ortası" } },
@@ -190,7 +189,7 @@ public sealed class DictationModule : CaptureModuleBase
         var token = operation!.Token; var currentStore = activeStore!;
         try
         {
-            if (!SpeechBuffer.ContainsSpeech(samples)) { ShowStatus("Konuşma algılanmadı."); return; }
+            if (!SpeechBuffer.ContainsSpeech(samples)) { overlay?.Hide(); Context.Notify("Konuşma algılanmadı."); return; }
             var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
             var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, 1);
             var path = Path.Combine(currentStore.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
@@ -200,7 +199,7 @@ public sealed class DictationModule : CaptureModuleBase
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
             var text = await client.TranscribeAsync(samples, config, token); token.ThrowIfCancellationRequested();
             Context.Log.Info($"Dictation transcription: {client.Engine}; audio={(double)samples.Length / DictationAudio.SampleRate:F2} s; elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
-            if (text.Length == 0) { ShowStatus("Metin bulunamadı."); return; }
+            if (text.Length == 0) { overlay?.Hide(); Context.Notify("Metin bulunamadı."); return; }
             try
             {
                 await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
@@ -213,13 +212,12 @@ public sealed class DictationModule : CaptureModuleBase
             }
             token.ThrowIfCancellationRequested();
             var copied = TryCopyResult(text);
-            var result = await FocusedTextOutput.InsertAsync(target, text, token);
-            var copyStatus = copied ? "Panoya kopyalandı" : "Panoya kopyalanamadı";
-            var insertionStatus = result == TextInsertion.Inserted ? "metin yazıldı" : "metin alana yazılamadı";
-            ShowResult(text, $"{copyStatus} · {insertionStatus} · {client.Engine}");
+            await FocusedTextOutput.InsertAsync(target, text, token);
+            overlay?.Hide();
+            if (!copied) Context.Notify("Dikte metni panoya kopyalanamadı.");
         }
         catch (OperationCanceledException) { }
-        catch (Exception error) { Report(error); ShowStatus("Dikte başarısız; yeniden deneyebilirsiniz."); }
+        catch (Exception error) { overlay?.Hide(); Report(error); }
         finally { Array.Clear(samples); busy = false; }
     }
     private static bool TryCopyResult(string text)
@@ -241,13 +239,6 @@ public sealed class DictationModule : CaptureModuleBase
             overlay.ShowStatus(text);
             overlay.Place(Context.Settings.GetString("overlay-position", "bottom-center"));
     }
-    private void ShowResult(string text, string status)
-    {
-        if (!IsActive) return;
-            overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
-            overlay.ShowResult(text, status, Context.Settings.GetInt("result-duration", 5));
-        overlay.Place(Context.Settings.GetString("overlay-position", "bottom-center"));
-    }
     public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Concat(new[]
     {
         new QuickAction(Id + ".toggle", "Dikteyi başlat / durdur", "whisper ses konuşma yazıya çevir", ToggleDictation),
@@ -257,27 +248,17 @@ public sealed class DictationModule : CaptureModuleBase
 
 internal sealed class StatusOverlay : IDisposable
 {
-    private const double StatusWidth = 360;
-    private const double StatusHeight = 76;
-    private const double ResultWidth = 480;
-    private const double ResultHeight = 210;
+    private const double StatusWidth = 72;
+    private const double StatusHeight = 72;
     private readonly IFeatureUiService? featureUi;
-    private readonly DispatcherTimer resultTimer = new();
     private IFeatureUiWindow? statusWindow;
-    private IFeatureUiWindow? resultWindow;
     private string message = "";
-    private string result = "";
     private double audioLevel;
     private bool recording;
 
     public StatusOverlay(IFeatureUiService? featureUi)
     {
         this.featureUi = featureUi;
-        resultTimer.Tick += (_, _) =>
-        {
-            resultTimer.Stop();
-            resultWindow?.Hide();
-        };
     }
 
     public void BeginRecording()
@@ -296,53 +277,27 @@ internal sealed class StatusOverlay : IDisposable
     public void ShowStatus(string text)
     {
         message = text;
-        result = "";
         recording = text.Contains("Dinleniyor", StringComparison.OrdinalIgnoreCase);
-        resultTimer.Stop();
         statusWindow ??= OpenStatusWindow();
         statusWindow?.SetState(new { message, audioLevel, recording });
         statusWindow?.Show();
-        resultWindow?.Hide();
-    }
-
-    public void ShowResult(string text, string status, int durationSeconds)
-    {
-        message = status;
-        result = text;
-        recording = false;
-        statusWindow?.Hide();
-        resultWindow ??= OpenResultWindow();
-        resultWindow?.SetState(new { message, result, recording = false, audioLevel = 0 });
-        resultWindow?.Show();
-        resultTimer.Stop();
-        if (durationSeconds > 0)
-        {
-            resultTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(durationSeconds, 1, 120));
-            resultTimer.Start();
-        }
     }
 
     public void Place(string position)
     {
         var area = CursorPanelPlacement.WorkArea;
         PlaceWindow(statusWindow, position, StatusWidth, StatusHeight, area);
-        PlaceWindow(resultWindow, position, ResultWidth, ResultHeight, area);
     }
 
     public void Hide()
     {
-        resultTimer.Stop();
         statusWindow?.Hide();
-        resultWindow?.Hide();
     }
 
     public void Close()
     {
-        resultTimer.Stop();
         statusWindow?.Close();
-        resultWindow?.Close();
         statusWindow = null;
-        resultWindow = null;
     }
 
     public void Dispose() => Close();
@@ -353,27 +308,6 @@ internal sealed class StatusOverlay : IDisposable
         return featureUi.Open("dictation-status", "dictation-status", "Dictation status",
             new FeatureUiWindowOptions(StatusWidth, StatusHeight, Topmost: true, ActivateOnShow: false,
                 Transparent: true, ClickThrough: true));
-    }
-
-    private IFeatureUiWindow? OpenResultWindow()
-    {
-        if (featureUi is null) return null;
-        var window = featureUi.Open("dictation-result", "dictation-status", "Dictation result",
-            new FeatureUiWindowOptions(ResultWidth, ResultHeight, Topmost: true, ActivateOnShow: false,
-                Transparent: true));
-        window.MessageReceived += OnResultMessage;
-        return window;
-    }
-
-    private void OnResultMessage(string command, System.Text.Json.JsonElement payload)
-    {
-        if (command != "dictation.copy") return;
-        try
-        {
-            if (!string.IsNullOrEmpty(result)) Clipboard.SetText(result);
-        }
-        catch (InvalidOperationException) { }
-        Hide();
     }
 
     private void PushStatus()

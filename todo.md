@@ -5,7 +5,6 @@
 
 
 
-
 <!-- Check -->  
 
 file explorer soldaki paneli görünümünü güncelleyen bir özelliğimiz vardı. o çalışıyor ancak file explorer açılıında kısa süreliğine varsayılan halini görüyorum sonra benim ayarlardığım stilde görünüyor. direkt benim ayarladığım stile açılması sağlanabilir mi.
