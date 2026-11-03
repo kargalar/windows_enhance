@@ -58,7 +58,8 @@ internal sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         if (IsActive) return;
         try
         {
-            ApplyRules(force: true);
+            try { ApplyRules(force: true); }
+            catch (Exception exception) { RecordConnectionError(exception); }
             _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, OnTick, Dispatcher.CurrentDispatcher);
             IsActive = true;
         }
@@ -81,7 +82,8 @@ internal sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
             var preferences = TaskbarSystemIcons.Capture(_context.Settings);
             try
             {
-                await Task.Run(() => ApplyRules(force: true, rules, preferences));
+                try { await Task.Run(() => ApplyRules(force: true, rules, preferences)); }
+                catch (Exception exception) { RecordConnectionError(exception); }
                 _timer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, OnTick, Dispatcher.CurrentDispatcher);
                 IsActive = true;
             }
@@ -112,9 +114,14 @@ internal sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         try { await UpdateAsync(force: false); }
         catch (Exception exception)
         {
-            if (_error != exception.Message) _context?.Log.Error("Kabuk özelleştirmesi uygulanamadı.", exception);
-            _error = exception.Message;
+            RecordConnectionError(exception);
         }
+    }
+
+    private void RecordConnectionError(Exception exception)
+    {
+        if (_error != exception.Message) _context?.Log.Error("Kabuk özelleştirmesi uygulanamadı; yeniden denenecek.", exception);
+        _error = exception.Message;
     }
 
     private void EnsureConnection()
@@ -133,11 +140,22 @@ internal sealed class ShellCustomizationModule : ITweakModule, IAsyncTweakModule
         _session = _lease.Session;
         _observedErrors = _session.Status.Errors;
         _processId = processId;
-        var clock = Stopwatch.StartNew();
-        while (!_session.ReadVisualTree().Any(node => node.Type == "Taskbar.TaskbarFrame"))
+        try
         {
-            if (clock.Elapsed >= ApplicationTimeout) throw new InvalidOperationException("Windows görev çubuğunun görsel ağacı doğrulanamadı.");
-            Thread.Sleep(20);
+            var clock = Stopwatch.StartNew();
+            while (!_session.ReadVisualTree().Any(node => node.Type == "Taskbar.TaskbarFrame"))
+            {
+                if (clock.Elapsed >= ApplicationTimeout) throw new InvalidOperationException("Windows görev çubuğunun görsel ağacı doğrulanamadı.");
+                Thread.Sleep(20);
+            }
+        }
+        catch
+        {
+            _lease.Dispose();
+            _lease = null;
+            _session = null;
+            _processId = 0;
+            throw;
         }
     }
 
