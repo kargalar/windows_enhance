@@ -28,6 +28,7 @@ internal static class Program
             }
             Check(ActionShortcut.Parse("ctrl+alt+MouseLeft") == new ActionShortcut(3, 0, "mouseleft"), "Mouse shortcut normalization");
             Check(ActionShortcut.Parse("Ctrl+Space") == new ActionShortcut(2, 32, ""), "Keyboard shortcut parsing");
+            Check(ActionShortcut.Parse("Ctrl+Alt+NumPad2") == new ActionShortcut(3, 0x62, ""), "Monitor shortcut uses numeric keypad 2");
             _checks += HotkeyConflictChecks.Run();
             DesktopChordChecks();
             Check(ActionShortcut.Parse("MouseXButton1") == new ActionShortcut(0, 0, "mousex1"), "Bare XButton1 alias accepted");
@@ -146,13 +147,14 @@ internal static class Program
                 pair.First.Name == pair.Second.Name && pair.First.Active == pair.Second.Active && pair.First.Primary == pair.Second.Primary && pair.First.Mode.SequenceEqual(pair.Second.Mode)),
                 "Native layout preserves complete display modes without source files");
             monitor.Activate();
-            Save(monitor, profile with { Name = "Native profile", Enabled = true, Value = "" });
+            Save(monitor, profile with { Name = "Native profile", Enabled = true, Shortcut = "Ctrl+Alt+NumPad2", Value = "" });
             var enabledProfile = JsonSerializer.Deserialize<List<ShortcutActionRule>>(monitorContext.Values["rules"], Json)!.Single();
             Check(enabledProfile.Value == profile.Value && monitorContext.HotkeyItems.Count == 1, "Editing and binding preserve native layout");
+            Check(monitorContext.HotkeyItems.Single().Modifiers == 3 && monitorContext.HotkeyItems.Single().Key == 0x62, "Monitor profile registers Ctrl+Alt+NumPad2");
             Command(monitor, "snapshot", new { id = profile.Id });
             var updatedProfile = JsonSerializer.Deserialize<List<ShortcutActionRule>>(monitorContext.Values["rules"], Json)!.Single();
             MonitorLayouts.Validate(updatedProfile.Value);
-            Check(updatedProfile.Enabled && updatedProfile.Shortcut == profile.Shortcut && monitorContext.HotkeyItems.Count == 1, "Snapshot refresh preserves shortcut and enabled state");
+            Check(updatedProfile.Enabled && updatedProfile.Shortcut == enabledProfile.Shortcut && monitorContext.HotkeyItems.Count == 1, "Snapshot refresh preserves shortcut and enabled state");
             var savedSettings = monitorContext.Values["rules"];
             Reject(() => Command(monitor, "import", new { }));
             Check(monitorContext.Values["rules"] == savedSettings, "Removed import command cannot mutate native profiles");

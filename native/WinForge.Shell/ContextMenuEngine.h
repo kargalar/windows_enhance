@@ -69,7 +69,9 @@ inline bool IsArchiveExtraction(std::wstring const& text) {
         (name.ends_with(L"\u00e7\u0131kar") || name.ends_with(L"\u00e7\u0131kart"));
 }
 inline bool CanExtractSelection(unsigned context, std::vector<std::wstring> const& paths) {
-    return context == 1u && MatchesExtensions(L".zip,.rar,.7z,.tar,.gz,.gzip,.tgz,.bz2,.bzip2,.tbz,.tbz2,.xz,.txz,.zst,.zstd,.tzst,.lz,.lzma,.lzo,.z,.cab,.iso,.arj,.lzh,.lha,.wim,.swm,.esd", paths);
+    // Explorer can expose compressed folders (especially ZIP files) with the
+    // folder scope even though their filesystem path still has an archive extension.
+    return (context == 1u || context == 2u) && MatchesExtensions(L".zip,.rar,.7z,.tar,.gz,.gzip,.tgz,.bz2,.bzip2,.tbz,.tbz2,.xz,.txz,.zst,.zstd,.tzst,.lz,.lzma,.lzo,.z,.cab,.iso,.arj,.lzh,.lha,.wim,.swm,.esd", paths);
 }
 inline unsigned SelectionScope(std::wstring const& path, bool folder, bool link, bool filesystem) {
     if (!filesystem) return 128u;

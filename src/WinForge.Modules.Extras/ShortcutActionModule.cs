@@ -119,13 +119,13 @@ public abstract class ShortcutActionModule : ITweakModule, IModulePanel
         {
             // Never send text/Windows chords while the user's physical modifiers remain down.
             var deadline = Environment.TickCount64 + 3000;
-            while (Id != "media-shortcuts" && !(Id == "desktop-shortcuts" && rule.Action is "left" or "right") && ActionInput.Modifiers != 0)
+            while (rule.Action != "profile" && Id != "media-shortcuts" && !(Id == "desktop-shortcuts" && rule.Action is "left" or "right") && ActionInput.Modifiers != 0)
             {
                 if (Environment.TickCount64 >= deadline) return;
                 await Task.Delay(15, token);
             }
             token.ThrowIfCancellationRequested();
-            if (target != Native.GetForegroundWindow()) return;
+            if (rule.Action != "profile" && target != Native.GetForegroundWindow()) return;
             Execute(rule);
         }
         catch (OperationCanceledException) { }

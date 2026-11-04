@@ -7,6 +7,12 @@ namespace WinForge.Modules.Extras;
 /// <summary>Captures and applies display layouts directly through Windows, persisted in WinForge settings.</summary>
 internal static class MonitorLayouts
 {
+    private const uint DmPosition = 0x00000020;
+    private const uint DmPelsWidth = 0x00080000;
+    private const uint DmPelsHeight = 0x00100000;
+    private const uint CdsUpdateRegistry = 0x00000001;
+    private const uint CdsSetPrimary = 0x00000010;
+    private const uint CdsNoReset = 0x10000000;
     internal sealed record Display(string Name, bool Active, bool Primary, byte[] Mode);
     private static List<Display>? _previous;
     private static Action? _changed;
@@ -58,27 +64,46 @@ internal static class MonitorLayouts
     }
     private static void Set(List<Display> target, List<Display> available)
     {
-        var changes = available.Select(a => target.FirstOrDefault(t => t.Name == a.Name) ?? a with { Active = false, Primary = false }).OrderByDescending(d => d.Primary).ToList();
-        foreach (var d in changes)
+        var changes = available
+            .Select(current => (Current: current, Target: target.FirstOrDefault(t => t.Name == current.Name) ?? current with { Active = false, Primary = false }))
+            // EnumDisplaySettings also returns registry modes for disconnected
+            // displays. Do not try to detach a display that is already inactive.
+            .Where(change => change.Current.Active || change.Target.Active)
+            .OrderByDescending(change => change.Target.Primary)
+            .ToList();
+        // Windows evaluates a multi-monitor topology only after every device's
+        // settings have been staged. CDS_TEST per device can reject a valid
+        // saved layout while the other displays are still in the old topology.
+        foreach (var change in changes)
         {
-            var mode = (byte[])d.Mode.Clone();
-            if (!d.Active) { BitConverter.GetBytes(0x00180020).CopyTo(mode, 72); Array.Clear(mode, 172, 8); }
-            else
+            var d = change.Target;
+            var detaching = !d.Active && change.Current.Active;
+            var mode = detaching ? NewMode() : (byte[])d.Mode.Clone();
+            if (detaching)
             {
-                var test = ChangeDisplaySettingsEx(d.Name, mode, IntPtr.Zero, 2, IntPtr.Zero);
-                if (test != 0) throw new InvalidOperationException($"{d.Name}: ekran modu desteklenmiyor ({test}).");
+                // Use a zeroed DEVMODE for a live detach so stale registry mode
+                // fields cannot affect the operation. Windows' detach sample
+                // specifies position and zero pixel dimensions.
+                BitConverter.GetBytes(DmPosition | DmPelsWidth | DmPelsHeight).CopyTo(mode, 72);
             }
-        }
-        foreach (var d in changes)
-        {
-            var mode = (byte[])d.Mode.Clone();
-            if (!d.Active) { BitConverter.GetBytes(0x00180020).CopyTo(mode, 72); Array.Clear(mode, 172, 8); }
-            var code = ChangeDisplaySettingsEx(d.Name, mode, IntPtr.Zero, 0x10000001u | (d.Primary && d.Active ? 0x10u : 0), IntPtr.Zero);
-            if (code != 0) throw new InvalidOperationException($"{d.Name}: ekran düzeni uygulanamadı ({code}).");
+            var flags = CdsUpdateRegistry | CdsNoReset | (d.Primary && d.Active ? CdsSetPrimary : 0);
+            var code = ChangeDisplaySettingsEx(d.Name, mode, IntPtr.Zero, flags, IntPtr.Zero);
+            if (code != 0) throw new InvalidOperationException($"{d.Name}: ekran ayarlar\u0131 haz\u0131rlanamad\u0131 ({DescribeResult(code)}).");
         }
         var apply = ChangeDisplaySettingsEx(null, null, IntPtr.Zero, 0, IntPtr.Zero);
-        if (apply != 0) throw new InvalidOperationException($"Ekran düzeni uygulanamadı ({apply}).");
+        if (apply != 0) throw new InvalidOperationException($"Ekran d\u00fczeni uygulanamad\u0131 ({DescribeResult(apply)}).");
     }
+    private static string DescribeResult(int code) => code switch
+    {
+        -1 => "ekran s\u00fcr\u00fcc\u00fcs\u00fc modu uygulayamad\u0131 (DISP_CHANGE_FAILED, -1)",
+        -2 => "istenen ekran modu desteklenmiyor (DISP_CHANGE_BADMODE, -2)",
+        -3 => "ayarlar kaydedilemedi (DISP_CHANGE_NOTUPDATED, -3)",
+        -4 => "de\u011fi\u015fiklik i\u00e7in Windows'un yeniden ba\u015flat\u0131lmas\u0131 gerekiyor (DISP_CHANGE_RESTART, -4)",
+        -5 => "ge\u00e7ersiz ekran de\u011fi\u015ftirme bayraklar\u0131 (DISP_CHANGE_BADFLAGS, -5)",
+        -6 => "ge\u00e7ersiz ekran parametresi (DISP_CHANGE_BADPARAM, -6)",
+        -7 => "DualView nedeniyle ekran d\u00fczeni de\u011fi\u015ftirilemedi (DISP_CHANGE_BADDUALVIEW, -7)",
+        _ => $"Windows ekran de\u011fi\u015fikli\u011fini reddetti ({code})"
+    };
     internal static void Confirm() { Timer.Stop(); _previous = null; Generation++; var changed = _changed; _changed = null; changed?.Invoke(); }
     internal static void Revert()
     {
