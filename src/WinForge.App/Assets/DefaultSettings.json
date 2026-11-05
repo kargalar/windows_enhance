@@ -1,0 +1,405 @@
+﻿{
+    "SchemaVersion":  1,
+    "Enabled":  [
+                    "display-brightness",
+                    "fancy-zones",
+                    "startup",
+                    "window-control",
+                    "media-flyout",
+                    "auto-correct",
+                    "always-on-top",
+                    "text-grabber",
+                    "file-locksmith",
+                    "notifications-placement",
+                    "color-picker",
+                    "context-menu",
+                    "classic-context-menu",
+                    "taskbar",
+                    "screen-history",
+                    "voice-dictation",
+                    "screen-capture",
+                    "net-speed",
+                    "explorer-folder-sizes",
+                    "start-menu",
+                    "automation",
+                    "media-shortcuts",
+                    "program-shortcuts",
+                    "explorer-mouse-navigation",
+                    "modern-folder-dialog",
+                    "desktop-shortcuts",
+                    "text-shortcuts",
+                    "explorer-tweaks",
+                    "monitor-shortcuts",
+                    "browser-fullscreen",
+                    "window-shortcuts",
+                    "explorer-navigation",
+                    "window-tweaks",
+                    "shortcut-guide",
+                    "combination-translator",
+                    "mouse",
+                    "system-shortcuts"
+                ],
+    "Values":  {
+                   "taskbar":  {
+                                   "clock-seconds":  "false",
+                                   "search-mode":  "Gizli",
+                                   "taskview":  "false",
+                                   "widgets":  "false",
+                                   "copilot":  "true",
+                                   "combine-mode":  "Birleştir",
+                                   "middle-click-close":  "true",
+                                   "volume-step":  "5",
+                                   "align":  "Orta",
+                                   "end-task":  "false",
+                                   "icon-size":  "Küçük",
+                                   "transparency":  "true",
+                                   "accent-taskbar":  "false",
+                                   "show-all-tray":  "false",
+                                   "middle-click-mute":  "false",
+                                   "behavior-enabled":  "true",
+                                   "design-enabled":  "true",
+                                   "tray-enabled":  "true",
+                                   "hide-battery":  "true",
+                                   "hide-network":  "true",
+                                   "hide-volume":  "true",
+                                   "hide-bell":  "always",
+                                   "dock-animation":  "true",
+                                   "dock-scale":  "133",
+                                   "dock-duration":  "134",
+                                   "hide-show-desktop":  "true",
+                                   "hide-language":  "false",
+                                   "hide-recall":  "false",
+                                   "tray-465568a215e73f3d":  "true",
+                                   "tray-e113ba3f33e91ba4":  "true",
+                                   "tray-2f12977eaa0ca926":  "true",
+                                   "app-icon-size":  "20",
+                                   "taskbar-height":  "40",
+                                   "button-width":  "30",
+                                   "clock-width":  "125",
+                                   "hide-start":  "true",
+                                   "background-opacity":  "100",
+                                   "background-color":  "#000000",
+                                   "custom-background":  "true",
+                                   "clock-format":  "",
+                                   "time-format":  "HH:mm",
+                                   "date-format":  "dddd, d MMMM",
+                                   "tray-two-rows":  "false",
+                                   "tray-icon-gap":  "0",
+                                   "system-icon-gap":  "0",
+                                   "tray-group-gap":  "0",
+                                   "clock-gap":  "-1",
+                                   "clock-display":  "Tarih ve saat",
+                                   "tray-icon-padding-y":  "0",
+                                   "tray-icon-padding-x":  "0",
+                                   "overflow-columns":  "0",
+                                   "overflow-icon-size":  "0",
+                                   "overflow-icon-padding":  "-1",
+                                   "overflow-icon-padding-x":  "-1",
+                                   "overflow-icon-padding-y":  "-1",
+                                   "overflow-icon-gap-x":  "-1",
+                                   "overflow-icon-gap-y":  "-1",
+                                   "overflow-panel-padding":  "-1",
+                                   "overflow-panel-radius":  "-1"
+                               },
+                   "always-on-top":  {
+                                         "border-thickness":  "2"
+                                     },
+                   "net-speed":  {
+
+                                 },
+                   "text-grabber":  {
+
+                                    },
+                   "auto-tiling":  {
+                                       "gap":  "0",
+                                       "layout":  "Izgara",
+                                       "master-percent":  "50",
+                                       "mode":  "Bölgeli pencere taşıma (FancyZones)",
+                                       "zone-activation":  "Sürüklerken otomatik göster",
+                                       "zone-layout":  "Dört bölge"
+                                   },
+                   "awake":  {
+
+                             },
+                   "classic-context-menu":  {
+
+                                            },
+                   "clipboard-history":  {
+
+                                         },
+                   "color-picker":  {
+
+                                    },
+                   "explorer-tweaks":  {
+                                           "frequent":  "true",
+                                           "compact":  "false",
+                                           "full-path":  "true",
+                                           "checkboxes":  "false"
+                                       },
+                   "plain-paste":  {
+
+                                   },
+                   "screen-ruler":  {
+
+                                    },
+                   "mouse":  {
+                                 "tweaks-enabled":  "true",
+                                 "spotlight-enabled":  "false",
+                                 "click-size":  "38",
+                                 "click-duration":  "380",
+                                 "click-color-left":  "Turuncu",
+                                 "click-color-right":  "Mor",
+                                 "click-color-middle":  "Camgöbeği",
+                                 "size":  "90",
+                                 "duration":  "723",
+                                 "scroll-lines":  "4",
+                                 "double-click":  "500",
+                                 "acceleration":  "false"
+                             },
+                   "square-corners":  {
+                                          "style":  "Kapalı"
+                                      },
+                   "theme-switch":  {
+
+                                    },
+                   "window-tweaks":  {
+
+                                     },
+                   "startup":  {
+
+                               },
+                   "browser-fullscreen":  {
+
+                                          },
+                   "context-menu":  {
+                                        "hide-f3d06e7c-1e45-4a26-847e-f9fcdee59be0":  "false",
+                                        "menu-rules":  "[{\"id\":\"verb:Directory\\\\Background:git_shell\",\"name\":\"Open Git Bash here\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory:git_shell\",\"name\":\"Open Git Bash here\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open git bash here\",\"name\":\"Open Git Bash here\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory:git_gui\",\"name\":\"Open Git GUI here\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory\\\\Background:git_gui\",\"name\":\"Open Git GUI here\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open git gui here\",\"name\":\"Open Git GUI here\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:customize this folder\",\"name\":\"Customize this folder...\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:amd software: adrenalin edition\",\"name\":\"AMD Software: Adrenalin Edition\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory:AnyCode\",\"name\":\"Open with Visual Studio\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory\\\\Background:AnyCode\",\"name\":\"Open with Visual Studio\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open with visual studio\",\"name\":\"Open with Visual Studio\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:give access to\",\"name\":\"Give access to\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:group by\",\"name\":\"Group by\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:expand all groups\",\"name\":\"Expand all groups\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:collapse all groups\",\"name\":\"Collapse all groups\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:view\",\"name\":\"View\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:sort by\",\"name\":\"Sort by\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:restore previous versions\",\"name\":\"Restore previous versions\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"extension:{7ba4c740-9e81-11cf-99d3-00aa004ae837}\",\"name\":\"Microsoft SendTo Service\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:send to\",\"name\":\"Send to\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"extension:{e2bf9676-5f8f-435c-97eb-11607a5bedf7}\",\"name\":\"Ribbon Modern Share Verb\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:share\",\"name\":\"Share\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:scan with microsoft defender\",\"name\":\"Scan with Microsoft Defender...\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"extension:{3dad6c5d-2167-4cae-9914-f99e41c12cfa}\",\"name\":\"Include In Library Sub Context Menu\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:retrieving libraries\",\"name\":\"Retrieving libraries...\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:show libraries\",\"name\":\"Show libraries\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:include in library\",\"name\":\"Include in library\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:create shortcut\",\"name\":\"Create shortcut\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:desktop (create shortcut)\",\"name\":\"Desktop (create shortcut)\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"builtin:cut\",\"name\":\"Cut\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:shortcut\",\"name\":\"Shortcut\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"builtin:copy\",\"name\":\"Copy\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"builtin:paste\",\"name\":\"Paste\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:edit with clipchamp\",\"name\":\"Edit with Clipchamp\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:edit in notepad\",\"name\":\"Edit in Notepad\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:photos\",\"name\":\"Photos\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:*:pintohomefile\",\"name\":\"Add to Favorites\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:add to favorites\",\"name\":\"Add to Favorites\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:cast to device\",\"name\":\"Cast to Device\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"builtin:delete\",\"name\":\"Delete\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:undo delete\",\"name\":\"Undo Delete\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"builtin:rename\",\"name\":\"Rename\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open in new window\",\"name\":\"Open in new window\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Folder:opennewtab\",\"name\":\"Open in new tab\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open in new tab\",\"name\":\"Open in new tab\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Folder:opennewprocess\",\"name\":\"Open in new process\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open in terminal\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open project in chatgpt\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:*:VSCode\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory:VSCode\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Directory\\\\Background:VSCode\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:Drive:VSCode\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:open with code\",\"name\":\"\",\"visible\":true,\"group\":\"Open In\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:troubleshoot compatibility\",\"name\":\"Troubleshoot compatibility\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:nvidia control panel\",\"name\":\"NVIDIA Control Panel\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:pin to taskbar\",\"name\":\"Pin to taskbar\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:dosya kilitlerini bul (winforge)\",\"name\":\"\",\"visible\":true,\"group\":\"Advaced\",\"icon\":\"\",\"contexts\":null,\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"prepared:toggle-hidden\",\"name\":\"Dosyay\\u0131 / k\\u0131sayolu gizle veya g\\u00F6ster\",\"visible\":true,\"group\":\"Advaced\",\"icon\":\"\",\"contexts\":{\"file\":true,\"folder\":true,\"background\":true,\"desktop\":true,\"drive\":true},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"prepared:folder-icon\",\"name\":\"\",\"visible\":true,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":true,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"separator:3F789E74292194B9\",\"name\":\"\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"separator:51D5A23A15023BC8\",\"name\":\"\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"separator:F035DE5AA5D10042\",\"name\":\"\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:nvidia app\",\"name\":\"NVIDIA App\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"extension:{3d1975af-48c6-4f8e-a182-be0e08fa86a9}\",\"name\":\"NVIDIA CPL Context Menu Extension\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:DesktopBackground:Display\",\"name\":\"Display settings\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:display settings\",\"name\":\"Display settings\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"separator:5BD05910B671E599\",\"name\":\"\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"verb:DesktopBackground:Personalize\",\"name\":\"Personalize\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:personalize\",\"name\":\"Personalize\",\"visible\":false,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":false,\"folder\":false,\"background\":false,\"desktop\":false,\"drive\":false,\"shortcut\":false,\"application\":false,\"virtual\":false},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"prepared:power-mode\",\"name\":\"G\\u00FC\\u00E7 modu\",\"visible\":true,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":true,\"folder\":true,\"background\":true,\"desktop\":true,\"drive\":true,\"shortcut\":true,\"application\":true,\"virtual\":true},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:(none)\",\"name\":\"(None)\",\"visible\":true,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":true,\"folder\":true,\"background\":true,\"desktop\":true,\"drive\":true,\"shortcut\":true,\"application\":true,\"virtual\":true},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:extract to \\u002217757060\\\\\\u0022\",\"name\":\"Extract to \\u002217757060\\\\\\u0022\",\"visible\":true,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":true,\"folder\":true,\"background\":true,\"desktop\":true,\"drive\":true,\"shortcut\":true,\"application\":true,\"virtual\":true},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"},{\"id\":\"menu:extract here\",\"name\":\"Extract Here\",\"visible\":true,\"group\":\"\",\"icon\":\"\",\"contexts\":{\"file\":true,\"folder\":true,\"background\":true,\"desktop\":true,\"drive\":true,\"shortcut\":true,\"application\":true,\"virtual\":true},\"separatorBefore\":false,\"separatorAfter\":false,\"extensions\":\"\"}]",
+                                        "hide-7ba4c740-9e81-11cf-99d3-00aa004ae837":  "true",
+                                        "hide-e2bf9676-5f8f-435c-97eb-11607a5bedf7":  "true",
+                                        "hide-3dad6c5d-2167-4cae-9914-f99e41c12cfa":  "true",
+                                        "menu-groups":  "[\"Open In\",\"Advaced\"]",
+                                        "menu-group-icons":  "{}",
+                                        "hide-3d1975af-48c6-4f8e-a182-be0e08fa86a9":  "true"
+                                    },
+                   "modern-folder-dialog":  {
+
+                                            },
+                   "window-control":  {
+                                          "Hotkeys":  "Sol Alt",
+                                          "ModKey":  "Sol Windows",
+                                          "Hotclicks":  "",
+                                          "LMB":  "Taşı",
+                                          "LMBB":  "İşlem yok",
+                                          "RMB":  "Boyutlandır",
+                                          "RMBB":  "İşlem yok",
+                                          "MMB":  "Tam ekran / geri yükle",
+                                          "MMBB":  "Tüm pencereler listesi",
+                                          "MB4":  "İşlem yok",
+                                          "MB4B":  "İşlem yok",
+                                          "MB5":  "İşlem yok",
+                                          "MB5B":  "İşlem yok",
+                                          "Scroll":  "İşlem yok",
+                                          "HScroll":  "İşlem yok",
+                                          "ScrollB":  "Ses düzeyi",
+                                          "HScrollB":  "İşlem yok",
+                                          "AutoFocus":  "false",
+                                          "Aero":  "True",
+                                          "SmartAero":  "True",
+                                          "AutoSnap":  "Pencerelerin dış kenarları",
+                                          "StickyResize":  "Kapalı",
+                                          "ResizeCenter":  "Tüm yönler",
+                                          "CenterFraction":  "24",
+                                          "AeroHoffset":  "50",
+                                          "AeroVoffset":  "50",
+                                          "SnapThreshold":  "41",
+                                          "AeroThreshold":  "5",
+                                          "SnapGap":  "0",
+                                          "MoveTrans":  "255",
+                                          "MDI":  "True",
+                                          "ResizeAll":  "False",
+                                          "FullScreen":  "true",
+                                          "Processes":  "",
+                                          "Windows":  "",
+                                          "TTBActions":  "Kapalı"
+                                      },
+                   "advanced-paste":  {
+
+                                      },
+                   "crop-and-lock":  {
+
+                                     },
+                   "display-brightness":  {
+                                              "brightness-hotkey-step":  "10",
+                                              "brightness-hotkeys-enabled":  "true",
+                                              "brightness-dim-hotkey":  "Ctrl+Alt+Shift+MouseWheelDown",
+                                              "brightness-schedule-enabled":  "false",
+                                              "brightness-brighten-hotkey":  "Ctrl+Alt+Shift+MouseWheelUp"
+                                          },
+                   "environment-variables":  {
+
+                                             },
+                   "file-locksmith":  {
+
+                                      },
+                   "hosts-file-editor":  {
+
+                                         },
+                   "image-resizer":  {
+
+                                     },
+                   "media-flyout":  {
+                                        "pinned-media-session":  "",
+                                        "flyout-dismiss-seconds":  "1",
+                                        "taskbar-media-widget-enabled":  "false",
+                                        "flyout-pinned":  "false",
+                                        "flyout-position":  "bottom-left",
+                                        "flyout-theme":  "dark",
+                                        "flyout-auto-dismiss-seconds":  "2"
+                                    },
+                   "power-rename":  {
+
+                                    },
+                   "quick-accent":  {
+
+                                    },
+                   "shortcut-guide":  {
+
+                                      },
+                   "workspaces":  {
+
+                                  },
+                   "launcher":  {
+                                    "index-roots":  "",
+                                    "index-extensions":  ""
+                                },
+                   "notifications-placement":  {
+                                                   "position":  "Sol üst",
+                                                   "gap":  "0"
+                                               },
+                   "auto-correct":  {
+                                        "language":  "Türkçe + English",
+                                        "custom-replacements":  "tşk=teşekkürler; saol=sağol; rca=rica ederim; brb=be right back; omw=on my way"
+                                    },
+                   "fancy-zones":  {
+                                       "zone-activation":  "Sürüklerken otomatik göster",
+                                       "zone-layout":  "Dört bölge",
+                                       "zone-show-numbers":  "false",
+                                       "zone-active-color":  "#344958",
+                                       "zone-merge-distance":  "109",
+                                       "zone-border-thickness":  "1",
+                                       "gap":  "0",
+                                       "zone-inactive-color":  "#282828"
+                                   },
+                   "nashi":  {
+
+                             },
+                   "clipboardline":  {
+
+                                     },
+                   "voice-dictation":  {
+                                           "language":  "tr",
+                                           "microphone":  "{0.0.1.00000000}.{8671af4d-a61b-4b42-9327-5e97c4f39496}"
+                                       },
+                   "screen-history":  {
+                                          "paused":  "false",
+                                          "portable-history-id":  "366ca4f5d483b2cfdcf955f3a4782a45bc260f9052c174355d0c4a8b66c3b1ef"
+                                      },
+                   "screen-capture":  {
+                                          "edit":  "false",
+                                          "hotkey":  "Alt+MouseX1",
+                                          "copy":  "true",
+                                          "image-directory":  "C:\\kargalar\\Backup\\Screenshots"
+                                      },
+                   "explorer-folder-sizes":  {
+                                                 "cache-seconds":  "300"
+                                             },
+                   "dynamic-island":  {
+
+                                      },
+                   "default-apps":  {
+
+                                    },
+                   "default-paths":  {
+
+                                     },
+                   "explorer-navigation":  {
+                                               "namespace-backup":  "[{\"Key\":\"Software\\\\Classes\\\\CLSID\\\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}\",\"Name\":\"System.IsPinnedToNameSpaceTree\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Classes\\\\CLSID\\\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}\",\"Name\":\"System.IsPinnedToNameSpaceTree\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Classes\\\\CLSID\\\\{018D5C66-4533-4307-9B53-224DE2ED1FE6}\",\"Name\":\"System.IsPinnedToNameSpaceTree\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Classes\\\\CLSID\\\\{031E4825-7B94-4dc3-B131-E946B44C8DD5}\",\"Name\":\"System.IsPinnedToNameSpaceTree\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Classes\\\\CLSID\\\\{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}\",\"Name\":\"System.IsPinnedToNameSpaceTree\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Advanced\",\"Name\":\"NavPaneExpandToCurrentFolder\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Advanced\",\"Name\":\"NavPaneShowAllFolders\",\"Exists\":false,\"Kind\":-1,\"Data\":null},{\"Key\":\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\",\"Name\":\"ShowFrequent\",\"Exists\":false,\"Kind\":-1,\"Data\":null}]",
+                                               "style-enabled":  "true",
+                                               "font-family":  "Microsoft Sans Serif",
+                                               "font-size":  "12",
+                                               "font-weight":  "400",
+                                               "padding-horizontal":  "2",
+                                               "padding-vertical":  "5",
+                                               "indent":  "2",
+                                               "row-margin":  "0",
+                                               "corner-radius":  "2",
+                                               "show-icons":  "true",
+                                               "show-arrows":  "false",
+                                               "icon-size":  "16",
+                                               "icon-gap":  "3",
+                                               "background":  "#191919",
+                                               "text":  "#F0F0F0",
+                                               "selected":  "#2D2D2D",
+                                               "selected-text":  "#FFFFFF",
+                                               "hover":  "#262626",
+                                               "hide-home":  "true",
+                                               "hide-gallery":  "true",
+                                               "show-all":  "false",
+                                               "block-frequent-folders":  "true"
+                                           },
+                   "automation":  {
+                                      "rules-v2":  "[{\"id\":\"2e22465811d94957a45e382a376c373b\",\"name\":\"Otomatik t\\u0131klama / komut\",\"enabled\":true,\"shortcut\":\"F1\",\"repeat\":true,\"interval\":500,\"steps\":[{\"kind\":\"click\",\"value\":\"left\",\"delay\":0}]},{\"id\":\"3cdc4a9d7a7e489ab7acc1cbb0f88154\",\"name\":\"Se\\u00E7ili metni Google\\u2019da ara\",\"enabled\":true,\"shortcut\":\"Alt\\u002BS\",\"repeat\":false,\"interval\":100,\"steps\":[{\"kind\":\"search\",\"value\":\"google\",\"delay\":0}]}]",
+                                      "master-shortcut":  "Ctrl+Alt+F8",
+                                      "paused":  "false"
+                                  },
+                   "media-shortcuts":  {
+                                           "rules":  "[{\"id\":\"play\",\"name\":\"Oynat / duraklat\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BSpace\",\"action\":\"play\",\"value\":\"\",\"arguments\":\"\"},{\"id\":\"next\",\"name\":\"Sonraki par\\u00E7a\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BN\",\"action\":\"next\",\"value\":\"\",\"arguments\":\"\"},{\"id\":\"previous\",\"name\":\"\\u00D6nceki par\\u00E7a\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BShift\\u002BN\",\"action\":\"previous\",\"value\":\"\",\"arguments\":\"\"},{\"id\":\"up\",\"name\":\"Sesi art\\u0131r\",\"enabled\":true,\"shortcut\":\"Alt\\u002BWheelUp\",\"action\":\"volume-up\",\"value\":\"10\",\"arguments\":\"\"},{\"id\":\"down\",\"name\":\"Sesi azalt\",\"enabled\":true,\"shortcut\":\"Alt\\u002BWheelDown\",\"action\":\"volume-down-5\",\"value\":\"10\",\"arguments\":\"\"},{\"id\":\"mouse-volume-down-5\",\"name\":\"Mouse XButton1 \\u00B7 sesi 5 azalt\",\"enabled\":true,\"shortcut\":\"MouseX1\",\"action\":\"volume-down-5\",\"value\":\"10\",\"arguments\":\"\"}]",
+                                           "mouse-volume-down-5-added":  "true"
+                                       },
+                   "window-shortcuts":  {
+                                            "rules":  "[{\"id\":\"close\",\"name\":\"Pencereyi kapat\",\"enabled\":true,\"shortcut\":\"Alt+W\",\"action\":\"close\",\"value\":\"\",\"arguments\":\"\"}]"
+                                        },
+                   "desktop-shortcuts":  {
+                                             "rules":  "[{\"id\":\"left\",\"name\":\"Soldaki masa\\u00FCst\\u00FC\",\"enabled\":true,\"shortcut\":\"Win\\u002BMouseLeft\",\"action\":\"left\",\"value\":\"\",\"arguments\":\"\"},{\"id\":\"right\",\"name\":\"Sa\\u011Fdaki masa\\u00FCst\\u00FC\",\"enabled\":true,\"shortcut\":\"Win\\u002BMouseRight\",\"action\":\"right\",\"value\":\"\",\"arguments\":\"\"}]"
+                                         },
+                   "text-shortcuts":  {
+                                          "rules":  "[{\"id\":\"text\",\"name\":\"Metin / \\u015Fifre yaz\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BI\",\"action\":\"text\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAAARoQpcca0U4w6eKztJemHnhTOr35sv727AhNB\\u002BB2O/iwAAAAAOgAAAAAIAACAAAACxT\\u002B20apJ7IM/ogUsL/d1DUlyfqdMThPiSLB2TVp8xExAAAACWpqzwCJyjq8J0iVZmiR5UQAAAAK3GNBaYGIjmPyN9mEf54e9J0zcJK3gWxMWeUtgMEWoZFtAZOeK\\u002B2TvpPUeuJSxEuVlcLu/a9KITP2sQJIqVyn0=\",\"arguments\":\"\"},{\"id\":\"ffbee8e2d7764aaf96837e826621a291\",\"name\":\"gmail\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BG\",\"action\":\"text\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAAD9PeIqwn98ZpT3Dy5O98o12OcdXdSnPun7OZlGIthujQAAAAAOgAAAAAIAACAAAACpShz7RmL3R07j5nd13JbXcctjU2sUjX7b4\\u002BKlJDl5ISAAAADGyk4wUzP6xQqVZZCOmGjNw9U7EMyD49g2YSeAc\\u002B5Hs0AAAACuaQ4dR\\u002B9iz3d4jb\\u002B6Fbsao4WYJSctFQXxXgBhMjcxuDNBiaqqMDkje58VuDCCwRVi17\\u002BYC9Q7JR7XcMXa2q70\",\"arguments\":\"\"},{\"id\":\"80c7bb8c23314cf7a94383da089e1838\",\"name\":\"karga password\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BP\",\"action\":\"text\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAAC5j3MWjA8O6eGeiS3y6eoFgWZzYAZEUtfhPgJY9JDeQwAAAAAOgAAAAAIAACAAAADE23xOk/YU5BZwFRATkibBnswswf9SsKuAfS7Xrc3O8xAAAAAXZzjM0sjrSV9xwa1yVtkVQAAAAOy73ZvXhZ\\u002B30aMI\\u002BE2fEYo09w7Mrf0uvTKAk3w/68Jx0HEYOQ4Bn1Pf2UA9aJd3Pp2hHnnAbg8YhNgRde4QTs8=\",\"arguments\":\"\"},{\"id\":\"b28560f1797a4c8f900792dbaa5a96a1\",\"name\":\"gk\",\"enabled\":true,\"shortcut\":\".gk\",\"action\":\"text-expand\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAAArXAkWQzHoAQn4VM5BsI2RWFGI1jQgQ45dZfsG1dgt9wAAAAAOgAAAAAIAACAAAAAAE9k5oPc1js5fIDT/AadgRjxAuBCZpBCoQmAufMyJsiAAAADkRqYYAdNf9FhgYyD1m6y68pOl8lENZxF8boBXc1oRB0AAAACXcQUNnQDkf2wD64p7n4QkfemG7PeOoCGSmruQHPKZ0hqNF6sAZz5Yprb7vXvKeiNCfuaOLr0SG8NBPrpYPgbb\",\"arguments\":\"\"},{\"id\":\"91510215d23b47b799d538e5745c64eb\",\"name\":\"adres\",\"enabled\":true,\"shortcut\":\".adress\",\"action\":\"text-expand\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAACdOzm8iNg3L6HRuMyQqBDrUkVkSNnh7CuBM3zqMupEoQAAAAAOgAAAAAIAACAAAAC2x0MuFUHhPtoOVhVTNKiQflz0B3WtHd/Edu7RyszGaoAAAAA0WviSzcWjz\\u002BHTUdEntu9/wAHrig1M6huNGuM9kGymXbnCOytU\\u002BvKJYGtC7w9mGNVnRf\\u002B92Z3qS4VXsuXGdFeyzZcbaAdKyT2KY3JSdCh5lr8SEQt98tP//xmj\\u002Bc1iV3jZzKU58HSgBRPLaPdH6d8fA7K1OtRA2K2Z4YOtuym\\u002BxUAAAACl/r1hfzth2AOgAPlnapW/4DitQPlj77Yv7zdmTJH0vBpKss3VdtHtw5kpvXoiohPDY4VtdEi7Td2RNE1qEQpq\",\"arguments\":\"\"},{\"id\":\"023d29f34216416ebba73025f01bad84\",\"name\":\"name\",\"enabled\":true,\"shortcut\":\".ib\",\"action\":\"text-expand\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAADRAC2Zd1Kondm\\u002BOcNl0pRgFUHToJrSmXdzoqQ3qXt0xAAAAAAOgAAAAAIAACAAAACFYQRZxnpLH5CiYQEeUgYnMgoMxY\\u002Bn7AMfDEKaBwK/dCAAAADwoxvuc205S8jqOlUFNfrUlkhPtlocj5szslga5gvIUUAAAAB7J4u67\\u002BYQmwyU3vI1\\u002Bi1KEHgaMDFc5VGQWoS8osG3AAMtWxC2fX9lbFsyo71kjM3add/9OlrmJo76V923sZmz\",\"arguments\":\"\"},{\"id\":\"23f0884dd9734c85898b23f53284c9f6\",\"name\":\"tel\",\"enabled\":true,\"shortcut\":\".no\",\"action\":\"text-expand\",\"value\":\"AQAAANCMnd8BFdERjHoAwE/Cl\\u002BsBAAAAeXaoWHP6vE68YLG2WrTtxgAAAAACAAAAAAAQZgAAAAEAACAAAAAcriFrBktYd4G3ezb/er86jXj81GpBLqn8OpFOhj6LXgAAAAAOgAAAAAIAACAAAACY0PfIHFrbqV/LHkVm\\u002BfANwi7Vooqg94aH8itQBxq00BAAAAAg4KqZwewdyVaZsuPtVLG/QAAAAJCofleSwM1p5mGG9V72V1SkBA6Ujr0qUncasjzTAPp27TJwTzIjCnT5zdUTr09qSzesnQaJy00Htb1Dxk1id5Y=\",\"arguments\":\"\"}]"
+                                      },
+                   "program-shortcuts":  {
+                                             "rules":  "[{\"id\":\"6482ef35484641b8a4ecdf0d41f70672\",\"name\":\"spotify\",\"enabled\":true,\"shortcut\":\"Alt\\u002BWin\\u002BD\",\"action\":\"launch\",\"value\":\"C:\\\\kargalar\\\\Programs\\\\Spotify.lnk\",\"arguments\":\"\"},{\"id\":\"mouse-downloads\",\"name\":\"\\u0130ndirilenler\",\"enabled\":true,\"shortcut\":\"MouseX2\",\"action\":\"downloads\",\"value\":\"\",\"arguments\":\"\"},{\"id\":\"922f3eb67063428eac5f4fa137be79ce\",\"name\":\"chrome\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BShift\\u002BOemOpenBrackets\",\"action\":\"launch\",\"value\":\"C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe\",\"arguments\":\"\"},{\"id\":\"ca6e996d677d4e3a9c4e86fb08dd087a\",\"name\":\"brave!\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BAlt\\u002BShift\\u002BWin\\u002BSubtract\",\"action\":\"launch\",\"value\":\"C:\\\\kargalar\\\\Programs\\\\brave\\\\brave-portable.exe\",\"arguments\":\"\"},{\"id\":\"3bd0a4a27a0947919b2a93497bec52dc\",\"name\":\"firefox\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BAlt\\u002BShift\\u002BF\",\"action\":\"launch\",\"value\":\"C:\\\\kargalar\\\\Programs\\\\FirefoxPortable\\\\FirefoxPortable.exe\",\"arguments\":\"\"}]",
+                                             "mouse-downloads-added":  "true"
+                                         },
+                   "monitor-shortcuts":  {
+                                             "rules":  "[{\"id\":\"850c34f2edeb4095932a6059eb5574e7\",\"name\":\"1-2\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BAlt\\u002BNumPad2\",\"action\":\"profile\",\"value\":\"[{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY1\\u0022,\\u0022Active\\u0022:true,\\u0022Primary\\u0022:true,\\u0022Mode\\u0022:\\u0022QwBEAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAoAB8IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAIAAAAIAHAAA4BAAAAAAAAKUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY2\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY3\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY4\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY5\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY6\\u0022,\\u0022Active\\u0022:true,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022QwBEAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAoAB8IID4//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAIAAAAIAHAAA4BAAAAAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022}]\",\"arguments\":\"\"},{\"id\":\"5b0c74dff31c4b1687cbbef789aea3ff\",\"name\":\"1\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BAlt\\u002BNumPad1\",\"action\":\"profile\",\"value\":\"[{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY1\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY2\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY3\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY4\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY5\\u0022,\\u0022Active\\u0022:false,\\u0022Primary\\u0022:false,\\u0022Mode\\u0022:\\u0022AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAgAB\\u002BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022},{\\u0022Name\\u0022:\\u0022\\\\\\\\\\\\\\\\.\\\\\\\\DISPLAY6\\u0022,\\u0022Active\\u0022:true,\\u0022Primary\\u0022:true,\\u0022Mode\\u0022:\\u0022QwBEAEQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEEAQS8AAAAoAB8IAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAIAAAAIAHAAA4BAAAAAAAAJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\\u0022}]\",\"arguments\":\"\"}]"
+                                         },
+                   "combination-translator":  {
+                                                  "rules":  "[{\"id\":\"faf1311212f04d86baec6823b6844770\",\"name\":\"Yeni k\\u0131sayol\",\"enabled\":true,\"shortcut\":\"Win\\u002BD\",\"action\":\"translate\",\"value\":\"Ctrl\\u002BShift\\u002BOemOpenBrackets\",\"arguments\":\"\"},{\"id\":\"73a6d6c87a044d0cb23efa66a7a85e07\",\"name\":\"wine to  firefox\",\"enabled\":true,\"shortcut\":\"Win\\u002BE\",\"action\":\"translate\",\"value\":\"Ctrl\\u002BAlt\\u002BShift\\u002BF\",\"arguments\":\"\"}]"
+                                              },
+                   "explorer-mouse-navigation":  {
+
+                                                 },
+                   "start-menu":  {
+                                      "appearance-enabled":  "true",
+                                      "width":  "1074",
+                                      "hide-search":  "true",
+                                      "hide-user":  "true",
+                                      "hide-power":  "false",
+                                      "hide-categories":  "true",
+                                      "hide-recent":  "true",
+                                      "hide-places":  "true",
+                                      "hide-all-apps-heading":  "true",
+                                      "cleanup-enabled":  "true",
+                                      "search-enabled":  "true",
+                                      "cursor-monitor-enabled":  "true",
+                                      "icon-size":  "35",
+                                      "opacity":  "100",
+                                      "hide-labels":  "false"
+                                  },
+                   "explorer-command-bar":  {
+
+                                            },
+                   "system-shortcuts":  {
+                                            "rules":  "[{\"id\":\"shutdown\",\"name\":\"Bilgisayar\\u0131 kapat\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BAlt\\u002BShift\\u002BX\",\"action\":\"shutdown\",\"value\":\"\",\"arguments\":\"\"},{\"id\":\"restart\",\"name\":\"Bilgisayar\\u0131 yeniden ba\\u015Flat\",\"enabled\":true,\"shortcut\":\"Ctrl\\u002BAlt\\u002BShift\\u002BWin\\u002BX\",\"action\":\"restart\",\"value\":\"\",\"arguments\":\"\"}]"
+                                        }
+               }
+}

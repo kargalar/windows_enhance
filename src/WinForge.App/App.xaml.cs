@@ -33,10 +33,20 @@ public partial class App : Application
     private static SettingsStore LoadSettings(string dataDirectory)
     {
         AppData.MigrateLegacyData();
-        var store = new SettingsStore(Path.Combine(dataDirectory, "settings.json"));
+        var settingsPath = Path.Combine(dataDirectory, "settings.json");
+        SeedDefaultSettings(settingsPath);
+        var store = new SettingsStore(settingsPath);
         var legacyDefault = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WinForge", "History");
         PortableHistoryMigration.Migrate(store, dataDirectory, legacyDefault);
         return store;
+    }
+
+    private static void SeedDefaultSettings(string settingsPath)
+    {
+        if (File.Exists(settingsPath)) return;
+
+        var defaultsPath = Path.Combine(AppContext.BaseDirectory, "Assets", "DefaultSettings.json");
+        if (File.Exists(defaultsPath)) File.Copy(defaultsPath, settingsPath, overwrite: false);
     }
 
     protected override async void OnStartup(StartupEventArgs e)
