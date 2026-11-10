@@ -68,6 +68,15 @@ inline bool IsArchiveExtraction(std::wstring const& text) {
     return name.find_first_of(L"\"\u201c") != std::wstring::npos &&
         (name.ends_with(L"\u00e7\u0131kar") || name.ends_with(L"\u00e7\u0131kart"));
 }
+inline bool IsArchiveCreation(std::wstring const& text) {
+    auto name = Normalize(text);
+    return name == L"add to zip" || name == L"add to archive" || name == L"compress to zip" ||
+        name == L"zip'e ekle" || name == L"zip'e sıkıştır" || name == L"arşive ekle";
+}
+inline bool CanCreateArchiveSelection(unsigned context) {
+    // Archive creation is available only for a selection made entirely of folders.
+    return context == 2u;
+}
 inline bool CanExtractSelection(unsigned context, std::vector<std::wstring> const& paths) {
     // Explorer can expose compressed folders (especially ZIP files) with the
     // folder scope even though their filesystem path still has an archive extension.
@@ -214,6 +223,10 @@ public:
             // Apply this restriction even when the item has no customization rule.
             // Inspect the original label so renaming/grouping cannot bypass it.
             if (!separator && IsArchiveExtraction(item.text) && !CanExtractSelection(context, paths)) {
+                if (RemoveMenu(item.menu, item.position, MF_BYPOSITION)) changes.push_back({item, true});
+                continue;
+            }
+            if (!separator && IsArchiveCreation(item.text) && !CanCreateArchiveSelection(context)) {
                 if (RemoveMenu(item.menu, item.position, MF_BYPOSITION)) changes.push_back({item, true});
                 continue;
             }

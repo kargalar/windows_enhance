@@ -132,6 +132,13 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
 
     private void RegisterNativeOrFallback(int id, uint modifiers, uint key)
     {
+        // Lock keys must be intercepted before Windows toggles their state.
+        if (key == 0x14)
+        {
+            EnsureFallbackHook();
+            _fallback.Add(id);
+            return;
+        }
         if (Native.RegisterHotKey(_source.Handle, id, modifiers | HotkeyModifiers.NoRepeat, key))
         {
             _registered.Add(id);
@@ -139,12 +146,15 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         }
         var error = Marshal.GetLastWin32Error();
         if (error != 1409) throw RegistrationError(modifiers, key, error);
-        if (_keyboardHook is null)
-        {
-            _keyboardCallback = HandleFallback;
-            _keyboardHook = new KeyboardHookThread(_keyboardCallback);
-        }
+        EnsureFallbackHook();
         _fallback.Add(id);
+    }
+
+    private void EnsureFallbackHook()
+    {
+        if (_keyboardHook is not null) return;
+        _keyboardCallback = HandleFallback;
+        _keyboardHook = new KeyboardHookThread(_keyboardCallback);
     }
 
     private IntPtr HandleFallback(int code, IntPtr message, IntPtr data)

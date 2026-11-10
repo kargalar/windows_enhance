@@ -75,12 +75,16 @@ internal sealed class LockKeysFlyoutHook : IDisposable
                     var label = GetEnabledLockKeyLabel(key, _showCapsLock, _showNumLock, _showScrollLock);
                     if (label is not null)
                     {
-                        // Read toggle state on the UI queue, after Windows processes the key.
-                        Application.Current?.Dispatcher.BeginInvoke(() =>
-                        {
-                            if (Volatile.Read(ref _disposed) == 0)
-                                LockKeysStatusWindow.Show(label, (GetKeyState(key) & 1) != 0);
-                        });
+                        // A later hook may consume the release for a shortcut. In that case
+                        // Windows never toggled the key, so there is no status to announce.
+                        var next = Native.CallNextHookEx(IntPtr.Zero, code, message, data);
+                        if (next == IntPtr.Zero)
+                            Application.Current?.Dispatcher.BeginInvoke(() =>
+                            {
+                                if (Volatile.Read(ref _disposed) == 0)
+                                    LockKeysStatusWindow.Show(label, (GetKeyState(key) & 1) != 0);
+                            });
+                        return next;
                     }
                 }
                 if (isKeyUp && IsMediaFlyoutKey(key) && !IsVolumeHardwareKey(key) && _showMediaFlyout is not null)

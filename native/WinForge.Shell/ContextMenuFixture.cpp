@@ -171,6 +171,19 @@ int wmain(int argc, wchar_t** argv) {
             WinForgeMenu::IsArchiveExtraction(L"Buraya \u00e7\u0131kart") && WinForgeMenu::IsArchiveExtraction(L"T\u00fcm\u00fcn\u00fc ay\u0131kla..."), "English and Turkish extraction commands are recognized");
         Check(!WinForgeMenu::IsArchiveExtraction(L"Extract text") && !WinForgeMenu::IsArchiveExtraction(L"Add to archive...") &&
             !WinForgeMenu::IsArchiveExtraction(L"Listeden \u00e7\u0131kar"), "Text extraction, compression and unrelated removal commands remain available");
+        Check(WinForgeMenu::IsArchiveCreation(L"Add to zip") && WinForgeMenu::IsArchiveCreation(L"Add to archive...") &&
+            WinForgeMenu::IsArchiveCreation(L"Ar\u015five ekle") && !WinForgeMenu::IsArchiveCreation(L"Extract Here"), "English and Turkish archive creation commands are recognized");
+        for (auto const& selection : std::vector<std::pair<unsigned, bool>>{{1, false}, {2, true}, {3, false}, {16, false}, {0, false}}) {
+            auto archiveMenu = CreatePopupMenu();
+            AppendMenuW(archiveMenu, MF_STRING, 310, L"Add to zip");
+            WinForgeMenu::Rule archiveRule{L"add to zip", L"Renamed zip action", L"", L"", true};
+            WinForgeMenu::Transaction archive;
+            archive.Apply(archiveMenu, WinForgeMenu::ReadItems(nullptr, archiveMenu, false), {archiveRule}, selection.first);
+            Check(GetMenuItemCount(archiveMenu) == (selection.second ? 1 : 0), "Add to zip is restricted to folder-only selections even when customized");
+            archive.Restore();
+            Check(GetMenuItemCount(archiveMenu) == 1 && GetMenuItemID(archiveMenu, 0) == 310, "Archive creation filtering restores the original menu and command ID");
+            DestroyMenu(archiveMenu);
+        }
         for (auto const& selection : std::vector<std::pair<unsigned, std::vector<std::wstring>>>{
             {1, {L"C:\\sample.ZIP", L"C:\\sample.rar", L"C:\\sample.7z", L"C:\\sample.tar.gz"}},
             {64, {L"C:\\sample.zip.exe"}}, {1, {L"C:\\sample.txt"}},
