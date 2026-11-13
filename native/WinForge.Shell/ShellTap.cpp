@@ -10,6 +10,7 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.Core.h>
+#include <winrt/Windows.UI.Text.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
@@ -59,6 +60,9 @@ struct SavedProperty {
     int64_t callbackToken{};
 };
 struct Node {
+    Panel quotaHost{nullptr};
+    StackPanel quotaText{nullptr};
+    std::wstring quotaContent;
     std::unique_ptr<ExplorerCommandBarState> explorer;
     InstanceHandle handle{};
     InstanceHandle parent{};
@@ -196,6 +200,7 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
 
     void Restore(Node& node) noexcept {
         try {
+            RemoveQuota(node);
             if (node.explorer) {
                 com_ptr<::IInspectable> instance;
                 // Closed tabs may already have released their diagnostics handle.
@@ -216,6 +221,27 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
                 node.geometry.reset();
             }
         } catch (...) { RecordError(to_hresult()); }
+    }
+
+    static void RemoveQuota(Node& node) {
+        if (node.quotaHost && node.quotaText) {
+            uint32_t index{};
+            if (node.quotaHost.Children().IndexOf(node.quotaText, index)) node.quotaHost.Children().RemoveAt(index);
+        }
+        node.quotaText = nullptr;
+        node.quotaContent.clear();
+        node.quotaHost = nullptr;
+    }
+
+    static Panel FindQuotaHost(DependencyObject const& parent, int depth = 0) {
+        if (depth > 8) return nullptr;
+        auto count = Media::VisualTreeHelper::GetChildrenCount(parent);
+        for (int i = 0; i < count; ++i) {
+            auto child = Media::VisualTreeHelper::GetChild(parent, i);
+            if (auto grid = child.try_as<Grid>()) return grid;
+            if (auto nested = FindQuotaHost(child, depth + 1)) return nested;
+        }
+        return nullptr;
     }
 
     static bool MatchIdentity(std::wstring const& selector, std::wstring const& actualType,
@@ -418,6 +444,69 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
                     desired[std::wstring(pair.Key())] = std::wstring(pair.Value().GetString());
                 }
             }
+            if (auto quota = desired.find(L"QuotaText"); quota != desired.end()) {
+                if (node.type != L"Taskbar.TaskbarFrame") throw hresult_invalid_argument();
+                if (!node.quotaText) {
+                    node.quotaHost = FindQuotaHost(element);
+                    if (!node.quotaHost) throw hresult_error(E_FAIL, L"Taskbar root panel not found");
+                    node.quotaText = StackPanel();
+                    node.quotaText.Name(L"WinForgeQuotaText");
+                    node.quotaText.Orientation(Orientation::Horizontal);
+                    node.quotaText.HorizontalAlignment(HorizontalAlignment::Left);
+                    node.quotaText.VerticalAlignment(VerticalAlignment::Center);
+                    node.quotaText.IsHitTestVisible(true);
+                    node.quotaText.PointerPressed([](auto const&, auto const& args) { args.Handled(true); });
+                    node.quotaText.PointerReleased([](auto const&, auto const& args) { args.Handled(true); });
+                    if (auto grid = node.quotaHost.try_as<Grid>()) {
+                        Grid::SetColumnSpan(node.quotaText, static_cast<int>(std::max(1u, grid.ColumnDefinitions().Size())));
+                        Grid::SetRowSpan(node.quotaText, static_cast<int>(std::max(1u, grid.RowDefinitions().Size())));
+                    }
+                    Canvas::SetZIndex(node.quotaText, 1000);
+                    node.quotaHost.Children().Append(node.quotaText);
+                }
+                if (node.quotaContent != quota->second) {
+                    auto accounts = JsonArray::Parse(quota->second);
+                    node.quotaText.Children().Clear();
+                    uint32_t index = 0;
+                    for (auto const& value : accounts) {
+                        auto account = value.GetObject();
+                        auto tile = Border();
+                        tile.Name(L"WinForgeQuotaTile" + to_hstring(index++));
+                        tile.Height(32);
+                        tile.Margin(Thickness{0, 0, 5, 0});
+                        tile.Padding(Thickness{4, 3, 8, 3});
+                        tile.CornerRadius(CornerRadius{7, 7, 7, 7});
+                        tile.Background(Brush(L"#E91B202B").as<Media::Brush>());
+                        tile.BorderBrush(Brush(L"#FF363D49").as<Media::Brush>());
+                        tile.BorderThickness(Thickness{1, 1, 1, 1});
+                        auto row = StackPanel(); row.Orientation(Orientation::Horizontal);
+                        auto accent = Border(); accent.Width(3); accent.CornerRadius(CornerRadius{2, 2, 2, 2});
+                        accent.Margin(Thickness{0, 0, 5, 0});
+                        accent.Background(Brush(std::wstring(account.GetNamedString(L"color"))).as<Media::Brush>());
+                        row.Children().Append(accent);
+                        auto badge = Border(); badge.Background(Brush(L"#FF3B414C").as<Media::Brush>());
+                        badge.CornerRadius(CornerRadius{4, 4, 4, 4}); badge.Padding(Thickness{5, 2, 5, 2});
+                        auto initials = TextBlock(); initials.Text(account.GetNamedString(L"initials")); initials.FontSize(11);
+                        initials.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); initials.Foreground(Brush(L"#FFFFFFFF").as<Media::Brush>());
+                        badge.Child(initials); row.Children().Append(badge);
+                        auto percent = TextBlock(); percent.Text(account.GetNamedString(L"percent")); percent.FontSize(13);
+                        percent.FontWeight(Windows::UI::Text::FontWeights::SemiBold()); percent.Foreground(Brush(L"#FFFFFFFF").as<Media::Brush>());
+                        percent.Margin(Thickness{7, 0, 7, 0}); percent.VerticalAlignment(VerticalAlignment::Center); row.Children().Append(percent);
+                        auto separator = Border(); separator.Width(1); separator.Margin(Thickness{0, 4, 7, 4});
+                        separator.Background(Brush(L"#FF555B66").as<Media::Brush>()); row.Children().Append(separator);
+                        auto countdown = TextBlock(); countdown.Text(account.GetNamedString(L"countdown")); countdown.FontSize(10);
+                        countdown.Foreground(Brush(L"#FFE6E8EC").as<Media::Brush>()); countdown.VerticalAlignment(VerticalAlignment::Center); row.Children().Append(countdown);
+                        tile.Child(row); node.quotaText.Children().Append(tile);
+                    }
+                    node.quotaContent = quota->second;
+                }
+                auto offset = desired.find(L"QuotaOffset");
+                auto x = offset == desired.end() ? 160.0 : std::stod(offset->second);
+                if (!std::isfinite(x) || x < 0 || x > 10000) throw hresult_invalid_argument();
+                node.quotaText.Margin(Thickness{x, 0, 0, 0});
+                desired.erase(quota);
+                if (offset != desired.end()) desired.erase(offset);
+            } else RemoveQuota(node);
             for (auto index = node.saved.size(); index > 0; --index) {
                 auto iterator = node.saved.begin() + static_cast<std::ptrdiff_t>(index - 1);
                 if (desired.contains(iterator->name)) continue;
@@ -833,3 +922,4 @@ STDAPI DllGetClassObject(REFCLSID clsid, REFIID iid, void** result) {
     catch (...) { return winrt::to_hresult(); }
 }
 STDAPI DllCanUnloadNow() { return S_FALSE; }
+

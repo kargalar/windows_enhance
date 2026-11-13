@@ -13,6 +13,7 @@ internal sealed class WindowControlEngine : IDisposable
     private const int SmartSnapTolerance = 8;
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly DispatcherTimer _timer;
+    private SharedBorderResize? _sharedBorders;
     private readonly Action<Exception> _report;
     private readonly Action<IntPtr>? _beginZoneDrag;
     private readonly Func<IntPtr, bool, bool>? _endZoneDrag;
@@ -61,7 +62,7 @@ internal sealed class WindowControlEngine : IDisposable
         _hook = Native.SetWindowsHookEx(Native.WH_MOUSE_LL, _callback, Native.GetModuleHandle(null), 0);
         if (_hook == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Pencere kontrolü fare kancası kurulamadı.");
         _keyboardCallback = KeyboardHook;
-        try { _keyboardHook = new KeyboardHookThread(_keyboardCallback); }
+        try { _keyboardHook = new KeyboardHookThread(_keyboardCallback); _sharedBorders = new SharedBorderResize(_candidates); }
         catch
         {
             Native.UnhookWindowsHookEx(_hook);
@@ -87,6 +88,7 @@ internal sealed class WindowControlEngine : IDisposable
             var info = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
             if ((info.flags & 1) != 0) return Native.CallNextHookEx(_hook, code, wParam, lParam);
             var message = (int)wParam;
+            if (_sharedBorders?.Mouse(message, info.pt) == true) return new IntPtr(1);
             _cursor = info.pt;
             var (button, isDown) = Button(message, info.mouseData);
             if (button != 0 && !isDown && _swallowedHotclicks.Remove(button))
@@ -383,6 +385,15 @@ internal sealed class WindowControlEngine : IDisposable
         finally { DestroyMenu(menu); }
     }
 
+    private static WindowFrameInsets GetFrameInsets(IntPtr window, WindowBounds outer)
+    {
+        if (Native.DwmGetWindowAttribute(window, Native.DWMWA_EXTENDED_FRAME_BOUNDS, out var rect, Marshal.SizeOf<RECT>()) != 0)
+            return default;
+        var visible = WindowBounds.From(rect);
+        if (visible.Width <= 0 || visible.Height <= 0) return default;
+        return new(visible.X - outer.X, visible.Y - outer.Y, outer.Right - visible.Right, outer.Bottom - visible.Bottom);
+    }
+
     private void BeginGesture(IntPtr window, POINT point, bool resize)
     {
         if (!Native.GetWindowRect(window, out var rect) || (resize && IsZoomed(window))) return;
@@ -406,6 +417,8 @@ internal sealed class WindowControlEngine : IDisposable
         var maxWidth = minMax.MaxTrackSize.X > 0 ? Math.Max(minWidth, minMax.MaxTrackSize.X) : int.MaxValue;
         var maxHeight = minMax.MaxTrackSize.Y > 0 ? Math.Max(minHeight, minMax.MaxTrackSize.Y) : int.MaxValue;
         var targets = new List<WindowBounds>();
+        var visibleTargets = new List<WindowBounds>();
+        var frameInsets = GetFrameInsets(window, WindowBounds.From(rect));
         var neighbors = new List<Neighbor>();
         foreach (var handle in _candidates(window, false))
         {
@@ -416,6 +429,7 @@ internal sealed class WindowControlEngine : IDisposable
                 if (target.Width > 0 && target.Height > 0)
                 {
                     targets.Add(target);
+                    visibleTargets.Add(GetFrameInsets(handle, target).Visible(target));
                     if (_options.StickyResize != "Kapalı" && !IsZoomed(handle) && ((long)Native.GetWindowLongPtr(handle, WindowStyleIndex) & ResizableStyle) != 0)
                     {
                         Native.GetWindowThreadProcessId(handle, out var neighborProcess);
@@ -432,8 +446,8 @@ internal sealed class WindowControlEngine : IDisposable
         var edges = resize ? WindowGeometry.ResizeRegion(bounds, point, _options.CenterFraction, _options.ResizeCenter) : ResizeEdges.None;
         var opacity = edges == ResizeEdges.None && _options.MoveOpacity < 255 ? TemporaryOpacity.Create(window, (byte)_options.MoveOpacity) : null;
         _snapSuppressed = false;
-        _gesture = new Gesture(window, processId, bounds, point, edges,
-            minWidth, minHeight, maxWidth, maxHeight, wasMaximized, targets, neighbors, opacity, WindowActions.WorkArea(window, point), initialBounds, snapNormal is not null);
+        _gesture = new Gesture(window, processId, bounds, point, edges, resize,
+            minWidth, minHeight, maxWidth, maxHeight, wasMaximized, targets, visibleTargets, frameInsets, neighbors, opacity, WindowActions.WorkArea(window, point), initialBounds, snapNormal is not null);
         if (_options.AutoFocus || ReadModifiers().Control) WindowActions.Activate(window);
         _timer.Start();
     }
@@ -454,7 +468,7 @@ internal sealed class WindowControlEngine : IDisposable
             Place(gesture.Window, gesture.Original);
         }
         if (_cursor.X != gesture.Start.X || _cursor.Y != gesture.Start.Y) gesture.DragStarted = true;
-        if (gesture.DragStarted && !gesture.ZoneDragStarted && _beginZoneDrag is not null)
+        if (gesture.DragStarted && !gesture.IsResize && !gesture.ZoneDragStarted && _beginZoneDrag is not null)
         {
             gesture.ZoneDragStarted = true;
             _beginZoneDrag(gesture.Window);
@@ -464,10 +478,23 @@ internal sealed class WindowControlEngine : IDisposable
         if (gesture.Edges == ResizeEdges.None && !modifiers.SuppressSnap && (_options.MagnetMode != "Kapalı" || modifiers.Shift))
         {
             var work = modifiers.Control || modifiers.Shift ? gesture.OriginWork : WindowActions.WorkArea(gesture.Window, _cursor);
+            bounds = gesture.FrameInsets.Visible(bounds);
             if (_options.MagnetMode is "Pencerelerin dış kenarları" or "İç ve dış kenarlar" || modifiers.Shift)
-                bounds = WindowGeometry.Magnet(bounds, gesture.Targets, _options.MagnetDistance, _options.Gap,
+                bounds = WindowGeometry.Magnet(bounds, gesture.VisibleTargets, _options.MagnetDistance, _options.Gap,
                     includeInner: _options.MagnetMode == "İç ve dış kenarlar");
             bounds = WindowGeometry.Magnet(bounds, [work], _options.MagnetDistance, 0, includeInner: true, includeOuter: false);
+            bounds = gesture.FrameInsets.Outer(bounds);
+        }
+        if (gesture.Edges != ResizeEdges.None && !modifiers.SuppressSnap && (_options.MagnetMode != "Kapalı" || modifiers.Shift))
+        {
+            var work = modifiers.Control || modifiers.Shift ? gesture.OriginWork : WindowActions.WorkArea(gesture.Window, _cursor);
+            var limits = gesture.FrameInsets.VisibleLimits(new WindowResizeLimits(gesture.MinWidth, gesture.MinHeight, gesture.MaxWidth, gesture.MaxHeight));
+            bounds = gesture.FrameInsets.Visible(bounds);
+            if (_options.MagnetMode is "Pencerelerin dış kenarları" or "İç ve dış kenarlar" || modifiers.Shift)
+                bounds = WindowGeometry.MagnetResize(bounds, gesture.Edges, gesture.VisibleTargets, _options.MagnetDistance, _options.Gap,
+                    _options.MagnetMode == "İç ve dış kenarlar", limits);
+            bounds = WindowGeometry.MagnetResize(bounds, gesture.Edges, [work], _options.MagnetDistance, 0, true, limits, includeOuter: false);
+            bounds = gesture.FrameInsets.Outer(bounds);
         }
         if (gesture.Edges == ResizeEdges.None && (modifiers.Control || modifiers.Shift)) bounds = WindowGeometry.Constrain(bounds, gesture.OriginWork);
         var shift = modifiers.Shift;
@@ -665,6 +692,8 @@ internal sealed class WindowControlEngine : IDisposable
     public void Dispose()
     {
         _dispatcher.VerifyAccess();
+        _sharedBorders?.Dispose();
+        _sharedBorders = null;
         _generation++;
         CancelGesture();
         if (_hook != IntPtr.Zero) { Native.UnhookWindowsHookEx(_hook); _hook = IntPtr.Zero; }
@@ -698,21 +727,24 @@ internal sealed class WindowControlEngine : IDisposable
         _appearance.Clear();
     }
 
-    private sealed class Gesture(IntPtr window, uint processId, WindowBounds original, POINT start, ResizeEdges edges,
+    private sealed class Gesture(IntPtr window, uint processId, WindowBounds original, POINT start, ResizeEdges edges, bool isResize,
         int minWidth, int minHeight, int maxWidth, int maxHeight, bool wasMaximized, IReadOnlyList<WindowBounds> targets,
-        IReadOnlyList<Neighbor> neighbors, TemporaryOpacity? opacity, WindowBounds originWork, WindowBounds initialBounds, bool hadSnapRestore)
+        IReadOnlyList<WindowBounds> visibleTargets, WindowFrameInsets frameInsets, IReadOnlyList<Neighbor> neighbors, TemporaryOpacity? opacity, WindowBounds originWork, WindowBounds initialBounds, bool hadSnapRestore)
     {
         internal IntPtr Window { get; } = window;
         internal uint ProcessId { get; } = processId;
         internal WindowBounds Original { get; } = original;
         internal POINT Start { get; } = start;
         internal ResizeEdges Edges { get; } = edges;
+        internal bool IsResize { get; } = isResize;
         internal int MinWidth { get; } = minWidth;
         internal int MinHeight { get; } = minHeight;
         internal int MaxWidth { get; } = maxWidth;
         internal int MaxHeight { get; } = maxHeight;
         internal bool WasMaximized { get; } = wasMaximized;
         internal IReadOnlyList<WindowBounds> Targets { get; } = targets;
+        internal IReadOnlyList<WindowBounds> VisibleTargets { get; } = visibleTargets;
+        internal WindowFrameInsets FrameInsets { get; } = frameInsets;
         internal IReadOnlyList<Neighbor> Neighbors { get; } = neighbors;
         internal HashSet<IntPtr> ChangedNeighbors { get; } = new();
         internal TemporaryOpacity? Opacity { get; } = opacity;
@@ -755,3 +787,5 @@ internal sealed class WindowControlEngine : IDisposable
         internal bool OpacityChanged { get; set; }
     }
 }
+
+

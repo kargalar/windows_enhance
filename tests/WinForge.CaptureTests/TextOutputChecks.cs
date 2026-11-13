@@ -5,9 +5,23 @@ using WinForge.Core;
 
 internal static class TextOutputChecks
 {
+    internal static async Task RunGuardsAsync(Action<bool, string> check)
+    {
+        var target = new TextTarget(1, 1, "test");
+        check(await FocusedTextOutput.InsertAsync(target, "bir\nikİ", default) == TextInsertion.UnsupportedLineBreak,
+            "Multiline Unicode output does not send newline key events");
+        check(await FocusedTextOutput.PasteAsync(null, 1, default) == TextInsertion.Blocked,
+            "Paste requires a captured target");
+        check(await FocusedTextOutput.PasteAsync(target, 0, default) == TextInsertion.Blocked,
+            "Paste requires a valid clipboard sequence");
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        try { await FocusedTextOutput.PasteAsync(target, 1, cancelled.Token); throw new InvalidOperationException("Cancellation ignored"); }
+        catch (OperationCanceledException) { check(true, "Cancelled paste does not send keys"); }
+    }
     internal static int RunFixture()
     {
-        var app = new Application(); var first = new TextBox(); var second = new TextBox();
+        var app = new Application(); var first = new TextBox { AcceptsReturn = true }; var second = new TextBox();
+        var originalClipboard = Clipboard.GetDataObject(); uint testClipboardSequence = 0;
         var readOnly = new TextBox { IsReadOnly = true, Text = "salt okunur" }; var password = new PasswordBox();
         var panel = new StackPanel(); foreach (var control in new Control[] { first, second, readOnly, password }) { control.Height = 40; panel.Children.Add(control); }
         var window = new Window { Title = "WinForge metin yazma testi", Width = 420, Height = 260, Content = panel, Topmost = true };
@@ -22,12 +36,27 @@ internal static class TextOutputChecks
                     window.Dispatcher.Invoke(() =>
                     {
                         if (command == "read") { Console.WriteLine(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(first.Text))); return; }
+                        if (command == "clear") { first.Clear(); Console.WriteLine("OK"); return; }
+                        if (command is "clipboard" or "clipboard-other")
+                        {
+                            Clipboard.SetText(command == "clipboard" ? "İlk satır\r\nİkinci satır" : "başka metin");
+                            testClipboardSequence = FocusedTextOutput.GetClipboardSequenceNumber();
+                            Console.WriteLine("OK"); return;
+                        }
                         window.Activate();
                         _ = command switch { "first" => first.Focus(), "second" => second.Focus(), "readonly" => readOnly.Focus(), "password" => password.Focus(), _ => false };
                         Console.WriteLine("OK");
                     });
                 }
             });
+        };
+        window.Closed += (_, _) =>
+        {
+            if (testClipboardSequence != 0 && FocusedTextOutput.GetClipboardSequenceNumber() == testClipboardSequence)
+            {
+                if (originalClipboard is null) Clipboard.Clear();
+                else Clipboard.SetDataObject(originalClipboard, true);
+            }
         };
         return app.Run(window);
     }
@@ -53,6 +82,28 @@ internal static class TextOutputChecks
             var received = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(await Read()));
             Console.WriteLine("Owned fixture received: " + System.Text.Json.JsonSerializer.Serialize(received));
             check(received == "İstanbul ölçüm 42", "The target receives exact Turkish text");
+            await Command("clear"); await Command("first"); target = FocusedTextOutput.Capture();
+            var longText = new string('a', 31) + "😀 İstanbul İkinci satır " + new string('b', 100);
+            check(await FocusedTextOutput.InsertAsync(target, longText, default) == TextInsertion.Inserted, "Long Unicode dictation reports insertion");
+            await Task.Delay(1500); await process.StandardInput.WriteLineAsync("read"); await process.StandardInput.FlushAsync();
+            received = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(await Read()));
+            check(received == longText, "Long dictation preserves surrogate pairs across input batches");
+            await Command("clear"); await Command("first"); target = FocusedTextOutput.Capture();
+            check(await FocusedTextOutput.InsertAsync(target, "İlk satır\r\nİkinci satır", default) == TextInsertion.UnsupportedLineBreak,
+                "Multiline text is not silently flattened or submitted with Enter");
+            await process.StandardInput.WriteLineAsync("read"); await process.StandardInput.FlushAsync();
+            var beforePaste = await Read();
+            check(beforePaste == "", "Unsupported multiline output leaves the target untouched: " + beforePaste);
+            await Command("clipboard"); var sequence = FocusedTextOutput.GetClipboardSequenceNumber();
+            await Command("second");
+            check(await FocusedTextOutput.PasteAsync(target, sequence, default) == TextInsertion.TargetChanged, "Paste refuses a changed target");
+            await Command("first"); await Command("clipboard-other");
+            check(await FocusedTextOutput.PasteAsync(target, sequence, default) == TextInsertion.Blocked, "Paste refuses a changed clipboard");
+            await Command("clipboard"); sequence = FocusedTextOutput.GetClipboardSequenceNumber();
+            check(await FocusedTextOutput.PasteAsync(target, sequence, default) == TextInsertion.Inserted, "Multiline text can be pasted into the original target");
+            await Task.Delay(500); await process.StandardInput.WriteLineAsync("read"); await process.StandardInput.FlushAsync();
+            received = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(await Read()));
+            check(received == "İlk satır\r\nİkinci satır", "Paste preserves Turkish text and line breaks");
             await Command("readonly"); check(FocusedTextOutput.Capture() is null, "Read-only fields reject dictation");
             await Command("password"); check(FocusedTextOutput.Capture() is null, "Password fields reject dictation");
         }

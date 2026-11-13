@@ -67,10 +67,13 @@ internal static class Program
                 Console.WriteLine($"PASS: {checks} pre-capture annotation checks."); return 0;
             }
             if (args.Length == 1 && args[0] == "--text-fixture") return TextOutputChecks.RunFixture();
+            if (args.Length == 1 && args[0] == "--text-output-guards") { TextOutputChecks.RunGuardsAsync(Check).GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--text-output") { TextOutputChecks.RunAsync(Check).GetAwaiter().GetResult(); return 0; }
             if (args.Length == 3 && args[0] == "--import") return Import(args[1], args[2]).GetAwaiter().GetResult();
             if (args.Length == 2 && args[0] == "--models") { CopyModels(args[1]).GetAwaiter().GetResult(); return 0; }
-            if (args.Length == 4 && args[0] == "--real-engine") { RealEngine(args[1], args[2], args[3] != "cpu", args[3] == "fallback", args[3] == "translate").GetAwaiter().GetResult(); return 0; }
+            if (args.Length == 4 && args[0] == "--real-engine") { RealEngine(args[1], args[2], args[3] is not ("cpu" or "q5cpu" or "smallcpu"), args[3] == "fallback", args[3] == "translate", args[3].StartsWith("q5", StringComparison.Ordinal), args[3].StartsWith("small", StringComparison.Ordinal)).GetAwaiter().GetResult(); return 0; }
+            if (args.Length == 4 && args[0] == "--real-cancel") { RealCancellation(args[1], args[2], args[3] == "gpu").GetAwaiter().GetResult(); return 0; }
+            if (args.Length is 4 or 5 && args[0] == "--benchmark-dictation") { DictationBenchmark.RunAsync(args[1], args[2], args[3], args.Length == 5 ? args[4] : null).GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--recording") { Recording().GetAwaiter().GetResult(); return 0; }
             if (args.Length == 1 && args[0] == "--render") { Render(); return 0; }
             if (args.Length == 1 && args[0] == "--dictation-ui") { Render(dictationOnly: true); return 0; }
@@ -85,7 +88,7 @@ internal static class Program
                 NetworkUsageChecks.Run(root, Check);
                 if (!args.Contains("--network"))
                 {
-                    HistoryRefreshChecks.Run(root, Check); CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult();
+                    HistoryRefreshChecks.Run(root, Check); CaptureClipboardChecks.Run(root, Check); CaptureShortcutChecks.Run(Check); PortableDataChecks.Run(root, Check); Storage(root).GetAwaiter().GetResult(); Usage(); Images(root); EditorLifecycleChecks.Run(root, Check); Speech(); Lifecycle(root); DictationEngineChecks.RunAsync(Check).GetAwaiter().GetResult(); ModelDownloadChecks.RunAsync(root, Check).GetAwaiter().GetResult();
                 }
             }
             finally { SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
@@ -269,6 +272,15 @@ internal static class Program
             Check(expected.Length == actual.Length && expected.Zip(actual).All(pair => Math.Abs(pair.First - pair.Second) < 0.0001f),
                 $"Resampling at {rate} Hz is independent of packet boundaries");
         }
+        double OutputRms(int frequency)
+        {
+            var signal = Enumerable.Range(0, 48000).Select(i => (float)Math.Sin(2 * Math.PI * frequency * i / 48000)).ToArray();
+            var buffer = new SpeechBuffer(); buffer.Append(signal, 48000);
+            var output = buffer.Take().Skip(100).ToArray();
+            return Math.Sqrt(output.Average(value => value * value));
+        }
+        Check(OutputRms(1000) > 0.69 && OutputRms(12000) < 0.02,
+            "48 kHz downsampling preserves speech frequencies and suppresses 12 kHz aliasing");
         for (var i = 0; i < 100; i++) audio.Append(Enumerable.Repeat(0.1f, 441).ToArray(), 44100);
         var samples = audio.Take(); Check(Math.Abs(samples.Length - 16000) <= 1 && SpeechBuffer.ContainsSpeech(samples), "Packet resampling preserves one second at 44.1 kHz");
         Check(audio.Take().Length == 0, "Consumed audio is cleared");
@@ -286,6 +298,10 @@ internal static class Program
             "Edge silence is trimmed with 200 ms padding while retaining quiet speech");
         audio.Append(new float[16000], 16000);
         Check(audio.Take(trimSilence: true).Length == 0, "Silent recordings are removed before inference");
+        audio.Append(Enumerable.Repeat(0.001f, 16000).ToArray(), 16000);
+        var quietTrimmed = audio.Take(out var quietPeak, trimSilence: true);
+        Check(quietTrimmed.Length == 0 && Math.Abs(quietPeak - 0.001f) < 0.00001f,
+            "Low input level remains available for diagnostics after silence trimming");
         audio.Append(Enumerable.Repeat(0.1f, 8000).ToArray(), 16000);
         audio.Append(new float[16000], 16000);
         audio.Append(Enumerable.Repeat(0.1f, 8000).ToArray(), 16000);
@@ -322,7 +338,25 @@ internal static class Program
             await WhisperModels.CopyAsync(source, directory, name, default); Console.WriteLine("Verified and copied: " + name);
         }
     }
-    private static async Task RealEngine(string engineDirectory, string modelDirectory, bool gpu, bool fallback = false, bool translate = false)
+    private static async Task RealCancellation(string engineDirectory, string modelPath, bool gpu)
+    {
+        var bytes = await File.ReadAllBytesAsync(Path.GetFullPath("artifacts/capture-verification/turkish.f32"));
+        var samples = new float[bytes.Length / 4]; Buffer.BlockCopy(bytes, 0, samples, 0, bytes.Length);
+        using var client = new DictationClient(Path.GetFullPath(engineDirectory));
+        var config = new WinForge.Dictation.DictationConfiguration(Path.GetFullPath(modelPath), "tr", false, gpu);
+        for (var iteration = 0; iteration < 3; iteration++)
+        {
+            await client.PrepareAsync(config, default);
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            try { await client.TranscribeAsync(samples, config, cancellation.Token); throw new InvalidOperationException("Cancellation ignored"); }
+            catch (OperationCanceledException) { Check(!client.IsRunning, $"Real model cancellation and release {iteration + 1}: {timer.Elapsed.TotalSeconds:F2} s"); }
+        }
+        var recovered = await client.TranscribeAsync(samples, config, default);
+        Check(recovered.Contains("İstanbul", StringComparison.OrdinalIgnoreCase), "A new transcription succeeds after repeated cancellation");
+        Array.Clear(samples); Array.Clear(bytes);
+    }
+    private static async Task RealEngine(string engineDirectory, string modelDirectory, bool gpu, bool fallback = false, bool translate = false, bool quantized = false, bool small = false)
     {
         var root = Path.GetFullPath("artifacts/capture-verification"); Directory.CreateDirectory(root);
         var wav = Path.Combine(root, "turkish.wav"); var raw = Path.Combine(root, "turkish.f32"); var synthesized = false;
@@ -347,14 +381,20 @@ internal static class Program
             engineDirectory = isolated;
         }
         using var client = new DictationClient(Path.GetFullPath(engineDirectory));
-        var configuration = new WinForge.Dictation.DictationConfiguration(Path.Combine(modelDirectory, translate ? "ggml-large-v3.bin" : "ggml-large-v3-turbo.bin"), "tr", translate, gpu);
+        var configuration = new WinForge.Dictation.DictationConfiguration(Path.Combine(modelDirectory, translate ? "ggml-large-v3.bin" : small ? "ggml-small.bin" : quantized ? "ggml-large-v3-turbo-q5_0.bin" : "ggml-large-v3-turbo.bin"), "tr", translate, gpu);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
         var result = await client.TranscribeAsync(samples, configuration, default);
+        Console.WriteLine($"Cold transcription: {timer.Elapsed.TotalSeconds:F2} s; audio: {(double)samples.Length / 16000:F2} s");
+        timer.Restart();
+        var warmResult = await client.TranscribeAsync(samples, configuration, default);
+        Console.WriteLine($"Warm transcription: {timer.Elapsed.TotalSeconds:F2} s; text: {warmResult}");
+        Check(warmResult == result, "Warm inference preserves the transcription");
         if (gpu && !fallback) Check(client.Engine == "CUDA", "GPU verification must actually use CUDA rather than silently falling back to CPU");
         Check(translate ? result.Contains("world", StringComparison.OrdinalIgnoreCase) && result.Contains("city", StringComparison.OrdinalIgnoreCase) :
             result.Contains("İstanbul", StringComparison.OrdinalIgnoreCase) && result.Contains("deneme", StringComparison.OrdinalIgnoreCase),
             (translate ? "Real Large-model English translation: " : "Real Turkish Whisper transcription: ") + client.Engine);
         if (fallback) Check(client.Engine.Contains("GPU yerine", StringComparison.Ordinal), "Missing GPU backend falls back to CPU");
-        File.WriteAllText(Path.Combine(root, translate ? "translation-result.txt" : gpu ? "gpu-result.txt" : "cpu-result.txt"), result);
+        File.WriteAllText(Path.Combine(root, translate ? "translation-result.txt" : small ? (gpu ? "small-gpu-result.txt" : "small-cpu-result.txt") : quantized ? (gpu ? "q5-gpu-result.txt" : "q5-cpu-result.txt") : gpu ? "gpu-result.txt" : "cpu-result.txt"), result);
         using (var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(10)))
         {
             try { await client.TranscribeAsync(samples, configuration, cancel.Token); throw new InvalidOperationException("Cancellation ignored."); }
@@ -382,6 +422,14 @@ internal static class Program
     private static void Lifecycle(string root)
     {
         var context = new TestContext(root);
+        var interrupted = new DictationModule(); interrupted.Initialize(context);
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var bufferedAudio = (SpeechBuffer)typeof(DictationModule).GetField("audio", flags)!.GetValue(interrupted)!;
+        bufferedAudio.Append(Enumerable.Repeat(0.1f, 8000).ToArray(), 16000);
+        typeof(DictationModule).GetField("starting", flags)!.SetValue(interrupted, true);
+        interrupted.OnMicrophoneFailure(new IOException("fixture disconnect"));
+        Check((bool)typeof(DictationModule).GetField("stopWhenStarted", flags)!.GetValue(interrupted)! && bufferedAudio.Take().Length == 8000,
+            "Microphone failure retains buffered speech and schedules processing even while startup is pending");
         var capturePaths = new ScreenCaptureModule(); capturePaths.Initialize(context);
         var export = typeof(ScreenCaptureModule).GetMethod("ExportImage", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var sample = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8);
@@ -398,8 +446,13 @@ internal static class Program
         {
             module.Initialize(context); Check(!module.IsActive, module.Name + " defaults to disabled");
             if (module is DictationModule dictation)
+            {
                 Check(dictation.GetQuickActions("").Any(action => action.Name == "Dikteyi başlat / durdur"),
                     "Whisper exposes a direct start/stop quick action");
+                Check(dictation.Settings.Single(setting => setting.Key == "model").Options.Contains("2") &&
+                    DictationDefaults.ModelFiles[2] == "ggml-small.bin" && WhisperModels.Checksums.ContainsKey("ggml-small.bin"),
+                    "The optional Small model is selectable and verified");
+            }
             if (module is ScreenCaptureModule capture)
                 Check(new[] { "Pencere yakala", "Etkin pencereyi yakala", "Monitörü yakala", "Tüm masaüstünü yakala", "Kayan ekranı yakala", "Ekran videosu kaydet", "Ekran GIF'i kaydet" }
                     .All(name => capture.GetQuickActions("").Any(action => action.Name == name)),
@@ -412,16 +465,25 @@ internal static class Program
                     "Recall exposes an optional privacy pause hotkey");
             }
             module.Activate(); Check(module.IsActive, module.Name + " activates");
+            if (module is DictationModule working)
+            {
+                typeof(DictationModule).GetField("busy", flags)!.SetValue(working, true);
+                context.Keys.Callback?.Invoke();
+                Check(context.Notifications.Any(message => message.Contains("çözümlemesi sürüyor", StringComparison.Ordinal)),
+                    "Shortcut reports an in-progress transcription");
+                typeof(DictationModule).GetField("busy", flags)!.SetValue(working, false);
+            }
             module.Deactivate(); module.Deactivate(); Check(!module.IsActive && context.Keys.Count == 0, module.Name + " deactivates idempotently and releases shortcuts");
         }
     }
     private sealed class TestContext(string root) : IModuleContext
     {
+        public List<string> Notifications { get; } = [];
         public TestHotkeys Keys { get; } = new();
         public IHotkeyService Hotkeys => Keys;
         public IModuleSettings Settings { get; } = new TestSettings(root);
         public ILogger Log { get; } = new FileLogger(Path.Combine(root, "test.log"));
-        public void Notify(string message) { }
+        public void Notify(string message) => Notifications.Add(message);
     }
     private sealed class TestSettings(string root) : IModuleSettings
     {
@@ -434,7 +496,8 @@ internal static class Program
     private sealed class TestHotkeys : IHotkeyService
     {
         public int Count;
-        public IDisposable Register(uint modifiers, uint virtualKey, Action callback) { Count++; return new Registration(() => Count--); }
+        public Action? Callback;
+        public IDisposable Register(uint modifiers, uint virtualKey, Action callback) { Count++; Callback = callback; return new Registration(() => { Count--; Callback = null; }); }
         private sealed class Registration(Action release) : IDisposable
         { private bool disposed; public void Dispose() { if (!disposed) { disposed = true; release(); } } }
     }

@@ -66,9 +66,9 @@ type CaptureRecordingState = { gif: boolean; busy: boolean; paused: boolean; sta
 type CaptureHistoryState = { title: string; kind: string; search: string; app: string; tag: string; from: string; until: string; offset: number; status: string; selectedId?: number; selectedText: string; selectedTags: string; preview?: string; cursor?: { x: number; y: number; width: number; height: number }; mediaType: string; confirmDelete: boolean; confirmDeleteRange: boolean; confirmDeleteAll: boolean; rows: { id: number; label: string; app: string; title: string; created: string; icon?: string; hasMedia: boolean; mediaType: string; tags: string }[] };
 type UsageState = { network?: { date: string; received: number; sent: number }[]; from: string; until: string; status: string; summary: string; applications: { app: string; seconds: number; duration: string; estimated: boolean }[]; days: { date: string; active: number; idle: number }[]; dayApplications: { date: string; app: string; duration: string; estimated: boolean }[]; contexts: { date: string; type: string; app: string; context: string; duration: string }[]; tags: { tag: string; seconds: number; duration: string; applications: number }[] };
 type ImportState = { title: string; kind: string; root: string; status: string; progress: number; busy: boolean; selectedDatabase: string; sources: { database: string; imagesDirectory: string }[]; preview?: { records: number; existingRecords: number; bytes: number; missingFiles: number; destination: string } };
-type ModelsState = { directory: string; status: string; models: { name: string; installed: boolean }[] };
+type ModelsState = { directory: string; status: string; busy?: boolean; models: { name: string; installed: boolean }[] };
 type SuggestionsState = { suggestions: string[] };
-type FileLocksmithState = { path: string; status: string; selectedProcessId?: number; canScan: boolean; canTerminate: boolean; confirmTerminate: boolean; processes: { processId: number; processName: string; applicationName: string; status: string; canTerminate: boolean }[] };
+type FileLocksmithState = { path: string; status: string; selectedProcessId?: number; canScan: boolean; scanning: boolean; canTerminate: boolean; confirmTerminate: boolean; processes: { processId: number; processName: string; applicationName: string; status: string; canTerminate: boolean }[] };
 type PowerRenameState = { find: string; replace: string; regex: boolean; caseSensitive: boolean; status: string; canApply: boolean; canUndo: boolean; rows: { originalName: string; newName: string; status: string }[] };
 type ImageResizerState = { preset: string; customSize: string; format: string; quality: string; preserveMetadata: boolean; processing: boolean; progress: number; progressMaximum: number; canResize: boolean; status: string; rows: { index: number; fileName: string; sourceSize: string; targetName: string; targetSize: string; status: string }[] };
 type CaptureImagePreviewState = { image: string; pinned: boolean };
@@ -282,12 +282,16 @@ function WheelView({ state }: { state: WheelState }) {
 
 function DictationStatusView({ state }: { state: DictationStatusState }) {
   const level = Math.max(0, Math.min(100, state.audioLevel));
-  return <div className="feature-root feature-root-dictation" role="status" aria-label={state.recording ? 'Dinleniyor' : 'Konuşma çözümleniyor'}>
+  const [label, hint] = (state.message || (state.recording ? 'Dinleniyor…' : 'Konuşma çözümleniyor…')).split(' · ');
+  return <div className="feature-root feature-root-dictation" role="status" aria-label={state.message || (state.recording ? 'Dinleniyor' : 'Konuşma çözümleniyor')}>
+    <div className="dictation-status-card">
     <div className={`dictation-orb ${state.recording ? 'recording' : 'processing'}`}>
       {state.recording
         ? <div className="dictation-waves" aria-hidden="true">{[0.38, 0.7, 1, 0.7, 0.38].map((factor, index) =>
           <i key={index} style={{ height: `${4 + level * factor * 0.28}px` }} />)}</div>
         : <span className="dictation-spinner" aria-hidden="true" />}
+    </div>
+    <div className="dictation-status-copy"><strong>{label}</strong>{hint && <span>{hint}</span>}</div>
     </div>
   </div>;
 }
@@ -738,8 +742,8 @@ export function FeatureApp({ view }: { view: string }) {
     const locksmith = state as unknown as FileLocksmithState | null;
     return <div className="feature-root feature-root-locksmith"><section className="locksmith-panel">
       {locksmith && <><header><div><strong>Dosya kilidi bulucu</strong><small>Dosyayı kullanan uygulama ve hizmetleri salt okunur olarak tara</small></div><button onClick={() => send('file-locksmith.close')} aria-label="Kapat">×</button></header>
-        <div className="locksmith-path"><code title={locksmith.path}>{locksmith.path || 'Bir dosya veya klasör seçin'}</code><button onClick={() => send('file-locksmith.choose')}>Dosya seç</button><button disabled={!locksmith.canScan} onClick={() => send('file-locksmith.scan')}>Yeniden tara</button></div>
-        <div className="locksmith-list"><div className="locksmith-list-heading"><span>İşlem</span><span>Uygulama / hizmet</span><span>PID</span><span>Durum</span></div>{locksmith.processes.map(process => <button key={process.processId} className={`locksmith-row ${process.processId === locksmith.selectedProcessId ? 'selected' : ''}`} onClick={() => send('file-locksmith.select', { processId: process.processId })}><span>{process.processName}</span><span>{process.applicationName}</span><span>{process.processId}</span><span>{process.status}</span></button>)}{locksmith.processes.length === 0 && <div className="history-empty">Tarama sonucu henüz yok.</div>}</div>
+        <div className="locksmith-path"><code title={locksmith.path}>{locksmith.path || 'Bir dosya veya klasör seçin'}</code><button disabled={locksmith.scanning} onClick={() => send('file-locksmith.choose')}>Dosya seç</button><button disabled={locksmith.scanning} onClick={() => send('file-locksmith.choose-folder')}>Klasör seç</button><button disabled={!locksmith.canScan} onClick={() => send('file-locksmith.scan')}>Yeniden tara</button></div>
+        <div className="locksmith-list"><div className="locksmith-list-heading"><span>İşlem</span><span>Uygulama / hizmet</span><span>PID</span><span>Durum</span></div>{locksmith.processes.map(process => <button key={process.processId} className={`locksmith-row ${process.processId === locksmith.selectedProcessId ? 'selected' : ''}`} onClick={() => send('file-locksmith.select', { processId: process.processId })}><span>{process.processName}</span><span>{process.applicationName}</span><span>{process.processId}</span><span>{process.status}</span></button>)}{locksmith.processes.length === 0 && <div className="history-empty">{locksmith.scanning ? 'Taranıyor…' : 'Gösterilecek işlem yok.'}</div>}</div>
         <footer><span>{locksmith.status}</span><button disabled={!locksmith.canTerminate} className="danger" onClick={() => send('file-locksmith.terminate')}>Uygulamayı sonlandır…</button></footer>
         {locksmith.confirmTerminate && <div className="history-confirm-backdrop"><section className="history-confirm"><strong>Uygulama sonlandırılsın mı?</strong><p>Kaydedilmemiş çalışmalar kaybolabilir. Yalnızca seçilen uygulama işlemi sonlandırılır.</p><div><button onClick={() => send('file-locksmith.terminate', { confirm: false })}>Vazgeç</button><button className="danger" onClick={() => send('file-locksmith.terminate', { confirm: true })}>Sonlandır</button></div></section></div>}
       </>}
@@ -939,8 +943,8 @@ export function FeatureApp({ view }: { view: string }) {
     return <div className="feature-root feature-root-models">
       {models && <section className="models-panel"><header><div><strong>Whisper modelleri</strong><small>Modeller cihaz üzerinde çalışır ve yerel olarak saklanır</small></div><button onClick={() => send('models.close')} aria-label="Kapat">×</button></header>
         <p className="models-path">Model klasörü: {models.directory}</p>
-        <div className="models-list">{models.models.map(model => <article key={model.name}><span className={model.installed ? 'installed' : ''}>{model.installed ? '✓' : '↓'}</span><div><strong>{model.name}</strong><small>{model.installed ? 'Hazır' : 'Yüklü değil'}</small></div><button onClick={() => send('models.add', { name: model.name })}>{model.installed ? 'Değiştir' : 'Model ekle'}</button></article>)}</div>
-        <footer>{models.status || 'GGML model dosyalarını ekleyerek yerel dikteyi kullanın.'}</footer>
+        <div className="models-list">{models.models.map(model => <article key={model.name}><span className={model.installed ? 'installed' : ''}>{model.installed ? '✓' : '↓'}</span><div><strong>{model.name}</strong><small>{model.installed ? 'Hazır' : model.name.includes('small') ? 'Yüklü değil · 488 MB' : model.name.includes('turbo') ? 'Yüklü değil · 1,62 GB' : 'Yüklü değil · 3,10 GB'}</small></div>{!model.installed && <button disabled={models.busy} onClick={() => send('models.download', { name: model.name })}>İndir</button>}<button disabled={models.busy} onClick={() => send('models.add', { name: model.name })}>{model.installed ? 'Değiştir' : 'Dosya seç'}</button></article>)}</div>
+        <footer>{models.status || 'Modeller Hugging Face üzerinden indirilir ve cihazda çalışır.'}{models.busy && <button onClick={() => send('models.cancel')}>İptal</button>}</footer>
       </section>}
     </div>;
   }

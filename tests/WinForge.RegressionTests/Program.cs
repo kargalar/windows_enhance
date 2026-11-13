@@ -97,6 +97,12 @@ internal static class Program
                 Console.WriteLine($"PASS: {_passed} Start placement checks.");
                 return 0;
             }
+            if (args.Contains("--cursor-taskbar-live"))
+            {
+                StartMenuPlacementChecks.RunTaskbarLive(Check);
+                Console.WriteLine($"PASS: {_passed} live taskbar checks.");
+                return 0;
+            }
             if (args.Contains("--combined-modules-only"))
             {
                 CombinedModuleChecks.Run(TestDirectory, Check);

@@ -89,6 +89,8 @@ internal sealed class FileLocksmithWindow : Window
     private string _status = "";
     private LockingProcess? _selectedProcess;
     private bool _confirmTerminate;
+    private bool _scanning;
+    private bool _closed;
 
     public FileLocksmithWindow() : this(null) { }
 
@@ -106,7 +108,7 @@ internal sealed class FileLocksmithWindow : Window
         ShowInTaskbar = true;
 
         Content = _uiSurface.Element;
-        Closed += (_, _) => _uiSurface.Dispose();
+        Closed += (_, _) => { _closed = true; _uiSurface.Dispose(); };
 
         if (!string.IsNullOrWhiteSpace(initialPath))
         {
@@ -121,6 +123,7 @@ internal sealed class FileLocksmithWindow : Window
         switch (command)
         {
             case "file-locksmith.choose": ChooseFile(); break;
+            case "file-locksmith.choose-folder": ChooseFolder(); break;
             case "file-locksmith.scan": Scan(); break;
             case "file-locksmith.select":
                 if (payload.TryGetProperty("processId", out var pid) && pid.TryGetUInt32(out var processId))
@@ -136,19 +139,24 @@ internal sealed class FileLocksmithWindow : Window
         }
     }
 
-    private void PushUiState() => _uiSurface.SetState(new
+    private void PushUiState()
     {
-        path = _path,
-        status = _status,
-        selectedProcessId = _selectedProcess?.ProcessId,
-        canScan = File.Exists(_path) || Directory.Exists(_path),
-        canTerminate = _selectedProcess?.CanTerminate == true,
-        confirmTerminate = _confirmTerminate,
-        processes = _processes.Select(process => new
+        if (_closed) return;
+        _uiSurface.SetState(new
         {
-            process.ProcessId, process.ProcessName, process.ApplicationName, process.Status, process.CanTerminate
-        }).ToArray()
-    });
+            path = _path,
+            status = _status,
+            selectedProcessId = _selectedProcess?.ProcessId,
+            canScan = !_scanning && (File.Exists(_path) || Directory.Exists(_path)),
+            scanning = _scanning,
+            canTerminate = _selectedProcess?.CanTerminate == true,
+            confirmTerminate = _confirmTerminate,
+            processes = _processes.Select(process => new
+            {
+                process.ProcessId, process.ProcessName, process.ApplicationName, process.Status, process.CanTerminate
+            }).ToArray()
+        });
+    }
 
     private void ChooseFile()
     {
@@ -165,8 +173,17 @@ internal sealed class FileLocksmithWindow : Window
         Scan();
     }
 
-    private void Scan()
+    private void ChooseFolder()
     {
+        var dialog = new OpenFolderDialog { Title = "Kilitleri aranacak klasörü seçin" };
+        if (dialog.ShowDialog(this) != true) return;
+        _path = dialog.FolderName;
+        Scan();
+    }
+
+    private async void Scan()
+    {
+        if (_scanning) return;
         if (!File.Exists(_path) && !Directory.Exists(_path))
         {
             _status = "Dosya/klasör bulunamadı veya artık erişilemiyor.";
@@ -176,15 +193,22 @@ internal sealed class FileLocksmithWindow : Window
 
         _processes.Clear();
         _selectedProcess = null;
+        _confirmTerminate = false;
+        _scanning = true;
+        var path = _path;
+        var isDirectory = Directory.Exists(path);
+        _status = "Taranıyor…";
+        PushUiState();
         try
         {
-            var processes = RestartManagerQuery.FindProcesses(_path);
+            var processes = await Task.Run(() => RestartManagerQuery.FindProcesses(path));
             foreach (var process in processes.OrderBy(item => item.ProcessName, StringComparer.CurrentCultureIgnoreCase))
                 _processes.Add(process);
 
-            _status = processes.Count == 0
-                ? "Restart Manager bu dosyayı kullanan bir uygulama veya hizmet bildirmedi."
-                : $"{processes.Count} uygulama veya hizmet bulundu. Tarama salt okunurdur; sonlandırma ayrıca onay ister.";
+            _status = (processes.Count == 0
+                ? "Restart Manager kullanılan dosya bildirmedi."
+                : $"{processes.Count} uygulama veya hizmet bulundu.")
+                + (isDirectory ? " Klasörün kendisine açılan tanıtıcılar ve erişilemeyen öğeler bu taramada gösterilmez." : "");
         }
         catch (Exception exception)
         {
@@ -192,8 +216,8 @@ internal sealed class FileLocksmithWindow : Window
         }
         finally
         {
+            _scanning = false;
             UpdateTerminateState();
-            PushUiState();
         }
     }
 
@@ -223,8 +247,8 @@ internal sealed class FileLocksmithWindow : Window
         }
         catch (Exception exception)
         {
-            _status = exception.Message;
-            Scan();
+            _status = "Sonlandırma başarısız: " + exception.Message;
+            PushUiState();
         }
     }
 }
@@ -260,7 +284,7 @@ internal static class RestartManagerQuery
     internal const uint ConsoleType = 5;
     private const int ErrorMoreData = 234;
     private const int MaximumResults = 1024;
-    private const int MaximumFolderFiles = 5000;
+    private const int ResourceBatchSize = 512;
     private const uint StatusRunning = 0x01;
     private const uint StatusStopped = 0x02;
     private const uint StatusStoppedOther = 0x04;
@@ -277,8 +301,17 @@ internal static class RestartManagerQuery
         var isDirectory = Directory.Exists(fullPath);
         if (!isDirectory && !File.Exists(fullPath)) throw new FileNotFoundException("Dosya bulunamadı.", fullPath);
         var paths = isDirectory ? EnumerateFolderFiles(fullPath) : new[] { fullPath };
-        if (paths.Length == 0) return Array.Empty<LockingProcess>();
+        var processes = new Dictionary<(uint, long), LockingProcess>();
+        foreach (var batch in paths.Chunk(ResourceBatchSize))
+        {
+            foreach (var process in FindProcessesForFiles(batch))
+                processes.TryAdd((process.ProcessId, process.ProcessStartTime), process);
+        }
+        return processes.Values.ToArray();
+    }
 
+    private static IReadOnlyList<LockingProcess> FindProcessesForFiles(string[] paths)
+    {
         var sessionKey = new StringBuilder(33);
         var result = RmStartSession(out var sessionHandle, 0, sessionKey);
         ThrowIfFailed(result, "Restart Manager oturumu başlatılamadı");
@@ -324,13 +357,10 @@ internal static class RestartManagerQuery
         }
     }
 
-    private static string[] EnumerateFolderFiles(string folder)
+    private static IEnumerable<string> EnumerateFolderFiles(string folder)
     {
         var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
-        var paths = Directory.EnumerateFiles(folder, "*", options).Take(MaximumFolderFiles + 1).ToArray();
-        if (paths.Length > MaximumFolderFiles)
-            throw new InvalidOperationException($"Klasör {MaximumFolderFiles} dosya sınırını aşıyor; daha küçük bir klasör seçin.");
-        return paths;
+        return Directory.EnumerateFiles(folder, "*", options);
     }
 
     public static void Terminate(LockingProcess target)

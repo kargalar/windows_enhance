@@ -40,6 +40,17 @@ function ManagementPanel({ module,filterQuery='',onClearFilter }: { module: Modu
     {panel && 'kind' in panel && panel.kind === 'default-apps' && <DefaultAppsPanel inline state={panel.state} sendCommand={command} filterQuery={filterQuery} />}
     {panel && 'kind' in panel && panel.kind === 'context-menu' && <ContextMenuPanel state={panel} command={command} filterQuery={filterQuery} />}
     {panel && 'kind' in panel && panel.kind === 'shortcut-actions' && <ShortcutActionsPanel state={panel} moduleId={module.id} active={module.isActive} command={command} filterQuery={filterQuery} onClearFilter={onClearFilter} />}
+    {panel && 'kind' in panel && panel.kind === 'codex-quota' && <div>
+      <p>AI Limit Status eklentisindeki Codex hesapları. Ad ve görünürlük yalnızca WinForge gösterimini değiştirir; oturumlar eklentide yönetilir.</p>
+      <button className="secondary-button" onClick={() => command('refresh')}>Listeyi yenile</button>
+      <p>Son kayıt: {panel.updatedAt || 'bulunamadı'}</p>
+      {panel.accounts.length === 0 && <p>Hesap bulunamadı. VS Code’da AI Limit Status eklentisini açıp hesapları yenileyin.</p>}
+      {panel.accounts.filter(a => `${a.email} ${a.alias}`.toLocaleLowerCase().includes(filterQuery.trim().toLocaleLowerCase())).map(a => <div className="setting-row" key={a.id}>
+        <div><strong>{a.email}</strong><p>{a.status === 'error' || a.status === 'expired' ? `Güncellenemedi: ${a.error}` : a.windows.map(w => `${w.label}: %${Math.round(w.remaining)} · ${w.resetsAt ? new Date(w.resetsAt).toLocaleString() : w.resetLabel}`).join(' | ') || 'Limit bilgisi yok'}</p>
+        <label>Görünen ad <input key={`${a.id}-${a.alias}`} defaultValue={a.alias} maxLength={80} placeholder={a.email} onBlur={e => { if (e.target.value.trim() !== a.alias) command('alias', { id:a.id, alias:e.target.value }); }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} /></label></div>
+        <Toggle checked={a.visible} label={`${a.email} göster`} onChange={visible => command('visibility', { id:a.id, visible })} />
+      </div>)}
+    </div>}
     {panel && 'kind' in panel && panel.kind === 'start-sections' && panel.buttons.map(button => <div className="setting-row" key={button.id}>
       <strong>{button.name}</strong><Toggle checked={button.visible} label={button.name} onChange={visible => command('place-visibility', { id: button.id, visible })} /></div>)}
     {panel && 'kind' in panel && panel.kind === 'start-sections' && !panel.buttons.length && <p className="management-empty">{copy(['Bu Windows sürümünde yönetilebilir alt klasör düğmesi bildirilmedi. Menü içeriğini diğer bölümlerden düzenleyebilirsin.','This Windows version reported no manageable folder buttons. You can customize menu content in the other sections.'])}</p>}

@@ -75,6 +75,9 @@ internal static class CombinedModuleChecks
         var placement = startModule.Settings.Single(setting => setting.Key == "cursor-monitor-enabled");
         check(placement.Kind == SettingKind.Toggle && placement.Default is false && placement.Section == "Konum",
             "Start cursor-monitor placement is an independent opt-in setting");
+        var taskbarPlacement = startModule.Settings.Single(setting => setting.Key == "cursor-taskbar-enabled");
+        check(taskbarPlacement.Kind == SettingKind.Toggle && taskbarPlacement.Default is false && taskbarPlacement.Section == "Konum",
+            "Cursor taskbar placement is an independent opt-in setting");
         check(JsonSerializer.SerializeToElement(((IModulePanel)startModule).GetPanelState()).GetProperty("kind").GetString() == "start-sections",
             "Combined Start Menu retains its interactive section panel");
         StartMenuPlacementChecks.Run(check);

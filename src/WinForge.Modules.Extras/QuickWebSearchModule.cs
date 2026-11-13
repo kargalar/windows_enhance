@@ -37,10 +37,14 @@ public sealed class QuickWebSearchModule : ITweakModule
     }
     private void Show()
     {
-        if (_window is not null) { _window.Activate(); return; }
+        if (_window is not null) { _window.Close(); return; }
         var input = new TextBox { FontSize = 17, BorderThickness = new Thickness(0), Background = Brushes.Transparent,
             Foreground = Brushes.White, CaretBrush = Brushes.White, VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(0), Margin = new Thickness(48, 0, 64, 0) };
+        // The default WPF theme draws a blue focus outline even with no border.
+        var inputTemplate = new ControlTemplate(typeof(TextBox));
+        inputTemplate.VisualTree = new FrameworkElementFactory(typeof(ScrollViewer), "PART_ContentHost");
+        input.Template = inputTemplate;
         var placeholder = new TextBlock { Text = "Web'de ara...", FontSize = 17,
             Foreground = new SolidColorBrush(Color.FromRgb(130, 130, 130)), VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(48, 0, 64, 0), IsHitTestVisible = false };
@@ -62,7 +66,6 @@ public sealed class QuickWebSearchModule : ITweakModule
         window.Left = area.Left + (area.Width - window.Width) / 2;
         window.Top = area.Bottom - window.Height - 24;
         _window = window;
-        var activated = false;
         var closing = false;
         void ClosePanel()
         {
@@ -70,8 +73,7 @@ public sealed class QuickWebSearchModule : ITweakModule
         }
         window.Closing += (_, _) => { closing = true; if (_window == window) _window = null; };
         window.Closed += (_, _) => { if (_window == window) _window = null; };
-        window.Activated += (_, _) => { if (!closing) { activated = true; input.Focus(); Keyboard.Focus(input); } };
-        window.Deactivated += (_, _) => { if (activated && !closing) ClosePanel(); };
+        window.Activated += (_, _) => { if (!closing) { input.Focus(); Keyboard.Focus(input); } };
         window.Loaded += (_, _) => window.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
         {
             if (!closing) FocusWindow(window, input, () => closing);
@@ -100,13 +102,12 @@ public sealed class QuickWebSearchModule : ITweakModule
         try
         {
             Native.SetForegroundWindow(new WindowInteropHelper(window).Handle);
-            if (isClosing()) return;
-            window.Activate();
-            if (isClosing()) return;
-            input.Focus();
-            if (!isClosing()) Keyboard.Focus(input);
+            if (!isClosing()) window.Activate();
         }
         finally { if (attached) AttachThreadInput(currentThread, foregroundThread, false); }
+        if (isClosing()) return;
+        input.Focus();
+        Keyboard.Focus(input);
     }
 
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint from, uint to, bool attach);

@@ -8,7 +8,7 @@ Yeni kurulumda üçü de kapalıdır. Geçmiş görüntülemek veya eski kayıtl
 | Modül | İş akışı |
 |---|---|
 | PC Geçmişi | Varsayılan 60 saniye ve etkin pencere değişiklikleri; imlecin monitörü; WebP kalite 80 veya PNG; boşta/kilit/uyku duraklatması; uygulama/pencere dışlama; arama, tarih, uygulama ve etiket filtreleri; uygulama, web sayfası ve klasör süreleri |
-| Sesle Yazma | `Shift+Space` kısa basışla başlat/durdur, 300 ms veya daha uzun basılı tutup bırakınca durdur; Esc ile iptal; mikrofon, dil, Turbo/Large ve CPU/otomatik seçim; İngilizce çeviri için Large |
+| Sesle Yazma | `Shift+Space` kısa basışla başlat/durdur, 300 ms veya daha uzun basılı tutup bırakınca durdur; Esc ile iptal; mikrofon, dil, Small/Turbo/Large ve CPU/otomatik seçim; İngilizce çeviri için Large |
 | Ekran Yakalama | `Win+Alt+S` bölge seçimi; panelden monitör, pencere, masaüstü, son bölge, kayan yakalama, video/GIF; pencereye gelince kenarlıkla mıknatıslı seçim, tıklamayla pencere veya sürüklemeyle serbest bölge |
 
 Dikte sonuçları otomatik olarak panoya kopyalanır ve kayıt başındaki düzenlenebilir alan hâlâ
@@ -100,8 +100,16 @@ whisper.cpp v1.8.3, revision `2eeeba56e9edd762b4b38467bab96c2517163158` kullanı
 Kaynaklar `.upstream` altında; WinForge C ABI köprüsü `native/WinForge.Whisper` altındadır.
 Dikte motoru WinForge sürecine DLL olarak yüklenir; ayrı worker veya named pipe yoktur.
 Çözümleme arka planda seri çalışır ve aynı yapılandırma için model tekrar kullanılır.
-İptal Whisper callback'leriyle iletilir; model ve DLL yerel çağrı döndükten sonra bırakılır.
+İptal Whisper callback'leriyle iletilir; model yerel çağrı döndükten sonra bırakılır.
+OpenMP iş parçacıklarının boşaltılmış DLL içinde çalışmasını önlemek için motor DLL'i
+süreç kapanana kadar yüklü kalır. Yerel motorun yenilenmesi için uygulama yeniden
+başlatılmalıdır. CPU motoru, derleme sırasında oluşturulan whisper.cpp kopyasında iptali
+hesap grafiği sırasında denetler; bunun için üst kaynak deposu değiştirilmez.
 Model yüklemesinin ortasında zorla sonlandırma yapılmaz. GPU kullanılamıyorsa CPU'ya geçilir.
+CUDA motoru ayrı derlenir; yalnız CPU motorunu yeniden derlemek önceden oluşturulmuş
+CUDA DLL'ini güncellemez. CUDA Toolkit kurulu ortamda `-Cuda` ile tekrar oluşturulmalıdır.
+Model yöneticisi Turbo, Large ve daha hızlı ancak daha az doğru olabilen Small modellerini indirebilir; dosyaların boyutu ve SHA-256
+özeti doğrulanmadan indirme mevcut modelin yerine geçirilmez.
 Eski RecallClone/Whisper çalıştırılabilirleri çağrılmaz.
 
 FFmpeg/FFprobe mevcut medya araç deposu ve PATH üzerinden ortak kullanılır. Yakalama araç

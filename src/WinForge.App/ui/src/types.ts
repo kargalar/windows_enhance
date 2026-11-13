@@ -28,7 +28,7 @@ export type Module = {
   panelLoaded?: boolean;
   panelError?: string;
   settings: Setting[];
-  panel?: AutomationState | ShortcutActionsState | ContextMenuState | { kind: 'start-sections'; buttons: { id: string; name: string; visible: boolean }[] } | { kind: 'default-paths' | 'default-apps'; state: Record<string, unknown> | null };
+  panel?: AutomationState | ShortcutActionsState | ContextMenuState | { kind: 'codex-quota'; updatedAt: string; accounts: { id: string; email: string; alias: string; visible: boolean; status: string; error: string; windows: { label: string; remaining: number; resetsAt: number | null; resetLabel: string }[] }[] } | { kind: 'start-sections'; buttons: { id: string; name: string; visible: boolean }[] } | { kind: 'default-paths' | 'default-apps'; state: Record<string, unknown> | null };
 };
 
 export type Appearance = {

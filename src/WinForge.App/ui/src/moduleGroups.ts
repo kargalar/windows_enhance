@@ -6,7 +6,7 @@ export const shortcutModuleIds = ['media-shortcuts', 'window-shortcuts', 'system
 export const isShortcutModule = (module: IdentifiedModule) => shortcutModuleIds.includes(module.id);
 
 const familiesTr: [string, string[]][] = [
-  ['Görev Çubuğu', ['taskbar', 'tray-icons', 'shell-customization', 'net-speed']],
+  ['Görev Çubuğu', ['taskbar', 'tray-icons', 'shell-customization', 'net-speed', 'codex-quota']],
   ['Başlat Menüsü', ['start-menu']],
   ['Sağ Tık Menüsü', ['context-menu', 'classic-context-menu']],
   ['Gezgin', ['explorer-tweaks', 'explorer-navigation', 'explorer-mouse-navigation', 'explorer-folder-sizes', 'folder-dialog']],
@@ -17,7 +17,7 @@ const familiesTr: [string, string[]][] = [
 ];
 
 const familiesEn: [string, string[]][] = [
-  ['Taskbar', ['taskbar', 'tray-icons', 'shell-customization', 'net-speed']],
+  ['Taskbar', ['taskbar', 'tray-icons', 'shell-customization', 'net-speed', 'codex-quota']],
   ['Start Menu', ['start-menu']],
   ['Context Menu', ['context-menu', 'classic-context-menu']],
   ['Explorer', ['explorer-tweaks', 'explorer-navigation', 'explorer-mouse-navigation', 'explorer-folder-sizes', 'folder-dialog']],

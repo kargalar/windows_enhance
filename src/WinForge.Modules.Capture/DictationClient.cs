@@ -4,13 +4,13 @@ namespace WinForge.Modules.Capture;
 
 internal static class DictationDefaults
 {
-    public static readonly string[] ModelFiles = ["ggml-large-v3-turbo.bin", "ggml-large-v3.bin"];
+    public static readonly string[] ModelFiles = ["ggml-large-v3-turbo.bin", "ggml-large-v3.bin", "ggml-small.bin"];
     public const string Hotkey = "Shift+Space";
 }
 
 // Dispose resets a reusable module session. Native resources are freed only after inference returns.
 internal sealed class DictationClient(string? engineDirectory = null,
-    Func<DictationConfiguration, IDictationEngine>? factory = null) : IDisposable
+    Func<DictationConfiguration, IDictationEngine>? factory = null, TimeSpan? timeout = null) : IDisposable
 {
     private readonly object state = new();
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -32,12 +32,15 @@ internal sealed class DictationClient(string? engineDirectory = null,
     private async Task<string> ExecuteAsync(float[]? samples, DictationConfiguration configuration, CancellationToken token)
     {
         CancellationTokenSource operation;
-        lock (state) operation = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime.Token);
+        CancellationToken sessionToken;
+        lock (state) { sessionToken = lifetime.Token; operation = CancellationTokenSource.CreateLinkedTokenSource(token, sessionToken); }
         using (operation)
         {
-            operation.CancelAfter(TimeSpan.FromMinutes(5));
+            operation.CancelAfter(timeout ?? TimeSpan.FromMinutes(5));
             var cancellation = operation.Token;
-            await gate.WaitAsync(cancellation).ConfigureAwait(false);
+            try { await gate.WaitAsync(cancellation).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested && !sessionToken.IsCancellationRequested)
+            { throw new TimeoutException("Dikte çözümlemesi zaman aşımına uğradı. Daha kısa bir kayıt deneyin."); }
             try
             {
                 return await Task.Run(() =>
@@ -54,6 +57,11 @@ internal sealed class DictationClient(string? engineDirectory = null,
                         return text;
                     }
                 }, cancellation).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!token.IsCancellationRequested && !sessionToken.IsCancellationRequested)
+            {
+                ReleaseEngine();
+                throw new TimeoutException("Dikte çözümlemesi zaman aşımına uğradı. Daha kısa bir kayıt deneyin.");
             }
             catch { ReleaseEngine(); throw; }
             finally

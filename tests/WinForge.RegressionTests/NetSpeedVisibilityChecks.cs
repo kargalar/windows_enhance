@@ -86,6 +86,13 @@ internal static class NetSpeedVisibilityChecks
     {
         var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.NetSpeed.dll"));
         var type = assembly.GetType("WinForge.Modules.NetSpeed.NetSpeedWindow")!;
+        var revealed = type.GetMethod("IsRevealed", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var screen = new RECT { Left = 1920, Right = 3840, Bottom = 1080 };
+        bool IsRevealed(RECT rect) => (bool)revealed.Invoke(null, [rect, screen])!;
+        check(!IsRevealed(new RECT { Left = 1920, Top = 1078, Right = 3840, Bottom = 1118 }),
+            "A secondary taskbar's auto-hide strip does not show the network overlay");
+        check(IsRevealed(new RECT { Left = 1920, Top = 1040, Right = 3840, Bottom = 1080 }),
+            "A revealed secondary taskbar can show the network overlay");
         var ui = new TrackingUi();
         var indicator = Activator.CreateInstance(type, ui)!;
         type.GetMethod("ApplyOptions")!.Invoke(indicator, [11d, true, true, 10, "Otomatik", 3000, "Görev çubuğunun içinde", "Yan yana"]);
@@ -98,10 +105,8 @@ internal static class NetSpeedVisibilityChecks
             PumpFor(TimeSpan.FromMilliseconds(400));
             var taskbar = Native.FindWindow("Shell_TrayWnd", null);
             Native.GetWindowRect(taskbar, out var rect);
-            var screen = DesktopDisplays.ForWindow(taskbar).Bounds;
-            var visibleWidth = Math.Max(0, Math.Min(rect.Right, screen.Right) - Math.Max(rect.Left, screen.Left));
-            var visibleHeight = Math.Max(0, Math.Min(rect.Bottom, screen.Bottom) - Math.Max(rect.Top, screen.Top));
-            var taskbarShown = Native.IsWindowVisible(taskbar) && visibleWidth > 2 && visibleHeight > 2;
+            var find = type.GetMethod("FindRevealedTaskbar", BindingFlags.Static | BindingFlags.NonPublic)!;
+            var taskbarShown = (IntPtr)find.Invoke(null, null)! != IntPtr.Zero;
             check(taskbarShown ? ui.Window.Placements > placements && ui.Window.IsVisible : !ui.Window.IsVisible,
                 taskbarShown ? "Taskbar tracking repairs visibility without waiting for the 3-second network interval"
                     : "An auto-hidden taskbar reveal strip keeps the network indicator hidden");

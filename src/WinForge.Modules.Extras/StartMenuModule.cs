@@ -8,7 +8,8 @@ public sealed class StartMenuModule : CombinedModule, IModulePanel
     private readonly StartAppearanceModule _appearance;
     public StartMenuModule() : this(new StartAppearanceModule()) { }
     private StartMenuModule(StartAppearanceModule appearance) : base(
-        new("cursor-monitor-enabled", "Konum", new StartMenuPlacementModule(), false, "Farenin bulunduğu monitörde aç"),
+        new("cursor-monitor-enabled", "Konum", new StartMenuPlacementModule(), false, "Başlat ve arama fareyi monitörler arasında takip etsin"),
+        new("cursor-taskbar-enabled", "Konum", new CursorTaskbarModule(), false, "Görev çubuğunu farenin bulunduğu monitörde göster"),
         new("appearance-enabled", "Tasarım", appearance),
         new("cleanup-enabled", "Başlat temizliği", new StartTweaksModule()),
         new("search-enabled", "Arama temizliği", new SearchTweaksModule())) => _appearance = appearance;

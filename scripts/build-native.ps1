@@ -55,7 +55,7 @@ foreach ($target in @(@{ Source = 'NotificationsPlacementTap.cpp'; Name = 'WinFo
     if ($target.Source -in @('ExplorerNavigationTap.cpp', 'ExplorerNavigationFixture.cpp', 'NotificationsPlacementTap.cpp', 'NotificationsPlacementFixture.cpp')) { $targetLibraries += ' comctl32.lib gdi32.lib advapi32.lib' }
     if ($target.Source -in @('FolderDialogTap.cpp', 'FolderDialogFixture.cpp')) { $targetLibraries += ' comctl32.lib shell32.lib advapi32.lib' }
     if ($target.Source -in @('ContextMenuTap.cpp', 'ContextMenuFixture.cpp')) { $targetLibraries += ' gdi32.lib advapi32.lib shell32.lib comctl32.lib msimg32.lib' }
-    if ($target.Source -eq 'FolderSizeHost.cpp') { $targetLibraries += ' dbghelp.lib winhttp.lib' }
+    if ($target.Source -eq 'FolderSizeHost.cpp') { $targetLibraries += ' dbghelp.lib winhttp.lib bcrypt.lib' }
     if ($target.Source -eq 'FolderSizeTap.cpp') { $targetLibraries += ' shell32.lib shlwapi.lib propsys.lib' }
     if ($target.Source -eq 'FolderSizeFixture.cpp') { $targetLibraries += ' shell32.lib' }
     $batchFile = Join-Path $output 'compile.cmd'

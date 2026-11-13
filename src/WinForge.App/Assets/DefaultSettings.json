@@ -298,8 +298,7 @@
 
                                      },
                    "voice-dictation":  {
-                                           "language":  "tr",
-                                           "microphone":  "{0.0.1.00000000}.{8671af4d-a61b-4b42-9327-5e97c4f39496}"
+                                           "language":  "tr"
                                        },
                    "screen-history":  {
                                           "paused":  "false",

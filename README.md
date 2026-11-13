@@ -4,6 +4,8 @@
 
 # WinForge
 
+**Görev Çubuğu → Codex Limitleri:** AI Limit Status eklentisinin yerel listesindeki görünür Codex hesaplarını görev çubuğunda metin olarak gösterir. Her hesabın en düşük kalan yüzdesi ve o pencerenin yenilenmesine kalan süre yan yana listelenir. Gösterge fareyle sürüklenebilir; ayrıntı ekranında soldan uzaklık da ayarlanabilir. Hesap adları ve görünürlük yönetim ekranında düzenlenir; oturumlar eklentide yönetilir. Eklenti çalışmadığında son kaydedilen veriler gösterilir. Bu değerler Codex limitleridir.
+
 Son modül düzeltmeleri, klasör seçenekleri ve doğrulama sınırları: [Modül düzeltmeleri](docs/MODULE_FIXES.md).
 
 **Gezgin → Sağ Tık Menüsü** artık mevcut simgeleri, okunabilir adları, özel simge atamasını ve otomatik kaydedilen alt menü gruplarını içerir. Özellikler ve Yeni klasör gibi yerleşik komutlar da gruplandırılabilir. [Kapsam ve kullanım](docs/CONTEXT_MENU.md).
@@ -29,6 +31,10 @@ Doğrulama: `dotnet run --project tests/WinForge.AutomationTests -c Release -p:P
 **Gezgin → Modern Klasör Seçici** klasik “Browse For Folder” penceresini modern Windows klasör seçicisiyle değiştirir. [Kapsam ve doğrulama](docs/FOLDER_DIALOG.md).
 
 **Başlat → Başlat Menüsü Tasarımı → Görünüm → Simge altındaki adları gizle** seçeneği, sabitlenmiş uygulama ve klasörlerin adlarını gizleyerek yalnızca simgelerini gösterir. Simge boyutu ve yalnızca sabitlenmiş uygulamaları gösterme ayarlarıyla birlikte kullanılabilir; seçenek veya modül kapatılınca adlar geri gelir.
+
+**Başlat → Başlat Menüsü → Boyut ve görünüm → Başlat ve arama fareyi monitörler arasında takip etsin** seçeneği açıkken Başlat ve Windows araması, açık kaldıkları sürece farenin bulunduğu monitörü takip eder.
+
+**Başlat → Başlat Menüsü → Boyut ve görünüm → Görev çubuğunu farenin bulunduğu monitörde göster** seçeneği, görev çubuğunu fareyle birlikte monitörler arasında gösterir. Windows'ta görev çubuğunun tüm ekranlarda gösterilmesi açık ve otomatik gizleme kapalı olmalıdır; hedef ekranda görev çubuğu yoksa mevcut çubuklar gizlenmez. Otomatik gizleme açıkken Windows'un kenardan açma davranışı korunur. Seçenek veya modül kapatıldığında WinForge'un gizlediği çubuklar geri gösterilir.
 
 **Başlat → Başlat Menüsü Tasarımı → Bölümler → Yalnızca sabitlenmiş uygulamaları göster** seçeneği, yeni Windows 11 Başlat menüsündeki **Tüm uygulamalar / All** başlığını, görünüm seçicisini, uygulama listesini/kategorilerini ve önerileri gizler. Sabitlenmiş uygulamalar görünür kalır. Seçenek veya modül kapatıldığında özgün görünüm geri yüklenir.
 
@@ -310,7 +316,9 @@ ilgili klasörü baştan tarar; bu sırada eksik boyut göstermez.
 Explorer'a ilk bağlantıda ve Windows bileşeni güncellendiğinde WinForge, kurulu
 Windows sürümüne ait hata ayıklama sembollerini Microsoft sunucusundan indirir
 ve kimliğini doğrulayarak uygulamanın `userdata\FolderSizes\Symbols` klasöründe
-önbelleğe alır. Eşleşen semboller hazır değilse bağlantı için internet gerekir.
+önbelleğe alır. Eşleşen semboller hazır değilse bağlantı için internet gerekir;
+Microsoft sembolü henüz yayımlamadığında, desteklenen belirli bir Windows
+bileşeni için dosya karması doğrulanmış yerleşik adresler de kullanılabilir.
 Windows'un iç uygulaması sürümler arasında değişebildiğinden, uyumsuz bir
 bağlantı noktası tespit edilirse modül hata bildirerek devreye girmez. Gerçek
 Explorer ve yalıtılmış görünüm sınamaları için

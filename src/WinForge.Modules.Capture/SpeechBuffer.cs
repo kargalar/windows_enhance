@@ -11,6 +11,10 @@ public sealed class SpeechBuffer
     private readonly List<float> samples = [];
     private double position;
     private float previousSample;
+    private const int FilterTaps = 63;
+    private readonly float[] filterHistory = new float[FilterTaps];
+    private double[]? filterCoefficients;
+    private int filterIndex, filterRate;
     public bool Full { get { lock (gate) return samples.Count >= DictationAudio.SampleRate * DictationAudio.MaximumSeconds; } }
     public void Append(ReadOnlySpan<float> packet, int sampleRate)
     {
@@ -19,6 +23,32 @@ public sealed class SpeechBuffer
         {
             var limit = DictationAudio.SampleRate * DictationAudio.MaximumSeconds;
             if (packet.IsEmpty || samples.Count >= limit) return;
+            if (sampleRate != filterRate)
+            {
+                Array.Clear(filterHistory); filterIndex = 0; filterRate = sampleRate;
+                filterCoefficients = sampleRate > DictationAudio.SampleRate ? CreateFilter(sampleRate) : null;
+                position = 0; previousSample = 0;
+            }
+            // Suppress frequencies above the 16 kHz output's Nyquist limit before
+            // decimation; otherwise microphone noise aliases into the speech band.
+            float[]? filtered = null;
+            if (filterCoefficients is not null)
+            {
+                filtered = new float[packet.Length];
+                for (var i = 0; i < packet.Length; i++)
+                {
+                    filterHistory[filterIndex] = float.IsFinite(packet[i]) ? Math.Clamp(packet[i], -1, 1) : 0;
+                    double sum = 0; var index = filterIndex;
+                    for (var tap = 0; tap < FilterTaps; tap++)
+                    {
+                        sum += filterHistory[index] * filterCoefficients[tap];
+                        if (--index < 0) index = FilterTaps - 1;
+                    }
+                    filterIndex = (filterIndex + 1) % FilterTaps;
+                    filtered[i] = (float)sum;
+                }
+                packet = filtered;
+            }
             var step = (double)sampleRate / DictationAudio.SampleRate;
             while (position < packet.Length && samples.Count < limit)
             {
@@ -36,11 +66,28 @@ public sealed class SpeechBuffer
             position -= packet.Length;
         }
     }
-    public float[] Take(bool trimSilence = false)
+    private static double[] CreateFilter(int rate)
+    {
+        var coefficients = new double[FilterTaps];
+        var cutoff = 7200d / rate; double sum = 0;
+        for (var i = 0; i < FilterTaps; i++)
+        {
+            var x = i - (FilterTaps - 1) / 2;
+            var sinc = x == 0 ? 2 * cutoff : Math.Sin(2 * Math.PI * cutoff * x) / (Math.PI * x);
+            coefficients[i] = sinc * (0.54 - 0.46 * Math.Cos(2 * Math.PI * i / (FilterTaps - 1)));
+            sum += coefficients[i];
+        }
+        for (var i = 0; i < FilterTaps; i++) coefficients[i] /= sum;
+        return coefficients;
+    }
+    public float[] Take(bool trimSilence = false) => Take(out _, trimSilence);
+    public float[] Take(out float peak, bool trimSilence = false)
     {
         lock (gate)
         {
             var audio = CollectionsMarshal.AsSpan(samples);
+            peak = 0;
+            foreach (var sample in audio) peak = Math.Max(peak, Math.Abs(sample));
             var start = 0;
             var end = audio.Length;
             if (trimSilence)
@@ -69,7 +116,7 @@ public sealed class SpeechBuffer
     }
     public void Clear()
     {
-        lock (gate) { CollectionsMarshal.AsSpan(samples).Clear(); samples.Clear(); position = 0; previousSample = 0; }
+        lock (gate) { CollectionsMarshal.AsSpan(samples).Clear(); samples.Clear(); position = 0; previousSample = 0; Array.Clear(filterHistory); filterIndex = 0; }
     }
     public static bool ContainsSpeech(float[] audio)
     {

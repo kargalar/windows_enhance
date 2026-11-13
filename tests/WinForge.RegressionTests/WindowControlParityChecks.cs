@@ -70,6 +70,18 @@ internal static class WindowControlParityChecks
         check(WindowGeometry.ResizeRegion(bounds, new POINT(110, 400), 24, "Tüm yönler") == ResizeEdges.Left &&
             WindowGeometry.ResizeRegion(bounds, new POINT(890, 110), 24, "Tüm yönler") == (ResizeEdges.Right | ResizeEdges.Top),
             "Resize regions select a single edge or corner around the center zone");
+        var frame = new WindowFrameInsets(7, 0, 7, 7);
+        var outer = new WindowBounds(93, 100, 814, 607);
+        check(frame.Visible(outer) == bounds && frame.Outer(bounds) == outer,
+            "Magnetic snapping converts between visible window frames and outer resize bounds");
+        var snapLimits = new WindowResizeLimits(100, 100, 1200, 1000);
+        var target = new WindowBounds(910, 100, 400, 600);
+        check(WindowGeometry.MagnetResize(bounds, ResizeEdges.Right, [target], 20, 4, false, snapLimits) == bounds with { Width = 806 },
+            "Resizing snaps the moving right edge to a neighboring window with the configured gap");
+        check(WindowGeometry.MagnetResize(bounds, ResizeEdges.Left | ResizeEdges.Right, [target], 20, 4, false, snapLimits) == new WindowBounds(94, 100, 812, 600),
+            "Centered resize snaps symmetrically while preserving its center");
+        check(WindowGeometry.MagnetResize(bounds, ResizeEdges.Right, [target], 20, 4, false, snapLimits with { MaximumWidth = 802 }) == bounds,
+            "Resize snapping respects window tracking limits");
         var neighbor = new WindowBounds(904, 100, 400, 600);
         check(WindowGeometry.StickyNeighbor(bounds, bounds with { Width = 900 }, neighbor, 4, 8) == new WindowBounds(1004, 100, 300, 600),
             "Sticky resize follows a shared right boundary while preserving the neighbor's outer edge");
@@ -226,6 +238,24 @@ internal static class WindowControlParityChecks
                     "Own centered resize changes all four edges of an actual owned HWND");
             }
             check(WaitUntil(() => Bounds(first) == original), "Deactivating an unfinished gesture restores its original rectangle");
+
+            var zoneBegins = 0;
+            var zoneEnds = 0;
+            using (var engine = new WindowControlEngine(options with { EdgeSnap = false, ResizeCenter = "Taşı" }, errors.Add,
+                candidates: (_, _) => [first], beginZoneDrag: _ => zoneBegins++, endZoneDrag: (_, _) => { zoneEnds++; return false; }))
+            {
+                var center = new POINT(original.X + original.Width / 2, original.Y + original.Height / 2);
+                engine.Execute(first, WindowAction.Resize, center);
+                engine.UpdateGesture(new(center.X + 20, center.Y + 15));
+                engine.FinishGesture();
+                check(zoneBegins == 0 && zoneEnds == 0, "Resize does not start zone dragging even when the center is configured to move");
+                engine.Execute(first, WindowAction.Move, center);
+                engine.UpdateGesture(new(center.X + 40, center.Y + 30));
+                engine.FinishGesture();
+                check(zoneBegins == 1 && zoneEnds == 1, "Move still starts and finishes zone dragging");
+            }
+            WindowActions.Place(first, original);
+            WaitUntil(() => Bounds(first) == original);
 
             var adjacent = new WindowBounds(original.Right, original.Y, original.Width, original.Height);
             WindowActions.Place(second, adjacent);

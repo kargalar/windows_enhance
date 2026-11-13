@@ -13,6 +13,17 @@ internal readonly record struct WindowBounds(int X, int Y, int Width, int Height
     internal static WindowBounds From(RECT bounds) => new(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top);
 }
 
+internal readonly record struct WindowFrameInsets(int Left, int Top, int Right, int Bottom)
+{
+    internal WindowBounds Visible(WindowBounds bounds) => new(bounds.X + Left, bounds.Y + Top,
+        bounds.Width - Left - Right, bounds.Height - Top - Bottom);
+    internal WindowBounds Outer(WindowBounds bounds) => new(bounds.X - Left, bounds.Y - Top,
+        bounds.Width + Left + Right, bounds.Height + Top + Bottom);
+    internal WindowResizeLimits VisibleLimits(WindowResizeLimits limits) => new(
+        Math.Max(1, limits.MinimumWidth - Left - Right), Math.Max(1, limits.MinimumHeight - Top - Bottom),
+        Math.Max(1, limits.MaximumWidth - Left - Right), Math.Max(1, limits.MaximumHeight - Top - Bottom));
+}
+
 internal readonly record struct WindowResizeLimits(int MinimumWidth, int MinimumHeight, int MaximumWidth, int MaximumHeight);
 
 internal static class WindowGeometry
@@ -233,6 +244,47 @@ internal static class WindowGeometry
             }
         }
         return moving with { X = moving.X + dx, Y = moving.Y + dy };
+    }
+
+    internal static WindowBounds MagnetResize(WindowBounds bounds, ResizeEdges edges, IEnumerable<WindowBounds> targets,
+        int distance, int gap, bool includeInner, WindowResizeLimits limits, bool includeOuter = true)
+    {
+        if (distance <= 0) return bounds;
+        var bestX = distance + 1;
+        var bestY = distance + 1;
+        var changeX = 0;
+        var changeY = 0;
+        var left = edges.HasFlag(ResizeEdges.Left);
+        var right = edges.HasFlag(ResizeEdges.Right);
+        var top = edges.HasFlag(ResizeEdges.Top);
+        var bottom = edges.HasFlag(ResizeEdges.Bottom);
+        void Candidate(int delta, bool leading, bool symmetric, int size, int min, int max, ref int best, ref int change)
+        {
+            var expansion = leading ? -delta : delta;
+            var newSize = (long)size + expansion * (symmetric ? 2L : 1L);
+            if (newSize < min || newSize > max) return;
+            if (Math.Abs(delta) < best) { best = Math.Abs(delta); change = expansion; }
+        }
+        foreach (var target in targets)
+        {
+            if (bounds.Y < target.Bottom && bounds.Bottom > target.Y)
+            {
+                if (left && includeOuter) Candidate(target.Right + gap - bounds.X, true, right, bounds.Width, limits.MinimumWidth, limits.MaximumWidth, ref bestX, ref changeX);
+                if (right && includeOuter) Candidate(target.X - gap - bounds.Right, false, left, bounds.Width, limits.MinimumWidth, limits.MaximumWidth, ref bestX, ref changeX);
+                if (left && includeInner) Candidate(target.X - bounds.X, true, right, bounds.Width, limits.MinimumWidth, limits.MaximumWidth, ref bestX, ref changeX);
+                if (right && includeInner) Candidate(target.Right - bounds.Right, false, left, bounds.Width, limits.MinimumWidth, limits.MaximumWidth, ref bestX, ref changeX);
+            }
+            if (bounds.X < target.Right && bounds.Right > target.X)
+            {
+                if (top && includeOuter) Candidate(target.Bottom + gap - bounds.Y, true, bottom, bounds.Height, limits.MinimumHeight, limits.MaximumHeight, ref bestY, ref changeY);
+                if (bottom && includeOuter) Candidate(target.Y - gap - bounds.Bottom, false, top, bounds.Height, limits.MinimumHeight, limits.MaximumHeight, ref bestY, ref changeY);
+                if (top && includeInner) Candidate(target.Y - bounds.Y, true, bottom, bounds.Height, limits.MinimumHeight, limits.MaximumHeight, ref bestY, ref changeY);
+                if (bottom && includeInner) Candidate(target.Bottom - bounds.Bottom, false, top, bounds.Height, limits.MinimumHeight, limits.MaximumHeight, ref bestY, ref changeY);
+            }
+        }
+        return new(bounds.X - (left ? changeX : 0), bounds.Y - (top ? changeY : 0),
+            bounds.Width + changeX * ((left ? 1 : 0) + (right ? 1 : 0)),
+            bounds.Height + changeY * ((top ? 1 : 0) + (bottom ? 1 : 0)));
     }
 
     private static void Consider(int delta, ref int bestDistance, ref int offset)

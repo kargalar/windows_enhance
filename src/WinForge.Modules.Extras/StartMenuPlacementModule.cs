@@ -6,7 +6,7 @@ using WinForge.Core;
 
 namespace WinForge.Modules.Extras;
 
-/// <summary>Captures a display once per Start opening and counters shell layout resets until it closes.</summary>
+/// <summary>Keeps the open Start and Search surfaces on the pointer's display.</summary>
 public sealed class StartMenuPlacementModule : IModuleComponent
 {
     private const uint ObjectHide = 0x8003;
@@ -15,9 +15,6 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     private readonly Func<IntPtr, bool> _isStart;
     private readonly Func<IntPtr, bool> _isSearch;
     private readonly Dictionary<IntPtr, Opening> _openings = [];
-    private DesktopDisplay? _sessionDisplay;
-    private long _handoffUntil;
-    private bool _lastWasSearch;
     private WindowEventObserver? _objects;
     private WindowEventObserver? _foreground;
     private WindowEventObserver? _cloaking;
@@ -33,7 +30,7 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     public string Id => "start-menu-placement";
     public string Name => "Başlat Menüsü Konumu";
     public string Category => "Başlat";
-    public string Description => "Başlat menüsünü açıldığı anda farenin bulunduğu monitöre taşır.";
+    public string Description => "Başlat menüsü ve arama açıkken farenin bulunduğu monitörü takip eder.";
     public string? Warning { get; private set; }
     public bool IsActive { get; private set; }
     public IReadOnlyList<SettingDescriptor> Settings => [];
@@ -71,7 +68,7 @@ public sealed class StartMenuPlacementModule : IModuleComponent
             {
                 _foreground = null;
                 try { _cloaking?.Dispose(); }
-                finally { _cloaking = null; _openings.Clear(); _sessionDisplay = null; _handoffUntil = 0; Warning = null; }
+                finally { _cloaking = null; _openings.Clear(); Warning = null; }
             }
         }
     }
@@ -79,6 +76,8 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     private void OnEvent(WindowEventObserver.WindowEvent change)
     {
         if (!IsActive) return;
+        // Focus can temporarily move to another shell window while Start is
+        // still presented. Visibility/cloaking, not focus, ends tracking.
         if (change.Kind is WindowEventObserver.ObjectDestroy or ObjectHide or ObjectCloaked)
         {
             EndOpening(change.Window);
@@ -91,36 +90,28 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     private void TrackOpening(IntPtr window)
     {
         if (window == IntPtr.Zero || _openings.ContainsKey(window) || !IsPresented(window)) return;
-        var isSearch = _isSearch(window);
-        if (!isSearch && !_isStart(window)) return;
-        // Search runs in a separate process. Preserve the opening display across
-        // either ordering of Start hiding and Search becoming visible.
-        var continuing = _sessionDisplay is not null && (isSearch || _lastWasSearch) &&
-            (_openings.Count > 0 || Environment.TickCount64 <= _handoffUntil);
-        if (!continuing)
-        {
-            if (!Native.GetCursorPos(out var cursor)) return;
-            _sessionDisplay = DesktopDisplays.ForPoint(cursor);
-        }
-        _lastWasSearch = isSearch;
-        _openings[window] = new(_sessionDisplay!);
-        Move(window, _openings[window]);
+        if (!_isSearch(window) && !_isStart(window)) return;
+        if (!Native.GetCursorPos(out var cursor)) return;
+        _openings[window] = new();
+        Move(window, DesktopDisplays.ForPoint(cursor));
     }
 
     private void EndOpening(IntPtr window)
     {
-        if (_openings.Remove(window) && _openings.Count == 0)
-            _handoffUntil = Environment.TickCount64 + 1500;
+        _openings.Remove(window);
     }
 
     private void OnTick(object? sender, EventArgs args)
     {
         if (!IsActive) return;
+        DesktopDisplay? target = null;
+        try { if (Native.GetCursorPos(out var cursor)) target = DesktopDisplays.ForPoint(cursor); }
+        catch (Exception error) { Report(error); }
         foreach (var (window, opening) in _openings.ToArray())
         {
             if (!Native.IsWindow(window) || !IsPresented(window)) { EndOpening(window); continue; }
             if (opening.Blocked) continue;
-            try { Move(window, opening); }
+            try { if (target is not null) Move(window, target); }
             catch (Exception error) { opening.Blocked = true; Report(error); }
         }
         // Foreground polling also catches shell openings with no SHOW notification.
@@ -134,12 +125,12 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr window, int attribute, out int value, int size);
 
-    private void Move(IntPtr window, Opening opening)
+    private void Move(IntPtr window, DesktopDisplay targetDisplay)
     {
         if (!Native.GetWindowRect(window, out var source) || source.Right <= source.Left || source.Bottom <= source.Top) return;
         var display = DesktopDisplays.ForWindow(window);
-        if (display.Handle == opening.Display.Handle) return;
-        var target = CalculateBounds(source, display.WorkArea, opening.Display.WorkArea);
+        if (display.Handle == targetDisplay.Handle) return;
+        var target = CalculateBounds(source, display.WorkArea, targetDisplay.WorkArea);
         if (!Native.SetWindowPos(window, IntPtr.Zero, target.Left, target.Top, target.Right - target.Left, target.Bottom - target.Top,
                 0x0004 | Native.SWP_NOACTIVATE))
             throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -182,9 +173,8 @@ public sealed class StartMenuPlacementModule : IModuleComponent
         _context?.Log.Error(Warning, error);
     }
 
-    private sealed class Opening(DesktopDisplay display)
+    private sealed class Opening
     {
-        internal DesktopDisplay Display { get; } = display;
         internal bool Blocked { get; set; }
     }
 }

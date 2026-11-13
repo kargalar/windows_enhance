@@ -1,5 +1,6 @@
 using System.Net.NetworkInformation;
 using System.Windows.Threading;
+using Timer = System.Threading.Timer;
 using WinForge.Core;
 
 namespace WinForge.Modules.NetSpeed;
@@ -97,7 +98,7 @@ public sealed class NetSpeedWindow
         }
         if (_placementSource is not null) { ApplyPlacement(_placementSource(), restack); return; }
 
-        var taskbar = Native.FindWindow("Shell_TrayWnd", null);
+        var taskbar = FindRevealedTaskbar();
         _taskbar = taskbar;
         if (taskbar == IntPtr.Zero || !Native.IsWindowVisible(taskbar) || !Native.GetWindowRect(taskbar, out var rect))
         {
@@ -123,7 +124,11 @@ public sealed class NetSpeedWindow
 
         var tray = Native.FindWindowEx(taskbar, IntPtr.Zero, "TrayNotifyWnd", null);
         _tray = tray;
+        // Secondary taskbars can lack a TrayNotifyWnd even though Windows
+        // draws a clock there. Leave room for it when no tray bounds exist.
         var trayRect = rect;
+        trayRect.Left = rect.Right - (int)Math.Round(120 * scale);
+        trayRect.Top = rect.Bottom - (int)Math.Round(120 * scale);
         if (tray != IntPtr.Zero) Native.GetWindowRect(tray, out trayRect);
 
         double left;
@@ -155,6 +160,37 @@ public sealed class NetSpeedWindow
 
         ApplyPlacement(new(Math.Clamp(left, bounds.Left / scale, Math.Max(bounds.Left / scale, bounds.Right / scale - OverlayWidth)),
             Math.Clamp(top, bounds.Top / scale, Math.Max(bounds.Top / scale, bounds.Bottom / scale - OverlayHeight)), OverlayWidth, OverlayHeight), restack);
+    }
+
+    private static IntPtr FindRevealedTaskbar()
+    {
+        var cursorDisplay = Native.GetCursorPos(out var cursor) ? DesktopDisplays.ForPoint(cursor).Handle : IntPtr.Zero;
+        var preferred = IntPtr.Zero;
+        var fallback = IntPtr.Zero;
+        Native.EnumWindows((window, _) =>
+        {
+            var name = Native.ClassNameOf(window);
+            if (name is not ("Shell_TrayWnd" or "Shell_SecondaryTrayWnd") || !Native.IsWindowVisible(window) ||
+                !Native.GetWindowRect(window, out var rect)) return true;
+            var display = DesktopDisplays.ForWindow(window);
+            if (!IsRevealed(rect, display.Bounds)) return true;
+            if (display.Handle == cursorDisplay) preferred = window;
+            if (fallback == IntPtr.Zero || name == "Shell_TrayWnd") fallback = window;
+            return true;
+        }, IntPtr.Zero);
+        return preferred != IntPtr.Zero ? preferred : fallback;
+    }
+
+    internal static bool IsRevealed(RECT rect, RECT bounds)
+    {
+        var width = rect.Right - rect.Left;
+        var height = rect.Bottom - rect.Top;
+        if (width < 8 || height < 8) return false;
+        var horizontal = width >= height;
+        var visible = horizontal ? Math.Min(rect.Bottom, bounds.Bottom) - Math.Max(rect.Top, bounds.Top)
+            : Math.Min(rect.Right, bounds.Right) - Math.Max(rect.Left, bounds.Left);
+        return visible >= (horizontal ? height : width) / 2.0 &&
+            rect.Right > bounds.Left && rect.Left < bounds.Right && rect.Bottom > bounds.Top && rect.Top < bounds.Bottom;
     }
 
     private void HideView() { if (_view?.IsVisible == true) _view.Hide(); }

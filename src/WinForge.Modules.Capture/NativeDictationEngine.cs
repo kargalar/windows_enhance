@@ -11,6 +11,12 @@ internal interface IDictationEngine : IDisposable
 
 internal sealed class NativeDictationEngine : IDictationEngine
 {
+    // The native OpenMP runtime can retain worker threads after a model is freed.
+    // Unloading its parent DLL while those threads are exiting can crash the process.
+    // Keep one library reference per backend for the lifetime of this process; models
+    // themselves are still released at the end of each session.
+    private static readonly object LibraryGate = new();
+    private static readonly Dictionary<string, nint> Libraries = new(StringComparer.OrdinalIgnoreCase);
     private nint library, model;
     private readonly FreeModel free;
     private readonly TranscribeAudio transcribe;
@@ -20,8 +26,15 @@ internal sealed class NativeDictationEngine : IDictationEngine
         var path = Path.GetFullPath(Path.Combine(directory ?? Path.Combine(AppContext.BaseDirectory, "dictation"),
             configuration.Gpu ? "cuda" : "cpu", "WinForge.Whisper.dll"));
         if (!File.Exists(path)) throw new FileNotFoundException("Whisper motoru bulunamadı. build-dictation.ps1 ile hazırlayın.", path);
-        library = NativeLibrary.Load(path, typeof(NativeDictationEngine).Assembly,
-            DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.System32);
+        lock (LibraryGate)
+        {
+            if (!Libraries.TryGetValue(path, out library))
+            {
+                library = NativeLibrary.Load(path, typeof(NativeDictationEngine).Assembly,
+                    DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.System32);
+                Libraries.Add(path, library);
+            }
+        }
         try
         {
             var load = Export<LoadModel>("wf_load");
@@ -30,7 +43,7 @@ internal sealed class NativeDictationEngine : IDictationEngine
             model = load(configuration.Model, configuration.Gpu);
             if (model == 0) throw new InvalidOperationException("Whisper modeli yüklenemedi.");
         }
-        catch { NativeLibrary.Free(library); library = 0; throw; }
+        catch { library = 0; throw; }
     }
 
     private T Export<T>(string name) where T : Delegate =>
@@ -56,7 +69,7 @@ internal sealed class NativeDictationEngine : IDictationEngine
     public void Dispose()
     {
         if (model != 0) { free(model); model = 0; }
-        if (library != 0) { NativeLibrary.Free(library); library = 0; }
+        library = 0;
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]

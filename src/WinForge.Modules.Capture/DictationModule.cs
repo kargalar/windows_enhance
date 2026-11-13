@@ -29,7 +29,7 @@ public sealed class DictationModule : CaptureModuleBase
     private DateTime lastWaveformUpdate;
     public override string Id => "voice-dictation";
     public override string Name => "Sesle Yazma";
-    public override string Description => "Çevrimdışı Whisper diktesi; hedef alana yazma, aranabilir geçmiş ve Turbo/Large modelleri.";
+    public override string Description => "Çevrimdışı Whisper diktesi; hedef alana yazma, aranabilir geçmiş ve Small/Turbo/Large modelleri.";
     protected override string Kind => "dictation";
     protected override IEnumerable<SettingDescriptor> ModuleSettings
     {
@@ -41,7 +41,8 @@ public sealed class DictationModule : CaptureModuleBase
                 new() { Key = "hotkey", Label = "Dikte kısayolu", Kind = SettingKind.Text, Default = DictationDefaults.Hotkey,
                     Description = "Kısa basıp bırakın: başlat/durdur. Basılı tutup bırakın: bırakınca durdurur." },
                 new() { Key = "language", Label = "Dil", Kind = SettingKind.Choice, Default = "auto", Options = DictationLanguages.All.Keys.ToArray(), OptionLabels = DictationLanguages.All },
-                new() { Key = "model", Label = "Model", Kind = SettingKind.Choice, Default = "0", Options = ["0", "1"], OptionLabels = new Dictionary<string, string> { ["0"] = "Turbo", ["1"] = "Large" } },
+                new() { Key = "model", Label = "Model", Kind = SettingKind.Choice, Default = "0", Options = ["0", "1", "2"], OptionLabels = new Dictionary<string, string> { ["0"] = "Turbo", ["1"] = "Large", ["2"] = "Small (hızlı, daha az doğru olabilir)" },
+                    Description = "Small CPU'da daha hızlıdır; özellikle özel isim ve teknik kelimelerde daha fazla hata yapabilir." },
                 new() { Key = "output", Label = "İngilizceye çevir (Large kullanır)", Default = false },
                 new() { Key = "cpu", Label = "Yalnız CPU kullan", Default = false },
                 new() { Key = "microphone", Label = "Mikrofon", Kind = SettingKind.Choice, Default = "", Options = devices.Select(d => d.Id).ToArray(), OptionLabels = devices.ToDictionary(d => d.Id, d => d.Name) },
@@ -68,6 +69,11 @@ public sealed class DictationModule : CaptureModuleBase
         hotkey = Context.Hotkeys.Register(modifiers, shortcutKey, () =>
         {
             if (!IsActive) return;
+            if (busy && !recording && !starting)
+            {
+                Context.Notify("Dikte çözümlemesi sürüyor. İptal etmek için Esc'ye basın.");
+                return;
+            }
             var action = shortcut.Press(recording || starting);
             if (action == DictationKeyAction.Start) _ = StartAsync(); else if (action == DictationKeyAction.Stop) RequestStop();
         });
@@ -101,7 +107,7 @@ public sealed class DictationModule : CaptureModuleBase
     private void PrepareSelectedModel()
     {
         var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
-        var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, 1);
+        var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1);
         var path = Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
         // Missing models are reported when recording starts, not during application startup.
         if (File.Exists(path))
@@ -119,20 +125,33 @@ public sealed class DictationModule : CaptureModuleBase
         busy = true; starting = true; operation?.Dispose(); operation = new(); var token = operation.Token;
         try
         {
-            target = await Task.Run(FocusedTextOutput.Capture).WaitAsync(TimeSpan.FromMilliseconds(800), token);
-            if (token.IsCancellationRequested || !IsActive) return;
+            // Capture focus immediately, but do not delay microphone startup for a slow
+            // accessibility provider. A timeout leaves clipboard/history as the fallback.
+            target = null;
+            var foreground = Native.GetForegroundWindow();
+            var focusedWindow = FocusedTextOutput.FocusedWindow(foreground);
+            var captureTarget = CaptureTargetAsync(foreground, token, focusedWindow: focusedWindow);
             var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
-            var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, 1);
+            var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1);
             if (!File.Exists(Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model])))
                 throw new FileNotFoundException("Model bulunamadı. Modelleri yönet bölümünden ekleyin.");
             audio.Clear();
+            ShowStatus("Mikrofon hazırlanıyor… · Esc: iptal");
             if (Context.Settings.GetBool("mute-playback", true)) playbackMute = PlaybackMuteScope.Begin();
-            microphone = new(true, Context.Settings.GetString("microphone")); microphone.SamplesAvailable += Samples;
-            try { microphone.Start(); }
-            catch when (Context.Settings.GetString("microphone").Length > 0)
+            var selectedDevice = Context.Settings.GetString("microphone");
+            var capture = new WasapiLoopbackCapture(true, selectedDevice);
+            microphone = capture; capture.SamplesAvailable += Samples;
+            try { await Task.Run(capture.Start); }
+            catch when (selectedDevice.Length > 0 && !token.IsCancellationRequested)
             {
-                microphone.Dispose(); microphone = new(true); microphone.SamplesAvailable += Samples; microphone.Start(); Context.Notify("Seçilen mikrofon bulunamadı; varsayılan kullanılıyor.");
+                capture.Dispose();
+                capture = new WasapiLoopbackCapture(true);
+                microphone = capture; capture.SamplesAvailable += Samples;
+                await Task.Run(capture.Start);
+                token.ThrowIfCancellationRequested();
+                Context.Notify("Seçilen mikrofon açılamadı; varsayılan kullanılıyor.");
             }
+            token.ThrowIfCancellationRequested();
             recording = true; lastWaveformUpdate = DateTime.MinValue; ShowStatus("Dinleniyor… · Esc: iptal"); overlay?.BeginRecording();
             _ = PrepareModelAsync(new DictationConfiguration(
                 Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model]),
@@ -140,11 +159,17 @@ public sealed class DictationModule : CaptureModuleBase
             monitor = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             monitor.Tick += (_, _) =>
             {
-                if (microphone?.LastError is { } error) { Cancel(); Report(new InvalidOperationException("Mikrofon bağlantısı kesildi.", error)); }
-                else if (audio.Full) _ = StopAsync();
+                if (microphone?.LastError is { } error) OnMicrophoneFailure(error);
+                else if (audio.Full)
+                {
+                    Context.Notify("Dikte beş dakikalık kayıt sınırına ulaştı; kayıt çözümleniyor.");
+                    _ = StopAsync();
+                }
             }; monitor.Start();
+            target = await captureTarget;
         }
         catch (OperationCanceledException) { }
+        catch (Exception) when (token.IsCancellationRequested) { }
         catch (Exception error) { Cancel(); Report(error); }
         finally
         {
@@ -156,6 +181,27 @@ public sealed class DictationModule : CaptureModuleBase
                 if (recording) _ = StopAsync();
             }
         }
+    }
+    internal void OnMicrophoneFailure(Exception error)
+    {
+        monitor?.Stop();
+        Context.Log.Error("Dikte mikrofon bağlantısı kesildi.", error);
+        Context.Notify("Mikrofon bağlantısı kesildi; kaydedilen bölüm çözümleniyor.");
+        RequestStop();
+    }
+    internal static async Task<TextTarget?> CaptureTargetAsync(nint foreground, CancellationToken token,
+        Func<TextTarget?>? capture = null, nint focusedWindow = 0, Func<nint, nint>? readFocus = null)
+    {
+        try
+        {
+            var result = await Task.Run(capture ?? FocusedTextOutput.Capture).WaitAsync(TimeSpan.FromMilliseconds(800), token);
+            // The accessibility query runs asynchronously. Never accept a field in a
+            // different window that happened to gain focus after the shortcut.
+            if (foreground == 0 || result?.Window != foreground) return null;
+            if (focusedWindow != 0 && (readFocus ?? FocusedTextOutput.FocusedWindow)(foreground) != focusedWindow) return null;
+            return result;
+        }
+        catch (TimeoutException) { return null; }
     }
     private async Task PrepareModelAsync(DictationConfiguration configuration, CancellationToken token)
     {
@@ -185,13 +231,20 @@ public sealed class DictationModule : CaptureModuleBase
         if (!recording || busy) return;
         recording = false; busy = true; monitor?.Stop(); monitor = null; microphone?.Dispose(); microphone = null;
         RestorePlayback();
-        var samples = audio.Take(trimSilence: true);
+        var samples = audio.Take(out var peak, trimSilence: true);
         var token = operation!.Token; var currentStore = activeStore!;
         try
         {
-            if (!SpeechBuffer.ContainsSpeech(samples)) { overlay?.Hide(); Context.Notify("Konuşma algılanmadı."); return; }
+            if (!SpeechBuffer.ContainsSpeech(samples))
+            {
+                overlay?.Hide();
+                Context.Notify(peak > 0 && peak < 0.01f
+                    ? "Ses çok düşük algılandı. Mikrofon düzeyini ve seçilen mikrofonu kontrol edin."
+                    : "Konuşma algılanmadı. Mikrofonu ve kayıt süresini kontrol edin.");
+                return;
+            }
             var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
-            var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, 1);
+            var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1);
             var path = Path.Combine(currentStore.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
             if (!File.Exists(path)) throw new FileNotFoundException("Model bulunamadı. Modelleri yönet bölümünden ekleyin.", path);
             ShowStatus("Konuşma çözümleniyor… · Esc: iptal");
@@ -200,9 +253,11 @@ public sealed class DictationModule : CaptureModuleBase
             var text = await client.TranscribeAsync(samples, config, token); token.ThrowIfCancellationRequested();
             Context.Log.Info($"Dictation transcription: {client.Engine}; audio={(double)samples.Length / DictationAudio.SampleRate:F2} s; elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
             if (text.Length == 0) { overlay?.Hide(); Context.Notify("Metin bulunamadı."); return; }
+            var saved = false;
             try
             {
                 await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
+                saved = true;
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception error)
@@ -211,18 +266,39 @@ public sealed class DictationModule : CaptureModuleBase
                 Context.Notify("Dikte geçmişe kaydedilemedi; metin yine de sunulacak.");
             }
             token.ThrowIfCancellationRequested();
-            var copied = TryCopyResult(text);
-            await FocusedTextOutput.InsertAsync(target, text, token);
+            var copied = TryCopyResult(text, out var clipboardSequence);
+            var insertion = await FocusedTextOutput.InsertAsync(target, text, token);
+            if (insertion == TextInsertion.UnsupportedLineBreak && copied)
+                insertion = await FocusedTextOutput.PasteAsync(target, clipboardSequence, token);
+            copied &= clipboardSequence != 0 && FocusedTextOutput.GetClipboardSequenceNumber() == clipboardSequence;
             overlay?.Hide();
-            if (!copied) Context.Notify("Dikte metni panoya kopyalanamadı.");
+            if (insertion != TextInsertion.Inserted)
+            {
+                var reason = insertion switch
+                {
+                    TextInsertion.TargetChanged => "Odak değiştiği için metnin tamamı yazılamadı.",
+                    TextInsertion.UnsupportedLineBreak => "Satır sonları olan metin otomatik yazılamadı.",
+                    _ => "Metin hedef alana yazılamadı."
+                };
+                Context.Notify(reason + (copied ? " Tam metin panoda." : saved ? " Metni dikte geçmişinden alabilirsiniz." : " Metin kaydedilemedi veya panoya kopyalanamadı."));
+            }
+            else if (!copied) Context.Notify("Dikte metni panoya kopyalanamadı.");
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { overlay?.Hide(); Report(error); }
         finally { Array.Clear(samples); busy = false; }
     }
-    private static bool TryCopyResult(string text)
+    private static bool TryCopyResult(string text, out uint sequence)
     {
-        try { Clipboard.SetText(text); return true; }
+        sequence = 0;
+        try
+        {
+            Clipboard.SetText(text);
+            var current = FocusedTextOutput.GetClipboardSequenceNumber();
+            if (current == 0 || Clipboard.GetText() != text || FocusedTextOutput.GetClipboardSequenceNumber() != current) return false;
+            sequence = current;
+            return true;
+        }
         catch (Exception error) when (error is ExternalException or InvalidOperationException) { return false; }
     }
     private void Cancel()
@@ -248,7 +324,7 @@ public sealed class DictationModule : CaptureModuleBase
 
 internal sealed class StatusOverlay : IDisposable
 {
-    private const double StatusWidth = 72;
+    private const double StatusWidth = 252;
     private const double StatusHeight = 72;
     private readonly IFeatureUiService? featureUi;
     private IFeatureUiWindow? statusWindow;
