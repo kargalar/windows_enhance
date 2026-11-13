@@ -144,21 +144,22 @@ LRESULT CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wparam, LPARAM lpa
 }
 
 LRESULT CALLBACK Hook(int code, WPARAM wparam, LPARAM lparam) {
-    if (code >= 0 && wparam == PM_REMOVE && !Opening && !Discovering && Enabled()) {
-        Discovering = true;
+    if (code >= 0 && wparam == PM_REMOVE && !Opening && !Discovering) {
         auto event = reinterpret_cast<MSG const*>(lparam);
-        auto dialog = event->hwnd;
-        if (ClassIs(dialog, L"#32770") && IsWindowVisible(dialog) && !GetPropW(dialog, HandledProperty) &&
-            GetDlgItem(dialog, IDOK) && GetDlgItem(dialog, IDCANCEL) && FindTree(dialog)) {
-            if (SetWindowSubclass(dialog, DialogProc, SubclassId, 0)) {
-                HMODULE pinned{};
-                GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                    reinterpret_cast<LPCWSTR>(&DialogProc), &pinned);
-                SetPropW(dialog, HandledProperty, reinterpret_cast<HANDLE>(1));
-                PostMessageW(dialog, OpenMessage, 0, 0);
+        auto dialog = event ? event->hwnd : nullptr;
+        if (dialog && ClassIs(dialog, L"#32770") && IsWindowVisible(dialog) && !GetPropW(dialog, HandledProperty) && Enabled()) {
+            Discovering = true;
+            if (GetDlgItem(dialog, IDOK) && GetDlgItem(dialog, IDCANCEL) && FindTree(dialog)) {
+                if (SetWindowSubclass(dialog, DialogProc, SubclassId, 0)) {
+                    HMODULE pinned{};
+                    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                        reinterpret_cast<LPCWSTR>(&DialogProc), &pinned);
+                    SetPropW(dialog, HandledProperty, reinterpret_cast<HANDLE>(1));
+                    PostMessageW(dialog, OpenMessage, 0, 0);
+                }
             }
+            Discovering = false;
         }
-        Discovering = false;
     }
     return CallNextHookEx(nullptr, code, wparam, lparam);
 }

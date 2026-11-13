@@ -110,6 +110,11 @@ public static class Native
     [DllImport("user32.dll", SetLastError = true)] public static extern bool UnhookWindowsHookEx(IntPtr hook);
     [DllImport("user32.dll")] public static extern IntPtr CallNextHookEx(IntPtr hook, int nCode, IntPtr wParam, IntPtr lParam);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandle(string? moduleName);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder exeName, ref uint size);
+    public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, int msg, IntPtr wParam, string lParam, uint flags, uint timeout, out IntPtr result);
     [DllImport("user32.dll", SetLastError = true)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int index);
@@ -166,6 +171,49 @@ public static class Native
         var sb = new StringBuilder(256);
         GetClassName(hWnd, sb, sb.Capacity);
         return sb.ToString();
+    }
+
+    private static readonly object _processCacheGate = new();
+    private static readonly Dictionary<uint, (long Tick, string Path)> _processPathCache = new();
+
+    public static bool IsShellSwitcherClass(string? className) =>
+        className is "XamlExplorerHostIslandWindow" or "MultitaskingViewFrame" or "TaskListThumbnailWnd" or "ForegroundStaging";
+
+    public static string? ExecutablePathOf(uint processId)
+    {
+        if (processId == 0) return null;
+        var now = Environment.TickCount64;
+        lock (_processCacheGate)
+        {
+            if (_processPathCache.TryGetValue(processId, out var cached) && now - cached.Tick < 2000)
+                return cached.Path;
+        }
+
+        var handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+        if (handle == IntPtr.Zero) return null;
+        try
+        {
+            var sb = new StringBuilder(512);
+            var size = (uint)sb.Capacity;
+            if (!QueryFullProcessImageName(handle, 0, sb, ref size) || size == 0) return null;
+            var path = sb.ToString();
+            lock (_processCacheGate)
+            {
+                if (_processPathCache.Count >= 64) _processPathCache.Clear();
+                _processPathCache[processId] = (now, path);
+            }
+            return path;
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    public static string? ProcessNameOf(uint processId)
+    {
+        var path = ExecutablePathOf(processId);
+        return string.IsNullOrEmpty(path) ? null : Path.GetFileNameWithoutExtension(path);
     }
 
     public static string TitleOf(IntPtr hWnd)

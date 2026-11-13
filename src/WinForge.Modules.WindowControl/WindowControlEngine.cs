@@ -316,20 +316,17 @@ internal sealed class WindowControlEngine : IDisposable
         Native.GetWindowThreadProcessId(window, out var processId);
         if (processId == Environment.ProcessId || processId == 0) return false;
         var className = Text(window, true);
-        if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "#32768") return false;
+        if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "#32768" ||
+            Native.IsShellSwitcherClass(className)) return false;
         if (!Native.GetWindowRect(window, out var rectangle)) return false;
         var bounds = WindowBounds.From(rectangle);
         var monitor = Monitor(point);
         if (!_options.AllowFullscreen && !IsZoomed(window) && bounds.X <= monitor.Monitor.Left && bounds.Y <= monitor.Monitor.Top &&
             bounds.Right >= monitor.Monitor.Right && bounds.Bottom >= monitor.Monitor.Bottom) return false;
-        try
-        {
-            using var process = Process.GetProcessById((int)processId);
-            return !WindowGeometry.IsExcluded(_options.ExcludedProcesses, _options.ExcludedWindows,
-                process.ProcessName + ".exe", Text(window, false), className);
-        }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
-        { return false; }
+        var processName = Native.ProcessNameOf(processId);
+        if (string.IsNullOrEmpty(processName)) return false;
+        return !WindowGeometry.IsExcluded(_options.ExcludedProcesses, _options.ExcludedWindows,
+            processName + ".exe", Text(window, false), className);
     }
 
     internal void Execute(IntPtr window, WindowAction action, POINT point, WindowGestureModifiers? modifiers = null)

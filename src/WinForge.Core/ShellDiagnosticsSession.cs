@@ -24,6 +24,7 @@ public sealed class ShellDiagnosticsSession : IDisposable
     private const uint Magic = 0x57465348;
     private const uint Version = 2;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly object _gate = new();
     private readonly MemoryMappedFile _mapping;
     private readonly FileStream _mappingFile;
@@ -31,6 +32,8 @@ public sealed class ShellDiagnosticsSession : IDisposable
     private readonly MemoryMappedViewAccessor _view;
     private readonly Timer _heartbeat;
     private int _revision;
+    private int _cachedSnapshotRevision = -1;
+    private ShellVisualNode[] _cachedSnapshot = [];
     private bool _disposed;
 
     private ShellDiagnosticsSession()
@@ -165,13 +168,21 @@ public sealed class ShellDiagnosticsSession : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             var first = _view.ReadInt32(52);
             if ((first & 1) != 0) return [];
+            if (first == _cachedSnapshotRevision) return _cachedSnapshot;
             var characters = _view.ReadInt32(48);
             if (characters <= 0 || characters > (MappingBytes - SnapshotOffset) / sizeof(char)) return [];
             var bytes = new byte[characters * sizeof(char)];
             _view.ReadArray(SnapshotOffset, bytes, 0, bytes.Length);
             Thread.MemoryBarrier();
-            if (first != _view.ReadInt32(52)) return [];
-            try { return JsonSerializer.Deserialize<ShellVisualNode[]>(Encoding.Unicode.GetString(bytes), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? []; }
+            var second = _view.ReadInt32(52);
+            if (first != second) return [];
+            try
+            {
+                var snapshot = JsonSerializer.Deserialize<ShellVisualNode[]>(Encoding.Unicode.GetString(bytes), SnapshotJsonOptions) ?? [];
+                _cachedSnapshot = snapshot;
+                _cachedSnapshotRevision = second;
+                return snapshot;
+            }
             catch (JsonException) { return []; }
         }
     }

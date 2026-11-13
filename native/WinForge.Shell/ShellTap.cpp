@@ -26,6 +26,8 @@
 #include <map>
 #include <limits>
 #include <mutex>
+#include <set>
+#include <string_view>
 #include <thread>
 #include <vector>
 #include "BridgeProtocol.h"
@@ -75,6 +77,7 @@ struct Node {
     ColumnDefinition iconColumn{nullptr};
     XamlValue originalIconColumnWidth{nullptr};
     double iconColumnWidth{};
+    mutable HWND hostWindow{};
 };
 struct SnapshotNode {
     InstanceHandle parent{};
@@ -116,8 +119,32 @@ class Tap : public implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
     std::map<DWORD, std::unique_ptr<UiContext>> contexts_;
     std::map<InstanceHandle, SnapshotNode> snapshot_;
     std::map<InstanceHandle, HWND> rootWindows_;
+    std::set<InstanceHandle> ignoredHandles_;
+    std::atomic_bool snapshotDirty_{true};
     static constexpr UINT_PTR TimerId = 1;
     static constexpr UINT PollMilliseconds = 200;
+
+    static bool IsExcludedRootWindow(HWND window) noexcept {
+        if (!window) return false;
+        auto checkClass = [](HWND candidate) noexcept {
+            if (!candidate) return false;
+            wchar_t name[96]{};
+            if (!GetClassNameW(candidate, name, static_cast<int>(std::size(name)))) return false;
+            return wcscmp(name, L"XamlExplorerHostIslandWindow") == 0 ||
+                wcscmp(name, L"MultitaskingViewFrame") == 0 ||
+                wcscmp(name, L"TaskListThumbnailWnd") == 0 ||
+                wcscmp(name, L"ForegroundStaging") == 0;
+        };
+        if (checkClass(window)) return true;
+        auto root = GetAncestor(window, GA_ROOT);
+        return root && root != window && checkClass(root);
+    }
+
+    static bool IsExcludedElementType(std::wstring_view type) noexcept {
+        return type.starts_with(L"WindowsInternal.ComposableShell.Experiences.Switcher.") ||
+            type.starts_with(L"WindowsInternal.ComposableShell.Experiences.TaskView.") ||
+            type.starts_with(L"WindowsInternal.ComposableShell.Experiences.MultitaskingView.");
+    }
 
     void RecordError(HRESULT result = E_FAIL, std::wstring const& message = {}) noexcept {
         std::lock_guard lock(lifetime_);
@@ -661,7 +688,9 @@ public:
                     init_apartment(apartment_type::multi_threaded);
                     check_hresult(self->service_->AdviseVisualTreeChange(self.get()));
                     while (self->session_.Alive()) {
-                        self->WriteSnapshot();
+                        if (self->snapshotDirty_.exchange(false, std::memory_order_acq_rel)) {
+                            self->WriteSnapshot();
+                        }
                         Sleep(PollMilliseconds);
                     }
                     { std::lock_guard lifetimeLock(self->lifetime_); self->stopped_ = true; }
@@ -678,7 +707,7 @@ public:
                     if (closed) {
                         std::lock_guard lifetimeLock(self->lifetime_);
                         { std::lock_guard stateLock(self->mutex_);
-                            self->contexts_.clear(); self->snapshot_.clear(); self->rootWindows_.clear();
+                            self->contexts_.clear(); self->snapshot_.clear(); self->rootWindows_.clear(); self->ignoredHandles_.clear();
                         }
                         self->service_ = nullptr; self->diagnostics_ = nullptr; self->site_ = nullptr;
                         InterlockedExchange(&self->session_.Get()->closed, 1);
@@ -706,13 +735,27 @@ public:
                 }
                 snapshot_.erase(element.Handle);
                 rootWindows_.erase(element.Handle);
+                ignoredHandles_.erase(element.Handle);
+                snapshotDirty_.store(true, std::memory_order_release);
             } else {
+                std::wstring_view typeView = element.Type ? element.Type : L"";
+                {
+                    std::lock_guard lock(mutex_);
+                    if ((relation.Parent != 0 && ignoredHandles_.contains(relation.Parent)) || IsExcludedElementType(typeView)) {
+                        ignoredHandles_.insert(element.Handle);
+                        return S_OK;
+                    }
+                }
                 com_ptr<::IInspectable> inspectable;
                 check_hresult(diagnostics_->GetIInspectableFromHandle(element.Handle, inspectable.put()));
                 if (auto source = inspectable.try_as<Hosting::DesktopWindowXamlSource>()) {
                     HWND window{};
                     if (SUCCEEDED(source.as<IDesktopWindowXamlSourceNative>()->get_WindowHandle(&window))) {
                         std::lock_guard lock(mutex_);
+                        if (IsExcludedRootWindow(window)) {
+                            ignoredHandles_.insert(element.Handle);
+                            return S_OK;
+                        }
                         rootWindows_[element.Handle] = window;
                     }
                 }
@@ -732,6 +775,7 @@ public:
                     entry.parent = relation.Parent;
                     entry.type = element.Type ? element.Type : L"";
                     entry.name = element.Name ? element.Name : L"";
+                    snapshotDirty_.store(true, std::memory_order_release);
                     return S_OK;
                 }
                 auto self = get_strong();
@@ -752,6 +796,13 @@ public:
     void Track(InstanceHandle handle, InstanceHandle parent, std::wstring const& type, std::wstring const& name) {
         std::lock_guard lifetimeLock(lifetime_);
         if (stopped_) return;
+        {
+            std::lock_guard lock(mutex_);
+            if (parent != 0 && ignoredHandles_.contains(parent)) {
+                ignoredHandles_.insert(handle);
+                return;
+            }
+        }
         auto& context = Context();
         if (context.nodes.size() >= 8192) return;
         com_ptr<::IInspectable> inspectable;
@@ -764,6 +815,13 @@ public:
         node.type = type;
         node.name = name.empty() ? std::wstring(framework.Name()) : name;
         node.element = make_weak(framework);
+        auto host = HostWindow(node);
+        if (host && IsExcludedRootWindow(host)) {
+            std::lock_guard lock(mutex_);
+            ignoredHandles_.insert(handle);
+            snapshot_.erase(handle);
+            return;
+        }
         auto [iterator, inserted] = context.nodes.try_emplace(handle, std::move(node));
         if (inserted) {
             UpdateSnapshot(iterator->second);
@@ -784,6 +842,7 @@ public:
             }
             std::lock_guard lock(mutex_);
             snapshot_[node.handle] = std::move(entry);
+            snapshotDirty_.store(true, std::memory_order_release);
             return;
         }
         auto element = node.element.get();
@@ -796,27 +855,22 @@ public:
         entry.accessibleName = Automation::AutomationProperties::GetName(element);
         entry.width = element.ActualWidth();
         entry.height = element.ActualHeight();
+        auto host = HostWindow(node);
         RECT hostBounds{};
-        if (GetWindowRect(HostWindow(node), &hostBounds)) entry.hostHeight = hostBounds.bottom - hostBounds.top;
+        if (host && GetWindowRect(host, &hostBounds)) {
+            entry.hostHeight = hostBounds.bottom - hostBounds.top;
+            try {
+                auto relative = element.TransformToVisual(nullptr).TransformBounds(
+                    Rect{0, 0, static_cast<float>(entry.width), static_cast<float>(entry.height)});
+                auto scale = static_cast<float>(GetDpiForWindow(host)) / 96.0f;
+                entry.screenBounds = Rect{hostBounds.left + relative.X * scale, hostBounds.top + relative.Y * scale,
+                    relative.Width * scale, relative.Height * scale};
+            } catch (...) { }
+        }
         entry.dockAnimation = node.dock != nullptr;
         entry.dockScale = node.dock ? node.dock->Scale() : 1.0;
         entry.opacity = element.Opacity();
         entry.visibility = element.Visibility() == Visibility::Visible ? L"Visible" : L"Collapsed";
-        {
-            try {
-                auto host = HostWindow(node);
-                RECT bounds{};
-                if (host && GetWindowRect(host, &bounds)) {
-                    {
-                        auto relative = element.TransformToVisual(nullptr).TransformBounds(
-                            Rect{0, 0, static_cast<float>(entry.width), static_cast<float>(entry.height)});
-                        auto scale = static_cast<float>(GetDpiForWindow(host)) / 96.0f;
-                        entry.screenBounds = Rect{bounds.left + relative.X * scale, bounds.top + relative.Y * scale,
-                            relative.Width * scale, relative.Height * scale};
-                    }
-                }
-            } catch (...) { }
-        }
         if (auto text = element.try_as<TextBlock>()) entry.text = text.Text();
         if (auto shape = element.try_as<Shapes::Shape>()) {
             if (auto brush = shape.Fill().try_as<SolidColorBrush>()) {
@@ -828,13 +882,18 @@ public:
         }
         std::lock_guard lock(mutex_);
         snapshot_[node.handle] = std::move(entry);
+        snapshotDirty_.store(true, std::memory_order_release);
     }
 
     HWND HostWindow(Node const& node) {
+        if (node.hostWindow && IsWindow(node.hostWindow)) return node.hostWindow;
         std::lock_guard lock(mutex_);
         auto ancestor = node.parent;
         for (unsigned int depth = 0; ancestor && depth < 64; ++depth) {
-            if (auto root = rootWindows_.find(ancestor); root != rootWindows_.end()) return root->second;
+            if (auto root = rootWindows_.find(ancestor); root != rootWindows_.end()) {
+                node.hostWindow = root->second;
+                return root->second;
+            }
             auto parent = snapshot_.find(ancestor);
             if (parent == snapshot_.end()) break;
             ancestor = parent->second.parent;
@@ -901,7 +960,6 @@ public:
                 }
                 UpdateSnapshot(node);
             }
-            WriteSnapshot();
         } catch (...) { RecordError(); }
     }
 };

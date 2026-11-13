@@ -43,7 +43,7 @@ public sealed class StartMenuPlacementModule : IModuleComponent
         {
             _timer = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromMilliseconds(60) };
             _timer.Tick += OnTick;
-            _objects = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectLocationChange, OnEvent, Report);
+            _objects = new(WindowEventObserver.ObjectDestroy, ObjectHide, OnEvent, Report);
             _foreground = new(WindowEventObserver.Foreground, WindowEventObserver.Foreground, OnEvent, Report);
             _cloaking = new(ObjectCloaked, ObjectUncloaked, OnEvent, Report);
             IsActive = true;
@@ -159,12 +159,8 @@ public sealed class StartMenuPlacementModule : IModuleComponent
     {
         if (Native.GetAncestor(window, Native.GA_ROOT) != window || Native.ClassNameOf(window) != "Windows.UI.Core.CoreWindow") return false;
         Native.GetWindowThreadProcessId(window, out var pid);
-        try
-        {
-            using var process = Process.GetProcessById((int)pid);
-            return processNames.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase);
-        }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
+        var processName = Native.ProcessNameOf(pid);
+        return !string.IsNullOrEmpty(processName) && processNames.Contains(processName, StringComparer.OrdinalIgnoreCase);
     }
 
     private void Report(Exception error)

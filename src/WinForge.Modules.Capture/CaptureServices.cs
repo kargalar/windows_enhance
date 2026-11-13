@@ -34,11 +34,13 @@ public static class CaptureServices
     }
     public static ForegroundInfo Foreground()
     {
-        var window = Native.GetForegroundWindow(); Native.GetWindowThreadProcessId(window, out var pid);
+        var window = Native.GetForegroundWindow();
+        if (window == IntPtr.Zero || Native.IsShellSwitcherClass(Native.ClassNameOf(window)))
+            return new(IntPtr.Zero, 0, "Bilinmeyen", string.Empty);
+        Native.GetWindowThreadProcessId(window, out var pid);
         var title = new StringBuilder(2048); Native.GetWindowText(window, title, title.Capacity);
-        string app;
-        try { using var process = System.Diagnostics.Process.GetProcessById((int)pid); app = process.ProcessName + ".exe"; }
-        catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception) { app = "Bilinmeyen"; }
+        var processName = Native.ProcessNameOf(pid);
+        var app = string.IsNullOrEmpty(processName) ? "Bilinmeyen" : processName + ".exe";
         return new(window, pid, app, title.ToString());
     }
     public static CaptureArea Monitor(string device = "cursor")

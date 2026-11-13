@@ -74,7 +74,10 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
         "Shell_TrayWnd",
         "Shell_SecondaryTrayWnd",
         "Windows.UI.Core.CoreWindow",
-        "XamlExplorerHostIslandWindow"
+        "XamlExplorerHostIslandWindow",
+        "MultitaskingViewFrame",
+        "TaskListThumbnailWnd",
+        "ForegroundStaging"
     };
 
     private readonly List<IntPtr> _hooks = new();
@@ -829,6 +832,7 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
     private bool PlaceNewWindowInAvailableZone(IntPtr hwnd)
     {
         if (!Native.IsWindow(hwnd) || _fullscreenWindows.ContainsKey(hwnd) || _placed.ContainsKey(hwnd)) return true;
+        if (IsPermanentlyNonTileable(hwnd)) return true;
         if (!Native.IsWindowVisible(hwnd) || Native.IsIconic(hwnd) || hwnd == _draggedWindow ||
             !IsResizableWindow(hwnd) || !TryTileableCore(hwnd, out var monitor, out var workArea, allowMaximized: true) ||
             !TryGetMonitorWorkArea(hwnd, out _, out var monitorName, out _)) return false;
@@ -1141,6 +1145,14 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
         result.Sort((a, b) => rank[a.Handle].CompareTo(rank[b.Handle]));
 
         return result;
+    }
+
+    private bool IsPermanentlyNonTileable(IntPtr hwnd)
+    {
+        var extended = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+        if ((extended & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)) != 0) return true;
+        if (GetWindow(hwnd, GW_OWNER) != IntPtr.Zero) return true;
+        return IgnoredClasses.Contains(Native.ClassNameOf(hwnd));
     }
 
     private bool TryTileable(IntPtr hwnd, out IntPtr monitor, out RECT work)

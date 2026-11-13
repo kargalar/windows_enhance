@@ -16,6 +16,7 @@ public sealed class BrowserFullscreenModule : ITweakModule
     private const int ShowWithoutActivation = 4;
     private IModuleContext? _context;
     private WindowEventObserver? _events;
+    private WindowEventObserver? _locationEvents;
     private readonly HashSet<IntPtr> _pending = [];
     private readonly Dictionary<IntPtr, uint> _hidden = [];
     private HashSet<string> _processes = new(StringComparer.OrdinalIgnoreCase);
@@ -38,7 +39,9 @@ public sealed class BrowserFullscreenModule : ITweakModule
     {
         if (IsActive) return;
         Apply();
-        _events = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectLocationChange, QueueWindow,
+        _events = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectHide, QueueWindow,
+            exception => _context?.Log.Error("Tarayıcı pencere gözlemi başarısız.", exception));
+        _locationEvents = new(WindowEventObserver.ObjectLocationChange, WindowEventObserver.ObjectLocationChange, QueueWindow,
             exception => _context?.Log.Error("Tarayıcı pencere gözlemi başarısız.", exception));
         IsActive = true;
         Native.EnumWindows((window, _) => { QueueWindow(new(WindowEventObserver.ObjectShow, window)); return true; }, IntPtr.Zero);
@@ -86,8 +89,8 @@ public sealed class BrowserFullscreenModule : ITweakModule
     {
         if (!IsExitBubbleShape(window)) return false;
         Native.GetWindowThreadProcessId(window, out var processId);
-        try { using var process = Process.GetProcessById((int)processId); return _processes.Contains(process.ProcessName); }
-        catch (ArgumentException) { return false; }
+        var processName = Native.ProcessNameOf(processId);
+        return !string.IsNullOrEmpty(processName) && _processes.Contains(processName);
     }
 
     private bool IsExitBubbleShape(IntPtr window)
@@ -125,6 +128,8 @@ public sealed class BrowserFullscreenModule : ITweakModule
         IsActive = false;
         _events?.Dispose();
         _events = null;
+        _locationEvents?.Dispose();
+        _locationEvents = null;
         _pending.Clear();
         RestoreHidden();
     }
@@ -138,12 +143,8 @@ public sealed class BrowserFullscreenModule : ITweakModule
             if (!Native.IsWindow(window) || currentProcess != processId || !IsExitBubbleShape(window)) continue;
             if (keepMatchingTargets)
             {
-                try
-                {
-                    using var process = Process.GetProcessById((int)processId);
-                    if (_processes.Contains(process.ProcessName)) { stillHidden[window] = processId; continue; }
-                }
-                catch (ArgumentException) { continue; }
+                var processName = Native.ProcessNameOf(processId);
+                if (!string.IsNullOrEmpty(processName) && _processes.Contains(processName)) { stillHidden[window] = processId; continue; }
             }
             ShowWindow(window, ShowWithoutActivation);
         }

@@ -167,17 +167,21 @@ public sealed class NetSpeedWindow
         var cursorDisplay = Native.GetCursorPos(out var cursor) ? DesktopDisplays.ForPoint(cursor).Handle : IntPtr.Zero;
         var preferred = IntPtr.Zero;
         var fallback = IntPtr.Zero;
-        Native.EnumWindows((window, _) =>
+
+        void Inspect(IntPtr window, bool isPrimary)
         {
-            var name = Native.ClassNameOf(window);
-            if (name is not ("Shell_TrayWnd" or "Shell_SecondaryTrayWnd") || !Native.IsWindowVisible(window) ||
-                !Native.GetWindowRect(window, out var rect)) return true;
+            if (window == IntPtr.Zero || !Native.IsWindowVisible(window) || !Native.GetWindowRect(window, out var rect)) return;
             var display = DesktopDisplays.ForWindow(window);
-            if (!IsRevealed(rect, display.Bounds)) return true;
+            if (!IsRevealed(rect, display.Bounds)) return;
             if (display.Handle == cursorDisplay) preferred = window;
-            if (fallback == IntPtr.Zero || name == "Shell_TrayWnd") fallback = window;
-            return true;
-        }, IntPtr.Zero);
+            if (fallback == IntPtr.Zero || isPrimary) fallback = window;
+        }
+
+        Inspect(Native.FindWindow("Shell_TrayWnd", null), isPrimary: true);
+        var secondary = IntPtr.Zero;
+        while ((secondary = Native.FindWindowEx(IntPtr.Zero, secondary, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero)
+            Inspect(secondary, isPrimary: false);
+
         return preferred != IntPtr.Zero ? preferred : fallback;
     }
 

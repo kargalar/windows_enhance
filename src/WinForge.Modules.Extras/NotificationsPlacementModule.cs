@@ -19,6 +19,7 @@ public sealed class NotificationsPlacementModule : ITweakModule
     private readonly Func<IntPtr, bool> _isToast;
     private readonly Dictionary<IntPtr, Placement> _placements = [];
     private WindowEventObserver? _observer;
+    private WindowEventObserver? _locationObserver;
     private DispatcherTimer? _timer;
     private IModuleContext? _context;
     private bool _positioning;
@@ -75,7 +76,8 @@ public sealed class NotificationsPlacementModule : ITweakModule
                 _timer.Tick += OnNativeHeartbeat;
                 _timer.Start();
             }
-            _observer = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectLocationChange, OnWindowEvent, Report);
+            _observer = new(WindowEventObserver.ObjectDestroy, WindowEventObserver.ObjectHide, OnWindowEvent, Report);
+            _locationObserver = new(WindowEventObserver.ObjectLocationChange, WindowEventObserver.ObjectLocationChange, OnWindowEvent, Report);
             IsActive = true;
             Apply();
         }
@@ -111,10 +113,15 @@ public sealed class NotificationsPlacementModule : ITweakModule
             _threadHooks.Clear();
             WakeNativeWindows();
         }
-        try { _observer?.Dispose(); }
+        try
+        {
+            _observer?.Dispose();
+            _locationObserver?.Dispose();
+        }
         finally
         {
             _observer = null;
+            _locationObserver = null;
             List<Exception> errors = [];
             foreach (var pair in _placements.ToArray())
             {
@@ -350,14 +357,11 @@ public sealed class NotificationsPlacementModule : ITweakModule
     {
         if (Native.GetAncestor(window, Native.GA_ROOT) != window || Native.ClassNameOf(window) != "Windows.UI.Core.CoreWindow") return false;
         Native.GetWindowThreadProcessId(window, out var pid);
-        try
-        {
-            using var process = Process.GetProcessById((int)pid);
-            // Never synchronously ask unrelated (including hidden own-process)
-            // windows for their text while their UI thread may be starting.
-            return IsSystemHostPath(process.MainModule?.FileName ?? "") && Native.TitleOf(window) is "Yeni bildirim" or "New notification";
-        }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception) { return false; }
+        // Never synchronously ask unrelated (including hidden own-process)
+        // windows for their text while their UI thread may be starting.
+        var executablePath = Native.ExecutablePathOf(pid);
+        return !string.IsNullOrEmpty(executablePath) && IsSystemHostPath(executablePath) &&
+               Native.TitleOf(window) is "Yeni bildirim" or "New notification";
     }
 
     private void SendTestNotification()

@@ -84,11 +84,18 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
         RegisterPauseHotkey();
         SystemEvents.SessionSwitch += SessionChanged; SystemEvents.PowerModeChanged += PowerChanged;
         timer.Tick += Tick; timer.Start();
-        foregroundObserver = new(WindowEventObserver.Foreground, WindowEventObserver.Foreground, _ =>
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        foregroundObserver = new(WindowEventObserver.Foreground, WindowEventObserver.Foreground, changed =>
         {
-            if (!IsActive) return;
-            var info = CaptureServices.Foreground(); usage?.Observe(ActiveApplication(info), DateTimeOffset.UtcNow, Environment.TickCount64);
-            Tick(this, EventArgs.Empty);
+            if (!IsActive || changed.Window == IntPtr.Zero ||
+                Native.IsShellSwitcherClass(Native.ClassNameOf(changed.Window))) return;
+            var info = CaptureServices.Foreground();
+            if (info.Window == IntPtr.Zero) return;
+            usage?.Observe(ActiveApplication(info), DateTimeOffset.UtcNow, Environment.TickCount64);
+            dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                if (IsActive) Tick(this, EventArgs.Empty);
+            }));
         }, error => Context.Log.Error("Etkin pencere takibi", error));
         var currentStore = store; var token = lifetime.Token; ocr = Task.Run(() => OcrLoopAsync(currentStore, token));
     }

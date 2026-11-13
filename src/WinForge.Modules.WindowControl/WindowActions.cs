@@ -278,7 +278,8 @@ internal sealed class WindowActions : IDisposable
             if ((style & Native.WS_EX_TOOLWINDOW) != 0 || GetWindow(window, 4) != IntPtr.Zero) return true;
             if (mdi && (style & MdiChildStyle) == 0) return true;
             var name = Text(window, true);
-            if (name is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "#32768") return true;
+            if (name is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "#32768" ||
+                Native.IsShellSwitcherClass(name)) return true;
             Native.GetWindowThreadProcessId(window, out var processId);
             if (processId == Environment.ProcessId && window != selected) return true;
             if (DwmGetWindowAttributeInt(window, 14, out var cloaked, sizeof(int)) == 0 && cloaked != 0) return true;

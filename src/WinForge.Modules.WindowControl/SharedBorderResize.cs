@@ -19,6 +19,7 @@ internal sealed class SharedBorderResize : IDisposable
     private bool swallowUp;
     private int refresh;
     private long? altPressedAt;
+    private bool _suppressedUntilAltRelease;
 
     internal SharedBorderResize(Func<IntPtr, bool, IReadOnlyList<IntPtr>> candidates)
     {
@@ -60,7 +61,17 @@ internal sealed class SharedBorderResize : IDisposable
             else if (Native.GetCursorPos(out var point)) Move(point);
             return;
         }
-        if (!AltDown()) { altPressedAt = null; refresh = 0; Clear(); return; }
+        if (!AltDown()) { altPressedAt = null; _suppressedUntilAltRelease = false; refresh = 0; Clear(); return; }
+        if (_suppressedUntilAltRelease) { Clear(); return; }
+        if ((GetAsyncKeyState(0x09) & 0x8000) != 0 || (GetAsyncKeyState(0x1B) & 0x8000) != 0 ||
+            (GetAsyncKeyState(0x20) & 0x8000) != 0 || (GetAsyncKeyState(0x73) & 0x8000) != 0 ||
+            (GetAsyncKeyState(0x5B) & 0x8000) != 0 || (GetAsyncKeyState(0x5C) & 0x8000) != 0 ||
+            Native.IsShellSwitcherClass(Native.ClassNameOf(Native.GetForegroundWindow())))
+        {
+            _suppressedUntilAltRelease = true;
+            Clear();
+            return;
+        }
         altPressedAt ??= Environment.TickCount64;
         if (Environment.TickCount64 - altPressedAt.Value < 500) return;
         if (++refresh % 8 != 1) return;

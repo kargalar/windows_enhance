@@ -10,6 +10,7 @@ public sealed class WindowEventObserver : IDisposable
     public const uint Foreground = 0x0003;
     public const uint ObjectDestroy = 0x8001;
     public const uint ObjectShow = 0x8002;
+    public const uint ObjectHide = 0x8003;
     public const uint ObjectLocationChange = 0x800B;
     private readonly WinEventCallback _callback;
     private IntPtr _hook;

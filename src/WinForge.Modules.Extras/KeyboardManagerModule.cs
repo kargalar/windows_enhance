@@ -49,7 +49,7 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
     private ApplicationMappingSet? _cachedApplicationMappings;
     private IModuleContext? _context;
     private IDisposable? _hotkey;
-    private IntPtr _hook;
+    private KeyboardHookThread? _hookThread;
 
     public string Id => "keyboard-manager";
     public string Name => "Klavye Yöneticisi";
@@ -106,11 +106,8 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
         IsActive = false;
         _hotkey?.Dispose();
         _hotkey = null;
-        if (_hook != IntPtr.Zero)
-        {
-            Native.UnhookWindowsHookEx(_hook);
-            _hook = IntPtr.Zero;
-        }
+        _hookThread?.Dispose();
+        _hookThread = null;
 
         _pressedKeys.Clear();
         _suppressedKeyUps.Clear();
@@ -138,9 +135,7 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
         if (_keyMappings.Count == 0 && _shortcutMappings.Count == 0 && _shortcutActions.Count == 0 &&
             _textMappings.Count == 0 && _applicationMappings.Count == 0) return;
 
-        _hook = Native.SetWindowsHookExKeyboard(Native.WH_KEYBOARD_LL, _callback, Native.GetModuleHandle(null), 0);
-        if (_hook == IntPtr.Zero)
-            throw new InvalidOperationException("Klavye eşleme kancası kurulamadı.");
+        _hookThread = new KeyboardHookThread(_callback);
     }
 
     private void StopHook()
@@ -149,9 +144,8 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
             SendKey(mappedKey, keyUp: true);
         _activeKeyRemaps.Clear();
 
-        if (_hook == IntPtr.Zero) return;
-        Native.UnhookWindowsHookEx(_hook);
-        _hook = IntPtr.Zero;
+        _hookThread?.Dispose();
+        _hookThread = null;
     }
 
     private void LoadMappings()
@@ -229,19 +223,19 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
 
     private IntPtr HandleKeyboard(int code, IntPtr messagePointer, IntPtr dataPointer)
     {
-        if (code < 0 || !IsActive) return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+        if (code < 0 || !IsActive) return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
 
         try
         {
             var message = messagePointer.ToInt32();
             var isDown = message is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN;
             var isUp = message is Native.WM_KEYUP or Native.WM_SYSKEYUP;
-            if (!isDown && !isUp) return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+            if (!isDown && !isUp) return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
 
             var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(dataPointer);
             var key = (int)info.vkCode;
             if ((info.flags & LlkhfInjected) != 0)
-                return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+                return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
 
             var isFirstKeyDown = isDown && _pressedKeys.Add(key);
             var appMappings = isDown ? GetForegroundApplicationMappings() : null;
@@ -267,7 +261,7 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
             if (HotkeyService.IsCapturing)
             {
                 if (isUp) _pressedKeys.Remove(key);
-                return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+                return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
             }
 
             if (isDown && TryGetShortcut(key, appMappings, out var shortcut))
@@ -308,12 +302,12 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
             }
 
             if (isUp) _pressedKeys.Remove(key);
-            return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+            return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
         }
         catch (Exception exception)
         {
             _context?.Log.Error("Klavye eşlemesi uygulanamadı.", exception);
-            return Native.CallNextHookEx(_hook, code, messagePointer, dataPointer);
+            return Native.CallNextHookEx(IntPtr.Zero, code, messagePointer, dataPointer);
         }
     }
 
@@ -555,6 +549,7 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
 
     private ApplicationMappingSet? GetForegroundApplicationMappings()
     {
+        if (_applicationMappings.Count == 0) return null;
         var foreground = Native.GetForegroundWindow();
         if (foreground == _cachedForegroundWindow) return _cachedApplicationMappings;
         _cachedForegroundWindow = foreground;
@@ -562,12 +557,9 @@ internal sealed class KeyboardManagerModule : ITweakModule, IModuleComponent
         if (foreground == IntPtr.Zero) return null;
 
         Native.GetWindowThreadProcessId(foreground, out var processId);
-        try
-        {
-            using var process = Process.GetProcessById((int)processId);
-            _applicationMappings.TryGetValue(process.ProcessName, out _cachedApplicationMappings);
-        }
-        catch { }
+        var processName = Native.ProcessNameOf(processId);
+        if (!string.IsNullOrEmpty(processName))
+            _applicationMappings.TryGetValue(processName, out _cachedApplicationMappings);
         return _cachedApplicationMappings;
     }
 

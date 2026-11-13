@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -392,8 +392,8 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
                 var generation = Volatile.Read(ref _hookGeneration);
                 var window = Native.GetForegroundWindow();
                 var key = (int)info.vkCode;
-                var shortcut = HasShortcutModifiers() || HotkeyService.IsCapturing;
-                var character = shortcut || IsModifierKey(key) || key is KeySpace or KeyBackspace
+                var shortcut = (info.flags & 0x20) != 0 || HasShortcutModifiers() || HotkeyService.IsCapturing;
+                var character = shortcut || IsModifierKey(key) || key is KeySpace or KeyBackspace || key == 0x09
                     ? '\0' : TranslateCharacter(key, info.scanCode, window);
                 _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
                 {
@@ -857,13 +857,8 @@ public sealed class AutoCorrectModule : ITweakModule, IAsyncTweakModule
     {
         if (_excludedProcesses.Count == 0) return false;
         Native.GetWindowThreadProcessId(window, out var processId);
-        try
-        {
-            using var process = Process.GetProcessById((int)processId);
-            return _excludedProcesses.Contains(process.ProcessName);
-        }
-        catch (ArgumentException) { return false; }
-        catch (InvalidOperationException) { return false; }
+        var processName = Native.ProcessNameOf(processId);
+        return !string.IsNullOrEmpty(processName) && _excludedProcesses.Contains(processName);
     }
 
     internal static HashSet<string> ParseExcludedProcesses(string value) => value
