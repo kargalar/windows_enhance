@@ -192,6 +192,11 @@ test('automation shortcut automatically persists across status refreshes', async
     await click([...card.querySelectorAll('button')].find(b => b.textContent === 'Tuş ata'));
     await key(card.querySelector('input[aria-label]'), 'F7', 'F7', { shiftKey: true });
     assert.equal(sent.findLast(c => c.action === 'save').data.rule.shortcut, 'Shift+F7');
+    const stepSelect = card.querySelector('select[aria-label="1. step kind"]');
+    await act(async () => { stepSelect.value = 'search-1337x'; stepSelect.dispatchEvent(new window.Event('change', { bubbles: true })); });
+    const saved = sent.findLast(c => c.action === 'save').data.rule;
+    assert.equal(saved.repeat, false);
+    assert.deepEqual(saved.steps[0], { kind: 'search', value: '1337x', delay: 0 });
   } finally { await view.close(); }
 });
 

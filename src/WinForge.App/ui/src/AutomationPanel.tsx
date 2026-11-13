@@ -48,11 +48,19 @@ function AutomationCard({ rule, command, capturing, active, paused }: { rule: Ru
       <small>{draft.repeat ? t('auto.intervalRepeatHint') : t('auto.intervalOnceHint')}</small>
     </div>
     </div><div className="automation-steps"><strong>{t('auto.steps')}</strong>{draft.steps.map((step, index) => <div className="automation-step" key={index}>
-      <span className="automation-step-number">{index + 1}</span><div className="automation-step-fields"><select className="white-control" value={step.kind} aria-label={`${index + 1}. step kind`} onChange={event => {
-        const kind = event.target.value;
-        const next = { ...draft, repeat: kind === 'search' ? false : draft.repeat, steps: draft.steps.map((item, position) => position === index ? { kind, value: ({ click: 'left', key: 'Enter', text: 'Hello', search: 'google', wait: '' } as Record<string, string>)[kind], delay: kind === 'wait' ? 500 : 0 } : item) };
+      <span className="automation-step-number">{index + 1}</span><div className="automation-step-fields"><select className="white-control" value={step.kind === 'search' && step.value === '1337x' ? 'search-1337x' : step.kind} aria-label={`${index + 1}. step kind`} onChange={event => {
+        const selected = event.target.value;
+        const kind = selected === 'search-1337x' ? 'search' : selected;
+        const nextStep: Step = selected === 'search-1337x'
+          ? { kind: 'search', value: '1337x', delay: 0 }
+          : { kind, value: ({ click: 'left', key: 'Enter', text: 'Hello', search: 'google', wait: '' } as Record<string, string>)[kind], delay: kind === 'wait' ? 500 : 0 };
+        const defaultNames = new Set(['Yeni otomasyon', t('auto.stepSearch'), t('auto.stepSearch1337x')]);
+        const name = (selected === 'search' || selected === 'search-1337x') && defaultNames.has(draft.name)
+          ? t(selected === 'search-1337x' ? 'auto.stepSearch1337x' : 'auto.stepSearch')
+          : draft.name;
+        const next = { ...draft, name, repeat: kind === 'search' ? false : draft.repeat, steps: draft.steps.map((item, position) => position === index ? nextStep : item) };
         persist(next);
-      }}><option value="click">{t('auto.stepClick')}</option><option value="key">{t('auto.stepKey')}</option><option value="text">{t('auto.stepText')}</option><option value="wait">{t('auto.stepWait')}</option><option value="search">{t('auto.stepSearch')}</option></select>
+      }}><option value="click">{t('auto.stepClick')}</option><option value="key">{t('auto.stepKey')}</option><option value="text">{t('auto.stepText')}</option><option value="wait">{t('auto.stepWait')}</option><option value="search">{t('auto.stepSearch')}</option><option value="search-1337x">{t('auto.stepSearch1337x')}</option></select>
       {step.kind === 'click' && <select className="white-control" aria-label={`${index + 1}. mouse button`} value={step.value} onChange={event => stepChange(index, { value: event.target.value }, true)}><option value="left">{t('auto.clickLeft')}</option><option value="right">{t('auto.clickRight')}</option><option value="middle">{t('auto.clickMiddle')}</option></select>}
       {step.kind === 'key' && <ShortcutField value={step.value} label={`${index + 1}. key to send`} command={command} capturing={capturing} save={value => stepChange(index, { value }, true)} />}
       {step.kind === 'text' && <input className="white-control" aria-label={`${index + 1}. text to type`} placeholder={t('auto.textPlaceholder')} value={step.value} onChange={event => stepChange(index, { value: event.target.value })} onBlur={() => persist(draft)} />}

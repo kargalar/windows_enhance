@@ -16,7 +16,10 @@ internal static class Program
             var commands = AutomationCommands.Parse(AutomationCommands.Example);
             Check(commands.Count == 2 && commands[0].Shortcut == new AutomationShortcut(0, 0x70), "Default includes plain F1");
             Check(commands[1].Shortcut == new AutomationShortcut(HotkeyModifiers.Alt, 0x53) && !commands[1].Repeat && commands[1].Steps[0].Kind == "search", "Alt+S searches selected text once");
+            var search1337x = AutomationCommands.Parse("Alt+Shift+S = once|100|search 1337x");
+            Check(search1337x.Count == 1 && !search1337x[0].Repeat && search1337x[0].Steps[0] is { Kind: "search", Value: "1337x" }, "Alt+Shift+S searches selected text on 1337x once");
             Reject("Alt+S = toggle|100|search google");
+            Reject("Alt+Shift+S = toggle|100|search 1337x");
             Reject("Alt+S = once|100|search bing");
             Reject("Alt+S = once|100|search google\nCtrl+C = once|100|text test");
             SelectionSearchChecks();
@@ -212,6 +215,14 @@ internal static class Program
         search.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
         Check(copies == 1 && polls == 3, "Waits for freshly copied selection");
         Check(opened == "https://www.google.com/search?q=T%C3%BCrk%C3%A7e%20%26%20%2B%20%23%3F", "Google URL encodes Unicode and query punctuation");
+        Check(SelectionSearch.BuildUrl("the odyssey", "1337x") == "https://1337x.to/search/the+odyssey/1/", "1337x URL joins terms with pluses");
+        opened = null;
+        version = 1;
+        polls = 0;
+        search = new SelectionSearch(() => { }, () => version, () => "  the   odyssey ", () => true,
+            url => opened = url, token => { token.ThrowIfCancellationRequested(); if (++polls == 2) version++; return Task.CompletedTask; }, "1337x");
+        search.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Check(opened == "https://1337x.to/search/the+odyssey/1/", "1337x search opens expected URL");
         opened = null;
         search = new SelectionSearch(() => { }, () => 1, () => "old private clipboard", () => true, url => opened = url, _ => Task.CompletedTask);
         try { search.RunAsync(CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("Expected copy timeout"); }

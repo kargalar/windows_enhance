@@ -39,7 +39,7 @@ internal static class AutomationCommands
                     var value = pair.Length == 2 ? pair[1] : "";
                     switch (kind)
                     {
-                        case "search" when value == "google":
+                        case "search" when value is "google" or "1337x":
                             steps.Add(new(kind, value)); break;
                         case "click" when value is "left" or "right" or "middle":
                             steps.Add(new(kind, value)); break;
@@ -51,7 +51,7 @@ internal static class AutomationCommands
                             steps.Add(new(kind, target.Key.ToString(System.Globalization.CultureInfo.InvariantCulture))); break;
                         case "text" when value.Length is > 0 and <= 2048:
                             steps.Add(new(kind, value)); break;
-                        default: throw new FormatException("Geçersiz adım. click left/right/middle, wait 500, key Enter, text Merhaba veya search google kullanın.");
+                        default: throw new FormatException("Geçersiz adım. click left/right/middle, wait 500, key Enter, text Merhaba, search google veya search 1337x kullanın.");
                     }
                 }
                 if (steps.Count is < 1 or > 100) throw new FormatException("Bir komut 1–100 adım içermeli.");

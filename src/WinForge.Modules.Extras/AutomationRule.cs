@@ -28,7 +28,11 @@ internal sealed record AutomationRule
 
     internal static AutomationRule FromLegacy(AutomationCommand command) => new()
     {
-        Name = command.Steps.Any(step => step.Kind == "search") ? "Seçili metni Google’da ara" : "Otomatik tıklama / komut",
+        Name = command.Steps.Any(step => step.Kind == "search" && step.Value == "1337x")
+            ? "Seçili metni 1337x’te ara"
+            : command.Steps.Any(step => step.Kind == "search")
+                ? "Seçili metni Google’da ara"
+                : "Otomatik tıklama / komut",
         Shortcut = FormatShortcut(command.Shortcut), Repeat = command.Repeat, Interval = command.Interval,
         Steps = command.Steps.Select(step => step.Kind == "key" ? step with
         { Value = KeyInterop.KeyFromVirtualKey(int.Parse(step.Value)).ToString() } : step).ToList()

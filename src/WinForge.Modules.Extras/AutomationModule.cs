@@ -96,8 +96,38 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
             : JsonSerializer.Deserialize<List<AutomationRule>>(saved, JsonOptions) ?? new();
         _masterShortcut = _context.Settings.GetString("master-shortcut", "Ctrl+Alt+F8");
         _paused = _context.Settings.GetBool("paused", false);
+        var added1337x = false;
+        if (!string.IsNullOrWhiteSpace(saved) && !_context.Settings.GetBool("search-1337x-added"))
+        {
+            if (_rules.Count < 64 && !_rules.Any(r => r.Steps.Any(s => s.Kind == "search" && s.Value == "1337x")))
+            {
+                var shortcut = new[] { "Alt+Shift+S", "Ctrl+Alt+S", "Alt+D" }
+                    .Concat(Enumerable.Range(2, 23).Where(k => k != 12).Select(k => "F" + k))
+                    .FirstOrDefault(s => !_rules.Any(r => r.Shortcut.Equals(s, StringComparison.OrdinalIgnoreCase)) && !s.Equals(_masterShortcut, StringComparison.OrdinalIgnoreCase)) ?? "Alt+Shift+S";
+                _rules.Add(new AutomationRule
+                {
+                    Id = "1337x-selection-search",
+                    Name = "Seçili metni 1337x’te ara",
+                    Enabled = true,
+                    Shortcut = shortcut,
+                    Repeat = false,
+                    Interval = 100,
+                    Steps = [new("search", "1337x", 0)]
+                });
+            }
+            _context.Settings.Set("search-1337x-added", true);
+            added1337x = true;
+        }
         Validate(_rules, _masterShortcut);
-        if (string.IsNullOrWhiteSpace(saved)) Persist();
+        if (string.IsNullOrWhiteSpace(saved))
+        {
+            _context.Settings.Set("search-1337x-added", true);
+            Persist();
+        }
+        else if (added1337x)
+        {
+            Persist();
+        }
     }
 
     private static void Validate(List<AutomationRule> rules, string masterShortcut)
@@ -319,7 +349,7 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
                 var blocked = IsDown(execution.Command.Shortcut.Key) || new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C }.Any(IsDown);
                 execution.Run.Advance(Environment.TickCount64, blocked, step =>
                 {
-                    if (step.Kind == "search") execution.Pending = SearchSelectionAsync(execution.Target, execution.Cancellation.Token);
+                    if (step.Kind == "search") execution.Pending = SearchSelectionAsync(execution.Target, step.Value, execution.Cancellation.Token);
                     else SendStep(step);
                 });
                 if (execution.Run.Finished && execution.Pending is null) { RemoveRun(id); changed = true; }
@@ -338,13 +368,14 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
 
     private static bool IsDown(int key) => (Native.GetAsyncKeyState(key) & 0x8000) != 0;
 
-    private static Task SearchSelectionAsync(IntPtr target, CancellationToken cancellationToken) => new SelectionSearch(
+    private static Task SearchSelectionAsync(IntPtr target, string provider, CancellationToken cancellationToken) => new SelectionSearch(
         CopySelection,
         GetClipboardSequenceNumber,
         () => Clipboard.ContainsText() ? Clipboard.GetText() : null,
         () => Native.GetForegroundWindow() == target,
         url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }),
-        token => Task.Delay(25, token)).RunAsync(cancellationToken);
+        token => Task.Delay(25, token),
+        provider).RunAsync(cancellationToken);
 
     private static void CopySelection()
     {

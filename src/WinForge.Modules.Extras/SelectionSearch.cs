@@ -7,7 +7,8 @@ internal sealed class SelectionSearch(
     Func<string?> readText,
     Func<bool> sameWindow,
     Action<string> openUrl,
-    Func<CancellationToken, Task> delay)
+    Func<CancellationToken, Task> delay,
+    string provider = "google")
 {
     internal async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -25,11 +26,15 @@ internal sealed class SelectionSearch(
             try { text = readText(); }
             catch (System.Runtime.InteropServices.ExternalException) { continue; }
             if (string.IsNullOrWhiteSpace(text)) continue;
-            openUrl(BuildUrl(text));
+            openUrl(BuildUrl(text, provider));
             return;
         }
         throw new InvalidOperationException("Seçili metin kopyalanamadı. Önce aranacak metni seçin.");
     }
 
-    internal static string BuildUrl(string text) => "https://www.google.com/search?q=" + Uri.EscapeDataString(text.Trim());
+    internal static string BuildUrl(string text, string provider = "google") => provider switch
+    {
+        "1337x" => "https://1337x.to/search/" + string.Join("+", text.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString)) + "/1/",
+        _ => "https://www.google.com/search?q=" + Uri.EscapeDataString(text.Trim())
+    };
 }

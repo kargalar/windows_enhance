@@ -1,4 +1,4 @@
-﻿{
+{
     "SchemaVersion":  1,
     "Enabled":  [
                     "display-brightness",
@@ -348,7 +348,8 @@
                                                "block-frequent-folders":  "true"
                                            },
                    "automation":  {
-                                      "rules-v2":  "[{\"id\":\"2e22465811d94957a45e382a376c373b\",\"name\":\"Otomatik t\\u0131klama / komut\",\"enabled\":true,\"shortcut\":\"F1\",\"repeat\":true,\"interval\":500,\"steps\":[{\"kind\":\"click\",\"value\":\"left\",\"delay\":0}]},{\"id\":\"3cdc4a9d7a7e489ab7acc1cbb0f88154\",\"name\":\"Se\\u00E7ili metni Google\\u2019da ara\",\"enabled\":true,\"shortcut\":\"Alt\\u002BS\",\"repeat\":false,\"interval\":100,\"steps\":[{\"kind\":\"search\",\"value\":\"google\",\"delay\":0}]}]",
+                                      "rules-v2":  "[{\"id\":\"2e22465811d94957a45e382a376c373b\",\"name\":\"Otomatik t\\u0131klama / komut\",\"enabled\":true,\"shortcut\":\"F1\",\"repeat\":true,\"interval\":500,\"steps\":[{\"kind\":\"click\",\"value\":\"left\",\"delay\":0}]},{\"id\":\"3cdc4a9d7a7e489ab7acc1cbb0f88154\",\"name\":\"Se\\u00E7ili metni Google\\u2019da ara\",\"enabled\":true,\"shortcut\":\"Alt\\u002BS\",\"repeat\":false,\"interval\":100,\"steps\":[{\"kind\":\"search\",\"value\":\"google\",\"delay\":0}]},{\"id\":\"1337x-selection-search\",\"name\":\"Se\\u00E7ili metni 1337x\\u2019te ara\",\"enabled\":true,\"shortcut\":\"Alt\\u002BShift\\u002BS\",\"repeat\":false,\"interval\":100,\"steps\":[{\"kind\":\"search\",\"value\":\"1337x\",\"delay\":0}]}]",
+                                      "search-1337x-added":  "true",
                                       "master-shortcut":  "Ctrl+Alt+F8",
                                       "paused":  "false"
                                   },
