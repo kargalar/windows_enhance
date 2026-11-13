@@ -23,14 +23,17 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
     private bool _capturing;
     private string _masterShortcut = "Ctrl+Alt+F8";
     private IFeatureUiWindow? _activeIndicator;
-    private sealed class Execution(AutomationCommand command, string processName, CancellationToken cancellation)
+    private sealed class Execution(AutomationCommand command, string processName, CancellationToken cancellation, bool closeTab)
     {
+        internal Execution(AutomationCommand command, string processName, CancellationToken cancellation)
+            : this(command, processName, cancellation, false) { }
         internal string ProcessName { get; } = processName;
         internal CancellationTokenSource Cancellation { get; } = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         internal AutomationRun Run { get; } = new(command);
         internal IntPtr Target { get; } = Native.GetForegroundWindow();
         internal Task? Pending { get; set; }
         internal AutomationCommand Command { get; } = command;
+        internal bool CloseTab { get; set; } = closeTab;
     }
 
     public string Id => "automation";
@@ -101,7 +104,7 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
         {
             if (_rules.Count < 64 && !_rules.Any(r => r.Steps.Any(s => s.Kind == "search" && s.Value == "1337x")))
             {
-                var shortcut = new[] { "Alt+Shift+S", "Ctrl+Alt+S", "Alt+D" }
+                var shortcut = new[] { "Alt+G", "Alt+Shift+S", "Ctrl+Alt+S", "Alt+D" }
                     .Concat(Enumerable.Range(2, 23).Where(k => k != 12).Select(k => "F" + k))
                     .FirstOrDefault(s => !_rules.Any(r => r.Shortcut.Equals(s, StringComparison.OrdinalIgnoreCase)) && !s.Equals(_masterShortcut, StringComparison.OrdinalIgnoreCase)) ?? "Alt+Shift+S";
                 _rules.Add(new AutomationRule
@@ -197,15 +200,42 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
             var master = AutomationCommands.ParseShortcut(_masterShortcut);
             _registrations.Add(_context.Hotkeys.Register(master.Modifiers, (uint)master.Key, () => SetPaused(!_paused)));
             if (_paused) return;
-            foreach (var rule in _rules.Where(rule => rule.Enabled))
+            var enabled = _rules.Where(rule => rule.Enabled).Select(rule => (Rule: rule, Command: rule.Compile())).ToList();
+            var occupied = enabled.Select(item => item.Command.Shortcut).Append(master).ToHashSet();
+            foreach (var (rule, command) in enabled)
             {
-                var command = rule.Compile();
                 _registrations.Add(string.IsNullOrWhiteSpace(rule.ProcessName)
                     ? _context.Hotkeys.Register(command.Shortcut.Modifiers, (uint)command.Shortcut.Key, () => Trigger(rule, command))
                     : new ForegroundShortcutBinding(command.Shortcut, rule.ProcessName, () => Trigger(rule, command)));
+                if (ShouldRegisterChromeShiftSearch(rule, command, occupied, out var shiftShortcut, out var scope))
+                {
+                    occupied.Add(shiftShortcut);
+                    _registrations.Add(new ForegroundShortcutBinding(shiftShortcut, scope, () => StartExecution(rule, command, closeTab: true)));
+                }
             }
         }
         catch { ClearRegistrations(); throw; }
+    }
+
+    internal static bool ShouldRegisterChromeShiftSearch(
+        AutomationRule rule,
+        AutomationCommand command,
+        IReadOnlySet<AutomationShortcut> occupied,
+        out AutomationShortcut shiftShortcut,
+        out string scope)
+    {
+        shiftShortcut = default!;
+        scope = "";
+        if (command.Repeat ||
+            !command.Steps.Any(step => step.Kind == "search") ||
+            (command.Shortcut.Modifiers & HotkeyModifiers.Shift) != 0)
+            return false;
+        if (!string.IsNullOrWhiteSpace(rule.ProcessName) && !ForegroundApplication.Matches(rule.ProcessName, "chrome"))
+            return false;
+        shiftShortcut = command.Shortcut with { Modifiers = command.Shortcut.Modifiers | HotkeyModifiers.Shift };
+        if (occupied.Contains(shiftShortcut)) return false;
+        scope = string.IsNullOrWhiteSpace(rule.ProcessName) ? "chrome.exe" : rule.ProcessName;
+        return true;
     }
 
     private void ClearRegistrations()
@@ -214,14 +244,17 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
         _registrations.Clear();
     }
 
-    private void Trigger(AutomationRule rule, AutomationCommand command)
+    private void Trigger(AutomationRule rule, AutomationCommand command) => StartExecution(rule, command, closeTab: false);
+
+    private void StartExecution(AutomationRule rule, AutomationCommand command, bool closeTab)
     {
-        if (!IsActive || _paused || _capturing || !rule.Enabled || !ForegroundApplication.IsFocused(rule.ProcessName)) return;
+        var scope = closeTab && string.IsNullOrWhiteSpace(rule.ProcessName) ? "chrome.exe" : rule.ProcessName;
+        if (!IsActive || _paused || _capturing || !rule.Enabled || !ForegroundApplication.IsFocused(scope)) return;
         if (_running.ContainsKey(rule.Id))
         {
             if (command.Repeat) RemoveRun(rule.Id);
         }
-        else _running.Add(rule.Id, new Execution(command, rule.ProcessName, _cancellation.Token));
+        else _running.Add(rule.Id, new Execution(command, scope, _cancellation.Token, closeTab));
         if (_running.Count > 0) _timer.Start(); else _timer.Stop();
         PublishState();
     }
@@ -349,7 +382,12 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
                 var blocked = IsDown(execution.Command.Shortcut.Key) || new[] { 0x10, 0x11, 0x12, 0x5B, 0x5C }.Any(IsDown);
                 execution.Run.Advance(Environment.TickCount64, blocked, step =>
                 {
-                    if (step.Kind == "search") execution.Pending = SearchSelectionAsync(execution.Target, step.Value, execution.Cancellation.Token);
+                    if (step.Kind == "search")
+                    {
+                        var closeTab = execution.CloseTab;
+                        execution.CloseTab = false;
+                        execution.Pending = SearchSelectionAsync(execution.Target, step.Value, closeTab, execution.Cancellation.Token);
+                    }
                     else SendStep(step);
                 });
                 if (execution.Run.Finished && execution.Pending is null) { RemoveRun(id); changed = true; }
@@ -368,23 +406,27 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
 
     private static bool IsDown(int key) => (Native.GetAsyncKeyState(key) & 0x8000) != 0;
 
-    private static Task SearchSelectionAsync(IntPtr target, string provider, CancellationToken cancellationToken) => new SelectionSearch(
+    private static Task SearchSelectionAsync(IntPtr target, string provider, bool closeTab, CancellationToken cancellationToken) => new SelectionSearch(
         CopySelection,
         GetClipboardSequenceNumber,
         () => Clipboard.ContainsText() ? Clipboard.GetText() : null,
         () => Native.GetForegroundWindow() == target,
         url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }),
         token => Task.Delay(25, token),
-        provider).RunAsync(cancellationToken);
+        provider,
+        closeTab ? CloseActiveTab : null).RunAsync(cancellationToken);
 
-    private static void CopySelection()
+    private static void CopySelection() => SendControlChord(0x43, "Seçili metin için kopyalama tuşları gönderilemedi.");
+    private static void CloseActiveTab() => SendControlChord(0x57, "Chrome sekmesini kapatma tuşları gönderilemedi.");
+
+    private static void SendControlChord(ushort key, string errorMessage)
     {
-        INPUT[] inputs = [KeyInput(0x11, 0, 0), KeyInput(0x43, 0, 0), KeyInput(0x43, 0, 2), KeyInput(0x11, 0, 2)];
+        INPUT[] inputs = [KeyInput(0x11, 0, 0), KeyInput(key, 0, 0), KeyInput(key, 0, 2), KeyInput(0x11, 0, 2)];
         if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
         {
-            INPUT[] release = [KeyInput(0x43, 0, 2), KeyInput(0x11, 0, 2)];
+            INPUT[] release = [KeyInput(key, 0, 2), KeyInput(0x11, 0, 2)];
             SendInput(2, release, Marshal.SizeOf<INPUT>());
-            throw new InvalidOperationException("Seçili metin için kopyalama tuşları gönderilemedi.");
+            throw new InvalidOperationException(errorMessage);
         }
     }
 

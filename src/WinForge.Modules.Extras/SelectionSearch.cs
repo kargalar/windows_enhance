@@ -8,7 +8,8 @@ internal sealed class SelectionSearch(
     Func<bool> sameWindow,
     Action<string> openUrl,
     Func<CancellationToken, Task> delay,
-    string provider = "google")
+    string provider = "google",
+    Action? closeTab = null)
 {
     internal async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -26,6 +27,13 @@ internal sealed class SelectionSearch(
             try { text = readText(); }
             catch (System.Runtime.InteropServices.ExternalException) { continue; }
             if (string.IsNullOrWhiteSpace(text)) continue;
+            if (closeTab is not null)
+            {
+                closeTab();
+                await delay(cancellationToken);
+                await delay(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
             openUrl(BuildUrl(text, provider));
             return;
         }

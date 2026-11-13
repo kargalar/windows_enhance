@@ -23,6 +23,7 @@ internal static class Program
             Reject("Alt+S = once|100|search bing");
             Reject("Alt+S = once|100|search google\nCtrl+C = once|100|text test");
             SelectionSearchChecks();
+            ChromeShiftSearchChecks();
             ActiveIndicatorChecks();
             ForegroundBindingChecks();
             Check(ForegroundApplication.Matches("GAME.exe", "game"), "Process scope matches case-insensitively with or without exe");
@@ -235,6 +236,55 @@ internal static class Program
             token => { cancellation.Cancel(); return Task.CompletedTask; });
         try { search.RunAsync(cancellation.Token).GetAwaiter().GetResult(); throw new Exception("Expected cancellation"); }
         catch (OperationCanceledException) { Check(opened is null, "Module stop cancels pending clipboard search"); }
+
+        var events = new List<string>();
+        version = 1;
+        polls = 0;
+        search = new SelectionSearch(() => events.Add("copy"), () => version, () => "the odyssey", () => true,
+            url => events.Add("open:" + url), token => { token.ThrowIfCancellationRequested(); if (++polls == 1) version++; return Task.CompletedTask; },
+            "1337x", () => events.Add("close-tab"));
+        search.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Check(events.SequenceEqual(["copy", "close-tab", "open:https://1337x.to/search/the+odyssey/1/"]), "Chrome Shift search closes tab after copy and before opening URL");
+
+        var closed = 0;
+        search = new SelectionSearch(() => { }, () => 1, () => "stale", () => true, _ => { }, _ => Task.CompletedTask, "google", () => closed++);
+        try { search.RunAsync(CancellationToken.None).GetAwaiter().GetResult(); throw new Exception("Expected copy timeout"); }
+        catch (InvalidOperationException) { Check(closed == 0, "Failed copy never closes the active tab"); }
+
+        search = new SelectionSearch(() => { }, () => 1, () => "", () => false, _ => { }, _ => Task.CompletedTask, "google", () => closed++);
+        search.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Check(closed == 0, "Window change never closes the active tab");
+    }
+
+    private static void ChromeShiftSearchChecks()
+    {
+        var googleRule = new AutomationRule { Shortcut = "Alt+S", Repeat = false, Steps = [new("search", "google")] };
+        var torrentRule = new AutomationRule { Shortcut = "Alt+G", Repeat = false, Steps = [new("search", "1337x")] };
+        var occupied = new HashSet<AutomationShortcut> { googleRule.Compile().Shortcut, torrentRule.Compile().Shortcut };
+
+        Check(AutomationModule.ShouldRegisterChromeShiftSearch(googleRule, googleRule.Compile(), occupied, out var googleShift, out var googleScope) &&
+              googleShift == AutomationCommands.ParseShortcut("Alt+Shift+S") && googleScope == "chrome.exe",
+            "Google search registers Alt+Shift+S scoped to Chrome");
+        Check(AutomationModule.ShouldRegisterChromeShiftSearch(torrentRule, torrentRule.Compile(), occupied, out var torrentShift, out var torrentScope) &&
+              torrentShift == AutomationCommands.ParseShortcut("Alt+Shift+G") && torrentScope == "chrome.exe",
+            "1337x search registers Alt+Shift+G scoped to Chrome");
+
+        var alreadyShifted = new AutomationRule { Shortcut = "Alt+Shift+S", Repeat = false, Steps = [new("search", "1337x")] };
+        Check(!AutomationModule.ShouldRegisterChromeShiftSearch(alreadyShifted, alreadyShifted.Compile(), occupied, out _, out _),
+            "Search shortcut already containing Shift does not add another Shift variant");
+
+        var withCollision = new HashSet<AutomationShortcut>(occupied) { AutomationCommands.ParseShortcut("Alt+Shift+S") };
+        Check(!AutomationModule.ShouldRegisterChromeShiftSearch(googleRule, googleRule.Compile(), withCollision, out _, out _),
+            "Explicitly assigned Shift shortcut takes precedence over Chrome tab-close variant");
+
+        var nonChromeRule = googleRule with { ProcessName = "notepad.exe" };
+        Check(!AutomationModule.ShouldRegisterChromeShiftSearch(nonChromeRule, nonChromeRule.Compile(), occupied, out _, out _),
+            "Search scoped to a non-Chrome app does not register Chrome Shift variant");
+
+        var chromeRule = googleRule with { ProcessName = "chrome.exe" };
+        Check(AutomationModule.ShouldRegisterChromeShiftSearch(chromeRule, chromeRule.Compile(), occupied, out _, out var explicitChromeScope) &&
+              explicitChromeScope == "chrome.exe",
+            "Search already scoped to Chrome keeps its Chrome Shift variant");
     }
     private static void Reject(string text)
     {

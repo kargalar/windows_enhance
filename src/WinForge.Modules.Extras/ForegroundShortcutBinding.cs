@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using WinForge.Core;
+using static WinForge.Modules.Extras.KeyboardInputSender;
 
 namespace WinForge.Modules.Extras;
 
@@ -57,9 +58,29 @@ internal sealed class ForegroundShortcutBinding : IDisposable
         if (code >= 0)
         {
             var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(pointer);
-            if (info.vkCode == _shortcut.Key && ProcessInput(message.ToInt32(), info, Modifiers(), ForegroundApplication.IsFocused(_process))) return new(1);
+            if (info.vkCode == _shortcut.Key)
+            {
+                var modifiers = Modifiers();
+                var wasHeld = _held;
+                if (ProcessInput(message.ToInt32(), info, modifiers, ForegroundApplication.IsFocused(_process)))
+                {
+                    if (!wasHeld && _held && (modifiers & (HotkeyModifiers.Alt | HotkeyModifiers.Win)) != 0)
+                        MaskMenuActivation();
+                    return new(1);
+                }
+            }
         }
         return Native.CallNextHookEx(_hook, code, message, pointer);
+    }
+
+    private static void MaskMenuActivation()
+    {
+        INPUT[] inputs =
+        [
+            new() { Type = 1, Union = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = 0xE8 } } },
+            new() { Type = 1, Union = new InputUnion { Keyboard = new KEYBDINPUT { VirtualKey = 0xE8, Flags = 2 } } }
+        ];
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
     internal bool ProcessInput(int message, KBDLLHOOKSTRUCT info, uint modifiers, bool focused)
     {
