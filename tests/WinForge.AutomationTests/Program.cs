@@ -254,6 +254,19 @@ internal static class Program
         search = new SelectionSearch(() => { }, () => 1, () => "", () => false, _ => { }, _ => Task.CompletedTask, "google", () => closed++);
         search.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
         Check(closed == 0, "Window change never closes the active tab");
+
+        events.Clear();
+        version = 1;
+        polls = 0;
+        search = new SelectionSearch(() => events.Add("copy"), () => version, () => "the odyssey", () => true,
+            url => events.Add("open:" + url), token => { token.ThrowIfCancellationRequested(); if (++polls == 1) version++; return Task.CompletedTask; },
+            "google", null, () =>
+            {
+                events.Add("prepare");
+                return _ => { events.Add("restore"); return Task.CompletedTask; };
+            });
+        search.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+        Check(events.SequenceEqual(["copy", "prepare", "open:https://www.google.com/search?q=the%20odyssey", "restore"]), "Ctrl background search prepares before open and restores after open");
     }
 
     private static void ChromeShiftSearchChecks()
@@ -285,6 +298,21 @@ internal static class Program
         Check(AutomationModule.ShouldRegisterChromeShiftSearch(chromeRule, chromeRule.Compile(), occupied, out _, out var explicitChromeScope) &&
               explicitChromeScope == "chrome.exe",
             "Search already scoped to Chrome keeps its Chrome Shift variant");
+
+        Check(AutomationModule.ShouldRegisterBackgroundCtrlSearch(googleRule, googleRule.Compile(), occupied, out var googleCtrl) &&
+              googleCtrl == AutomationCommands.ParseShortcut("Ctrl+Alt+S"),
+            "Google search registers Ctrl+Alt+S background variant");
+        Check(AutomationModule.ShouldRegisterBackgroundCtrlSearch(torrentRule, torrentRule.Compile(), occupied, out var torrentCtrl) &&
+              torrentCtrl == AutomationCommands.ParseShortcut("Ctrl+Alt+G"),
+            "1337x search registers Ctrl+Alt+G background variant");
+
+        var alreadyCtrled = new AutomationRule { Shortcut = "Ctrl+Alt+S", Repeat = false, Steps = [new("search", "google")] };
+        Check(!AutomationModule.ShouldRegisterBackgroundCtrlSearch(alreadyCtrled, alreadyCtrled.Compile(), occupied, out _),
+            "Search shortcut already containing Ctrl does not add another Ctrl variant");
+
+        var withCtrlCollision = new HashSet<AutomationShortcut>(occupied) { AutomationCommands.ParseShortcut("Ctrl+Alt+S") };
+        Check(!AutomationModule.ShouldRegisterBackgroundCtrlSearch(googleRule, googleRule.Compile(), withCtrlCollision, out _),
+            "Explicitly assigned Ctrl shortcut takes precedence over background variant");
     }
     private static void Reject(string text)
     {

@@ -9,7 +9,8 @@ internal sealed class SelectionSearch(
     Action<string> openUrl,
     Func<CancellationToken, Task> delay,
     string provider = "google",
-    Action? closeTab = null)
+    Action? closeTab = null,
+    Func<Func<CancellationToken, Task>>? prepareBackgroundReturn = null)
 {
     internal async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -34,7 +35,10 @@ internal sealed class SelectionSearch(
                 await delay(cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
             }
+            var restore = prepareBackgroundReturn?.Invoke();
             openUrl(BuildUrl(text, provider));
+            if (restore is not null)
+                await restore(cancellationToken);
             return;
         }
         throw new InvalidOperationException("Seçili metin kopyalanamadı. Önce aranacak metni seçin.");

@@ -23,10 +23,10 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
     private bool _capturing;
     private string _masterShortcut = "Ctrl+Alt+F8";
     private IFeatureUiWindow? _activeIndicator;
-    private sealed class Execution(AutomationCommand command, string processName, CancellationToken cancellation, bool closeTab)
+    private sealed class Execution(AutomationCommand command, string processName, CancellationToken cancellation, bool closeTab, bool backgroundTab = false)
     {
         internal Execution(AutomationCommand command, string processName, CancellationToken cancellation)
-            : this(command, processName, cancellation, false) { }
+            : this(command, processName, cancellation, false, false) { }
         internal string ProcessName { get; } = processName;
         internal CancellationTokenSource Cancellation { get; } = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         internal AutomationRun Run { get; } = new(command);
@@ -34,6 +34,7 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
         internal Task? Pending { get; set; }
         internal AutomationCommand Command { get; } = command;
         internal bool CloseTab { get; set; } = closeTab;
+        internal bool BackgroundTab { get; set; } = backgroundTab;
     }
 
     public string Id => "automation";
@@ -210,7 +211,12 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
                 if (ShouldRegisterChromeShiftSearch(rule, command, occupied, out var shiftShortcut, out var scope))
                 {
                     occupied.Add(shiftShortcut);
-                    _registrations.Add(new ForegroundShortcutBinding(shiftShortcut, scope, () => StartExecution(rule, command, closeTab: true)));
+                    _registrations.Add(new ForegroundShortcutBinding(shiftShortcut, scope, () => StartExecution(rule, command, closeTab: true, backgroundTab: false)));
+                }
+                if (ShouldRegisterBackgroundCtrlSearch(rule, command, occupied, out var ctrlShortcut))
+                {
+                    occupied.Add(ctrlShortcut);
+                    _registrations.Add(new ForegroundShortcutBinding(ctrlShortcut, rule.ProcessName, () => StartExecution(rule, command, closeTab: false, backgroundTab: true)));
                 }
             }
         }
@@ -238,15 +244,30 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
         return true;
     }
 
+    internal static bool ShouldRegisterBackgroundCtrlSearch(
+        AutomationRule rule,
+        AutomationCommand command,
+        IReadOnlySet<AutomationShortcut> occupied,
+        out AutomationShortcut ctrlShortcut)
+    {
+        ctrlShortcut = default!;
+        if (command.Repeat ||
+            !command.Steps.Any(step => step.Kind == "search") ||
+            (command.Shortcut.Modifiers & HotkeyModifiers.Control) != 0)
+            return false;
+        ctrlShortcut = command.Shortcut with { Modifiers = command.Shortcut.Modifiers | HotkeyModifiers.Control };
+        return !occupied.Contains(ctrlShortcut);
+    }
+
     private void ClearRegistrations()
     {
         foreach (var registration in _registrations) registration.Dispose();
         _registrations.Clear();
     }
 
-    private void Trigger(AutomationRule rule, AutomationCommand command) => StartExecution(rule, command, closeTab: false);
+    private void Trigger(AutomationRule rule, AutomationCommand command) => StartExecution(rule, command, closeTab: false, backgroundTab: false);
 
-    private void StartExecution(AutomationRule rule, AutomationCommand command, bool closeTab)
+    private void StartExecution(AutomationRule rule, AutomationCommand command, bool closeTab, bool backgroundTab)
     {
         var scope = closeTab && string.IsNullOrWhiteSpace(rule.ProcessName) ? "chrome.exe" : rule.ProcessName;
         if (!IsActive || _paused || _capturing || !rule.Enabled || !ForegroundApplication.IsFocused(scope)) return;
@@ -254,7 +275,7 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
         {
             if (command.Repeat) RemoveRun(rule.Id);
         }
-        else _running.Add(rule.Id, new Execution(command, scope, _cancellation.Token, closeTab));
+        else _running.Add(rule.Id, new Execution(command, scope, _cancellation.Token, closeTab, backgroundTab));
         if (_running.Count > 0) _timer.Start(); else _timer.Stop();
         PublishState();
     }
@@ -385,8 +406,10 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
                     if (step.Kind == "search")
                     {
                         var closeTab = execution.CloseTab;
+                        var backgroundTab = execution.BackgroundTab;
                         execution.CloseTab = false;
-                        execution.Pending = SearchSelectionAsync(execution.Target, step.Value, closeTab, execution.Cancellation.Token);
+                        execution.BackgroundTab = false;
+                        execution.Pending = SearchSelectionAsync(execution.Target, step.Value, closeTab, backgroundTab, execution.Cancellation.Token);
                     }
                     else SendStep(step);
                 });
@@ -406,7 +429,7 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
 
     private static bool IsDown(int key) => (Native.GetAsyncKeyState(key) & 0x8000) != 0;
 
-    private static Task SearchSelectionAsync(IntPtr target, string provider, bool closeTab, CancellationToken cancellationToken) => new SelectionSearch(
+    private static Task SearchSelectionAsync(IntPtr target, string provider, bool closeTab, bool backgroundTab, CancellationToken cancellationToken) => new SelectionSearch(
         CopySelection,
         GetClipboardSequenceNumber,
         () => Clipboard.ContainsText() ? Clipboard.GetText() : null,
@@ -414,7 +437,8 @@ public sealed class AutomationModule : ITweakModule, IModulePanel
         url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }),
         token => Task.Delay(25, token),
         provider,
-        closeTab ? CloseActiveTab : null).RunAsync(cancellationToken);
+        closeTab ? CloseActiveTab : null,
+        backgroundTab ? () => BackgroundTabReturn.Prepare(target) : null).RunAsync(cancellationToken);
 
     private static void CopySelection() => SendControlChord(0x43, "Seçili metin için kopyalama tuşları gönderilemedi.");
     private static void CloseActiveTab() => SendControlChord(0x57, "Chrome sekmesini kapatma tuşları gönderilemedi.");

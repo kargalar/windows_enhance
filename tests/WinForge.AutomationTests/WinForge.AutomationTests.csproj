@@ -13,6 +13,7 @@
     <Compile Include="../../src/WinForge.Modules.Extras/AutomationCommands.cs" Link="AutomationCommands.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/AutomationModule.cs" Link="AutomationModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/AutomationRule.cs" Link="AutomationRule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/BackgroundTabReturn.cs" Link="BackgroundTabReturn.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ForegroundShortcutBinding.cs" Link="ForegroundShortcutBinding.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/SelectionSearch.cs" Link="SelectionSearch.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/KeyboardInputSender.cs" Link="KeyboardInputSender.cs" />
