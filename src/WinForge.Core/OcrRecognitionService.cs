@@ -144,6 +144,8 @@ public static class OcrRecognitionService
             var winCandidate = new OcrCandidate(winTask.Result, 0.85f, IsWindows: true);
             var tessResult = tessTask.Result;
             var tessCandidate = new OcrCandidate(tessResult.Text, tessResult.Confidence, IsWindows: false);
+            if (Environment.GetEnvironmentVariable("WINFORGE_OCR_DEBUG") == "1")
+                Console.WriteLine($"  WIN='{winCandidate.Text}' | TESS='{tessCandidate.Text}' (conf={tessCandidate.Confidence:F2})");
             return PickHigherScoring(winCandidate, tessCandidate, winHasTurkish);
         }
 

@@ -47,6 +47,10 @@ internal static class OcrChecks
             {
                 var bal = await OcrRecognitionService.RecognizeAsync(img, OcrRecognitionMode.Balanced);
                 var acc = await OcrRecognitionService.RecognizeAsync(img, OcrRecognitionMode.Accurate);
+                var bmp = new byte[img.PixelWidth * img.PixelHeight * 4];
+                img.CopyPixels(bmp, img.PixelWidth * 4, 0);
+                var gray = new byte[img.PixelWidth * img.PixelHeight];
+                for (var i = 0; i < gray.Length; i++) gray[i] = (byte)((29 * bmp[i * 4] + 150 * bmp[i * 4 + 1] + 77 * bmp[i * 4 + 2] + 128) >> 8);
                 Console.WriteLine($"[{name}] expected='{expected}' | balanced='{bal}' | accurate='{acc}'");
             }
 
