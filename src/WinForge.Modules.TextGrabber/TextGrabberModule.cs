@@ -79,15 +79,15 @@ public sealed class TextGrabberModule : ITweakModule
             _selection = null;
 
             if (overlay.Result is not { } rect) return;
-            await Task.Delay(80); // Let the compositor remove the selection tint before OCR capture.
 
-            var (pixels, width, height) = ScreenCapture.Capture(
+            var (pixels, width, height) = overlay.CapturedPixels ?? ScreenCapture.Capture(
                 (int)Math.Round(rect.X),
                 (int)Math.Round(rect.Y),
                 (int)Math.Round(rect.Width),
                 (int)Math.Round(rect.Height));
 
-            var text = await RecognizeAsync(pixels, width, height).ConfigureAwait(true);
+            var text = await OcrRecognitionService.RecognizeBgraAsync(pixels, width, height, OcrRecognitionMode.Accurate)
+                .ConfigureAwait(true);
 
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -122,10 +122,6 @@ public sealed class TextGrabberModule : ITweakModule
         var flat = Regex.Replace(text, @"\s+", " ").Trim();
         return flat.Length <= 160 ? flat : flat[..160].TrimEnd() + "…";
     }
-
-    private static Task<string> RecognizeAsync(byte[] bgra, int width, int height) =>
-        OcrRecognitionService.RecognizeAsync(BitmapSource.Create(width, height, 96, 96,
-            PixelFormats.Bgra32, null, bgra, checked(width * 4)));
 
     private static bool TryCopyToClipboard(string text)
     {

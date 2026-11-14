@@ -220,10 +220,15 @@ internal sealed partial class ClipboardShelfWindow
     {
         Hide(); var overlay = new SelectionOverlay((_context as IFeatureUiContext)?.FeatureUi) { Owner = this }; overlay.ShowDialog();
         if (overlay.Result is not { } area) { Show(); return; }
-        DwmFlush();
-        var (pixels, width, height) = ScreenCapture.Capture((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height);
+        var (pixels, width, height) = overlay.CapturedPixels ?? CaptureWithFlush(area);
         var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixels, width * 4); image.Freeze();
         var item = _capture.ImportBitmap(image, "Ekran görüntüsü"); PresentCapturedImage(item);
+    }
+
+    private (byte[] Pixels, int Width, int Height) CaptureWithFlush(Rect area)
+    {
+        DwmFlush();
+        return ScreenCapture.Capture((int)area.X, (int)area.Y, (int)area.Width, (int)area.Height);
     }
 
     internal void PresentCapturedImage(ClipItem item)

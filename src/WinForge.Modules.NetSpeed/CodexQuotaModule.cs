@@ -75,9 +75,8 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
         private Account[] _accounts = [];
         private ShellVisualNode[] _tiles = [];
         private int _shownIndex = -1;
-        private DateTime _lastHover;
         private DateTime _lastRefresh;
-        private ShellVisualNode? _clock;
+        private ShellVisualNode[] _clocks = [];
         private bool _dragging;
         private bool _mouseWasDown;
         private int _dragStart;
@@ -87,8 +86,8 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
         {
             _read = read;
             _context = context;
-            var surface = new Border { Background = Brush("#F51B2029"), BorderBrush = Brush("#FF414955"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(18), Child = _details };
-            _popup = new Window { Width = 460, SizeToContent = SizeToContent.Height, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+            var surface = new Border { Background = Brush("#F5181818"), BorderBrush = Brush("#FF444444"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(12), Child = _details };
+            _popup = new Window { Width = 380, SizeToContent = SizeToContent.Height, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
                 AllowsTransparency = true, ShowInTaskbar = false, ShowActivated = false, Topmost = true, Background = Brushes.Transparent, Content = surface };
             _timer.Tick += (_, _) => {
                 CheckPointer();
@@ -105,11 +104,11 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
                 _lastTree = DateTime.UtcNow;
                 try {
                     var nodes = _lease.Session.ReadVisualTree();
-                    _clock = nodes.FirstOrDefault(n => n.Name == "WinForgeQuotaText");
+                    _clocks = nodes.Where(n => n.Name == "WinForgeQuotaText").ToArray();
                     _tiles = nodes.Where(n => n.Name.StartsWith("WinForgeQuotaTile", StringComparison.Ordinal)).ToArray();
-                } catch { _clock = null; _tiles = []; }
+                } catch { _clocks = []; _tiles = []; }
             }
-            var over = _clock is { ScreenWidth: > 0, ScreenHeight: > 0 } clock && point.X >= clock.ScreenLeft && point.X < clock.ScreenLeft + clock.ScreenWidth && point.Y >= clock.ScreenTop && point.Y < clock.ScreenTop + clock.ScreenHeight;
+            var over = _clocks.Any(clock => clock.ScreenWidth > 0 && clock.ScreenHeight > 0 && point.X >= clock.ScreenLeft && point.X < clock.ScreenLeft + clock.ScreenWidth && point.Y >= clock.ScreenTop && point.Y < clock.ScreenTop + clock.ScreenHeight);
             if (down && !_mouseWasDown && over)
             {
                 _dragging = true; _dragStart = point.X; _offsetStart = _context.Settings.GetInt("position-left", 0); _popup.Hide();
@@ -124,25 +123,27 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
             }
             if (!down) _dragging = false;
             _mouseWasDown = down;
-            if (over && !_dragging && !down)
+            var hoveredTile = over && !_dragging && !down
+                ? _tiles.FirstOrDefault(n => point.X >= n.ScreenLeft && point.X < n.ScreenLeft + n.ScreenWidth && point.Y >= n.ScreenTop && point.Y < n.ScreenTop + n.ScreenHeight)
+                : null;
+            if (hoveredTile is { } tile)
             {
-                var tile = _tiles.FirstOrDefault(n => point.X >= n.ScreenLeft && point.X < n.ScreenLeft + n.ScreenWidth && point.Y >= n.ScreenTop && point.Y < n.ScreenTop + n.ScreenHeight);
-                var index = tile is null || !int.TryParse(tile.Name["WinForgeQuotaTile".Length..], out var parsed) ? -1 : parsed;
+                var index = !int.TryParse(tile.Name["WinForgeQuotaTile".Length..], out var parsed) ? -1 : parsed;
                 if (index >= 0 && index < _accounts.Length)
                 {
-                    _lastHover = DateTime.UtcNow;
                     if (_shownIndex != index) { _shownIndex = index; BuildDetails(_accounts[index]); }
                     var screen = System.Windows.Forms.Screen.FromPoint(point);
                     var scale = VisualTreeHelper.GetDpi(_popup).DpiScaleX;
-                    _popup.Measure(new System.Windows.Size(_popup.Width, double.PositiveInfinity));
-                    var height = _popup.DesiredSize.Height;
-                    _popup.Left = Math.Max(screen.WorkingArea.Left / scale, Math.Min(tile!.ScreenLeft / scale, screen.WorkingArea.Right / scale - _popup.Width));
-                    var above = (tile.ScreenTop / scale) - height - 8;
-                    _popup.Top = above >= screen.WorkingArea.Top / scale ? above : (tile.ScreenTop + tile.ScreenHeight) / scale + 8;
+                    var content = (FrameworkElement)_popup.Content;
+                    content.Measure(new System.Windows.Size(_popup.Width, double.PositiveInfinity));
+                    var height = content.DesiredSize.Height;
+                    _popup.Left = Math.Max(screen.WorkingArea.Left / scale, Math.Min(tile.ScreenLeft / scale, screen.WorkingArea.Right / scale - _popup.Width));
+                    var above = (tile.ScreenTop / scale) - height;
+                    _popup.Top = above >= screen.WorkingArea.Top / scale ? above : (tile.ScreenTop + tile.ScreenHeight) / scale;
                     if (!_popup.IsVisible) _popup.Show();
                 }
             }
-            else if (_popup.IsVisible && DateTime.UtcNow - _lastHover > TimeSpan.FromSeconds(2) && !_popup.IsMouseOver) _popup.Hide();
+            else if (_popup.IsVisible && !_popup.IsMouseOver) _popup.Hide();
         }
         private void ApplyTaskbar(string text)
         {
@@ -173,7 +174,12 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
             var result = words.Length > 1 ? string.Concat(words[0][0], words[1][0]) : name.Length > 1 ? name[..2] : name;
             return string.IsNullOrWhiteSpace(result) ? "?" : result.ToUpperInvariant();
         }
-        private static WindowInfo? Lowest(Account account) => account.Status is "error" or "expired" ? null : account.Windows.OrderBy(w => w.Remaining).FirstOrDefault();
+        private static WindowInfo? FiveHour(Account account) => account.Status is "error" or "expired" ? null : account.Windows.FirstOrDefault(w => string.Equals(w.Label.Trim(), "5h", StringComparison.OrdinalIgnoreCase));
+        private static string ResetTime(WindowInfo? window)
+        {
+            if (window?.ResetsAt is long ms) try { return DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime().ToString("HH:mm"); } catch (ArgumentOutOfRangeException) { }
+            return string.IsNullOrWhiteSpace(window?.ResetLabel) ? "—" : window.ResetLabel;
+        }
         private static string Countdown(WindowInfo? window)
         {
             if (window?.ResetsAt is not long ms) return "—";
@@ -183,35 +189,35 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
                 return left.TotalDays >= 1 ? $"{(int)left.TotalDays}g {left.Hours}sa" : $"{(int)left.TotalHours}sa {left.Minutes}dk";
             } catch (ArgumentOutOfRangeException) { return "—"; }
         }
-        private static string Accent(WindowInfo? window) => window is null ? "#FF8A929E" : window.Remaining <= 10 ? "#FFFF5D62" : window.Remaining <= 30 ? "#FFFFBA27" : "#FF51E66B";
+        private static string Accent(WindowInfo? window) => "#FFAAAAAA";
         private static TextBlock Label(string text, double size, string color, FontWeight weight) => new() { Text = text, FontSize = size, Foreground = Brush(color), FontWeight = weight, TextTrimming = TextTrimming.CharacterEllipsis };
         private void BuildDetails(Account account)
         {
             _details.Children.Clear();
             var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 14) };
-            var badge = new Border { Background = Brush("#FF3B414C"), CornerRadius = new CornerRadius(8), Padding = new Thickness(11, 8, 11, 8), Margin = new Thickness(0, 0, 12, 0), Child = Label(Initials(account), 18, "#FFFFFFFF", FontWeights.SemiBold) };
+            var badge = new Border { Background = Brush("#FF3B3B3B"), CornerRadius = new CornerRadius(8), Padding = new Thickness(11, 8, 11, 8), Margin = new Thickness(0, 0, 12, 0), Child = Label(Initials(account), 18, "#FFFFFFFF", FontWeights.SemiBold) };
             DockPanel.SetDock(badge, Dock.Left); header.Children.Add(badge);
             var title = new StackPanel(); title.Children.Add(Label("Codex kullanım limitleri", 18, "#FFFFFFFF", FontWeights.SemiBold));
-            title.Children.Add(Label(string.IsNullOrWhiteSpace(account.Alias) ? account.Email : account.Alias + " · " + account.Email, 12, "#FFACB2BC", FontWeights.Normal));
+            title.Children.Add(Label(string.IsNullOrWhiteSpace(account.Alias) ? account.Email : account.Alias + " · " + account.Email, 12, "#FFFFFFFF", FontWeights.Normal));
             header.Children.Add(title); _details.Children.Add(header);
-            if (account.Status is "error" or "expired") _details.Children.Add(Label("Güncellenemedi: " + account.Error, 13, "#FFFFA0A2", FontWeights.Normal));
-            else if (account.Windows.Length == 0) _details.Children.Add(Label("Limit bilgisi bulunamadı.", 13, "#FFACB2BC", FontWeights.Normal));
+            if (account.Status is "error" or "expired") _details.Children.Add(Label("Güncellenemedi: " + account.Error, 13, "#FFFFFFFF", FontWeights.Normal));
+            else if (account.Windows.Length == 0) _details.Children.Add(Label("Limit bilgisi bulunamadı.", 13, "#FFFFFFFF", FontWeights.Normal));
             else foreach (var window in account.Windows)
             {
-                _details.Children.Add(new Border { Height = 1, Background = Brush("#FF383E48"), Margin = new Thickness(0, 0, 0, 12) });
+                _details.Children.Add(new Border { Height = 1, Background = Brush("#FF383838"), Margin = new Thickness(0, 0, 0, 12) });
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 12) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(135) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 var description = new StackPanel(); description.Children.Add(Label(window.Label, 14, "#FFFFFFFF", FontWeights.SemiBold));
-                description.Children.Add(Label($"Kalan %{Math.Clamp(window.Remaining, 0, 100):0}", 12, "#FFACB2BC", FontWeights.Normal)); row.Children.Add(description);
-                var progress = new System.Windows.Controls.ProgressBar { Minimum = 0, Maximum = 100, Value = Math.Clamp(window.Remaining, 0, 100), Height = 8, Margin = new Thickness(8, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Brush(Accent(window)), Background = Brush("#FF3B414C"), BorderThickness = new Thickness(0) };
+                description.Children.Add(Label($"Kalan %{Math.Clamp(window.Remaining, 0, 100):0}", 12, "#FFFFFFFF", FontWeights.Normal)); row.Children.Add(description);
+                var progress = new System.Windows.Controls.ProgressBar { Minimum = 0, Maximum = 100, Value = Math.Clamp(window.Remaining, 0, 100), Height = 8, Margin = new Thickness(8, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Brush(Accent(window)), Background = Brush("#FF3B3B3B"), BorderThickness = new Thickness(0) };
                 Grid.SetColumn(progress, 1); row.Children.Add(progress);
                 var reset = new StackPanel { HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
                 reset.Children.Add(Label(Countdown(window), 13, "#FFFFFFFF", FontWeights.SemiBold));
                 var resetText = window.ResetLabel;
                 if (window.ResetsAt is long ms) try { resetText = DateTimeOffset.FromUnixTimeMilliseconds(ms).ToLocalTime().ToString("dd.MM HH:mm"); } catch (ArgumentOutOfRangeException) { }
-                reset.Children.Add(Label(resetText, 11, "#FFACB2BC", FontWeights.Normal));
+                if (window.Remaining > 0) reset.Children.Add(Label(resetText, 11, "#FFFFFFFF", FontWeights.Normal));
                 Grid.SetColumn(reset, 2); row.Children.Add(reset); _details.Children.Add(row);
             }
         }
@@ -220,8 +226,9 @@ public sealed class CodexQuotaModule : ITweakModule, IModulePanel
             _lastRefresh = DateTime.UtcNow;
             _accounts = _read().Where(a => a.Visible).ToArray();
             var items = _accounts.Select(account => {
-                var window = Lowest(account);
-                return new { initials = Initials(account), percent = window is null ? "—" : $"%{Math.Clamp(window.Remaining, 0, 100):0}", countdown = "◷ " + Countdown(window), color = Accent(window) };
+                var window = FiveHour(account);
+                var exhausted = window is not null && window.Remaining <= 0;
+                return new { initials = Initials(account), percent = exhausted ? "" : window is null ? "—" : $"%{Math.Clamp(window.Remaining, 0, 100):0}", countdown = "◷ " + (exhausted ? Countdown(window) : ResetTime(window)), color = Accent(window) };
             }).ToArray();
             ApplyTaskbar(JsonSerializer.Serialize(items));
             if (_shownIndex >= 0 && _shownIndex < _accounts.Length) BuildDetails(_accounts[_shownIndex]);

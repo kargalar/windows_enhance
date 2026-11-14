@@ -117,7 +117,12 @@ internal sealed class CaptureEditor
                     new ImagePreviewWindow(ReadImage(payload), true, _featureUi);
                     break;
                 case "capture-editor.ocr":
-                    var text = await OcrRecognitionService.RecognizeAsync(ReadImage(payload));
+                    var text = await OcrRecognitionService.RecognizeAsync(ReadImage(payload), OcrRecognitionMode.Accurate);
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        SetStatus("Metin bulunamadı.");
+                        break;
+                    }
                     Clipboard.SetText(text);
                     SetStatus("OCR metni panoya kopyalandı.");
                     break;

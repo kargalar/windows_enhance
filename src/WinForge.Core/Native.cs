@@ -216,6 +216,8 @@ public static class Native
         return string.IsNullOrEmpty(path) ? null : Path.GetFileNameWithoutExtension(path);
     }
 
+    [DllImport("dwmapi.dll")] public static extern int DwmFlush();
+
     public static string TitleOf(IntPtr hWnd)
     {
         var length = GetWindowTextLength(hWnd);

@@ -4,7 +4,7 @@
 
 # WinForge
 
-**Görev Çubuğu → Codex Limitleri:** AI Limit Status eklentisinin yerel listesindeki görünür Codex hesaplarını görev çubuğunda metin olarak gösterir. Her hesabın en düşük kalan yüzdesi ve o pencerenin yenilenmesine kalan süre yan yana listelenir. Gösterge fareyle sürüklenebilir; ayrıntı ekranında soldan uzaklık da ayarlanabilir. Hesap adları ve görünürlük yönetim ekranında düzenlenir; oturumlar eklentide yönetilir. Eklenti çalışmadığında son kaydedilen veriler gösterilir. Bu değerler Codex limitleridir.
+**Görev Çubuğu → Codex Limitleri:** AI Limit Status eklentisinin yerel listesindeki görünür Codex hesaplarını görev çubuğunda metin olarak gösterir. Her hesabın beş saatlik kalan yüzdesi ve yenilenme saati gösterilir; limit bittiğinde yenilenmeye kalan süre gösterilir. Haftalık limit ve diğer ayrıntılar hesap taşının üzerine gelince açılır. Gösterge fareyle sürüklenebilir; ayrıntı ekranında soldan uzaklık da ayarlanabilir. Hesap adları ve görünürlük yönetim ekranında düzenlenir; oturumlar eklentide yönetilir. Eklenti çalışmadığında son kaydedilen veriler gösterilir. Bu değerler Codex limitleridir.
 
 Son modül düzeltmeleri, klasör seçenekleri ve doğrulama sınırları: [Modül düzeltmeleri](docs/MODULE_FIXES.md).
 
