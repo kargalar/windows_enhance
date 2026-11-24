@@ -13,6 +13,8 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider, ITile
     private const uint GW_OWNER = 4;
     private const long WS_POPUP = unchecked((int)0x80000000);
     private const long WS_OVERLAPPEDWINDOW = 0x00CF0000;
+    private const long WS_MAXIMIZE = 0x01000000;
+    private const long WS_MINIMIZE = 0x20000000;
     private const long WS_THICKFRAME = 0x00040000;
     private const long WS_EX_TOPMOST = 0x00000008;
     private const long WS_EX_TOOLWINDOW = 0x00000080;
@@ -31,7 +33,6 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider, ITile
     private const uint MONITOR_DEFAULTTONEAREST = 2;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_FRAMECHANGED = 0x0020;
-    private const uint SWP_SHOWWINDOW = 0x0040;
     private const int AutoTileMode = 0;
     private const int ZoneMoveMode = 1;
     private const int DefaultZoneMergeDistance = 24;

@@ -166,14 +166,21 @@ public partial class TilingModule
 
         var style = Native.GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
         var extendedStyle = Native.GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-        _fullscreenWindows[hwnd] = new FullscreenWindowState(style, extendedStyle, placement);
+        _fullscreenWindows[hwnd] = new FullscreenWindowState(style & ~(WS_MAXIMIZE | WS_MINIMIZE), extendedStyle, placement);
 
-        ShowWindow(hwnd, SW_RESTORE);
-        var fullscreenStyle = (style & ~WS_OVERLAPPEDWINDOW) | WS_POPUP;
+        if (IsZoomed(hwnd) || Native.IsIconic(hwnd))
+        {
+            ShowWindow(hwnd, SW_RESTORE);
+            var deadline = Environment.TickCount64 + 150;
+            while (IsZoomed(hwnd) && Environment.TickCount64 < deadline) Thread.Sleep(5);
+            style = Native.GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
+        }
+
+        var fullscreenStyle = (style & ~(WS_OVERLAPPEDWINDOW | WS_MAXIMIZE | WS_MINIMIZE)) | WS_POPUP;
         Native.SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(fullscreenStyle));
         if (!Native.SetWindowPos(hwnd, IntPtr.Zero, bounds.Left, bounds.Top,
                 bounds.Right - bounds.Left, bounds.Bottom - bounds.Top,
-                SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW))
+                SWP_NOZORDER | SWP_FRAMECHANGED))
         {
             RestoreFullscreenWindow(hwnd, restorePlacement: true);
             return;

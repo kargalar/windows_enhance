@@ -302,6 +302,7 @@ internal static class WindowControlParityChecks
             TestMenuAndZoom(first, options, errors, check);
             TestQueuedWheelModifiers(first, options, errors, check);
             TestPublishedModifierEdges(first, second, options, errors, check);
+            TestToggleFullscreen(first, options, errors, check);
 
             var masterMuted = false;
             var endpointWrites = 0;
@@ -736,6 +737,67 @@ internal static class WindowControlParityChecks
         actions.Execute(second, WindowAction.MinimizeOthers, point, options);
         check(WaitUntil(() => !Native.IsIconic(first) && !Native.IsIconic(second)),
             "Repeating minimize-others on the same exact owner restores the windows saved for that owner");
+    }
+
+    private static void TestToggleFullscreen(IntPtr window, WindowControlOptions options, List<Exception> errors, Action<bool, string> check)
+    {
+        var original = Bounds(window);
+        var originalStyle = (long)Native.GetWindowLongPtr(window, WindowStyleIndex);
+        var point = new POINT(original.X + 40, original.Y + 40);
+        var work = WindowActions.WorkArea(window, point);
+        var monitorInfo = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        GetMonitorInfo(MonitorFromPoint(point, 2), ref monitorInfo);
+        var monitor = WindowBounds.From(monitorInfo.Monitor);
+
+        using (var engine = new WindowControlEngine(options, errors.Add))
+        {
+            engine.Execute(window, WindowAction.ToggleFullscreen, point);
+            check(WaitUntil(() => Bounds(window) == monitor &&
+                ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & CaptionStyle) == 0 && !IsZoomed(window)),
+                "ToggleFullscreen makes a normal window borderless fullscreen over the target monitor");
+
+            engine.Execute(window, WindowAction.ToggleFullscreen, point);
+            check(WaitUntil(() => Bounds(window) == original &&
+                (long)Native.GetWindowLongPtr(window, WindowStyleIndex) == originalStyle),
+                "Repeating ToggleFullscreen restores the normal window bounds and original frame style");
+
+            ShowWindowAsync(window, Maximize);
+            WaitUntil(() => IsZoomed(window));
+            engine.Execute(window, WindowAction.ToggleFullscreen, point);
+            check(WaitUntil(() => Bounds(window) == monitor && !IsZoomed(window) &&
+                ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & 0x01000000) == 0),
+                "ToggleFullscreen on a maximized window strips WS_MAXIMIZE and enters true fullscreen");
+
+            engine.Execute(window, WindowAction.ToggleFullscreen, point);
+            check(WaitUntil(() => IsZoomed(window) &&
+                ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & CaptionStyle) != 0),
+                "Repeating ToggleFullscreen from a previously maximized window restores its maximized state");
+
+            ShowWindowAsync(window, Restore);
+            WaitUntil(() => !IsZoomed(window));
+            WindowActions.Place(window, original);
+            WaitUntil(() => Bounds(window) == original);
+
+            engine.Execute(window, WindowAction.ToggleFullscreen, point);
+            WaitUntil(() => Bounds(window) == monitor);
+            var corner = new WindowBounds(work.X, work.Y, work.Width / 2, work.Height / 2);
+            WindowActions.Place(window, corner);
+            WaitUntil(() => Bounds(window) == corner);
+
+            var cornerPoint = new POINT(corner.X + 40, corner.Y + 40);
+            engine.Execute(window, WindowAction.ToggleFullscreen, cornerPoint);
+            check(WaitUntil(() => Bounds(window) == monitor &&
+                ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & CaptionStyle) == 0),
+                "ToggleFullscreen enters fullscreen on the first press even if a prior fullscreen window was moved to a corner");
+
+            engine.Execute(window, WindowAction.ToggleFullscreen, cornerPoint);
+            check(WaitUntil(() => Bounds(window) == corner &&
+                (long)Native.GetWindowLongPtr(window, WindowStyleIndex) == originalStyle),
+                "Exiting fullscreen after a stale-state re-entry preserves original frame styles and returns to the corner bounds");
+        }
+
+        WindowActions.Place(window, original);
+        WaitUntil(() => Bounds(window) == original);
     }
 
     private static void DoublePress(WindowControlEngine engine, IntPtr window, WindowAction action, POINT point, WindowGestureModifiers modifiers)

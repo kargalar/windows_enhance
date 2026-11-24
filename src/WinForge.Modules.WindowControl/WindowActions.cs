@@ -13,8 +13,9 @@ internal sealed class WindowActions : IDisposable
     private const uint ActivationTimeoutMilliseconds = 150;
     private const long OverlappedWindowStyle = 0x00CF0000;
     private const long PopupWindowStyle = unchecked((int)0x80000000);
+    private const long MaximizeStyle = 0x01000000;
+    private const long MinimizeStyle = 0x20000000;
     private const uint FrameChanged = 0x0020;
-    private const uint ShowWindow = 0x0040;
     private readonly Dictionary<IntPtr, SavedBounds> _rolled = new();
     private readonly Dictionary<IntPtr, SavedBounds> _snapped = new();
     private readonly Dictionary<IntPtr, FullscreenState> _fullscreen = new();
@@ -357,14 +358,14 @@ internal sealed class WindowActions : IDisposable
         if (Native.GetWindowThreadProcessId(window, out _) == GetCurrentThreadId())
         {
             ShowWindowSynchronously(window, Restore);
-            if (IsZoomed(window))
+            if (IsZoomed(window) || Native.IsIconic(window))
                 throw new InvalidOperationException("Büyütülmüş pencere yerleştirmeden önce normal boyutuna döndürülemedi.");
             return;
         }
         ShowWindowAsync(window, Restore);
         var deadline = Environment.TickCount64 + ActivationTimeoutMilliseconds;
-        while (IsZoomed(window) && Environment.TickCount64 < deadline) Thread.Sleep(5);
-        if (IsZoomed(window))
+        while ((IsZoomed(window) || Native.IsIconic(window)) && Environment.TickCount64 < deadline) Thread.Sleep(5);
+        if (IsZoomed(window) || Native.IsIconic(window))
             throw new InvalidOperationException("Büyütülmüş pencere yerleştirmeden önce normal boyutuna döndürülemedi.");
     }
 
@@ -430,42 +431,93 @@ internal sealed class WindowActions : IDisposable
         }
     }
 
+    private static bool BoundsClose(WindowBounds actual, WindowBounds expected, int tolerance) =>
+        Math.Abs(actual.X - expected.X) <= tolerance &&
+        Math.Abs(actual.Y - expected.Y) <= tolerance &&
+        Math.Abs(actual.Right - expected.Right) <= tolerance &&
+        Math.Abs(actual.Bottom - expected.Bottom) <= tolerance;
+
+    private static bool IsStillFullscreen(IntPtr window, FullscreenState state) =>
+        state.Identity.IsCurrent &&
+        !IsZoomed(window) &&
+        !Native.IsIconic(window) &&
+        Native.GetWindowRect(window, out var rect) &&
+        BoundsClose(WindowBounds.From(rect), state.FullscreenBounds, 4) &&
+        (Native.GetWindowLongPtr(window, WindowStyleIndex).ToInt64() & CaptionStyle) == 0;
+
     private void ToggleFullscreen(IntPtr window, POINT point)
     {
-        if (_fullscreen.ContainsKey(window))
+        long? preservedStyle = null;
+        long? preservedExtendedStyle = null;
+        if (_fullscreen.TryGetValue(window, out var existing))
         {
-            RestoreFullscreen(window);
-            return;
+            if (IsStillFullscreen(window, existing))
+            {
+                RestoreFullscreen(window);
+                return;
+            }
+            _fullscreen.Remove(window);
+            if (existing.Identity.IsCurrent)
+            {
+                var styleBeforeToggle = Native.GetWindowLongPtr(window, WindowStyleIndex).ToInt64();
+                if ((styleBeforeToggle & OverlappedWindowStyle) == 0 && (styleBeforeToggle & PopupWindowStyle) != 0)
+                {
+                    preservedStyle = existing.Style;
+                    preservedExtendedStyle = existing.ExtendedStyle;
+                }
+            }
         }
+
+        var identity = WindowIdentity.Capture(window);
+        if (identity is null) return;
 
         var placement = new WindowPlacement { Length = Marshal.SizeOf<WindowPlacement>() };
         if (!GetWindowPlacement(window, ref placement)) throw new Win32Exception(Marshal.GetLastWin32Error());
 
+        var wasMaximized = IsZoomed(window);
+        var wasIconic = Native.IsIconic(window);
+        WindowBounds? originalBounds = !wasMaximized && !wasIconic && Native.GetWindowRect(window, out var currentRect)
+            ? WindowBounds.From(currentRect)
+            : null;
+
         var monitor = MonitorFromPoint(point, 2);
         var monitorInfo = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
         if (!GetMonitorInfo(monitor, ref monitorInfo)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        var targetBounds = WindowBounds.From(monitorInfo.Monitor);
 
-        var style = Native.GetWindowLongPtr(window, WindowStyleIndex).ToInt64();
-        var extendedStyle = Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64();
-        _fullscreen[window] = new FullscreenState(style, extendedStyle, placement);
+        var currentStyle = Native.GetWindowLongPtr(window, WindowStyleIndex).ToInt64();
+        var currentExtendedStyle = Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64();
+        var savedStyle = (preservedStyle ?? currentStyle) & ~(MaximizeStyle | MinimizeStyle);
+        var savedExtendedStyle = preservedExtendedStyle ?? currentExtendedStyle;
 
-        ShowWindowSynchronously(window, Restore);
-        Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr((style & ~OverlappedWindowStyle) | PopupWindowStyle));
-        if (!Native.SetWindowPos(window, IntPtr.Zero, monitorInfo.Monitor.Left, monitorInfo.Monitor.Top,
-                monitorInfo.Monitor.Right - monitorInfo.Monitor.Left, monitorInfo.Monitor.Bottom - monitorInfo.Monitor.Top,
-                NoZOrder | FrameChanged | ShowWindow))
+        if (wasMaximized || wasIconic)
+        {
+            RestoreBeforeResize(window);
+            SendWindowMessageTimeout(window, 0, IntPtr.Zero, IntPtr.Zero, Native.SMTO_ABORTIFHUNG, ActivationTimeoutMilliseconds, out _);
+            currentStyle = Native.GetWindowLongPtr(window, WindowStyleIndex).ToInt64();
+        }
+
+        _fullscreen[window] = new FullscreenState(identity, savedStyle, savedExtendedStyle, placement, wasMaximized, originalBounds, targetBounds);
+
+        var fullscreenStyle = (currentStyle & ~(OverlappedWindowStyle | MaximizeStyle | MinimizeStyle)) | PopupWindowStyle;
+        Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr(fullscreenStyle));
+        if (!Native.SetWindowPos(window, IntPtr.Zero, targetBounds.X, targetBounds.Y, targetBounds.Width, targetBounds.Height,
+                NoZOrder | FrameChanged))
         {
             var error = Marshal.GetLastWin32Error();
             RestoreFullscreen(window);
             throw new Win32Exception(error);
         }
 
+        if (Native.GetWindowRect(window, out var actual) && !BoundsClose(WindowBounds.From(actual), targetBounds, 2))
+            Native.SetWindowPos(window, IntPtr.Zero, targetBounds.X, targetBounds.Y, targetBounds.Width, targetBounds.Height, NoZOrder);
+
         Native.SetForegroundWindow(window);
     }
 
     private void RestoreFullscreen(IntPtr window)
     {
-        if (!_fullscreen.Remove(window, out var state) || !Native.IsWindow(window)) return;
+        if (!_fullscreen.Remove(window, out var state) || !state.Identity.IsCurrent) return;
 
         Native.SetWindowLongPtr(window, WindowStyleIndex, new IntPtr(state.Style));
         var currentTopmost = Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE).ToInt64() & Native.WS_EX_TOPMOST;
@@ -475,6 +527,12 @@ internal sealed class WindowActions : IDisposable
         var placement = state.Placement;
         placement.Length = Marshal.SizeOf<WindowPlacement>();
         SetWindowPlacement(window, ref placement);
+        if (!state.WasMaximized && state.OriginalBounds is { } originalBounds &&
+            Native.GetWindowRect(window, out var restoredRect) && !BoundsClose(WindowBounds.From(restoredRect), originalBounds, 2))
+        {
+            Native.SetWindowPos(window, IntPtr.Zero, originalBounds.X, originalBounds.Y, originalBounds.Width, originalBounds.Height,
+                NoZOrder | Native.SWP_NOACTIVATE);
+        }
     }
 
     private static SavedBounds Save(IntPtr window, WindowBounds bounds) =>
@@ -502,7 +560,8 @@ internal sealed class WindowActions : IDisposable
     }
 
     private sealed record SavedBounds(WindowIdentity Identity, WindowBounds Bounds);
-    private readonly record struct FullscreenState(long Style, long ExtendedStyle, WindowPlacement Placement);
+    private readonly record struct FullscreenState(WindowIdentity Identity, long Style, long ExtendedStyle, WindowPlacement Placement,
+        bool WasMaximized, WindowBounds? OriginalBounds, WindowBounds FullscreenBounds);
     private sealed record WindowIdentity(IntPtr Window, uint ProcessId, long StartTicks)
     {
         internal bool IsCurrent
