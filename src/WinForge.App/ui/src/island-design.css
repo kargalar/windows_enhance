@@ -88,7 +88,7 @@ html { background: var(--island-base); }
 .toggle.on { border-color: #c5d3ff; background: #c5d3ff; }
 .toggle.on span { transform: translateX(15px); background: #161922; }
 .white-control { border-color: #ffffff17; border-radius: 16px; color: #efeff3; background: #ffffff07; }
-.white-control:focus { border-color: #a5baff70; box-shadow: 0 0 0 3px #a5baff0d; }
+.white-control:focus { border-color: var(--muted); }
 .white-control option { color: #efeff3; background: #191a1f; }
 .value-pill { border-color: #ffffff14; background: #ffffff0b; color: #d5dfff; }
 .primary-button { background: #e7eaff; border-color: #e7eaff; color: #131620; font-size: 10px; }
@@ -112,6 +112,7 @@ html { background: var(--island-base); }
 .feature-root:not(.feature-root-island) :is(button, input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { border-radius: 14px; transition: background var(--motion-quick), border-color var(--motion-quick), transform var(--motion-surface) var(--ease-island); }
 .feature-root:not(.feature-root-island) button:active:not(:disabled) { transform: scale(.97); }
 .feature-root:not(.feature-root-island) :is(button, input, select, textarea):focus-visible { outline: 2px solid #a5baff; outline-offset: 2px; }
+.feature-root:not(.feature-root-island) :is(textarea, input:where(:not([type]), [type=text], [type=search], [type=number], [type=password], [type=url], [type=date], [type=time])):focus-visible { outline-color: var(--tool-muted, var(--island-muted)); outline-offset: -2px; }
 .feature-root :is(.history-detail, .display-monitor) { border-radius: 20px; border-color: #ffffff14; background-color: #ffffff04; }
 .feature-root :is(.capture-tool, .history-row) { border-radius: 18px; }
 .defaults-panel { background: var(--island-base); padding: 26px; }

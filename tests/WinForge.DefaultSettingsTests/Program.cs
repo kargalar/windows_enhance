@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Microsoft.Win32;
 using WinForge.Core;
 using WinForge.Modules.Extras;
 
@@ -18,6 +19,7 @@ internal static class Program
             TestAssociations();
             TestPanels(root);
             TestDeferredPanels(root);
+            TestWindowsSecurityNotifications(root);
             Console.WriteLine($"PASS: {_checks} default settings checks; no real Windows settings changed.");
         }
         finally
@@ -127,6 +129,56 @@ internal static class Program
         module.GetPanelState();
         Check(module.Reads == 5, "A failed initial read can be retried without restarting the module.");
         module.Deactivate();
+    }
+
+    private static void TestWindowsSecurityNotifications(string root)
+    {
+        var testKey = @"Software\WinForge.DefaultSettingsTests\" + Guid.NewGuid().ToString("N");
+        var policyPath = $@"{testKey}\Policy";
+        var statePath = $@"{testKey}\State";
+        const string valueName = "DisableEnhancedNotifications";
+        using var registry = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Registry64);
+        var context = new TestContext(root);
+        WindowsSecurityNotificationsModule LoadModule()
+        {
+            var module = new WindowsSecurityNotificationsModule(RegistryHive.CurrentUser, policyPath, statePath);
+            module.Initialize(context);
+            return module;
+        }
+
+        try
+        {
+            using var policy = registry.CreateSubKey(policyPath);
+            policy.SetValue("UnrelatedValue", 42, RegistryValueKind.DWord);
+            var module = LoadModule();
+            Check(!module.IsActive && module.IsPersistent && policy.GetValue(valueName) is null,
+                "Windows Security notification module starts off and uses a persistent policy when enabled.");
+            module.Activate();
+            Check(module.IsActive && policy.GetValue(valueName) is 1 && policy.GetValueKind(valueName) == RegistryValueKind.DWord,
+                "Enabling configures the noncritical notification policy.");
+            var reopened = LoadModule();
+            Check(reopened.IsActive, "A new instance recognizes the policy applied by WinForge.");
+            reopened.Deactivate();
+            Check(!reopened.IsActive && policy.GetValue(valueName) is null && policy.GetValue("UnrelatedValue") is 42,
+                "Disabling after restart restores the unconfigured policy and preserves unrelated values.");
+
+            foreach (var existing in new[] { 0, 1 })
+            {
+                policy.SetValue(valueName, existing, RegistryValueKind.DWord);
+                var managed = LoadModule();
+                Throws(managed.Activate, "An existing notification policy cannot be taken over.");
+                managed.Deactivate();
+                Check(!managed.IsActive && Equals(policy.GetValue(valueName), existing), "Existing policy is preserved.");
+            }
+
+            policy.DeleteValue(valueName);
+            module = LoadModule();
+            module.Activate();
+            policy.SetValue(valueName, 0, RegistryValueKind.DWord);
+            module.Deactivate();
+            Check(!module.IsActive && policy.GetValue(valueName) is 0, "Disabling preserves a policy changed externally.");
+        }
+        finally { registry.DeleteSubKeyTree(testKey, throwOnMissingSubKey: false); }
     }
 
     private sealed class DeferredPanelFixture : DefaultSettingsModule

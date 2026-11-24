@@ -13,6 +13,7 @@ export function moduleIcon(module: Module) {
   if (/taskbar|görev çubuğu/.test(text)) return 'taskbar';
   if (/window|pencere|tiling/.test(text)) return 'windows';
   if (/text|metin|ocr/.test(text)) return 'text';
+  if (module.id === 'clipboard-history') return 'files';
   if (/color|renk/.test(text)) return 'pipette';
   if (/rename|adlandır/.test(text)) return 'files';
   if (/media|medya|ses|volume|sound/.test(text)) return 'volume';

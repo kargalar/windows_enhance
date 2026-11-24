@@ -15,5 +15,6 @@
     <Compile Include="../../src/WinForge.Modules.Extras/DefaultSettingsModule.cs" Link="DefaultSettingsModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/DefaultPathsModule.cs" Link="DefaultPathsModule.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/DefaultAppsModule.cs" Link="DefaultAppsModule.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/WindowsSecurityNotificationsModule.cs" Link="WindowsSecurityNotificationsModule.cs" />
   </ItemGroup>
 </Project>

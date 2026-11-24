@@ -327,22 +327,12 @@ class FolderSizeEngine {
                 }
             }
         }
-        bool hasDescendantWatcher{};
-        for (auto const& [candidatePath, entry] : entries_) {
-            (void)candidatePath;
-            if (entry->watch && entry->watch->Valid() && IsPathWithin(path, entry->watch->Root())) {
-                hasDescendantWatcher = true;
-                break;
-            }
-        }
         auto root = hasSiblingWatcher ? parent : path;
         auto watcher = std::make_shared<DirectoryWatch>(root);
         if (!watcher->Valid()) return nullptr;
-        for (auto const& [candidatePath, entry] : entries_) {
-            if (entry->retired || !IsPathWithin(root, candidatePath)) continue;
-            if (candidatePath == path || hasSiblingWatcher || hasDescendantWatcher || !entry->watch)
-                entry->watch = watcher;
-        }
+        // Do not replace another entry's watcher: it may contain unread changes
+        // that occurred before the new watcher was armed. New requests can still
+        // share this covering watcher, while existing entries keep their history.
         return watcher;
     }
 

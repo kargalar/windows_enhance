@@ -11,6 +11,7 @@ const { act, createElement: h } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const server = await createTestServer();
 const { FeatureApp } = await server.ssrLoadModule('/src/features/FeatureApp.tsx');
+const { PcHistoryPanel } = await server.ssrLoadModule('/src/PcHistoryPanel.tsx');
 after(async () => { await server.close(); await window.happyDOM.close(); });
 
 test('PC History shows network totals and refreshes to an empty date range', async () => {
@@ -34,5 +35,45 @@ test('PC History shows network totals and refreshes to an empty date range', asy
     assert.match(container.querySelector('.statistics-summary').textContent, /Toplam: 0 B/);
   } finally {
     await act(async () => root.unmount()); container.remove();
+  }
+});
+
+test('PC History requests the selected statistics section and page', async () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  const commands = [];
+  const state = {
+    kind: 'pc-history', search: '', app: '', tag: '', from: '', until: '', offset: 0, section: 'history',
+    statisticsOffset: 0, loading: true, error: null, summary: null, rows: [], hasMore: false,
+    selected: null, preview: null, statistics: [], statisticsTotal: 0, maximumApplicationSeconds: 1,
+  };
+  const render = patch => act(async () => root.render(h(PcHistoryPanel, {
+    state: { ...state, ...patch }, command: (action, data) => commands.push([action, data]),
+  })));
+  const button = label => [...container.querySelectorAll('button')].find(node => node.textContent.includes(label));
+
+  try {
+    await render({});
+    assert.match(container.querySelector('[role=status]').textContent, /yükleniyor/);
+    assert.doesNotMatch(container.textContent, /Bu aralıkta kayıt bulunamadı/);
+    assert.deepEqual(commands, []);
+    await act(async () => button('Kullanım istatistikleri').click());
+    assert.deepEqual(commands.pop(), ['section', { section: 'apps' }]);
+    await render({ section: 'apps', loading: false });
+    await act(async () => button('Siteler ve klasörler').click());
+    assert.deepEqual(commands.pop(), ['section', { section: 'contexts' }]);
+
+    const statistics = Array.from({ length: 100 }, (_, index) => ({
+      date: '03.11.2026', app: 'browser.exe', type: 'website', context: `https://example.test/${index}`, seconds: 60,
+    }));
+    await render({ section: 'contexts', loading: false, statistics, statisticsTotal: 125 });
+    assert.equal(container.querySelectorAll('.pc-table > div').length, 100);
+    assert.ok(button('Önceki').disabled);
+    await act(async () => button('Sonraki').click());
+    assert.deepEqual(commands.pop(), ['statistics-page', { delta: 100 }]);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
   }
 });

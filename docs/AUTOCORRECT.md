@@ -1,5 +1,66 @@
 # Otomatik düzeltme
 
+## Ayrı kaynaklı değerlendirme ve yanlış düzeltme maliyeti
+
+Önceden eşik ayarında kullanılan TurkishTweets kümesi bağımsız son test değildir.
+Ek değerlendirme için [TDD sentetik yazım benchmark'ının](https://github.com/tdd-ai/spell-checking-and-correction/tree/9821a06ccae28af4ece5859370794c662f84601e/evaluation/data)
+`official_test_v2.csv` dosyası kullanılır. Bu kaynak hataları yapay üretir ve
+bağlam içermez; tweet veya gerçek kullanıcı deneyimini temsil ettiği varsayılmaz.
+Kaynak kelimeler motorun sözlük ve eğitim verileriyle kesişebilir; bağımsızlık
+burada **eşik ayarında kullanılmamış değerlendirme örneklerini** ifade eder,
+eğitim verilerinden tamamen ayrık kelime dağarcığını değil. Kaynağın kullanım
+koşulları ayrıca incelenmelidir; veri uygulama veya depoya kopyalanmaz.
+
+Sabit SHA-256 doğrulaması ve referans kelimeye göre gruplanmış %70/%30 hash
+ayrımıyla aynı hedefin farklı bozulmaları bölümler arasında paylaşılmaz. Boş
+referanslı 1.500 rastgele/yabancı kelime bir düzeltme hedefi olmadığından dışlanır.
+Bölümler örnek sayısına göre değil, hash gruplarına göre belirlenir.
+Geliştirme 5.972, test 2.528 satırdır. Betik çiftleri aynen tutar; tekrarlar
+bağımsız örnek varsayılmamalıdır.
+
+```powershell
+git clone https://github.com/tdd-ai/spell-checking-and-correction.git work/corpus/tdd-spell
+git -C work/corpus/tdd-spell checkout 9821a06ccae28af4ece5859370794c662f84601e
+python scripts/prepare-autocorrect-evaluation.py work/corpus/tdd-spell/evaluation/data/official_test_v2.csv work/corpus/autocorrect-independent
+& tests/WinForge.RegressionTests/bin/x64/Release/net10.0-windows10.0.19041.0/WinForge.RegressionTests.exe --autocorrect-independent-benchmark work/corpus/autocorrect-independent/tdd-test.tsv
+```
+
+Üretilen geliştirme/test dosyalarının SHA-256 değerleri sırasıyla
+`042c2ef078d333112a56b199b30a88d49c9b3d9ddff5ddc1a68df5a816533019` ve
+`3529225c9cd4dbc72ef2f8fbdd6e77740611fa471ad95fb49cda77c8e1ae810f`.
+Ölçüm üretim motorunu Türkçe, bağlamsız ve kişiselleştirme kapalı çağırır;
+klavye kancası, en kısa kelime ayarı ve uygulama davranışı ölçülmez.
+
+Seçim maliyeti varsayımı: kaçırılan hata 1, zararlı değişiklik 5 birimdir.
+Yanlış hedefe çevrilmiş hata hem kaçırılmış hem zararlı sayılır (6 birim).
+Bu katsayı kullanıcı davranışından ölçülmüş değildir; farklı bir maliyet tercihi
+farklı eşik seçebilir. Doğruluk sütunu tüm değişikliklerde doğru hedef oranıdır;
+değiştirilen sağlam kelimeler de paydadır.
+
+| Bölüm ve birincil/uzun kuyruk marjı | Hatalar: doğru / yanlış / atlanan | Sağlam: değişen / toplam | Değişiklik doğruluğu | Maliyet |
+|---|---:|---:|---:|---:|
+| Geliştirme, önceki 0,30 / 0,50 | 1.959 / 569 / 1.347 | 24 / 2.097 | %76,76 | 4.881 |
+| Geliştirme, 0,50 / 0,50 | 1.895 / 437 / 1.543 | 23 / 2.097 | %80,47 | 4.280 |
+| Geliştirme, 0,70 / 0,70 | 1.693 / 349 / 1.833 | 21 / 2.097 | %82,06 | 4.032 |
+| Ayrı test, önceki 0,30 / 0,50 | 819 / 226 / 568 | 5 / 915 | %78,00 | 1.949 |
+| Ayrı test, seçilen 0,50 / 0,50 | 786 / 181 / 646 | 5 / 915 | %80,86 | 1.757 |
+
+0,70 maliyeti daha da düşürse de mevcut `gidicektin → gidecektin` regresyonunu
+bozduğu için seçilmedi. 0,50 geliştirme ölçümünde maliyeti düşürüp mevcut
+otomatik düzeltme kontrollerini korudu. Test sonucunda doğruluk artarken hata
+recall'ı %50,77'den %48,73'e düştü: iyileşme daha güvenilir değiştirme
+karşılığında daha fazla hatayı kullanıcıya bırakır. Bu test sonuçları eşik
+seçildikten sonra hesaplandı; test kümesi sonraki ayarlar için tüketilmiş sayılır.
+
+Önceden kullanılmış TurkishTweets kümesinin ilk 500 hizalı satırında ayrı bir
+alan kontrolü yapıldı; bu bağımsız test değildir. Önceki/yeni sürümde 1.045
+hata için tam düzeltme %64,59/%62,68, düzeltme precision'ı %92,59/%93,97,
+2.765 sağlam kelimede değişiklik 35/30 ve öneri top-3 %80,48/%80,57 idi.
+Ölçülen düzeltme çağrısı p95 süresi 18,36/33,52 ms idi; bu tek koşu reflection
+üzerinden yapılmıştır ve gerçek tuş gecikmesi değildir. Daha fazla adayın uzun
+kuyruk aramasına düşmesi gecikmeyi artırabilir; gerçek yazma gecikmesi ayrıca
+ölçülmelidir.
+
 Motor Türkçe ve İngilizce için yerel sözlükler, klavye yakınlığı, yazım uzaklığı
 ve iki dile özel korpuslardan eğitilmiş unigram/bigram/trigram frekans modelleri
 kullanır. Eğitim verisi tüm gündelik yazımı kapsamadığından bağlam hatasız değildir.

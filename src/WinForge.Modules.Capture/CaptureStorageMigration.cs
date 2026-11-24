@@ -50,40 +50,74 @@ internal static class CaptureStorageMigration
 
     public static void Images(HistoryStore store, string oldValue, string newValue)
     {
-        var from = Full(string.IsNullOrWhiteSpace(oldValue) ? store.MediaDirectory : oldValue.Trim());
-        var to = Full(string.IsNullOrWhiteSpace(newValue) ? store.MediaDirectory : newValue.Trim());
-        if (Same(from, to) || !Directory.Exists(from)) return;
-        IEnumerable<string> files;
-        if (string.IsNullOrWhiteSpace(oldValue))
+        var fromHistory = string.IsNullOrWhiteSpace(oldValue);
+        var toHistory = string.IsNullOrWhiteSpace(newValue);
+        var defaultFolder = Path.Combine(store.MediaDirectory, HistoryStore.CaptureImages);
+        var from = Full(fromHistory ? defaultFolder : oldValue.Trim());
+        var to = Full(toHistory ? defaultFolder : newValue.Trim());
+        if (Same(from, to)) return;
+        var files = new List<(string Source, string Relative)>();
+        if (fromHistory)
         {
             using var connection = store.Open(); using var command = connection.CreateCommand();
             command.CommandText = "SELECT DISTINCT media FROM items WHERE kind='capture' AND media<>''";
-            using var reader = command.ExecuteReader(); var names = new List<string>();
-            while (reader.Read()) { var name = reader.GetString(0); if (Path.GetFileName(name) == name) names.Add(Path.Combine(from, name)); }
-            files = names.Where(File.Exists).ToArray();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var name = reader.GetString(0);
+                if (!string.Equals(Path.GetExtension(name), ".png", StringComparison.OrdinalIgnoreCase)) continue;
+                var imagePrefix = HistoryStore.CaptureImages + "/";
+                var relative = name.StartsWith(imagePrefix, StringComparison.Ordinal)
+                    ? name[imagePrefix.Length..].Replace('/', Path.DirectorySeparatorChar) : Path.GetFileName(name);
+                var source = store.ResolveMedia(name);
+                if (File.Exists(source)) files.Add((source, relative));
+            }
         }
-        else files = Directory.EnumerateFiles(from, "*.png").Where(path =>
+        else
         {
-            var name = Path.GetFileNameWithoutExtension(path);
-            return name.Length == 64 && name.All(Uri.IsHexDigit);
-        }).ToArray();
-        Directory.CreateDirectory(to);
-        foreach (var file in files)
+            AddExports(from, "");
+            var fullscreen = new DirectoryInfo(Path.Combine(from, HistoryStore.FullscreenFolderName));
+            if (fullscreen.Exists && (fullscreen.Attributes & FileAttributes.ReparsePoint) == 0)
+            {
+                AddExports(fullscreen.FullName, fullscreen.Name);
+                foreach (var application in fullscreen.EnumerateDirectories())
+                    if ((application.Attributes & FileAttributes.ReparsePoint) == 0 && HistoryStore.IsValidMediaSegment(application.Name))
+                        AddExports(application.FullName, Path.Combine(fullscreen.Name, application.Name));
+            }
+        }
+
+        foreach (var (file, relative) in files)
         {
-            var target = Path.Combine(to, Path.GetFileName(file));
+            var target = Path.Combine(to, relative);
+            if (Same(file, target)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             if (File.Exists(target))
             {
                 using var a = File.OpenRead(file); using var b = File.OpenRead(target);
                 if (!SHA256.HashData(a).SequenceEqual(SHA256.HashData(b))) throw new IOException("Hedefte farklı içerikli dosya var: " + target);
             }
             else File.Copy(file, target);
-            if (string.IsNullOrWhiteSpace(newValue) && !string.IsNullOrWhiteSpace(oldValue))
+            if (toHistory)
             {
+                var name = HistoryStore.CaptureImages + "/" + relative.Replace(Path.DirectorySeparatorChar, '/');
+                var legacyName = Path.GetFileName(relative) == relative ? relative : name;
                 using var connection = store.Open(); using var command = connection.CreateCommand();
-                command.CommandText = "SELECT COUNT(*) FROM items WHERE kind='capture' AND media=$media";
-                command.Parameters.AddWithValue("$media", Path.GetFileName(target));
+                command.CommandText = "SELECT COUNT(*) FROM items WHERE kind='capture' AND media IN ($media, $legacy)";
+                command.Parameters.AddWithValue("$media", name);
+                command.Parameters.AddWithValue("$legacy", legacyName);
                 if (Convert.ToInt64(command.ExecuteScalar()) == 0)
-                    store.Add("capture", File.GetLastWriteTimeUtc(file), title: "Ta??nan ekran g?r?nt?s?", media: Path.GetFileName(target));
+                    store.Add("capture", File.GetLastWriteTimeUtc(file), title: "Taşınan ekran görüntüsü", media: name);
+            }
+        }
+
+        void AddExports(string folder, string relativeFolder)
+        {
+            if (!Directory.Exists(folder)) return;
+            foreach (var file in Directory.EnumerateFiles(folder, "*.png"))
+            {
+                var name = Path.GetFileNameWithoutExtension(file);
+                if ((name.Length == 64 && name.All(Uri.IsHexDigit)) || CaptureImageFile.IsCaptureFilename(Path.GetFileName(file)))
+                    files.Add((file, Path.Combine(relativeFolder, Path.GetFileName(file))));
             }
         }
     }

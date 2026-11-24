@@ -6,7 +6,7 @@ using WinForge.History;
 
 namespace WinForge.Modules.Capture;
 
-public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
+public sealed partial class RecallModule : CaptureModuleBase, ISettingChangePreparation, IModulePanel, IAsyncTweakModule
 {
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly object recordingGate = new();
@@ -20,10 +20,12 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     private IDisposable? pauseHotkey;
     private CancellationTokenSource? lifetime;
     private Task? ocr;
-    private bool locked, suspended, busy, paused;
+    private volatile bool locked, suspended, paused;
+    private bool busy;
     private string previous = "";
     private long lastCapture;
     private long lastContextRead;
+    private long lastUsageFlush;
     private nint contextWindow, contextReadWindow;
     private ActivityContext? currentContext;
     private Task<ActivityContext?>? contextRead;
@@ -33,9 +35,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     protected override string Kind => "recall";
     protected override IEnumerable<SettingDescriptor> ModuleSettings =>
     [
-        new() { Key = "statistics", Label = "Kullanım istatistiklerini aç", Kind = SettingKind.Action,
-            Execute = () => new UsageStatisticsWindow(Store, null, null, (Context as IFeatureUiContext)?.FeatureUi).Show() },
-        new() { Key = "storage-directory", Label = "Görseller ve geçmiş klasörü", Kind = SettingKind.Text, Default = "",
+        new() { Key = PortableHistoryMigration.DirectorySettingKey, Label = "Görseller ve geçmiş klasörü", Kind = SettingKind.Text, Default = "",
             Description = "Görseller seçilen klasörün media alt klasörüne kaydedilir. Boş: varsayılan konum. Eski kayıtlar önceki klasörde korunur." },
         new() { Key = "choose-storage", Label = "Görseller ve geçmiş için klasör seç", Kind = SettingKind.Action, Execute = () =>
         {
@@ -43,8 +43,9 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             if (picker.ShowDialog() != true) return;
             try
             {
-                PrepareSettingChange("storage-directory", Context.Settings.GetString("storage-directory"), picker.FolderName);
-                Context.Settings.Set("storage-directory", picker.FolderName);
+                var key = PortableHistoryMigration.DirectorySettingKey;
+                PrepareSettingChange(key, Context.Settings.GetString(key), picker.FolderName);
+                Context.Settings.Set(key, picker.FolderName);
                 Apply();
             }
             catch (Exception error) { Report(error); }
@@ -66,7 +67,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     ];
     public void PrepareSettingChange(string key, object previous, object next)
     {
-        if (key != "storage-directory") return;
+        if (key != PortableHistoryMigration.DirectorySettingKey) return;
         var destination = next?.ToString()?.Trim() ?? "";
         if (destination.Length == 0)
             destination = PortableHistoryMigration.DirectoryFor(AppData.DirectoryPath, Context.Settings.GetString(PortableHistoryMigration.StorageIdKey, ""));
@@ -75,9 +76,20 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     public override void Activate()
     {
         if (IsActive) return;
-        store = Store; lifetime = new(); usage = new(store.AddUsage); idleUsage = new(store.AddUsage);
-        networkUsage = new(store.AddNetworkUsage); lastNetworkRead = 0;
-        contextUsage = new(store.AddContextUsage); previous = ""; lastCapture = 0;
+        StartRecording(Store);
+    }
+    public async Task ActivateAsync()
+    {
+        if (IsActive) return;
+        var directory = HistoryDirectory;
+        var history = await Task.Run(() => new HistoryStore(directory));
+        StartRecording(history);
+    }
+    private void StartRecording(HistoryStore history)
+    {
+        store = history; lifetime = new(); usage = new(history.AddUsage); idleUsage = new(history.AddUsage);
+        networkUsage = new(history.AddNetworkUsage); lastNetworkRead = 0;
+        contextUsage = new(history.AddContextUsage); previous = ""; lastCapture = lastUsageFlush = 0;
         contextWindow = contextReadWindow = 0; lastContextRead = 0; currentContext = null; contextRead = null;
         paused = Context.Settings.GetBool("paused");
         IsActive = true;
@@ -97,7 +109,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
                 if (IsActive) Tick(this, EventArgs.Empty);
             }));
         }, error => Context.Log.Error("Etkin pencere takibi", error));
-        var currentStore = store; var token = lifetime.Token; ocr = Task.Run(() => OcrLoopAsync(currentStore, token));
+        var token = lifetime.Token; ocr = Task.Run(() => OcrLoopAsync(history, token));
     }
     public override void Deactivate()
     {
@@ -115,7 +127,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     }
     public override void Apply()
     {
-        if (IsActive && store is not null && !string.Equals(store.DirectoryPath, Store.DirectoryPath, StringComparison.OrdinalIgnoreCase))
+        if (IsActive && store is not null && !string.Equals(store.DirectoryPath, HistoryDirectory, StringComparison.OrdinalIgnoreCase))
         {
             Deactivate(); Activate(); return;
         }
@@ -124,6 +136,20 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             RegisterPauseHotkey();
             if (!Context.Settings.GetBool("track-network", true)) networkUsage?.Reset();
         }
+    }
+    public async Task ApplyAsync()
+    {
+        if (IsActive && store is not null && !string.Equals(store.DirectoryPath, HistoryDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            await DeactivateAsync();
+            await ActivateAsync();
+        }
+        else Apply();
+    }
+    public Task DeactivateAsync()
+    {
+        Deactivate();
+        return Task.CompletedTask;
     }
     private void RegisterPauseHotkey()
     {
@@ -209,46 +235,84 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
             else idleUsage?.Observe(null, now, tick);
             if (activeApp is null)
             {
-                contextUsage?.Observe(null, null, null, now, tick); currentContext = null; contextWindow = 0; contextRead = null;
+                contextUsage?.Observe(null, null, null, now, tick); currentContext = null; contextWindow = contextReadWindow = 0;
                 return;
             }
-            usage?.Flush(now, tick);
             UpdateContext(foreground, activeApp, now, tick);
-            contextUsage?.Flush(now, tick);
+            if (tick - lastUsageFlush >= 10_000)
+            {
+                // Transitions still flush immediately; periodic writes keep ongoing sessions current.
+                lastUsageFlush = tick;
+                usage?.Flush(now, tick);
+                contextUsage?.Flush(now, tick);
+            }
             if (!Context.Settings.GetBool("capture-screens", true)) return;
             var identity = foreground.Window + "|" + foreground.Title;
             var elapsed = tick - lastCapture;
             var interval = Math.Clamp(Context.Settings.GetInt("interval", 60), 1, 3600) * 1000L;
             if (elapsed < Math.Min(2000, interval) || (identity == previous && elapsed < interval)) return;
             busy = true;
-            if (!CaptureServices.HasSpace(currentStore.DirectoryPath)) { paused = true; Context.Notify("Disk alanı az; PC geçmişi durduruldu. Eski kayıtlar korunuyor."); return; }
-            var area = CaptureServices.Monitor(Context.Settings.GetString("monitor", "cursor"));
-            Native.GetCursorPos(out var cursor);
-            var cursorMetadata = cursor.X >= area.X && cursor.X < area.X + area.Width && cursor.Y >= area.Y && cursor.Y < area.Y + area.Height
-                ? System.Text.Json.JsonSerializer.Serialize(new { cursorX = cursor.X - area.X, cursorY = cursor.Y - area.Y }) : "";
-            var image = CaptureServices.Capture(area);
+            var monitor = Context.Settings.GetString("monitor", "cursor");
             var webp = Context.Settings.GetString("image-format", "webp") == "webp";
             var quality = Context.Settings.GetInt("image-quality", 80);
-            await Task.Run(() =>
+            var retentionDays = Context.Settings.GetInt("retention-days");
+            var limitGb = Context.Settings.GetInt("limit-gb");
+            var result = await Task.Run(() =>
             {
+                if (!CaptureServices.HasSpace(currentStore.DirectoryPath)) return CaptureResult.LowDiskSpace;
+                token.ThrowIfCancellationRequested();
+                if (paused || locked || suspended || !CaptureServices.IsDefaultInputDesktop || Native.GetForegroundWindow() != foreground.Window)
+                    return CaptureResult.Skipped;
+                var area = CaptureServices.Monitor(monitor);
+                Native.GetCursorPos(out var cursor);
+                var cursorMetadata = cursor.X >= area.X && cursor.X < area.X + area.Width && cursor.Y >= area.Y && cursor.Y < area.Y + area.Height
+                    ? System.Text.Json.JsonSerializer.Serialize(new { cursorX = cursor.X - area.X, cursorY = cursor.Y - area.Y }) : "";
+                var image = CaptureServices.Capture(area);
                 lock (recordingGate)
                 {
-                    token.ThrowIfCancellationRequested(); var media = CaptureServices.Save(currentStore, image, webp, quality); token.ThrowIfCancellationRequested();
-                    var icon = CaptureServices.SaveProcessIcon(currentStore, foreground.Process);
-                    currentStore.Add("recall", now, foreground.App, foreground.Title, media: media, ocrState: "pending", icon: icon, metadata: cursorMetadata);
+                    token.ThrowIfCancellationRequested();
+                    if (paused || locked || suspended) return CaptureResult.Skipped;
+                    var media = CaptureServices.Save(currentStore, image, webp, quality);
+                    var icon = "";
+                    try
+                    {
+                        token.ThrowIfCancellationRequested();
+                        icon = CaptureServices.SaveProcessIcon(currentStore, foreground.Process);
+                        currentStore.Add("recall", now, foreground.App, foreground.Title, media: media, ocrState: "pending", icon: icon, metadata: cursorMetadata);
+                    }
+                    catch
+                    {
+                        currentStore.ReleasePendingMedia(media);
+                        currentStore.ReleasePendingMedia(icon);
+                        throw;
+                    }
+                    token.ThrowIfCancellationRequested();
+                    if (retentionDays > 0) currentStore.PruneRecall(now.AddDays(-retentionDays));
                 }
+                if (limitGb > 0 && currentStore.EnumerateMediaFiles().Sum(file => file.Length) > limitGb * 1024L * 1024 * 1024)
+                    return CaptureResult.StorageLimit;
+                return CaptureResult.Saved;
             }, token);
-            if (token.IsCancellationRequested) return;
-            previous = identity; lastCapture = tick;
-            var days = Context.Settings.GetInt("retention-days"); if (days > 0) currentStore.Delete("recall", until: now.AddDays(-days));
-            var gigabytes = Context.Settings.GetInt("limit-gb");
-            if (gigabytes > 0 && new DirectoryInfo(currentStore.MediaDirectory).EnumerateFiles().Sum(f => f.Length) > gigabytes * 1024L * 1024 * 1024)
-            { paused = true; Context.Notify("Depolama sınırına ulaşıldı. Eski kayıtları temizleyin veya sınırı artırın."); }
+            if (token.IsCancellationRequested || result == CaptureResult.Skipped) return;
+            if (result is CaptureResult.Saved or CaptureResult.StorageLimit)
+            {
+                previous = identity;
+                lastCapture = tick;
+            }
+            if (result is CaptureResult.LowDiskSpace or CaptureResult.StorageLimit)
+            {
+                paused = true;
+                Context.Notify(result == CaptureResult.LowDiskSpace
+                    ? "Disk alanı az; PC geçmişi durduruldu. Eski kayıtlar korunuyor."
+                    : "Depolama sınırına ulaşıldı. Eski kayıtları temizleyin veya sınırı artırın.");
+            }
         }
         catch (OperationCanceledException) { }
+        catch (Exception error) when (token.IsCancellationRequested) { Context.Log.Error("PC geçmişi kapatılırken yakalama hatası", error); }
         catch (Exception error) { paused = true; Report(error); }
         finally { busy = false; }
     }
+    private enum CaptureResult { Saved, Skipped, LowDiskSpace, StorageLimit }
     private void ObserveNetwork(bool force = false)
     {
         if (networkUsage is null) return;
@@ -284,20 +348,21 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
     {
         if (!Context.Settings.GetBool("track-context", true))
         {
-            currentContext = null; contextWindow = foreground.Window;
-            contextUsage?.Observe(activeApp, null, null, now, tick); return;
+            currentContext = null; contextWindow = contextReadWindow = 0;
+            contextUsage?.Observe(null, null, null, now, tick); return;
         }
         if (contextWindow != foreground.Window)
         {
-            currentContext = null; contextWindow = foreground.Window; contextRead = null; lastContextRead = 0;
+            currentContext = null; contextWindow = foreground.Window; contextReadWindow = 0; lastContextRead = 0;
         }
         if (contextRead is { IsCompleted: true } completed)
         {
-            if (contextReadWindow == foreground.Window)
+            try
             {
-                try { currentContext = completed.GetAwaiter().GetResult(); }
-                catch (Exception error) { Context.Log.Error("Web sitesi veya klasör okunamadı", error); currentContext = null; }
+                var result = completed.GetAwaiter().GetResult();
+                if (contextReadWindow == foreground.Window) currentContext = result;
             }
+            catch (Exception error) { Context.Log.Error("Web sitesi veya klasör okunamadı", error); }
             contextRead = null;
         }
         if (contextRead is null && tick - lastContextRead >= 3000)
@@ -324,6 +389,7 @@ public sealed class RecallModule : CaptureModuleBase, ISettingChangePreparation
                     }
                     catch (OperationCanceledException) { throw; }
                     catch (Exception error) { currentStore.CompleteOcr(row.Id, "", true); Context.Log.Error("PC geçmişi OCR", error); }
+                    await Task.Delay(250, token);
                 }
             }
             catch (OperationCanceledException) { throw; }

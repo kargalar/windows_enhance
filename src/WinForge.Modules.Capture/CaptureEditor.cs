@@ -63,15 +63,17 @@ internal sealed class CaptureEditor
     private readonly string _image;
     private readonly int _initialTool;
     private readonly bool _workflowCompletion;
+    private readonly CaptureImageFile _file;
     private string _status = string.Empty;
 
     public CaptureEditor(HistoryStore store, BitmapSource image, DrawingTool? initialTool = null, bool workflowCompletion = false,
-        IFeatureUiService? featureUi = null)
+        IFeatureUiService? featureUi = null, CaptureImageFile? file = null)
     {
         _store = store;
         _featureUi = featureUi;
         _initialTool = (int)(initialTool ?? DrawingTool.Freehand);
         _workflowCompletion = workflowCompletion;
+        _file = file ?? new CaptureImageFile("Ekran görüntüsü", DateTimeOffset.Now);
         _image = ToDataUri(image);
         Completion = _completion.Task;
         if (featureUi is null)
@@ -102,12 +104,13 @@ internal sealed class CaptureEditor
             switch (command)
             {
                 case "capture-editor.copy":
-                    Clipboard.SetImage(ReadImage(payload));
+                    await CaptureClipboard.CopyAsync(ReadImage(payload), _file, CancellationToken.None);
                     SetStatus("Görsel panoya kopyalandı.");
                     break;
                 case "capture-editor.save-history":
-                    var media = CaptureServices.Save(_store, ReadImage(payload));
-                    _store.Add("capture", DateTimeOffset.UtcNow, title: "Düzenlenmiş görüntü", media: media);
+                    var media = _file.Save(_store, ReadImage(payload));
+                    try { _store.Add("capture", _file.CapturedAt, title: "Düzenlenmiş görüntü", media: media); }
+                    catch { _store.ReleasePendingMedia(media); throw; }
                     SetStatus("Geçmişe kaydedildi.");
                     break;
                 case "capture-editor.save-file":
@@ -168,7 +171,7 @@ internal sealed class CaptureEditor
 
     private void SaveFile(BitmapSource image)
     {
-        var dialog = new SaveFileDialog { Filter = "PNG görüntüsü|*.png|JPEG görüntüsü|*.jpg", FileName = "WinForge-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") };
+        var dialog = new SaveFileDialog { Filter = "PNG görüntüsü|*.png|JPEG görüntüsü|*.jpg", FileName = _file.FileStem + ".png" };
         if (dialog.ShowDialog() != true) return;
         BitmapEncoder encoder = dialog.FilterIndex == 2 ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(image));

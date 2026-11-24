@@ -71,7 +71,7 @@ public sealed class WindowControlModule : ITweakModule
         Action<IntPtr>? beginZoneDrag = placement is null ? null : new Action<IntPtr>(placement.BeginWindowZoneDrag);
         Func<IntPtr, bool, bool>? endZoneDrag = placement is null ? null : new Func<IntPtr, bool, bool>(placement.EndWindowZoneDrag);
         var engine = new WindowControlEngine(ReadOptions(), exception => _context!.Log.Error("Pencere kontrolü başarısız.", exception),
-            placeInZone, beginZoneDrag: beginZoneDrag, endZoneDrag: endZoneDrag);
+            placeInZone, beginZoneDrag: beginZoneDrag, endZoneDrag: endZoneDrag, tiledResize: _context as ITiledResizeContext);
         try { engine.Start(); _engine = engine; }
         catch { engine.Dispose(); throw; }
     }

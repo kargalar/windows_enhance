@@ -18,7 +18,9 @@ internal sealed class SpellEngine
     private const double MaxTurkishSuggestionScoreLong = 2.5;
     private const double MinimumCandidateMargin = 0.30;
     private const double MinimumTurkishCandidateMargin = 0.40;
-    private const double MinimumTurkishFuzzyCandidateMargin = 0.30;
+    // Ambiguous fuzzy guesses are costlier than leaving a typo for the user.
+    // The Turkish development benchmark and held-out comparison are documented in AUTOCORRECT.md.
+    private const double MinimumTurkishFuzzyCandidateMargin = 0.50;
     private const double MinimumTurkishLongTailCandidateMargin = 0.50;
     private const double MaximumKnownTurkishCandidateScore = 0.0;
     private const double MaximumStrongTwoDiacriticCandidateScore = -0.2;

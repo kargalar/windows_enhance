@@ -12,6 +12,46 @@ internal static class AutoCorrectCorpusChecks
     private const int EvaluationWordCount = 1_000;
     private const int MaximumNextWordEvaluationContexts = 100_000;
 
+    internal static void RunIndependentWords(string path, Assembly extras, Action<bool, string> check)
+    {
+        var engineType = extras.GetType("WinForge.Modules.Extras.SpellEngine")!;
+        var engine = engineType.GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!.GetValue(null)!;
+        var find = engineType.GetMethods().Single(method => method.Name == "FindCorrection" && method.GetParameters().Length == 8);
+        var errors = 0; var clean = 0; var correct = 0; var wrong = 0; var missed = 0; var damaged = 0;
+        var examples = new List<string>();
+        using var reader = new StreamReader(path, Encoding.UTF8, true);
+        if (reader.ReadLine() != "raw\tinput\tgold\tannotation") throw new InvalidDataException("Invalid evaluation header");
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
+        {
+            var fields = line.Split('\t');
+            if (fields.Length != 4 || fields[1].Length == 0 || fields[2].Length == 0)
+                throw new InvalidDataException("Invalid evaluation row");
+            var input = fields[1]; var expected = fields[2];
+            var actual = (string?)find.Invoke(engine, [input, "tr-TR", null, true, true, false, false, null]);
+            var changed = actual is not null && !StringComparer.OrdinalIgnoreCase.Equals(actual, input);
+            if (StringComparer.OrdinalIgnoreCase.Equals(input, expected))
+            {
+                clean++;
+                if (changed) { damaged++; if (examples.Count < 20) examples.Add($"{input} -> {actual} (clean)"); }
+            }
+            else
+            {
+                errors++;
+                if (!changed) missed++;
+                else if (StringComparer.OrdinalIgnoreCase.Equals(actual, expected)) correct++;
+                else { wrong++; if (examples.Count < 20) examples.Add($"{input} -> {actual}, expected {expected}"); }
+            }
+        }
+        Console.WriteLine($"Errors {errors}, exact {correct}, missed {missed}, wrong {wrong}; clean {clean}, changed {damaged}");
+        Console.WriteLine($"Recall {(double)correct / errors:P2}; correction precision {(double)correct / (correct + wrong + damaged):P2}; clean change rate {(double)damaged / clean:P2}");
+        // One missed correction costs 1; every harmful replacement costs an additional 5.
+        Console.WriteLine($"Cost (missed=1, harmful replacement=5): {missed + 6 * wrong + 5 * damaged}");
+        Console.WriteLine($"Examples: {string.Join(" | ", examples)}");
+        check(errors > 100 && clean > 100 && errors == correct + missed + wrong,
+            "Independent word benchmark contains valid annotated errors and clean words");
+    }
+
     internal static int Run(string corpusPath, string languageTag, Assembly extras, Action<bool, string> check)
     {
         var engineType = extras.GetType("WinForge.Modules.Extras.SpellEngine")!;

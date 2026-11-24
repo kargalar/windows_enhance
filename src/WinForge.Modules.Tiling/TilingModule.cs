@@ -6,7 +6,7 @@ using RECT = WinForge.Core.RECT;
 
 namespace WinForge.Modules.Tiling;
 
-public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
+public partial class TilingModule : ITweakModule, IWindowZoneDragProvider, ITiledResizeProvider
 {
     private const int GWL_EXSTYLE = -20;
     private const int GWL_STYLE = -16;
@@ -344,12 +344,14 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
         ReadSettings();
         RegisterZoneWindowSwitchingHotkeys();
         InstallHooks();
+        if (_mode == AutoTileMode) StartTileMouseHook();
         Retile();
     }
 
     public void Deactivate()
     {
         IsActive = false;
+        StopTileMouseHook();
         foreach (var window in _fullscreenWindows.Keys.ToArray()) RestoreFullscreenWindow(window, restorePlacement: true);
         _timer?.Dispose();
         _timer = null;
@@ -897,14 +899,24 @@ public partial class TilingModule : ITweakModule, IWindowZoneDragProvider
             {
                 if (_dragging) return;
                 var windows = Collect();
+                if (_order.Count == 0) _tileRatios.Clear();
+                _tileLayouts.Clear();
 
                 foreach (var group in windows.GroupBy(w => w.Monitor))
                 {
                     var handles = group.Select(w => w.Handle).ToList();
                     var work = group.First().Work;
-                    if (_layout == 1) TileGrid(handles, work, _gap);
+                    var key = (group.Key, _layout, handles.Count);
+                    _recordedBounds.Clear();
+                    if (_tileRatios.TryGetValue(key, out var ratios) && ratios.Length == handles.Count)
+                    {
+                        for (var i = 0; i < handles.Count; i++) Move(handles[i], FromRatio(ratios[i], work));
+                    }
+                    else if (_layout == 1) TileGrid(handles, work, _gap);
                     else if (_layout == 2) TileColumns(handles, work, _gap);
                     else TileMaster(handles, work, _gap);
+                    if (_recordedBounds.Count == handles.Count)
+                        _tileLayouts.Add(new TileLayout(key, work, handles.ToArray(), _recordedBounds.ToArray()));
                 }
             }
         }

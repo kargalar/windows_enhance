@@ -52,7 +52,31 @@ internal static class WindowControlParityChecks
             WindowControlModule.ActionMenuEntries[0].Value == WindowAction.ToggleMaximize && WindowControlModule.ActionMenuEntries[1].Value == WindowAction.Minimize &&
             WindowControlModule.ActionMenuEntries.All(entry => entry.Value is not (WindowAction.ActionMenu or WindowAction.None)),
             "Default middle button opens our own actionable catalogue while the Windows system menu remains explicitly available");
+        TestInProcessGestures(module.ReadOptions(), check);
         TestOwnedWindows(check);
+    }
+
+    private static void TestInProcessGestures(WindowControlOptions options, Action<bool, string> check)
+    {
+        const string windowClass = "WinForge.InProcessResizeFixture";
+        var rectangle = new RECT { Left = 100, Top = 100, Right = 740, Bottom = 580 };
+        using var window = new NativeWindowFixture(windowClass, "Dashboard", rectangle, (uint)FixtureStyle, 0);
+        using var overlay = new NativeWindowFixture(windowClass, "Overlay", rectangle, (uint)FixtureStyle, Native.WS_EX_NOACTIVATE);
+        using var engine = new WindowControlEngine(options with { EdgeSnap = false, MagnetMode = "Kapalı" }, _ => { },
+            candidates: (_, _) => []);
+        var original = Bounds(window.Handle);
+        var start = new POINT(original.Right - 10, original.Bottom - 10);
+        check(engine.CanHandleInput(window.Handle, start, WindowAction.Resize) &&
+            engine.CanHandleInput(window.Handle, start, WindowAction.Move),
+            "A resizable window in WinForge's own process accepts mouse move and resize gestures");
+        check(!engine.CanHandleInput(overlay.Handle, start, WindowAction.Resize) &&
+            !engine.CanHandleInput(window.Handle, start, WindowAction.Close),
+            "In-process gestures leave nonactivating overlays and unrelated actions out of mouse interception");
+        engine.Press(window.Handle, WindowAction.Resize, start, 1, default, Environment.TickCount64);
+        engine.UpdateGesture(new POINT(start.X + 60, start.Y + 40));
+        engine.FinishGesture();
+        check(Bounds(window.Handle) == original with { Width = original.Width + 60, Height = original.Height + 40 },
+            "A completed resize changes the bounds of a window on the engine's own thread");
     }
 
     private static void TestGeometry(Action<bool, string> check)

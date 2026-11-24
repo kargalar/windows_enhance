@@ -13,8 +13,9 @@ internal sealed class UsageStatisticsWindow : Window
     private readonly IFeatureUiSurface uiSurface;
     private string fromText = "";
     private string untilText = "";
-    private string statusText = "";
-    private string summaryText = "";
+    private bool closed;
+    private bool loading;
+    private long refreshVersion;
 
     public UsageStatisticsWindow(HistoryStore store, DateTimeOffset? from, DateTimeOffset? until, IFeatureUiService? featureUi = null)
     {
@@ -33,12 +34,14 @@ internal sealed class UsageStatisticsWindow : Window
             ?? throw new InvalidOperationException("The React usage statistics view is required.");
         uiSurface.MessageReceived += OnUiMessage;
         Content = uiSurface.Element;
-        Loaded += (_, _) => Refresh();
-        Closed += (_, _) => uiSurface.Dispose();
+        Loaded += (_, _) => _ = RefreshAsync();
+        Closed += (_, _) =>
+        {
+            closed = true;
+            uiSurface.MessageReceived -= OnUiMessage;
+            uiSurface.Dispose();
+        };
     }
-
-    private DateTimeOffset? Start => ParseDate(fromText);
-    private DateTimeOffset? End => ParseDate(untilText)?.AddDays(1);
 
     private static DateTimeOffset? ParseDate(string value)
     {
@@ -54,7 +57,7 @@ internal sealed class UsageStatisticsWindow : Window
         {
             fromText = payload.TryGetProperty("from", out var start) ? start.GetString() ?? "" : "";
             untilText = payload.TryGetProperty("until", out var end) ? end.GetString() ?? "" : "";
-            Refresh();
+            _ = RefreshAsync();
         }
         else if (command == "statistics.close")
         {
@@ -62,91 +65,83 @@ internal sealed class UsageStatisticsWindow : Window
         }
     }
 
-    private void Refresh()
+    private async Task RefreshAsync()
     {
+        refreshVersion++;
+        if (loading || closed) return;
+        loading = true;
         try
         {
-            if (Start is { } start && End is { } end && end <= start)
-                throw new ArgumentException("Bitiş tarihi başlangıçtan sonra olmalı.");
-
-            var summary = store.RecallSummary(Start, End);
-            summaryText = $"Etkin: {TimeSpan.FromSeconds(summary.ActiveSeconds):g}     Boşta: {TimeSpan.FromSeconds(summary.IdleSeconds):g}     " +
-                $"Ekran görüntüsü: {summary.Captures:N0}     En çok kullanılan: {summary.MostUsedApp}";
-
-            var appTotals = store.Usage(Start, End);
-            var activeByDay = store.UsageByDay(Start, End);
-            var idleByDay = store.IdleUsageByDay(Start, End);
-            var dates = activeByDay.Select(row => row.Date).Concat(idleByDay.Select(row => row.Date)).Distinct(StringComparer.Ordinal);
-            var dailyTotals = dates
-                .Select(date => (date,
-                    active: activeByDay.Where(row => row.Date == date).Sum(row => row.Seconds),
-                    idle: idleByDay.Where(row => row.Date == date).Sum(row => row.Seconds)))
-                .OrderBy(row => DateTime.ParseExact(row.date, "dd.MM.yyyy", TurkishCulture))
-                .TakeLast(14)
-                .ToArray();
-            var contextTotals = store.ContextUsageByDay(Start, End);
-            var tagTotals = store.TagUsage(Start, End);
-            var networkTotals = store.NetworkUsageByDay(Start, End);
-
-            statusText = $"Aralık: {(Start?.ToLocalTime().ToString("dd.MM.yyyy") ?? "başlangıçtan beri")} – " +
-                $"{(End?.AddDays(-1).ToLocalTime().ToString("dd.MM.yyyy") ?? "bugün dahil")} · " +
-                "İstatistikler yerel kullanım zamanlarından hesaplanır.";
-
-            uiSurface.SetState(new
+            while (!closed)
             {
-                from = fromText,
-                until = untilText,
-                status = statusText,
-                summary = summaryText,
-                network = networkTotals.Select(row => new { date = row.Date, received = row.Received, sent = row.Sent }).ToArray(),
-                applications = appTotals.Select(row => new
+                var version = refreshVersion;
+                var from = fromText;
+                var until = untilText;
+                object state;
+                try
                 {
-                    app = row.App,
-                    seconds = row.Seconds,
-                    duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"),
-                    estimated = row.Estimated
-                }).ToArray(),
-                days = dailyTotals.Select(row => new { date = row.date, active = row.active, idle = row.idle }).ToArray(),
-                dayApplications = activeByDay.Select(row => new
+                    state = await Task.Run(() => ReadStatistics(from, until));
+                }
+                catch (Exception error)
                 {
-                    date = row.Date,
-                    app = row.App,
-                    duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"),
-                    estimated = row.Estimated
-                }).ToArray(),
-                contexts = contextTotals.Select(row => new
-                {
-                    date = row.Date,
-                    type = row.Type,
-                    app = row.App,
-                    context = row.Context,
-                    duration = TimeSpan.FromSeconds(row.Seconds).ToString("g")
-                }).ToArray(),
-                tags = tagTotals.Select(row => new
-                {
-                    tag = row.Tag,
-                    seconds = row.Seconds,
-                    duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"),
-                    applications = row.ApplicationCount
-                }).ToArray()
-            });
+                    state = new { from, until, status = error.Message, summary = "", applications = Array.Empty<object>(),
+                        network = Array.Empty<object>(), days = Array.Empty<object>(), dayApplications = Array.Empty<object>(),
+                        contexts = Array.Empty<object>(), tags = Array.Empty<object>() };
+                }
+                if (closed) return;
+                if (version != refreshVersion) continue;
+                uiSurface.SetState(state);
+                break;
+            }
         }
-        catch (Exception error)
+        finally { loading = false; }
+    }
+
+    private object ReadStatistics(string from, string until)
+    {
+        var start = ParseDate(from);
+        var end = ParseDate(until)?.AddDays(1);
+        if (start >= end) throw new ArgumentException("Bitiş tarihi başlangıçtan sonra olmalı.");
+        var (summary, appTotals) = store.RecallOverview(start, end);
+        var summaryText = $"Etkin: {TimeSpan.FromSeconds(summary.ActiveSeconds):g}     Boşta: {TimeSpan.FromSeconds(summary.IdleSeconds):g}     " +
+            $"Ekran görüntüsü: {summary.Captures:N0}     En çok kullanılan: {summary.MostUsedApp}";
+
+        var activeByDay = store.UsageByDay(start, end);
+        var idleByDay = store.IdleUsageByDay(start, end);
+        var activeTotals = activeByDay.GroupBy(row => row.Date).ToDictionary(group => group.Key, group => group.Sum(row => row.Seconds));
+        var idleTotals = idleByDay.GroupBy(row => row.Date).ToDictionary(group => group.Key, group => group.Sum(row => row.Seconds));
+        var dailyTotals = activeTotals.Keys.Union(idleTotals.Keys)
+            .OrderBy(date => DateTime.ParseExact(date, "dd.MM.yyyy", TurkishCulture))
+            .TakeLast(14)
+            .Select(date => new { date, active = activeTotals.GetValueOrDefault(date), idle = idleTotals.GetValueOrDefault(date) })
+            .ToArray();
+
+        return new
         {
-            statusText = error.Message;
-            uiSurface.SetState(new
+            from,
+            until,
+            status = $"Aralık: {(start?.ToLocalTime().ToString("dd.MM.yyyy") ?? "başlangıçtan beri")} – " +
+                $"{(end?.AddDays(-1).ToLocalTime().ToString("dd.MM.yyyy") ?? "bugün dahil")} · " +
+                "İstatistikler yerel kullanım zamanlarından hesaplanır.",
+            summary = summaryText,
+            network = store.NetworkUsageByDay(start, end).Select(row => new { row.Date, row.Received, row.Sent }).ToArray(),
+            applications = appTotals.Select(row => new
             {
-                from = fromText,
-                until = untilText,
-                status = statusText,
-                summary = summaryText,
-                applications = Array.Empty<object>(),
-                network = Array.Empty<object>(),
-                days = Array.Empty<object>(),
-                dayApplications = Array.Empty<object>(),
-                contexts = Array.Empty<object>(),
-                tags = Array.Empty<object>()
-            });
-        }
+                app = row.App, seconds = row.Seconds, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"), estimated = row.Estimated
+            }).ToArray(),
+            days = dailyTotals,
+            dayApplications = activeByDay.Select(row => new
+            {
+                date = row.Date, app = row.App, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"), estimated = row.Estimated
+            }).ToArray(),
+            contexts = store.ContextUsageByDay(start, end).Select(row => new
+            {
+                date = row.Date, type = row.Type, app = row.App, context = row.Context, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g")
+            }).ToArray(),
+            tags = store.TagUsage(appTotals).Select(row => new
+            {
+                tag = row.Tag, seconds = row.Seconds, duration = TimeSpan.FromSeconds(row.Seconds).ToString("g"), applications = row.ApplicationCount
+            }).ToArray()
+        };
     }
 }

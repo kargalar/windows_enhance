@@ -8,12 +8,18 @@ Yeni kurulumda üçü de kapalıdır. Geçmiş görüntülemek veya eski kayıtl
 | Modül | İş akışı |
 |---|---|
 | PC Geçmişi | Varsayılan 60 saniye ve etkin pencere değişiklikleri; imlecin monitörü; WebP kalite 80 veya PNG; boşta/kilit/uyku duraklatması; uygulama/pencere dışlama; arama, tarih, uygulama ve etiket filtreleri; uygulama, web sayfası ve klasör süreleri |
-| Sesle Yazma | `Shift+Space` kısa basışla başlat/durdur, 300 ms veya daha uzun basılı tutup bırakınca durdur; Esc ile iptal; mikrofon, dil, Small/Turbo/Large ve CPU/otomatik seçim; İngilizce çeviri için Large |
+| Sesle Yazma | `Shift+Space` ile dikte, `Ctrl+Shift+Space` ile İngilizce dikte. Kısa basış kaydı başlatır veya durdurur. 300 ms veya daha uzun basılı tutup bırakınca kayıt durur. Esc kaydı iptal eder. |
 | Ekran Yakalama | `Win+Alt+S` bölge seçimi; panelden monitör, pencere, masaüstü, son bölge, kayan yakalama, video/GIF; pencereye gelince kenarlıkla mıknatıslı seçim, tıklamayla pencere veya sürüklemeyle serbest bölge |
 
-Dikte sonuçları otomatik olarak panoya kopyalanır ve kayıt başındaki düzenlenebilir alan hâlâ
-odaktaysa o alana yazılır. Hedef değişirse metin panoda ve geçmişte kalır. Ses bellekte tutulur; ham dikte sesi dosyaya kaydedilmez. GPU başarısızsa
-CPU'ya geçilir ve sonraki aynı ayarlardaki kayıtlar yüklenen CPU modelini kullanır.
+İngilizce dikte, ayarlardaki konuşma dilini kullanır ve **Large** modeliyle çevrimdışı çeviri yapar.
+Kısayolu **Sesle Yazma → Ses girişi** bölümünden değiştirebilir veya boş bırakarak kapatabilirsiniz.
+Large modelini **Dil ve model → Modelleri yönet** bölümünden ekleyebilirsiniz.
+
+Whisper, konuşma sürerken kısa ses parçalarını çözümler ve metni kaydın başındaki düzenlenebilir
+alana yapıştırır. Kayıt durduğunda kalan metin tek seferde yapıştırılır. Pano son yapıştırılan
+parçayı, dikte geçmişi ise kaydın tam metnini tutar. Hedef değişirse tam metin panoya da kopyalanır.
+Ham dikte sesi yalnızca bellekte tutulur. GPU başarısızsa CPU'ya geçilir ve sonraki aynı
+ayarlardaki kayıtlar yüklenen CPU modelini kullanır.
 
 Yakalama panelinde tam ekran üzerinde metin, şekil veya serbest çizim başlatan düğmeler vardır;
 sonrasında düzenleyicide “Alanı seç / kırp” ile istenen kısım alınabilir. Bölge seçicide

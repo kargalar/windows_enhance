@@ -23,6 +23,7 @@ internal static class Program
             Reject("Alt+S = once|100|search bing");
             Reject("Alt+S = once|100|search google\nCtrl+C = once|100|text test");
             SelectionSearchChecks();
+            SelectionTranslationChecks();
             ChromeShiftSearchChecks();
             ActiveIndicatorChecks();
             ForegroundBindingChecks();
@@ -344,6 +345,216 @@ internal static class Program
             Check(plain == 2 && shifted == 1, $"Real Windows: release and repress toggles again (plain={plain}, shifted={shifted})");
         }
         finally { Send(0x86, true); Send(0x10, true); }
+    }
+
+    private static void SelectionTranslationChecks()
+    {
+        var input = "  " + string.Concat(Enumerable.Repeat("Türkçe 😀 sözcük ", 400)) + "\r\n";
+        var emptyCopy = CustomClipboardPickle("{\"version\":1,\"isFromEmptySelection\":true}");
+        Check(ChromiumClipboardData.IsVsCodeEmptySelection(emptyCopy), "VS Code copy without selection is detected");
+        Check(!ChromiumClipboardData.IsVsCodeEmptySelection(CustomClipboardPickle("{\"version\":1,\"isFromEmptySelection\":false}")), "A real VS Code selection is accepted");
+        Check(!ChromiumClipboardData.IsVsCodeEmptySelection(CustomClipboardPickle("{\"version\":\"bad\",\"isFromEmptySelection\":true}")), "Unexpected clipboard metadata types are ignored");
+        Check(!ChromiumClipboardData.IsVsCodeEmptySelection(emptyCopy[..^1]), "Truncated custom clipboard data is ignored");
+        var random = new Random(12345);
+        for (var i = 0; i < 200; i++) { var bytes = new byte[random.Next(0, 100)]; random.NextBytes(bytes); ChromiumClipboardData.IsVsCodeEmptySelection(bytes); }
+        Check(true, "Malformed custom clipboard data does not throw");
+        var chunks = SelectionTranslationService.Split(input).ToArray();
+        Check(SelectionTranslationService.Language("zh-Hans-CN") == "zh-Hans-CN", "Language codes may include script and region");
+        try { SelectionTranslationService.Language("en&tl=tr"); throw new Exception("Invalid language was accepted"); }
+        catch (FormatException) { Check(true, "Language code rejects request delimiters"); }
+        Check(string.Concat(chunks.Select(c => c.Text + c.Whitespace)) == input, "Translation splitting preserves exact input and whitespace");
+        Check(chunks.All(c => System.Text.Encoding.UTF8.GetByteCount(c.Text) <= SelectionTranslationService.ChunkBytes), "Translation chunks obey byte limits");
+        Check(chunks.All(c => !c.Text.Any(char.IsSurrogate) || !c.Text.Contains('\uFFFD')), "Translation chunks preserve Unicode");
+        var handler = new TranslationHandler();
+        var service = new SelectionTranslationService(new System.Net.Http.HttpClient(handler));
+        var output = service.TranslateAsync("  hello  ", "auto", "tr", default).GetAwaiter().GetResult();
+        Check(output == "  merhaba  " && handler.LastUrl!.Contains("sl=auto") && handler.LastUrl.Contains("tl=tr"), "Translation parses segments, preserves whitespace and passes languages");
+        handler.Response = "{\"translatedText\":\"bonjour\"}";
+        output = service.TranslateAsync("hello", "auto", "fr", default, "libretranslate", "https://example.com/base/", "private-key").GetAwaiter().GetResult();
+        using (var payload = JsonDocument.Parse(handler.LastBody!))
+            Check(output == "bonjour" && handler.LastMethod == "POST" && handler.LastUrl == "https://example.com/base/translate" &&
+                  payload.RootElement.GetProperty("q").GetString() == "hello" && payload.RootElement.GetProperty("api_key").GetString() == "private-key" && !handler.LastUrl.Contains("private-key"), "LibreTranslate uses its documented POST body and endpoint");
+        handler.Response = "{\"responseStatus\":200,\"quotaFinished\":false,\"responseData\":{\"translatedText\":\"Merhaba &amp; dünya\"}}";
+        output = service.TranslateAsync("hello & world", "en", "tr", default, "mymemory").GetAwaiter().GetResult();
+        Check(output == "Merhaba & dünya" && handler.LastMethod == "GET" && handler.LastUrl!.StartsWith("https://api.mymemory.translated.net/get?") && Uri.UnescapeDataString(handler.LastUrl).Contains("langpair=en|tr"), "MyMemory uses the documented language pair and decodes HTML entities");
+        var myMemoryPieces = SelectionTranslationService.Split(input, SelectionTranslationService.MyMemoryChunkBytes).ToArray();
+        Check(string.Concat(myMemoryPieces.Select(piece => piece.Text + piece.Whitespace)) == input && myMemoryPieces.All(piece => System.Text.Encoding.UTF8.GetByteCount(piece.Text) <= 500), "MyMemory splits long Unicode input within 500-byte request limits");
+        output = service.TranslateAsync("hello", "auto", "tr", default, "mymemory").GetAwaiter().GetResult();
+        Check(output == "Merhaba & dünya" && Uri.UnescapeDataString(handler.LastUrl!).Contains("langpair=autodetect|tr"), "MyMemory maps automatic source to its observed autodetect behavior");
+        var lines = SelectionTranslationService.Split("one\r\ntwo\nthree", 500, true).ToArray();
+        Check(string.Concat(lines.Select(piece => piece.Text + piece.Whitespace)) == "one\r\ntwo\nthree" && lines.All(piece => !piece.Text.Contains('\n') && !piece.Text.Contains('\r')), "MyMemory keeps line boundaries outside requests");
+        handler.Response = "{\"responseStatus\":200,\"quotaFinished\":true,\"responseData\":{\"translatedText\":\"warning\"}}";
+        try { service.TranslateAsync("hello", "en", "tr", default, "mymemory").GetAwaiter().GetResult(); throw new Exception("MyMemory quota warning was accepted as translation"); }
+        catch (InvalidOperationException) { Check(true, "MyMemory quota exhaustion is not inserted as translated text"); }
+        handler.Response = "{\"responseStatus\":200,\"quotaFinished\":false,\"responseData\":{\"translatedText\":\"MYMEMORY WARNING: quota exhausted\"}}";
+        try { service.TranslateAsync("hello", "en", "tr", default, "mymemory").GetAwaiter().GetResult(); throw new Exception("MyMemory warning text was accepted as translation"); }
+        catch (InvalidOperationException) { Check(true, "MyMemory warning text is never inserted as a translation"); }
+        var partialHandler = new MyMemoryPartialHandler();
+        var partialService = new SelectionTranslationService(new System.Net.Http.HttpClient(partialHandler));
+        try { partialService.TranslateAsync(new string('a', 700), "en", "tr", default, "mymemory").GetAwaiter().GetResult(); throw new Exception("Partial MyMemory translation was accepted"); }
+        catch (InvalidOperationException) { Check(partialHandler.RequestCount == 2, "Failure in a later MyMemory chunk prevents a partial result"); }
+        Check(SelectionTranslationService.LibreEndpoint("http://localhost:5000/translate").ToString() == "http://localhost:5000/translate", "Local LibreTranslate HTTP and explicit endpoint are supported");
+        try { SelectionTranslationService.LibreEndpoint("http://example.com/"); throw new Exception("Remote HTTP was accepted"); }
+        catch (FormatException) { Check(true, "Remote LibreTranslate requires HTTPS"); }
+        try { SelectionTranslationService.LibreEndpoint("https://example.com/?key=secret"); throw new Exception("Endpoint query was accepted"); }
+        catch (FormatException) { Check(true, "LibreTranslate URL rejects query secrets"); }
+        LocalLibreTranslationCheck();
+        handler.Status = System.Net.HttpStatusCode.TooManyRequests;
+        try { service.TranslateAsync("hello", "auto", "tr", default).GetAwaiter().GetResult(); throw new Exception("Rate limit was accepted"); }
+        catch (InvalidOperationException error) { Check(error.Message.Contains("istek sınırına") && !error.Message.Contains("hello"), "Rate limit gives actionable feedback without echoing selected text"); }
+        handler.Status = System.Net.HttpStatusCode.Forbidden;
+        try { service.TranslateAsync("hello", "en", "tr", default, "libretranslate", "http://localhost:5000", "private-key").GetAwaiter().GetResult(); throw new Exception("Forbidden response was accepted"); }
+        catch (InvalidOperationException error) { Check(error.Message.Contains("API anahtarını") && !error.Message.Contains("private-key"), "LibreTranslate authentication failure does not expose the key"); }
+        handler.Status = System.Net.HttpStatusCode.OK;
+        handler.Response = "[[],null,\"en\"]";
+        try { service.TranslateAsync("hello", "auto", "tr", default).GetAwaiter().GetResult(); throw new Exception("Empty response was accepted"); }
+        catch (InvalidOperationException) { Check(true, "Empty translation is rejected"); }
+        try { service.TranslateAsync(new string('x', 30001), "en", "tr", default).GetAwaiter().GetResult(); throw new Exception("Oversized selection was accepted"); }
+        catch (InvalidOperationException) { Check(true, "Oversized selection is rejected"); }
+        BoundedTranslationResponseChecks();
+    }
+
+    private static void BoundedTranslationResponseChecks()
+    {
+        var bomResponse = System.Text.Encoding.UTF8.GetPreamble().Concat(System.Text.Encoding.UTF8.GetBytes("[[[\"merhaba\",\"hello\"]],null,\"en\"]")).ToArray();
+        using (var client = new System.Net.Http.HttpClient(new ResponseBodyHandler(() => new System.Net.Http.ByteArrayContent(bomResponse))))
+            Check(new SelectionTranslationService(client).TranslateAsync("hello", "en", "tr", default).GetAwaiter().GetResult() == "merhaba", "UTF-8 JSON byte-order mark is accepted");
+        var large = new byte[SelectionTranslationService.MaxResponseBytes + 1];
+        using (var client = new System.Net.Http.HttpClient(new ResponseBodyHandler(() => new System.Net.Http.ByteArrayContent(large))))
+        {
+            try { new SelectionTranslationService(client).TranslateAsync("hello", "en", "tr", default).GetAwaiter().GetResult(); throw new Exception("Oversized declared response was accepted"); }
+            catch (InvalidOperationException error) { Check(error.Message.Contains("çok büyük"), "Oversized declared response is rejected"); }
+        }
+        using (var client = new System.Net.Http.HttpClient(new ResponseBodyHandler(() => new System.Net.Http.StreamContent(new NonSeekableReadStream(large)))))
+        {
+            try { new SelectionTranslationService(client).TranslateAsync("hello", "en", "tr", default).GetAwaiter().GetResult(); throw new Exception("Oversized streaming response was accepted"); }
+            catch (InvalidOperationException error) { Check(error.Message.Contains("çok büyük"), "Oversized response without content length is rejected"); }
+        }
+        using (var client = new System.Net.Http.HttpClient(new ResponseBodyHandler(() => new System.Net.Http.StreamContent(new StalledReadStream()))) { Timeout = TimeSpan.FromMilliseconds(100) })
+        {
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            try { new SelectionTranslationService(client).TranslateAsync("hello", "en", "tr", default).GetAwaiter().GetResult(); throw new Exception("Stalled body did not time out"); }
+            catch (OperationCanceledException) { Check(elapsed.Elapsed < TimeSpan.FromSeconds(3), "Timeout remains active while reading the response body"); }
+        }
+        using (var client = new System.Net.Http.HttpClient(new ResponseBodyHandler(() => new System.Net.Http.StreamContent(new StalledReadStream()))) { Timeout = TimeSpan.FromSeconds(5) })
+        using (var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(100)))
+        {
+            try { new SelectionTranslationService(client).TranslateAsync("hello", "en", "tr", cancel.Token).GetAwaiter().GetResult(); throw new Exception("Stalled body ignored cancellation"); }
+            catch (OperationCanceledException) { Check(cancel.IsCancellationRequested, "Caller cancellation interrupts the response body"); }
+        }
+    }
+
+    private static byte[] CustomClipboardPickle(string json)
+    {
+        using var stream = new System.IO.MemoryStream();
+        using var writer = new System.IO.BinaryWriter(stream, System.Text.Encoding.Unicode, true);
+        writer.Write(0u); // Chromium Pickle payload length, filled after writing.
+        writer.Write(2u);
+        void String16(string text)
+        {
+            writer.Write((uint)text.Length);
+            var bytes = System.Text.Encoding.Unicode.GetBytes(text);
+            writer.Write(bytes);
+            for (var i = bytes.Length; (i & 3) != 0; i++) writer.Write((byte)0);
+        }
+        String16("unrelated"); String16("value");
+        String16("vscode-editor-data"); String16(json);
+        writer.Flush();
+        stream.Position = 0;
+        writer.Write((uint)(stream.Length - 4)); writer.Flush();
+        return stream.ToArray();
+    }
+
+    private static void LocalLibreTranslationCheck()
+    {
+        using var listener = new System.Net.HttpListener();
+        var temporary = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        temporary.Start();
+        var port = ((System.Net.IPEndPoint)temporary.LocalEndpoint).Port;
+        temporary.Stop();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        listener.Start();
+        var server = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            using var reader = new System.IO.StreamReader(context.Request.InputStream);
+            var body = await reader.ReadToEndAsync();
+            var method = context.Request.HttpMethod;
+            var path = context.Request.Url!.AbsolutePath;
+            var bytes = System.Text.Encoding.UTF8.GetBytes("{\"translatedText\":\"merhaba\"}");
+            context.Response.ContentType = "application/json";
+            context.Response.ContentLength64 = bytes.Length;
+            await context.Response.OutputStream.WriteAsync(bytes);
+            context.Response.Close();
+            return (method, path, body);
+        });
+        using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var result = new SelectionTranslationService(client).TranslateAsync("hello", "auto", "tr", default, "libretranslate", $"http://127.0.0.1:{port}").GetAwaiter().GetResult();
+        var request = server.GetAwaiter().GetResult();
+        using var document = JsonDocument.Parse(request.body);
+        Check(result == "merhaba" && request.method == "POST" && request.path == "/translate" && document.RootElement.GetProperty("source").GetString() == "auto", "LibreTranslate runs through a real local HTTP request");
+    }
+
+    private sealed class TranslationHandler : System.Net.Http.HttpMessageHandler
+    {
+        public string Response = "[[[\"mer\",\"hel\"],[\"haba\",\"lo\"]],null,\"en\"]";
+        public System.Net.HttpStatusCode Status = System.Net.HttpStatusCode.OK;
+        public string? LastUrl;
+        public string? LastMethod, LastBody;
+        public int RequestCount;
+        protected override async Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken token)
+        {
+            LastUrl = request.RequestUri!.ToString();
+            RequestCount++;
+            LastMethod = request.Method.Method;
+            LastBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(token);
+            return new System.Net.Http.HttpResponseMessage(Status) { Content = new System.Net.Http.StringContent(Response) };
+        }
+    }
+    private sealed class MyMemoryPartialHandler : System.Net.Http.HttpMessageHandler
+    {
+        public int RequestCount;
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken token)
+        {
+            RequestCount++;
+            var json = RequestCount == 1 ? "{\"responseStatus\":200,\"responseData\":{\"translatedText\":\"translated\"}}" : "{\"responseStatus\":200,\"quotaFinished\":true,\"responseData\":{\"translatedText\":\"warning\"}}";
+            return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new System.Net.Http.StringContent(json) });
+        }
+    }
+    private sealed class ResponseBodyHandler(Func<System.Net.Http.HttpContent> content) : System.Net.Http.HttpMessageHandler
+    {
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, CancellationToken token) =>
+            Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content() });
+    }
+    private sealed class NonSeekableReadStream(byte[] bytes) : System.IO.Stream
+    {
+        private readonly System.IO.MemoryStream _inner = new(bytes, false);
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken token = default) => _inner.ReadAsync(buffer, token);
+        public override void Flush() { }
+        public override long Seek(long offset, System.IO.SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        protected override void Dispose(bool disposing) { if (disposing) _inner.Dispose(); base.Dispose(disposing); }
+    }
+    private sealed class StalledReadStream : System.IO.Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken token = default) { await Task.Delay(Timeout.Infinite, token); return 0; }
+        public override void Flush() { }
+        public override long Seek(long offset, System.IO.SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static void Send(ushort key, bool up)

@@ -1869,6 +1869,20 @@
       "settings": []
     },
     {
+      "id": "windows-security-notifications",
+      "name": "Windows Güvenliği Bildirimleri",
+      "category": "Sistem",
+      "description": "Windows Güvenliği'nin tarama özetleri gibi rutin bildirimlerini gizler. Kritik güvenlik uyarıları görünmeye devam eder.",
+      "warning": "Bu ayar cihazdaki tüm kullanıcıları etkiler. Değiştirmek için WinForge'u yönetici olarak çalıştırın.",
+      "isActive": false,
+      "error": null,
+      "panel": null,
+      "panelAvailable": false,
+      "panelLoaded": false,
+      "panelError": null,
+      "settings": []
+    },
+    {
       "id": "media-flyout",
       "name": "Fluent Medya Flyout’u",
       "category": "Sistem",
@@ -3430,6 +3444,47 @@
       ]
     },
     {
+      "id": "clipboard-history",
+      "name": "Pano Geçmişi",
+      "category": "Verimlilik",
+      "description": "Win+V ile kopyalanan metin ve görsellere erişin. Geçmiş bu cihazda saklanır.",
+      "warning": null,
+      "isActive": false,
+      "error": null,
+      "panel": null,
+      "panelAvailable": false,
+      "panelLoaded": false,
+      "panelError": null,
+      "settings": [
+        {
+          "key": "open",
+          "label": "Pano geçmişini aç",
+          "description": null,
+          "section": null,
+          "kind": "action",
+          "defaultValue": null,
+          "value": null,
+          "min": 0,
+          "max": 100,
+          "options": [],
+          "optionLabels": {}
+        },
+        {
+          "key": "retention-days",
+          "label": "Otomatik silme süresi (gün)",
+          "description": "Bu süreden eski öğeler otomatik silinir. Süresiz saklamak için 0 girin.",
+          "section": null,
+          "kind": "number",
+          "defaultValue": 7,
+          "value": 7,
+          "min": 0,
+          "max": 3650,
+          "options": [],
+          "optionLabels": {}
+        }
+      ]
+    },
+    {
       "id": "clipboardline",
       "name": "ClipBoardLine · Pano Rafları",
       "category": "Verimlilik",
@@ -3633,7 +3688,7 @@
           "optionLabels": {}
         },
         {
-          "key": "storage-directory",
+          "key": "history-directory",
           "label": "Görseller ve geçmiş klasörü",
           "description": "Görseller seçilen klasörün media alt klasörüne kaydedilir. Boş: varsayılan konum. Eski kayıtlar önceki klasörde korunur.",
           "section": null,
@@ -3917,6 +3972,19 @@
           "optionLabels": {}
         },
         {
+          "key": "monitor-hotkey",
+          "label": "İmleçteki monitörü yakalama kısayolu",
+          "description": "Fare imlecinin bulunduğu monitörün tamamını alan seçmeden yakalar. Kapatmak için boş bırakın.",
+          "section": null,
+          "kind": "text",
+          "defaultValue": "",
+          "value": "",
+          "min": 0,
+          "max": 100,
+          "options": [],
+          "optionLabels": {}
+        },
+        {
           "key": "edit",
           "label": "Yakalama sonrası düzenle",
           "description": null,
@@ -4054,6 +4122,32 @@
           "value": 0,
           "min": 0,
           "max": 30,
+          "options": [],
+          "optionLabels": {}
+        },
+        {
+          "key": "video-region-hotkey",
+          "label": "Bölge video kaydı kısayolu",
+          "description": "Bir alan seçtikten sonra video kaydını başlatır. Kapatmak için boş bırakın.",
+          "section": null,
+          "kind": "text",
+          "defaultValue": "",
+          "value": "",
+          "min": 0,
+          "max": 100,
+          "options": [],
+          "optionLabels": {}
+        },
+        {
+          "key": "video-monitor-hotkey",
+          "label": "Tam ekran video kaydı kısayolu",
+          "description": "Fare imlecinin bulunduğu monitörün tamamını kaydetmeye başlar. Kapatmak için boş bırakın.",
+          "section": null,
+          "kind": "text",
+          "defaultValue": "",
+          "value": "",
+          "min": 0,
+          "max": 100,
           "options": [],
           "optionLabels": {}
         },
@@ -6614,6 +6708,19 @@
           "optionLabels": {}
         },
         {
+          "key": "translation-hotkey",
+          "label": "İngilizce dikte kısayolu",
+          "description": "Konuşmayı çevrimdışı İngilizceye çevirip yazar. Large modeli gerekir. Kısayolu kapatmak için boş bırakın.",
+          "section": null,
+          "kind": "text",
+          "defaultValue": "Ctrl+Shift+Space",
+          "value": "Ctrl+Shift+Space",
+          "min": 0,
+          "max": 100,
+          "options": [],
+          "optionLabels": {}
+        },
+        {
           "key": "language",
           "label": "Dil",
           "description": null,
@@ -6849,7 +6956,7 @@
         },
         {
           "key": "output",
-          "label": "İngilizceye çevir (Large kullanır)",
+          "label": "Normal dikteyi de İngilizceye çevir (Large kullanır)",
           "description": null,
           "section": null,
           "kind": "toggle",

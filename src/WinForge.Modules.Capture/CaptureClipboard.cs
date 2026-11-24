@@ -1,6 +1,5 @@
 using System.Collections.Specialized;
 using System.Runtime.InteropServices;
-using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Media.Imaging;
 
@@ -8,26 +7,33 @@ namespace WinForge.Modules.Capture;
 
 internal static class CaptureClipboard
 {
-    internal static DataObject CreateData(BitmapSource image, string directory)
+    internal const string PngFormat = "PNG";
+
+    internal static DataObject CreateData(BitmapSource image, string directory, CaptureImageFile file)
     {
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(image));
-        using var stream = new MemoryStream();
-        encoder.Save(stream);
-        var bytes = stream.ToArray();
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, "Ekran-" + Convert.ToHexString(SHA256.HashData(bytes)) + ".png");
-        // Keep clipboard files independent of history retention and editor changes.
-        if (!File.Exists(path)) File.WriteAllBytes(path, bytes);
+        var png = CaptureImageFile.EncodePng(image);
         var data = new DataObject();
+        data.SetData(PngFormat, new MemoryStream(png, writable: false), autoConvert: false);
         data.SetImage(image);
-        data.SetFileDropList(new StringCollection { path });
+        try
+        {
+            // Keep clipboard files independent of history retention and editor changes.
+            var path = file.Export(directory, png);
+            data.SetFileDropList(new StringCollection { path });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // Image paste is still available if the temporary file cannot be written.
+        }
         return data;
     }
 
-    internal static async Task CopyAsync(BitmapSource image, CancellationToken token)
+    internal static async Task CopyAsync(BitmapSource image, CaptureImageFile file, CancellationToken token)
     {
-        var data = CreateData(image, Path.Combine(Path.GetTempPath(), "WinForge", "CaptureClipboard"));
+        var directory = Path.Combine(Path.GetTempPath(), "WinForge", "CaptureClipboard");
+        var data = image.IsFrozen
+            ? await Task.Run(() => CreateData(image, directory, file), token)
+            : CreateData(image, directory, file);
         for (var attempt = 0; ; attempt++)
         {
             token.ThrowIfCancellationRequested();

@@ -86,7 +86,37 @@ internal static class SettingsPersistenceChecks
         }
         check(new SettingsStore(batchPath).For("test")["value"] == "close", "Normal disposal flushes the last pending edit");
         check(!Directory.GetFiles(root, "*.tmp").Any(), "Successful and failed writes clean their temporary files");
+        ClipboardShortcutMigration(root, check);
         SerializedRollback(root, check);
+    }
+
+    private static void ClipboardShortcutMigration(string root, Action<bool, string> check)
+    {
+        var path = Path.Combine(root, "clipboard.json");
+        File.WriteAllText(path, """
+            {"Enabled":["clipboardline"],"Values":{"clipboardline":{"hotkey":"V + Windows","search-hotkey":"Ctrl+Alt+S"}}}
+            """);
+        using (var settings = new SettingsStore(path))
+        {
+            check(settings.IsModuleEnabled("clipboard-history") && settings.IsModuleEnabled("clipboardline"),
+                "An active legacy Win+V assignment enables Clipboard History alongside the shelf.");
+            check(!settings.For("clipboardline").ContainsKey("hotkey") && settings.For("clipboardline")["search-hotkey"] == "Ctrl+Alt+S",
+                "Migration restores the default shelf shortcut and preserves the other settings.");
+            settings.SetModuleEnabled("clipboard-history", false);
+            settings.For("clipboardline")["hotkey"] = "Win+V";
+            settings.Save();
+        }
+        using (var settings = new SettingsStore(path))
+            check(!settings.IsModuleEnabled("clipboard-history") && settings.For("clipboardline")["hotkey"] == "Win+V",
+                "A subsequent explicit shortcut choice survives restart.");
+
+        var disabledPath = Path.Combine(root, "clipboard-disabled.json");
+        File.WriteAllText(disabledPath, """
+            {"Enabled":["clipboardline"],"Values":{"clipboardline":{"hotkey":"Win+V","hotkey-enabled":"false"}}}
+            """);
+        using var disabled = new SettingsStore(disabledPath);
+        check(!disabled.IsModuleEnabled("clipboard-history") && disabled.For("clipboardline")["hotkey"] == "Win+V",
+            "A disabled shortcut does not turn on clipboard recording.");
     }
 
     private static void SerializedRollback(string root, Action<bool, string> check)

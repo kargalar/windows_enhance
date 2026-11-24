@@ -4,8 +4,10 @@ namespace WinForge.Modules.Capture;
 
 internal static class DictationDefaults
 {
-    public static readonly string[] ModelFiles = ["ggml-large-v3-turbo.bin", "ggml-large-v3.bin", "ggml-small.bin"];
+    public const string TranslationModel = "ggml-large-v3.bin";
+    public static readonly string[] ModelFiles = ["ggml-large-v3-turbo.bin", TranslationModel, "ggml-small.bin"];
     public const string Hotkey = "Shift+Space";
+    public const string TranslationHotkey = "Ctrl+Shift+Space";
 }
 
 // Dispose resets a reusable module session. Native resources are freed only after inference returns.

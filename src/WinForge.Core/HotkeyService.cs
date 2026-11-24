@@ -132,8 +132,8 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
 
     private void RegisterNativeOrFallback(int id, uint modifiers, uint key)
     {
-        // Lock keys must be intercepted before Windows toggles their state.
-        if (key == 0x14)
+        // Intercept Caps Lock before it toggles and Win+V before Explorer opens its history.
+        if (key == 0x14 || IsClipboardShortcut(modifiers, key))
         {
             EnsureFallbackHook();
             _fallback.Add(id);
@@ -170,7 +170,14 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
                 if (Down(0x12)) modifiers |= HotkeyModifiers.Alt;
                 if (Down(0x10)) modifiers |= HotkeyModifiers.Shift;
                 if (Down(0x5B) || Down(0x5C)) modifiers |= HotkeyModifiers.Win;
-                if (ProcessFallback(message.ToInt32(), input.vkCode, modifiers)) return new IntPtr(1);
+                var kind = message.ToInt32();
+                var suppressStartMenu = kind is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN &&
+                    IsClipboardShortcut(modifiers, input.vkCode) && !_heldFallbackKeys.ContainsKey(input.vkCode);
+                if (ProcessFallback(kind, input.vkCode, modifiers))
+                {
+                    if (suppressStartMenu) FocusedTextOutput.MaskWindowsKeyRelease();
+                    return new IntPtr(1);
+                }
             }
         }
         return Native.CallNextHookEx(IntPtr.Zero, code, message, data);
@@ -180,6 +187,9 @@ public sealed class HotkeyService : IHotkeyService, IDisposable
         _fallbackBindings = _fallback.Select(id => new FallbackBinding(id, _shortcuts[id].Modifiers, _shortcuts[id].Key)).ToArray();
 
     private static bool Down(int key) => (Native.GetAsyncKeyState(key) & 0x8000) != 0;
+
+    private static bool IsClipboardShortcut(uint modifiers, uint key) =>
+        modifiers == HotkeyModifiers.Win && key == 'V';
 
     internal bool ProcessFallback(int message, uint key, uint modifiers)
     {

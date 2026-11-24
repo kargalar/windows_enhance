@@ -38,12 +38,62 @@ internal static class TilingInteractionChecks
         check((bool)swap.Invoke(null, [order, right, left])! && order.SequenceEqual([left, right, third]),
             "Tile swaps can be repeated in either direction");
 
+        VerifySharedTileResize(tilingType, check);
+        VerifyGridBounds(tilingType, check);
         VerifyDragLifecycle(tilingType, check);
         VerifyFullscreenStacking(tilingType, check, originallyTopmost: false);
         VerifyFullscreenStacking(tilingType, check, originallyTopmost: true);
         VerifyNewWindowPlacement(tilingType, check);
     }
 
+    private static void VerifySharedTileResize(Type tilingType, Action<bool, string> check)
+    {
+        var resize = tilingType.GetMethod("ResizeSharedEdge", StaticMethods)!;
+        var bounds = new[]
+        {
+            new RECT { Left = 0, Top = 0, Right = 500, Bottom = 800 },
+            new RECT { Left = 510, Top = 0, Right = 1000, Bottom = 395 },
+            new RECT { Left = 510, Top = 405, Right = 1000, Bottom = 800 }
+        };
+        var shared = tilingType.GetMethod("HasSharedEdge", StaticMethods)!;
+        check((bool)shared.Invoke(null, [bounds, 1, true, 500, 10])! &&
+              !(bool)shared.Invoke(null, [bounds, 1, true, 1000, 10])! &&
+              (bool)shared.Invoke(null, [bounds, 1, false, 395, 10])!,
+            "Window Control selects only boundaries shared with another tile");
+        var resized = (RECT[])resize.Invoke(null, [bounds, 1, true, 500, 100, 10])!;
+        check(resized[0].Right == 600 && resized[1].Left == 610 && resized[2].Left == 610 && bounds[0].Right == 500,
+            "Resizing a shared master edge moves every adjacent stack window without changing the original snapshot");
+        resized = (RECT[])resize.Invoke(null, [bounds, 1, true, 500, 2000, 10])!;
+        check(resized[1].Right - resized[1].Left == 80 && resized[2].Right - resized[2].Left == 80,
+            "Shared edge resizing clamps all adjacent windows to the minimum size");
+        resized = (RECT[])resize.Invoke(null, [bounds, 1, false, 395, 100, 10])!;
+        check(resized[1].Bottom == 495 && resized[2].Top == 505 && resized[0].Bottom == 800,
+            "Resizing a stack boundary leaves the master window unchanged");
+    }
+
+    private static void VerifyGridBounds(Type tilingType, Action<bool, string> check)
+    {
+        var method = tilingType.GetMethod("GetGridBounds", StaticMethods)!;
+        var work = new RECT { Left = -1000, Top = 100, Right = 0, Bottom = 900 };
+        for (var count = 1; count <= 7; count++)
+        {
+            var bounds = (RECT[])method.Invoke(null, [count, work, 10])!;
+            var leftCount = count >= 4 ? 2 : 1;
+            var valid = bounds.Length == count && (count != 1 ||
+                (bounds[0].Left == work.Left && bounds[0].Right == work.Right && bounds[0].Top == work.Top && bounds[0].Bottom == work.Bottom));
+            if (count > 1)
+            {
+                valid &= bounds.Take(leftCount).All(r => r.Left == work.Left && r.Right == -505) &&
+                         bounds.Skip(leftCount).All(r => r.Left == -495 && r.Right == work.Right);
+                foreach (var column in new[] { bounds.Take(leftCount).ToArray(), bounds.Skip(leftCount).ToArray() })
+                {
+                    valid &= column[0].Top == work.Top && column[^1].Bottom == work.Bottom;
+                    for (var i = 1; i < column.Length; i++) valid &= column[i].Top == column[i - 1].Bottom + 10;
+                }
+            }
+            check(valid, $"Grid places {count} windows in the requested two-column arrangement");
+        }
+    }
     private static void VerifyNewWindowPlacement(Type tilingType, Action<bool, string> check)
     {
         var fancyType = tilingType.Assembly.GetType("WinForge.Modules.Tiling.FancyZonesModule")!;

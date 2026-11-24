@@ -66,7 +66,8 @@ public sealed record FeatureUiWindowOptions(
     bool Resizable = false,
     double? Left = null,
     double? Top = null,
-    bool ShowOnOpen = true);
+    bool ShowOnOpen = true,
+    bool DismissOnDeactivate = false);
 
 /// <summary>Controls a React-rendered feature window hosted by the desktop application.</summary>
 public interface IFeatureUiWindow : IDisposable
@@ -162,6 +163,20 @@ public interface IWindowZoneDragProvider : IWindowZoneProvider
 {
     void BeginWindowZoneDrag(IntPtr window);
     bool EndWindowZoneDrag(IntPtr window, bool canceled);
+}
+
+public interface ITiledResizeContext
+{
+    bool BeginTiledResize(IntPtr window, POINT start, int edges);
+    void UpdateTiledResize(POINT cursor);
+    void EndTiledResize(bool canceled);
+}
+
+public interface ITiledResizeProvider
+{
+    bool BeginTiledResize(IntPtr window, POINT start, int edges);
+    void UpdateTiledResize(POINT cursor);
+    void EndTiledResize(bool canceled);
 }
 
 /// <summary>A lifecycle component owned by a combined module, excluded from module discovery.</summary>

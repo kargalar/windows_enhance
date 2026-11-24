@@ -81,11 +81,57 @@ public sealed class SpeechBuffer
         return coefficients;
     }
     public float[] Take(bool trimSilence = false) => Take(out _, trimSilence);
-    public float[] Take(out float peak, bool trimSilence = false)
+    public float[] Take(out float peak, bool trimSilence = false) => Take(out peak, 0, trimSilence);
+
+    internal float[]? ReadLiveChunk(int offset, out int end)
     {
+        const int frame = DictationAudio.SampleRate / 50;
+        const int pause = 18 * frame;
+        const int minimumSpeech = 40 * frame;
+        const int maximumChunk = 5 * DictationAudio.SampleRate;
+        const int padding = DictationAudio.SampleRate / 5;
         lock (gate)
         {
             var audio = CollectionsMarshal.AsSpan(samples);
+            var limit = Math.Min(audio.Length, offset + maximumChunk);
+            var first = -1;
+            var last = offset;
+            var shortPause = 0;
+            end = offset;
+            for (var start = offset; start + frame <= limit; start += frame)
+            {
+                var next = start + frame;
+                if (IsSpeechFrame(audio[start..next]))
+                {
+                    if (first < 0) first = start;
+                    last = next;
+                }
+                else if (first >= 0 && last - first >= minimumSpeech && next - last >= pause)
+                {
+                    end = next;
+                    return audio[Math.Max(offset, first - padding)..(last + padding)].ToArray();
+                }
+                else if (first >= 0 && last - first >= minimumSpeech && next - last == 3 * frame &&
+                         last >= offset + maximumChunk - DictationAudio.SampleRate)
+                {
+                    shortPause = last + frame;
+                }
+            }
+            if (limit - offset < maximumChunk) return null;
+            // Keep the leading edge of a phrase that has only just started.
+            if (first < 0) { end = limit - padding; return null; }
+            if (limit - first < minimumSpeech) { end = first - padding; return null; }
+            // Prefer a short gap near the limit to a cut in the middle of continuous speech.
+            end = shortPause > 0 ? shortPause : limit;
+            return audio[Math.Max(offset, first - padding)..Math.Min(end, last + padding)].ToArray();
+        }
+    }
+
+    internal float[] Take(out float peak, int startOffset, bool trimSilence = false)
+    {
+        lock (gate)
+        {
+            var audio = CollectionsMarshal.AsSpan(samples)[startOffset..];
             peak = 0;
             foreach (var sample in audio) peak = Math.Max(peak, Math.Abs(sample));
             var start = 0;
@@ -100,9 +146,7 @@ public sealed class SpeechBuffer
                 for (var offset = 0; offset < audio.Length; offset += frame)
                 {
                     var length = Math.Min(frame, audio.Length - offset);
-                    double energy = 0;
-                    foreach (var sample in audio.Slice(offset, length)) energy += (double)sample * sample;
-                    if (energy / length < SilenceThreshold * SilenceThreshold) continue;
+                    if (!IsSpeechFrame(audio.Slice(offset, length))) continue;
                     if (first < 0) first = offset;
                     last = offset + length;
                 }
@@ -127,11 +171,16 @@ public sealed class SpeechBuffer
         for (var offset = 0; offset < audio.Length; offset += frame)
         {
             var length = Math.Min(frame, audio.Length - offset);
-            double energy = 0;
-            for (var i = offset; i < offset + length; i++) energy += (double)audio[i] * audio[i];
-            if (energy / length >= SilenceThreshold * SilenceThreshold) return true;
+            if (IsSpeechFrame(audio.AsSpan(offset, length))) return true;
         }
         return false;
+    }
+
+    private static bool IsSpeechFrame(ReadOnlySpan<float> frame)
+    {
+        double energy = 0;
+        foreach (var sample in frame) energy += (double)sample * sample;
+        return energy / frame.Length >= SilenceThreshold * SilenceThreshold;
     }
 }
 
@@ -141,6 +190,7 @@ public sealed class DictationShortcutState
     public static readonly TimeSpan HoldThreshold = TimeSpan.FromMilliseconds(300);
     public bool Held { get; private set; }
     private bool startsRecording;
+    private bool keyObservedDown;
     private long pressedAt;
 
     public DictationKeyAction Press(bool recording)
@@ -150,6 +200,22 @@ public sealed class DictationShortcutState
         startsRecording = !recording;
         pressedAt = Stopwatch.GetTimestamp();
         return recording ? DictationKeyAction.Stop : DictationKeyAction.Start;
+    }
+
+    internal DictationKeyAction PressRegistered(bool recording, bool keyDown)
+    {
+        // The hotkey service suppresses repeats. A new activation supersedes a missed release.
+        Reset();
+        keyObservedDown = keyDown;
+        return Press(recording);
+    }
+
+    internal DictationKeyAction ObserveKeyState(bool keyDown, bool modifiersDown)
+    {
+        if (!Held) return DictationKeyAction.None;
+        // Hook-based hotkeys can swallow the primary keydown before it reaches GetAsyncKeyState.
+        keyObservedDown |= keyDown;
+        return !modifiersDown || (keyObservedDown && !keyDown) ? Release() : DictationKeyAction.None;
     }
 
     public DictationKeyAction Release() => Release(pressedAt == 0 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(pressedAt));
@@ -163,5 +229,5 @@ public sealed class DictationShortcutState
         return action;
     }
 
-    public void Reset() { Held = false; startsRecording = false; pressedAt = 0; }
+    public void Reset() { Held = false; startsRecording = false; keyObservedDown = false; pressedAt = 0; }
 }

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Collections.Concurrent;
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -8,7 +9,9 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using ImageMagick;
 using WinForge.Core;
+using WinForge.FileTools.Engine;
 using WinForge.History;
 
 namespace WinForge.Modules.Capture;
@@ -18,6 +21,7 @@ public readonly record struct CaptureArea(int X, int Y, int Width, int Height)
     public bool IsValid => Width > 0 && Height > 0 && (long)Width * Height <= 30_000_000;
 }
 public sealed record ForegroundInfo(nint Window, uint Process, string App, string Title);
+internal readonly record struct CaptureWindow(nint Handle, CaptureArea Area);
 public static class CaptureServices
 {
     public const long MinimumFreeBytes = 256L * 1024 * 1024;
@@ -32,9 +36,10 @@ public static class CaptureServices
             finally { CloseDesktop(desktop); }
         }
     }
-    public static ForegroundInfo Foreground()
+    public static ForegroundInfo Foreground() => DescribeWindow(Native.GetForegroundWindow());
+
+    internal static ForegroundInfo DescribeWindow(nint window)
     {
-        var window = Native.GetForegroundWindow();
         if (window == IntPtr.Zero || Native.IsShellSwitcherClass(Native.ClassNameOf(window)))
             return new(IntPtr.Zero, 0, "Bilinmeyen", string.Empty);
         Native.GetWindowThreadProcessId(window, out var pid);
@@ -51,11 +56,97 @@ public static class CaptureServices
         return Area(display.Bounds);
     }
     public static CaptureArea Area(RECT rect) => new(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+    internal static nint FindFullscreenWindow(CaptureArea capture, nint foreground)
+    {
+        nint match = 0;
+        foreach (var display in DesktopDisplays.Enumerate())
+        {
+            var monitor = Area(display.Bounds);
+            if (!Covers(capture, monitor)) continue;
+            var center = new POINT(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2);
+            var window = GetAncestor(WindowFromPoint(center), 2);
+            if (!IsApplicationWindow(window)) continue;
+            const int windowStyle = -16;
+            const long caption = 0x00C00000;
+            if ((Native.GetWindowLongPtr(window, windowStyle).ToInt64() & caption) == caption) continue;
+            if (!TryWindowArea(window, out var bounds) || !Covers(bounds, monitor, tolerance: 2)) continue;
+            if (window == foreground) return window;
+            if (match == 0) match = window;
+        }
+        return match;
+    }
+
+    private static bool IsApplicationWindow(nint window)
+    {
+        if (window == 0 || window == GetDesktopWindow() || window == GetShellWindow()) return false;
+        var windowClass = Native.ClassNameOf(window);
+        return windowClass is not ("Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") &&
+            !Native.IsShellSwitcherClass(windowClass);
+    }
+
+    internal static IReadOnlyList<CaptureWindow> VisibleWindows()
+    {
+        var windows = new List<CaptureWindow>();
+        EnumWindows((window, _) =>
+        {
+            const int cloakedAttribute = 14;
+            if (IsWindowVisible(window) && !Native.IsIconic(window) && IsApplicationWindow(window) &&
+                (DwmGetWindowAttribute(window, cloakedAttribute, out int cloaked, sizeof(int)) != 0 || cloaked == 0) &&
+                TryWindowArea(window, out var area) && area.Width > 0 && area.Height > 0)
+                windows.Add(new(window, area));
+            return true;
+        }, 0);
+        return windows;
+    }
+
+    internal static nint WindowAt(IReadOnlyList<CaptureWindow> windows, int x, int y)
+    {
+        foreach (var window in windows)
+        {
+            var area = window.Area;
+            if (x >= area.X && x < area.X + area.Width && y >= area.Y && y < area.Y + area.Height)
+                return window.Handle;
+        }
+        return 0;
+    }
+
+    internal static nint WindowIn(CaptureArea area, IReadOnlyList<CaptureWindow> windows)
+    {
+        // Sample the visible window across the region so a small dialog at its center does not dominate.
+        const int samples = 5;
+        var counts = new Dictionary<nint, int>();
+        for (var row = 0; row < samples; row++)
+        for (var column = 0; column < samples; column++)
+        {
+            var x = area.X + (2 * column + 1) * area.Width / (2 * samples);
+            var y = area.Y + (2 * row + 1) * area.Height / (2 * samples);
+            var window = WindowAt(windows, x, y);
+            if (window != 0) counts[window] = counts.GetValueOrDefault(window) + 1;
+        }
+        var center = WindowAt(windows, area.X + area.Width / 2, area.Y + area.Height / 2);
+        var best = center;
+        foreach (var (window, count) in counts)
+            if (count > counts.GetValueOrDefault(best)) best = window;
+        return best;
+    }
+
+    private static bool Covers(CaptureArea area, CaptureArea target, int tolerance = 0) =>
+        area.X <= target.X + tolerance && area.Y <= target.Y + tolerance &&
+        area.X + area.Width >= target.X + target.Width - tolerance &&
+        area.Y + area.Height >= target.Y + target.Height - tolerance;
+
     public static CaptureArea WindowArea(nint window)
     {
-        if (DwmGetWindowAttribute(window, 9, out RECT rect, Marshal.SizeOf<RECT>()) != 0 && !Native.GetWindowRect(window, out rect))
+        if (!TryWindowArea(window, out var area))
             throw new InvalidOperationException("Pencere sınırları okunamadı.");
-        return Area(rect);
+        return area;
+    }
+    private static bool TryWindowArea(nint window, out CaptureArea area)
+    {
+        var found = DwmGetWindowAttribute(window, Native.DWMWA_EXTENDED_FRAME_BOUNDS, out RECT rect, Marshal.SizeOf<RECT>()) == 0 ||
+            Native.GetWindowRect(window, out rect);
+        area = found ? Area(rect) : default;
+        return found;
     }
     public static CaptureArea? WindowAtPoint(POINT point)
     {
@@ -82,21 +173,56 @@ public static class CaptureServices
     }
     public static BitmapSource Load(string path)
     {
-        return WinForge.FileTools.UI.ImageEngine.Load(path);
+        if (!Path.GetExtension(path).Equals(".webp", StringComparison.OrdinalIgnoreCase))
+            return WinForge.FileTools.UI.ImageEngine.Load(path);
+
+        using var image = PhotoCodec.Read(path);
+        using var pixels = image.GetPixelsUnsafe();
+        var bgra = pixels.ToByteArray(PixelMapping.BGRA) ?? throw new InvalidDataException("WebP pikselleri okunamadı.");
+        var result = BitmapSource.Create((int)image.Width, (int)image.Height, 96, 96, PixelFormats.Bgra32, null, bgra, (int)image.Width * 4);
+        result.Freeze();
+        return result;
     }
-    public static string Save(HistoryStore store, BitmapSource image, bool webp = false, int quality = 80)
+    public static string Save(HistoryStore store, BitmapSource image, bool webp = false, int quality = 80, string mediaFolder = "")
     {
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
-        using var memory = new MemoryStream(); encoder.Save(memory); var bytes = memory.ToArray();
+        byte[] bytes;
+        byte[] digest;
+        if (webp)
+        {
+            var source = image.Format == PixelFormats.Bgra32 ? image : new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+            var stride = checked(source.PixelWidth * 4);
+            bytes = new byte[checked(stride * source.PixelHeight)];
+            source.CopyPixels(bytes, stride, 0);
+            // Hash the same pixels sent to the WebP encoder without first compressing them as PNG.
+            Span<byte> dimensions = stackalloc byte[8];
+            BinaryPrimitives.WriteInt32LittleEndian(dimensions, source.PixelWidth);
+            BinaryPrimitives.WriteInt32LittleEndian(dimensions[4..], source.PixelHeight);
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            hash.AppendData(dimensions);
+            hash.AppendData(bytes);
+            digest = hash.GetHashAndReset();
+        }
+        else
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(image));
+            using var memory = new MemoryStream();
+            encoder.Save(memory);
+            bytes = memory.ToArray();
+            digest = SHA256.HashData(bytes);
+        }
         quality = Math.Clamp(quality, 1, 100);
-        var name = Convert.ToHexString(SHA256.HashData(bytes)) + (webp ? $"-q{quality}.webp" : ".png"); var path = store.ResolveMedia(name);
+        var filename = Convert.ToHexString(digest) + (webp ? $"-q{quality}.webp" : ".png");
+        var name = mediaFolder.Length == 0 ? filename : mediaFolder + "/" + filename;
+        var path = store.ResolveMedia(name);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         store.ReserveMedia(name);
         if (!File.Exists(path))
         {
             var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                if (webp) WinForge.FileTools.UI.ImageEngine.Save(image, temporary, "webp", quality);
+                if (webp) PhotoCodec.EncodePixels(bytes, image.PixelWidth, image.PixelHeight, temporary, "webp", quality);
                 else File.WriteAllBytes(temporary, bytes);
                 File.Move(temporary, path, true);
             }
@@ -154,15 +280,18 @@ public static class CaptureServices
     {
         var selection = new RegionPicker(quickCapture: false, multiple: true); selection.ShowDialog(); snapshot = selection.Snapshot; return selection.Results;
     }
-    public static CaptureArea? SelectWindow() => SelectWindow(out _);
-    internal static CaptureArea? SelectWindow(out FrozenDesktop? snapshot)
+    public static CaptureArea? SelectWindow() => SelectWindow(out _, out _);
+    internal static CaptureArea? SelectWindow(out FrozenDesktop? snapshot, out nint window)
     {
-        var selection = SelectArea(true, out snapshot); if (selection is not { } area) return null;
-        var window = GetAncestor(WindowFromPoint(new POINT(area.X + area.Width / 2, area.Y + area.Height / 2)), 2);
+        window = 0;
+        var selection = SelectArea(true, out snapshot); if (selection is not { } area || snapshot is null) return null;
+        window = WindowAt(snapshot.Windows, area.X + area.Width / 2, area.Y + area.Height / 2);
         if (window == 0) return null;
         Native.GetWindowThreadProcessId(window, out var process);
         if (process == Environment.ProcessId) throw new InvalidOperationException("Yakalanacak başka bir uygulama penceresi seçin.");
-        return WindowArea(window);
+        foreach (var candidate in snapshot.Windows)
+            if (candidate.Handle == window) return candidate.Area;
+        return null;
     }
     [StructLayout(LayoutKind.Sequential)] private struct LastInput { public uint Size, Time; }
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -176,11 +305,14 @@ public static class CaptureServices
     }
     [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LastInput info);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, int attribute, out RECT value, int size);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, int attribute, out int value, int size);
     [DllImport("user32.dll")] private static extern nint OpenInputDesktop(uint flags, bool inherit, uint access);
     [DllImport("user32.dll")] private static extern bool CloseDesktop(nint desktop);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern nint SHGetFileInfo(string path, uint attributes, ref ShellFileInfo info, uint size, uint flags);
     [DllImport("user32.dll")] private static extern bool DestroyIcon(nint icon);
     [DllImport("user32.dll")] private static extern nint WindowFromPoint(POINT point);
+    [DllImport("user32.dll")] private static extern nint GetDesktopWindow();
+    [DllImport("user32.dll")] private static extern nint GetShellWindow();
     [DllImport("user32.dll")] private static extern nint GetAncestor(nint window, uint flags);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsCallback callback, nint parameter);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);

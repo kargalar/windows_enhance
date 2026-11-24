@@ -15,16 +15,24 @@ public abstract class CaptureModuleBase : ITweakModule, IQuickActionProvider
     public string? Warning => null;
     public bool IsActive { get; protected set; }
     protected abstract string Kind { get; }
-    protected HistoryStore Store => new(string.IsNullOrWhiteSpace(Context.Settings.GetString("storage-directory"))
-        ? PortableHistoryMigration.DirectoryFor(AppData.DirectoryPath, Context.Settings.GetString(PortableHistoryMigration.StorageIdKey, ""))
-        : Environment.ExpandEnvironmentVariables(Context.Settings.GetString("storage-directory")));
+    protected HistoryStore Store => new(HistoryDirectory);
+    protected string HistoryDirectory
+    {
+        get
+        {
+            var configured = Context.Settings.GetString(PortableHistoryMigration.DirectorySettingKey);
+            return Path.GetFullPath(string.IsNullOrWhiteSpace(configured)
+                ? PortableHistoryMigration.DirectoryFor(AppData.DirectoryPath, Context.Settings.GetString(PortableHistoryMigration.StorageIdKey, ""))
+                : Environment.ExpandEnvironmentVariables(configured));
+        }
+    }
     protected virtual IEnumerable<SettingDescriptor> ModuleSettings => [];
     public IReadOnlyList<SettingDescriptor> Settings => new[]
     {
         new SettingDescriptor { Key = "open", Label = "Geçmişi aç", Kind = SettingKind.Action, Execute = Open },
         new SettingDescriptor { Key = "import", Label = "Eski kayıtları içe aktar", Kind = SettingKind.Action,
             Execute = () => new ImportWindow(Store, Kind, Context, (Context as IFeatureUiContext)?.FeatureUi).Show() }
-    }.Where(setting => Kind != "capture" || setting.Key != "import").Concat(ModuleSettings).ToArray();
+    }.Where(setting => (Kind != "capture" || setting.Key != "import") && (Kind != "recall" || setting.Key != "open")).Concat(ModuleSettings).ToArray();
     public void Initialize(IModuleContext context) => Context = context;
     public virtual void Activate() => IsActive = true;
     public virtual void Deactivate() { IsActive = false; window?.Close(); window = null; }

@@ -71,7 +71,7 @@ public sealed class ModuleHost
                     var settings = new ModuleSettings(_store.For(module.Id), _store.ScheduleSave, _store.SyncRoot);
                     _settings[module.Id] = settings;
                     module.Initialize(new ModuleContext(settings, _log, new ModuleHotkeyService(_hotkeys, module.Name), _notify, _quickActions, _showDisplayBrightness, _showAudioVolume, _featureUi,
-                        TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag));
+                        TryPlaceWindowInZone, BeginWindowZoneDrag, EndWindowZoneDrag, BeginTiledResize, UpdateTiledResize, EndTiledResize));
                     _modules.Add(module);
                     _log.Info($"Modül yüklendi: {module.Id} ({module.Name})");
                 }
@@ -364,7 +364,24 @@ public sealed class ModuleHost
         return handled;
     }
 
-    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext,
+    private ITiledResizeProvider? _activeTiledResize;
+
+    private bool BeginTiledResize(IntPtr window, POINT start, int edges)
+    {
+        _activeTiledResize = _modules.Where(module => module.IsActive).OfType<ITiledResizeProvider>()
+            .FirstOrDefault(provider => provider.BeginTiledResize(window, start, edges));
+        return _activeTiledResize is not null;
+    }
+
+    private void UpdateTiledResize(POINT cursor) => _activeTiledResize?.UpdateTiledResize(cursor);
+    private void EndTiledResize(bool canceled)
+    {
+        var provider = _activeTiledResize;
+        _activeTiledResize = null;
+        provider?.EndTiledResize(canceled);
+    }
+
+    private sealed class ModuleContext : IModuleContext, IQuickActionContext, IWindowPlacementContext, ITiledResizeContext,
         IDisplayBrightnessOverlayContext, IAudioVolumeOverlayContext, IFeatureUiContext
     {
         private readonly Action<string> _notify;
@@ -374,12 +391,16 @@ public sealed class ModuleHost
         private readonly Func<IntPtr, POINT, bool> _placeWindow;
         private readonly Action<IntPtr> _beginWindowZoneDrag;
         private readonly Func<IntPtr, bool, bool> _endWindowZoneDrag;
+        private readonly Func<IntPtr, POINT, int, bool> _beginTiledResize;
+        private readonly Action<POINT> _updateTiledResize;
+        private readonly Action<bool> _endTiledResize;
 
         public ModuleContext(IModuleSettings settings, FileLogger log, IHotkeyService hotkeys, Action<string> notify,
             IQuickActionService quickActions, Action<int, string, Action<int>?, string?, IReadOnlyList<BrightnessOverlayMonitor>?, Action<string, int>?>? showDisplayBrightness,
             Action<int, bool, Action?, int>? showAudioVolume, IFeatureUiService? featureUi,
             Func<IntPtr, POINT, bool> placeWindow,
-            Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag)
+            Action<IntPtr> beginWindowZoneDrag, Func<IntPtr, bool, bool> endWindowZoneDrag,
+            Func<IntPtr, POINT, int, bool> beginTiledResize, Action<POINT> updateTiledResize, Action<bool> endTiledResize)
         {
             Settings = settings;
             Log = log;
@@ -392,6 +413,9 @@ public sealed class ModuleHost
             _placeWindow = placeWindow;
             _beginWindowZoneDrag = beginWindowZoneDrag;
             _endWindowZoneDrag = endWindowZoneDrag;
+            _beginTiledResize = beginTiledResize;
+            _updateTiledResize = updateTiledResize;
+            _endTiledResize = endTiledResize;
         }
 
         public IModuleSettings Settings { get; }
@@ -414,6 +438,9 @@ public sealed class ModuleHost
         public bool TryPlaceWindowInZone(IntPtr window, POINT point) => _placeWindow(window, point);
         public void BeginWindowZoneDrag(IntPtr window) => _beginWindowZoneDrag(window);
         public bool EndWindowZoneDrag(IntPtr window, bool canceled) => _endWindowZoneDrag(window, canceled);
+        public bool BeginTiledResize(IntPtr window, POINT start, int edges) => _beginTiledResize(window, start, edges);
+        public void UpdateTiledResize(POINT cursor) => _updateTiledResize(cursor);
+        public void EndTiledResize(bool canceled) => _endTiledResize(canceled);
     }
 
     private sealed class QuickActionService(Func<IEnumerable<ITweakModule>> modules, ILogger log, Action<string> notify)

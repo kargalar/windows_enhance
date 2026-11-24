@@ -21,9 +21,9 @@ internal sealed class CapturePreviewWindow : Window
         var margin = (int)Math.Round(16 * scale);
         var maxWidth = Math.Max(1, Math.Min(320 * scale, work.Right - work.Left - 2 * margin));
         var maxHeight = Math.Max(1, Math.Min(220 * scale, work.Bottom - work.Top - 2 * margin));
-        var ratio = Math.Min(maxWidth / (image.PixelWidth + 12d), maxHeight / (image.PixelHeight + 12d));
-        var width = (int)Math.Ceiling((image.PixelWidth + 12d) * ratio);
-        var height = (int)Math.Ceiling((image.PixelHeight + 12d) * ratio);
+        var ratio = Math.Min(maxWidth / image.PixelWidth, maxHeight / image.PixelHeight);
+        var width = Math.Max(1, (int)Math.Round(image.PixelWidth * ratio));
+        var height = Math.Max(1, (int)Math.Round(image.PixelHeight * ratio));
 
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
@@ -42,12 +42,8 @@ internal sealed class CapturePreviewWindow : Window
         Height = height / scale;
         Content = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(24, 28, 36)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(5),
-            Child = new Image { Source = image, Stretch = Stretch.Uniform }
+            Background = new ImageBrush(image) { Stretch = Stretch.Fill },
+            CornerRadius = new CornerRadius(Math.Min(6, Math.Min(Width, Height) / 2))
         };
 
         SourceInitialized += (_, _) =>

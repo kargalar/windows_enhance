@@ -16,6 +16,8 @@
     <Compile Include="../../src/WinForge.Modules.Extras/BackgroundTabReturn.cs" Link="BackgroundTabReturn.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ForegroundShortcutBinding.cs" Link="ForegroundShortcutBinding.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/SelectionSearch.cs" Link="SelectionSearch.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/SelectionTranslationService.cs" Link="SelectionTranslationService.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/ChromiumClipboardData.cs" Link="ChromiumClipboardData.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/KeyboardInputSender.cs" Link="KeyboardInputSender.cs" />
   </ItemGroup>
 </Project>

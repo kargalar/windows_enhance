@@ -143,7 +143,6 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
         _filterTags.TextChanged += (_, _) => ResetAndRender(); _sort.SelectionChanged += (_, _) => ResetAndRender();
         _type.SelectionChanged += (_, _) => ResetAndRender(); _date.SelectionChanged += (_, _) => ResetAndRender();
         _pinned.Click += (_, _) => ResetAndRender(); _trash.Click += (_, _) => { SetMode(true); ResetAndRender(); };
-        _library.Changed += LibraryChanged;
         _saveTimer.Tick += (_, _) => { SaveDraft(); PushReactState(); };
         PreviewKeyDown += OnKey;
         AllowDrop = true; Drop += (_, args) => { if (args.Data.GetData(DataFormats.FileDrop) is string[] files) foreach (var file in files.Take(100)) _capture.ImportFile(file); args.Handled = true; };
@@ -153,17 +152,32 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
             _activationSource?.AddHook(TrackActivation);
         };
         Closing += (_, args) => { if (!SaveDraft()) args.Cancel = true; };
-        Closed += (_, _) => { _activationSource?.RemoveHook(TrackActivation); _thumbnailLifetime.Cancel(); _saveTimer.Stop(); _library.Changed -= LibraryChanged; };
-        SetMode(false);
         _status.Text = library.RecoveryNotice ?? "Metin ve görsel yakalamayı Ayarlar’dan açabilirsiniz. Space: önizle · Enter: kopyala · P: sabitle · S: raftan kaldır.";
         var featureUi = (context as IFeatureUiContext)?.FeatureUi
             ?? throw new InvalidOperationException("Pano rafı için React arayüzü gerekli.");
         _uiSurface = featureUi.CreateSurface("clipboard-shelf") as IFeatureUiAssetSurface
             ?? throw new InvalidOperationException("Pano rafı için React varlık yüzeyi gerekli.");
-        _uiSurface.MessageReceived += OnUiMessage;
-        Content = _uiSurface.Element;
-        Closed += (_, _) => _uiSurface.Dispose();
-        PushReactState();
+        try
+        {
+            Content = _uiSurface.Element;
+            SetMode(false);
+            _uiSurface.MessageReceived += OnUiMessage;
+        }
+        catch
+        {
+            _thumbnailLifetime.Cancel();
+            _uiSurface.Dispose();
+            throw;
+        }
+        _library.Changed += LibraryChanged;
+        Closed += (_, _) =>
+        {
+            _activationSource?.RemoveHook(TrackActivation);
+            _thumbnailLifetime.Cancel();
+            _saveTimer.Stop();
+            _library.Changed -= LibraryChanged;
+            _uiSurface.Dispose();
+        };
     }
 
     private GridSplitter WorkspaceSplitter()

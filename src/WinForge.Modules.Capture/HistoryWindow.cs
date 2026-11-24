@@ -33,7 +33,10 @@ internal sealed class HistoryWindow : Window
     private string selectedText = "";
     private string selectedTags = "";
     private string statusText = "";
-    private BitmapSource? previewImage;
+    private string? preview;
+    private int previewWidth, previewHeight;
+    private long previewVersion;
+    private bool previewLoading;
     private Point? cursorImagePoint;
 
     public HistoryWindow(HistoryStore store, string kind, string title, IFeatureUiService? featureUi = null,
@@ -116,7 +119,9 @@ internal sealed class HistoryWindow : Window
 
     private void ShowSelection()
     {
-        previewImage = null;
+        previewVersion++;
+        preview = null;
+        previewWidth = previewHeight = 0;
         cursorImagePoint = null;
         selectedText = "";
         selectedTags = "";
@@ -125,25 +130,50 @@ internal sealed class HistoryWindow : Window
         selectedText = row.Item.Text;
         selectedTags = row.Item.Tags;
         if (row.Item.Media.Length == 0) return;
-
-        Guard(() =>
+        if (Path.GetExtension(row.Item.Media) is ".mp4" or ".gif")
         {
-            var path = store.ResolveMedia(row.Item.Media);
-            if (Path.GetExtension(path) is ".mp4" or ".gif")
-            {
-                selectedText += "\nVideo/GIF kaydı. Oynatmak için Medyayı aç düğmesini kullanın.";
-                return;
-            }
+            selectedText += "\nVideo/GIF kaydı. Oynatmak için Medyayı aç düğmesini kullanın.";
+            return;
+        }
+        if (!previewLoading) _ = RefreshPreviewAsync();
+    }
 
-            if (!File.Exists(path))
+    private async Task RefreshPreviewAsync()
+    {
+        previewLoading = true;
+        try
+        {
+            while (!closed && SelectedRow is { Item.Media.Length: > 0 } row &&
+                Path.GetExtension(row.Item.Media) is not (".mp4" or ".gif"))
             {
-                statusText = "Görsel dosyası bulunamadı.";
-                return;
+                var version = previewVersion;
+                try
+                {
+                    var result = await Task.Run(() =>
+                    {
+                        var path = store.ResolveMedia(row.Item.Media);
+                        if (!File.Exists(path)) throw new FileNotFoundException("Görsel dosyası bulunamadı.");
+                        var image = CaptureServices.Load(path);
+                        return (Uri: BitmapToDataUri(image), Width: image.PixelWidth, Height: image.PixelHeight);
+                    });
+                    if (closed) return;
+                    if (version != previewVersion) continue;
+                    preview = result.Uri;
+                    previewWidth = result.Width;
+                    previewHeight = result.Height;
+                    cursorImagePoint = ReadCursor(row.Item.Metadata, result.Width, result.Height);
+                }
+                catch (Exception error)
+                {
+                    if (closed) return;
+                    if (version != previewVersion) continue;
+                    statusText = error.Message;
+                }
+                PushUiState();
+                break;
             }
-
-            previewImage = CaptureServices.Load(path);
-            cursorImagePoint = ReadCursor(row.Item.Metadata, previewImage.PixelWidth, previewImage.PixelHeight);
-        });
+        }
+        finally { previewLoading = false; }
     }
 
     private HistoryRow? SelectedRow => selectedId is { } id ? rows.FirstOrDefault(row => row.Item.Id == id) : null;
@@ -259,11 +289,11 @@ internal sealed class HistoryWindow : Window
             selectedId = selected?.Item.Id,
             selectedText,
             selectedTags,
-            cursor = cursorImagePoint is { } point ? new { x = point.X, y = point.Y, width = previewImage?.PixelWidth ?? 0, height = previewImage?.PixelHeight ?? 0 } : null,
+            cursor = cursorImagePoint is { } point ? new { x = point.X, y = point.Y, width = previewWidth, height = previewHeight } : null,
             confirmDelete,
             confirmDeleteRange,
             confirmDeleteAll,
-            preview = BitmapToDataUri(previewImage),
+            preview,
             mediaType = selected is null ? "" : Path.GetExtension(selected.Item.Media),
             rows = rows.Select(row => new
             {
@@ -279,9 +309,8 @@ internal sealed class HistoryWindow : Window
         });
     }
 
-    private static string? BitmapToDataUri(BitmapSource? bitmap)
+    private static string BitmapToDataUri(BitmapSource bitmap)
     {
-        if (bitmap is null) return null;
         const double maximumPreviewDimension = 1200;
         var scale = Math.Min(1, maximumPreviewDimension / Math.Max(bitmap.PixelWidth, bitmap.PixelHeight));
         BitmapSource source = bitmap;
@@ -295,7 +324,7 @@ internal sealed class HistoryWindow : Window
         encoder.Frames.Add(BitmapFrame.Create(source));
         using var stream = new MemoryStream();
         encoder.Save(stream);
-        return $"data:image/png;base64,{Convert.ToBase64String(stream.ToArray())}";
+        return $"data:image/png;base64,{Convert.ToBase64String(stream.GetBuffer(), 0, (int)stream.Length)}";
     }
 
     private static Point? ReadCursor(string metadata, int imageWidth, int imageHeight)
@@ -377,8 +406,12 @@ internal sealed class HistoryWindow : Window
         {
             get
             {
-                var flattenedText = Item.Text.ReplaceLineEndings(" ");
-                var summary = Item.Kind == "dictation" ? flattenedText[..Math.Min(100, flattenedText.Length)] : Item.Title;
+                var summary = Item.Title;
+                if (Item.Kind == "dictation")
+                {
+                    var text = Item.Text.ReplaceLineEndings(" ");
+                    summary = text[..Math.Min(100, text.Length)];
+                }
                 return $"{Item.Created.LocalDateTime:dd.MM.yyyy HH:mm:ss} · {Item.App}\n{summary}{(Item.OcrState == "failed" ? " · OCR hatası" : "")}";
             }
         }

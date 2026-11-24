@@ -41,9 +41,9 @@ public sealed partial class HistoryStore
             var clippedEnd = until is { } upper && upper < ended ? upper : ended;
             while (cursor < clippedEnd)
             {
-                var date = cursor.ToLocalTime().Date;
-                var nextDate = date.AddDays(1);
-                var nextDay = new DateTimeOffset(nextDate, TimeZoneInfo.Local.GetUtcOffset(nextDate));
+                var local = cursor.ToLocalTime();
+                var date = local.Date;
+                var nextDay = NextLocalDay(local);
                 var segmentEnd = nextDay < clippedEnd ? nextDay : clippedEnd;
                 var fraction = (segmentEnd - cursor).TotalSeconds / seconds;
                 var value = totals.GetValueOrDefault(date);
@@ -52,6 +52,6 @@ public sealed partial class HistoryStore
             }
         }
         return totals.OrderByDescending(row => row.Key)
-            .Select(row => new NetworkUsageDayTotal(row.Key.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture), row.Value.Received, row.Value.Sent)).ToArray();
+            .Select(row => new NetworkUsageDayTotal(FormatUsageDate(row.Key), row.Value.Received, row.Value.Sent)).ToArray();
     }
 }

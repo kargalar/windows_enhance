@@ -126,7 +126,7 @@
 
                                             },
                    "clipboard-history":  {
-
+                                              "retention-days":  "7"
                                          },
                    "color-picker":  {
 

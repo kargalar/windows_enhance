@@ -7,6 +7,7 @@ namespace WinForge.Core;
 public static class PortableHistoryMigration
 {
     public const string StorageIdKey = "portable-history-id";
+    public const string DirectorySettingKey = "history-directory";
     private const string LegacyStorageKey = "storage-directory";
 
     public static string DirectoryFor(string dataDirectory, string id)
@@ -23,7 +24,7 @@ public static class PortableHistoryMigration
         foreach (var values in settings.Values.Values)
         {
             if (!values.TryGetValue(LegacyStorageKey, out var configured)) continue;
-            if (!string.IsNullOrWhiteSpace(configured))
+            if (!values.ContainsKey(DirectorySettingKey) && !string.IsNullOrWhiteSpace(configured))
             {
                 var source = Path.GetFullPath(configured).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                 if (!SamePath(source, legacyDefault) && !SamePath(source, destination))

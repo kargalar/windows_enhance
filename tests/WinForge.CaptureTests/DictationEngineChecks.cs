@@ -1,3 +1,4 @@
+using WinForge.Core;
 using WinForge.Dictation;
 using WinForge.Modules.Capture;
 
@@ -5,8 +6,8 @@ internal static class DictationEngineChecks
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
-        var originalTarget = new WinForge.Core.TextTarget(1, 5, "field");
-        var changedTarget = new WinForge.Core.TextTarget(2, 6, "other");
+        var originalTarget = new TextTarget(1, 5, "field");
+        var changedTarget = new TextTarget(2, 6, "other");
         check(await DictationModule.CaptureTargetAsync(1, default, () => originalTarget) == originalTarget,
             "Startup accepts a target from the original foreground window");
         check(await DictationModule.CaptureTargetAsync(1, default, () => changedTarget) is null,
@@ -15,6 +16,14 @@ internal static class DictationEngineChecks
             "Delayed target capture rejects a changed native focus within the same window");
         check(await DictationModule.CaptureTargetAsync(1, default, () => originalTarget, 10, _ => 10) == originalTarget,
             "Unchanged native focus retains the original target");
+        check(await DictationModule.CaptureTargetAsync(1, default, () => null, 10, _ => 10) is null &&
+            await DictationModule.RecoverTargetAsync(1, 10, default, () => originalTarget, () => 1, _ => 10) == originalTarget,
+            "A field missed at startup can be recovered at stop with the same native focus");
+        TextTarget? UnexpectedCapture() => throw new InvalidOperationException("A changed focus must not be queried");
+        check(await DictationModule.RecoverTargetAsync(1, 10, default, UnexpectedCapture, () => 2, _ => 10) is null &&
+            await DictationModule.RecoverTargetAsync(1, 10, default, UnexpectedCapture, () => 1, _ => 11) is null &&
+            await DictationModule.RecoverTargetAsync(1, 0, default, UnexpectedCapture, () => 1, _ => 0) is null,
+            "Stop-time recovery requires the known, original window and native focus");
         var configuration = new DictationConfiguration("model.bin", "tr", false, false);
         var engines = new List<FakeEngine>();
         using var client = new DictationClient(factory: _ => { var engine = new FakeEngine(); engines.Add(engine); return engine; });

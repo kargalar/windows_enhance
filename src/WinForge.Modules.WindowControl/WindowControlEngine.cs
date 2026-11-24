@@ -15,6 +15,7 @@ internal sealed class WindowControlEngine : IDisposable
     private readonly DispatcherTimer _timer;
     private SharedBorderResize? _sharedBorders;
     private readonly Action<Exception> _report;
+    private readonly ITiledResizeContext? _tiledResize;
     private readonly Action<IntPtr>? _beginZoneDrag;
     private readonly Func<IntPtr, bool, bool>? _endZoneDrag;
     private readonly HashSet<int> _swallowedButtons = new();
@@ -40,12 +41,13 @@ internal sealed class WindowControlEngine : IDisposable
 
     internal WindowControlEngine(WindowControlOptions options, Action<Exception> report, Func<IntPtr, POINT, bool>? placeInZone = null,
         Func<IntPtr, bool, IReadOnlyList<IntPtr>>? candidates = null, Action<IntPtr>? beginZoneDrag = null,
-        Func<IntPtr, bool, bool>? endZoneDrag = null)
+        Func<IntPtr, bool, bool>? endZoneDrag = null, ITiledResizeContext? tiledResize = null)
     {
         _options = options;
         _report = report;
         _beginZoneDrag = beginZoneDrag;
         _endZoneDrag = endZoneDrag;
+        _tiledResize = tiledResize;
         _candidates = candidates ?? WindowActions.Candidates;
         _actions = new WindowActions(report, placeInZone, _candidates);
         _timer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(8) };
@@ -131,9 +133,7 @@ internal sealed class WindowControlEngine : IDisposable
             var action = _options.Actions.GetValueOrDefault(key, WindowAction.None);
             if (action == WindowAction.None) return Native.CallNextHookEx(_hook, code, wParam, lParam);
             var window = InputWindow(info.pt);
-            if (!Eligible(window, info.pt)) return Native.CallNextHookEx(_hook, code, wParam, lParam);
-            if (action == WindowAction.Resize && !_options.AllowFixedResize && ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & ResizableStyle) == 0)
-                return Native.CallNextHookEx(_hook, code, wParam, lParam);
+            if (!CanHandleInput(window, info.pt, action)) return Native.CallNextHookEx(_hook, code, wParam, lParam);
             QueueInput(window, action, info, button, wheel, ReadModifiers());
             return new IntPtr(1);
         }
@@ -177,8 +177,7 @@ internal sealed class WindowControlEngine : IDisposable
         var window = InputWindow(info.pt);
         var action = TitlebarAction(window, info.pt, InputKey(message, button, wheel),
             ActivationPressed(_options.ActivationKey) || _heldHotclicks.Count != 0, AlternativePressed(_options.AlternativeKey));
-        if (action == WindowAction.None || !Eligible(window, info.pt)) return false;
-        if (action == WindowAction.Resize && !_options.AllowFixedResize && ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & ResizableStyle) == 0) return false;
+        if (action == WindowAction.None || !CanHandleInput(window, info.pt, action)) return false;
         QueueInput(window, action, info, button, wheel, ReadModifiers());
         return true;
     }
@@ -310,11 +309,16 @@ internal sealed class WindowControlEngine : IDisposable
         catch (Exception exception) { CancelGesture(); _report(exception); }
     }
 
-    private bool Eligible(IntPtr window, POINT point)
+    internal bool CanHandleInput(IntPtr window, POINT point, WindowAction action)
     {
         if (window == IntPtr.Zero || !Native.IsWindowVisible(window) || Native.IsIconic(window)) return false;
         Native.GetWindowThreadProcessId(window, out var processId);
-        if (processId == Environment.ProcessId || processId == 0) return false;
+        if (processId == 0) return false;
+        var ownWindow = processId == Environment.ProcessId;
+        if (ownWindow && (action is not (WindowAction.Move or WindowAction.Resize) ||
+            ((long)Native.GetWindowLongPtr(window, Native.GWL_EXSTYLE) & Native.WS_EX_NOACTIVATE) != 0)) return false;
+        if ((ownWindow || (action == WindowAction.Resize && !_options.AllowFixedResize)) &&
+            ((long)Native.GetWindowLongPtr(window, WindowStyleIndex) & ResizableStyle) == 0) return false;
         var className = Text(window, true);
         if (className is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd" or "#32768" ||
             Native.IsShellSwitcherClass(className)) return false;
@@ -470,6 +474,19 @@ internal sealed class WindowControlEngine : IDisposable
             gesture.ZoneDragStarted = true;
             _beginZoneDrag(gesture.Window);
         }
+        if (gesture.IsResize && gesture.Edges != ResizeEdges.None && gesture.DragStarted)
+        {
+            if (!gesture.TiledResizeAttempted)
+            {
+                gesture.TiledResizeAttempted = true;
+                gesture.TiledResizeActive = _tiledResize?.BeginTiledResize(gesture.Window, gesture.Start, (int)gesture.Edges) == true;
+            }
+            if (gesture.TiledResizeActive)
+            {
+                _tiledResize?.UpdateTiledResize(_cursor);
+                return;
+            }
+        }
         var bounds = WindowGeometry.Drag(gesture.Original, gesture.Start, _cursor, gesture.Edges,
             gesture.MinWidth, gesture.MinHeight, gesture.MaxWidth, gesture.MaxHeight);
         if (gesture.Edges == ResizeEdges.None && !modifiers.SuppressSnap && (_options.MagnetMode != "Kapalı" || modifiers.Shift))
@@ -523,6 +540,7 @@ internal sealed class WindowControlEngine : IDisposable
         if (_gesture is not { } gesture) return;
         UpdateGesture(modifiers);
         if (_gesture is null) return;
+        if (gesture.TiledResizeActive) _tiledResize?.EndTiledResize(false);
         var zoneHandled = gesture.ZoneDragStarted && _endZoneDrag?.Invoke(gesture.Window, false) == true;
         var snapped = false;
         if (!zoneHandled && gesture.DragStarted && gesture.Edges == ResizeEdges.None && _options.EdgeSnap && !modifiers.SuppressSnap)
@@ -551,6 +569,7 @@ internal sealed class WindowControlEngine : IDisposable
 
     private void CancelGesture()
     {
+        if (_gesture is { TiledResizeActive: true }) _tiledResize?.EndTiledResize(true);
         if (_gesture is { } gesture && SameWindow(gesture.Window, gesture.ProcessId))
         {
             if (!(gesture.WasMaximized || gesture.HadSnapRestore) || gesture.DragStarted)
@@ -733,6 +752,8 @@ internal sealed class WindowControlEngine : IDisposable
         internal WindowBounds Original { get; } = original;
         internal POINT Start { get; } = start;
         internal ResizeEdges Edges { get; } = edges;
+        internal bool TiledResizeAttempted { get; set; }
+        internal bool TiledResizeActive { get; set; }
         internal bool IsResize { get; } = isResize;
         internal int MinWidth { get; } = minWidth;
         internal int MinHeight { get; } = minHeight;

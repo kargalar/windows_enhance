@@ -14,6 +14,7 @@ import { moduleIcon } from './modulePresentation';
 import { send } from './bridge';
 import { t, getLanguage } from './localization';
 
+const PcHistoryPanel = React.lazy(() => import('./PcHistoryPanel').then(m => ({ default: m.PcHistoryPanel })));
 const AutomationPanel = React.lazy(() => import('./AutomationPanel').then(m => ({ default: m.AutomationPanel })));
 const ContextMenuPanel = React.lazy(() => import('./ContextMenuPanel').then(m => ({ default: m.ContextMenuPanel })));
 const ShortcutActionsPanel = React.lazy(() => import('./ShortcutActionsPanel').then(m => ({ default: m.ShortcutActionsPanel })));
@@ -35,6 +36,7 @@ function ManagementPanel({ module,filterQuery='',onClearFilter }: { module: Modu
     <button className="secondary-button" onClick={() => send('module.inspect', { moduleId: module.id })}>{t('details.reloadSettings')}</button></div>;
   if (!module.panelLoaded && !panel) return <div className="panel-loading" role="status"><span className="loader" />{t('details.loadingSettings')}</div>;
   return <ErrorBoundary key={module.id}><Suspense fallback={<p role="status">{t('details.loadingSettings')}</p>}>
+    {panel && 'kind' in panel && panel.kind === 'pc-history' && <PcHistoryPanel state={panel} command={command} />}
     {module.id === 'automation' && panel && <AutomationPanel state={panel as AutomationState} active={module.isActive} command={command} filterQuery={filterQuery} onClearFilter={onClearFilter} />}
     {panel && 'kind' in panel && panel.kind === 'default-paths' && <DefaultPathsPanel inline state={panel.state} sendCommand={command} filterQuery={filterQuery} />}
     {panel && 'kind' in panel && panel.kind === 'default-apps' && <DefaultAppsPanel inline state={panel.state} sendCommand={command} filterQuery={filterQuery} />}
@@ -72,7 +74,7 @@ export function ModuleDetails({ module, persistence, onToggle, onUpdate, onExecu
   const sections = useMemo(() => {
     const resolved = resolveDesign(module);
     const pages = resolved.pages;
-    if (hasPanel && !pages.some(page => page.management)) pages.unshift({ id:'management',title:[t('details.management'),t('details.management')],description:['',''],icon:'layers',groups:[],management:true });
+    if (hasPanel && !pages.some(page => page.management)) pages.unshift({ id:'management',title:module.id === 'screen-history' ? ['Geçmiş ve istatistikler','History and statistics'] : [t('details.management'),t('details.management')],description:['',''],icon:'layers',groups:[],management:true });
     return { ...resolved, pages };
   }, [module, hasPanel, language]);
   const { design,pages }=sections;

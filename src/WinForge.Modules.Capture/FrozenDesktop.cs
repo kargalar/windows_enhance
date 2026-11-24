@@ -8,9 +8,17 @@ namespace WinForge.Modules.Capture;
 /// <summary>The original desktop pixels shared by the selection overlay and the saved crop.</summary>
 internal sealed class FrozenDesktop(IReadOnlyList<(CaptureArea Area, BitmapSource Image)> frames)
 {
-    public static FrozenDesktop Capture(IReadOnlyList<DesktopDisplay> displays) => new(displays
-        .Select(display => CaptureServices.Area(display.Bounds))
-        .Select(area => (area, CaptureServices.Capture(area))).ToArray());
+    public IReadOnlyList<CaptureWindow> Windows { get; private init; } = [];
+    public DateTimeOffset CapturedAt { get; private init; }
+
+    public static FrozenDesktop Capture(IReadOnlyList<DesktopDisplay> displays)
+    {
+        var capturedAt = DateTimeOffset.Now;
+        var windows = CaptureServices.VisibleWindows();
+        return new(displays.Select(display => CaptureServices.Area(display.Bounds))
+            .Select(area => (area, CaptureServices.Capture(area))).ToArray())
+        { Windows = windows, CapturedAt = capturedAt };
+    }
 
     public BitmapSource ForDisplay(DesktopDisplay display) => frames.First(frame => frame.Area == CaptureServices.Area(display.Bounds)).Image;
 

@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../WinForge.Core/WinForge.Core.csproj" />
+    <ProjectReference Include="../WinForge.History/WinForge.History.csproj" />
     <ProjectReference Include="../WinForge.Modules.TextGrabber/WinForge.Modules.TextGrabber.csproj" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />

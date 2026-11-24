@@ -24,6 +24,9 @@ internal static class ModuleDiscoveryChecks
                 check(module.Settings.Any(setting => setting.Key == "open" && setting.Kind == SettingKind.Action && setting.Execute is not null), $"{id} contributes a usable open action.");
                 check(module.Settings.Any(setting => setting.Key == "hotkey"), $"{id} exposes its configurable global shortcut.");
             }
+            var history = host.Modules.Single(module => module.Id == "clipboard-history");
+            check(history.Settings.Any(setting => setting.Key == "retention-days" && setting.Default is 7),
+                "Published Clipboard History exposes the retention setting.");
         }
         finally
         {

@@ -22,8 +22,21 @@ if (args.Contains("--clipboard-only"))
 }
 if (args.Contains("--native-only"))
 {
+    ClipboardHistoryChecks.Run(Check);
     NativeIntegrationChecks.Run(Check, args.Contains("--uia"));
     Console.WriteLine($"PASS: {checks} native clipboard and file-tools checks.");
+    return;
+}
+if (args.Contains("--clipboard-shelf-open-only"))
+{
+    ClipboardHistoryChecks.RunShelfStartup(Check);
+    Console.WriteLine($"PASS: {checks} ClipboardLine startup checks.");
+    return;
+}
+if (args.Contains("--clipboard-history-only"))
+{
+    ClipboardHistoryChecks.Run(Check);
+    Console.WriteLine($"PASS: {checks} Windows clipboard history checks.");
     return;
 }
 if (args.Contains("--video-only"))

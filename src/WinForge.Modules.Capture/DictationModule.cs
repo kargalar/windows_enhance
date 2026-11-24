@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -16,15 +18,22 @@ public sealed class DictationModule : CaptureModuleBase
     private readonly DictationShortcutState shortcut = new();
     private WasapiLoopbackCapture? microphone;
     private PlaybackMuteScope? playbackMute;
-    private IDisposable? hotkey;
+    private IDisposable? hotkey, translationHotkey;
     private GlobalKeyboardHook? hook;
     private CancellationTokenSource? operation;
     private TextTarget? target;
+    private nint recordingWindow, recordingFocus;
+    private DictationConfiguration? configuration;
+    private readonly StringBuilder transcript = new();
+    private Task liveTask = Task.CompletedTask;
+    private int liveOffset, pastedLength;
+    private bool livePaused, liveTargetChanged;
     private HistoryStore? activeStore;
     private StatusOverlay? overlay;
     private bool recording, busy, starting, stopWhenStarted;
-    private uint shortcutKey;
-    private uint shortcutModifiers;
+    private (uint Modifiers, uint Key) pressedShortcut;
+    private bool preferShiftInsert, shiftInsertIsBound;
+    private DispatcherTimer? shortcutMonitor;
     private DispatcherTimer? monitor;
     private DateTime lastWaveformUpdate;
     public override string Id => "voice-dictation";
@@ -40,10 +49,12 @@ public sealed class DictationModule : CaptureModuleBase
             [
                 new() { Key = "hotkey", Label = "Dikte kısayolu", Kind = SettingKind.Text, Default = DictationDefaults.Hotkey,
                     Description = "Kısa basıp bırakın: başlat/durdur. Basılı tutup bırakın: bırakınca durdurur." },
+                new() { Key = "translation-hotkey", Label = "İngilizce dikte kısayolu", Kind = SettingKind.Text, Default = DictationDefaults.TranslationHotkey,
+                    Description = "Konuşmayı çevrimdışı İngilizceye çevirip yazar. Large modeli gerekir. Kısayolu kapatmak için boş bırakın." },
                 new() { Key = "language", Label = "Dil", Kind = SettingKind.Choice, Default = "auto", Options = DictationLanguages.All.Keys.ToArray(), OptionLabels = DictationLanguages.All },
                 new() { Key = "model", Label = "Model", Kind = SettingKind.Choice, Default = "0", Options = ["0", "1", "2"], OptionLabels = new Dictionary<string, string> { ["0"] = "Turbo", ["1"] = "Large", ["2"] = "Small (hızlı, daha az doğru olabilir)" },
                     Description = "Small CPU'da daha hızlıdır; özellikle özel isim ve teknik kelimelerde daha fazla hata yapabilir." },
-                new() { Key = "output", Label = "İngilizceye çevir (Large kullanır)", Default = false },
+                new() { Key = "output", Label = "Normal dikteyi de İngilizceye çevir (Large kullanır)", Default = false },
                 new() { Key = "cpu", Label = "Yalnız CPU kullan", Default = false },
                 new() { Key = "microphone", Label = "Mikrofon", Kind = SettingKind.Choice, Default = "", Options = devices.Select(d => d.Id).ToArray(), OptionLabels = devices.ToDictionary(d => d.Id, d => d.Name) },
                 new() { Key = "mute-playback", Label = "Dikte sırasında etkin ses çıkışlarını sessize al", Default = true },
@@ -64,9 +75,46 @@ public sealed class DictationModule : CaptureModuleBase
     }
     private void Register()
     {
-        hotkey?.Dispose(); hook?.Dispose(); hotkey = null; hook = null;
-        var (modifiers, key) = ModuleShortcut.Parse(Context.Settings.GetString("hotkey", DictationDefaults.Hotkey)); shortcutKey = key; shortcutModifiers = modifiers;
-        hotkey = Context.Hotkeys.Register(modifiers, shortcutKey, () =>
+        var normal = ModuleShortcut.Parse(Context.Settings.GetString("hotkey", DictationDefaults.Hotkey));
+        var translationSetting = Context.Settings.GetString("translation-hotkey", DictationDefaults.TranslationHotkey);
+        var implicitDefault = translationSetting == DictationDefaults.TranslationHotkey && Context.Settings.GetString("translation-hotkey").Length == 0;
+        (uint Modifiers, uint Key)? translation = string.IsNullOrWhiteSpace(translationSetting) ? null : ModuleShortcut.Parse(translationSetting);
+        if (translation == normal && !implicitDefault)
+            throw new InvalidOperationException("Dikte ve İngilizce dikte kısayolları farklı olmalı.");
+        var controlV = (HotkeyModifiers.Control, 0x56u);
+        var shiftInsert = (HotkeyModifiers.Shift, 0x2Du);
+        if ((normal == controlV && translation == shiftInsert) || (normal == shiftInsert && translation == controlV))
+            throw new InvalidOperationException("Dikte, metni yapıştırmak için Ctrl+V veya Shift+Insert tuşlarından birine ihtiyaç duyar.");
+
+        Unregister();
+        hotkey = Bind(normal, translateToEnglish: false);
+        if (translation is { } chord)
+        {
+            try
+            {
+                if (chord == normal) throw new InvalidOperationException("Dikte zaten bu kısayolu kullanıyor.");
+                translationHotkey = Bind(chord, translateToEnglish: true);
+            }
+            catch (InvalidOperationException error) when (implicitDefault)
+            {
+                Context.Log.Error("İngilizce dikte kısayolu kaydedilemedi.", error);
+                Context.Notify("Ctrl+Shift+Space kaydedilemedi. İngilizce dikte için ayarlardan başka bir kısayol seçin.");
+                translation = null;
+            }
+        }
+        preferShiftInsert = normal == controlV || translation == controlV;
+        shiftInsertIsBound = normal == shiftInsert || translation == shiftInsert;
+        shortcutMonitor = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(25) };
+        shortcutMonitor.Tick += (_, _) => CheckShortcutRelease();
+        hook = new(); hook.KeyStateChanged += (vk, down) =>
+        {
+            if (vk == 0x1B && down && (recording || busy)) Cancel();
+            if (!down && shortcut.Held && (vk == pressedShortcut.Key || IsModifier(pressedShortcut.Modifiers, vk)))
+                FinishShortcutCheck(shortcut.Release());
+        }; hook.Install();
+    }
+    private IDisposable Bind((uint Modifiers, uint Key) chord, bool translateToEnglish) =>
+        Context.Hotkeys.Register(chord.Modifiers, chord.Key, () =>
         {
             if (!IsActive) return;
             if (busy && !recording && !starting)
@@ -74,20 +122,44 @@ public sealed class DictationModule : CaptureModuleBase
                 Context.Notify("Dikte çözümlemesi sürüyor. İptal etmek için Esc'ye basın.");
                 return;
             }
-            var action = shortcut.Press(recording || starting);
-            if (action == DictationKeyAction.Start) _ = StartAsync(); else if (action == DictationKeyAction.Stop) RequestStop();
+            pressedShortcut = chord;
+            var action = shortcut.PressRegistered(recording || starting, IsKeyDown(chord.Key));
+            shortcutMonitor?.Start();
+            if (action == DictationKeyAction.Start) _ = StartAsync(translateToEnglish);
+            else RequestStop();
         });
-        hook = new(); hook.KeyStateChanged += (vk, down) =>
-        {
-            if (vk == 0x1B && down && (recording || busy)) Cancel();
-            if (!down && (vk == shortcutKey || IsConfiguredModifier(vk)) && shortcut.Release() == DictationKeyAction.Stop) RequestStop();
-        }; hook.Install();
+
+    private void Unregister()
+    {
+        shortcutMonitor?.Stop(); shortcutMonitor = null;
+        translationHotkey?.Dispose(); translationHotkey = null;
+        hotkey?.Dispose(); hotkey = null;
+        hook?.Dispose(); hook = null;
     }
-    private bool IsConfiguredModifier(uint key) =>
-        ((shortcutModifiers & HotkeyModifiers.Control) != 0 && key is 0x11 or 0xA2 or 0xA3) ||
-        ((shortcutModifiers & HotkeyModifiers.Shift) != 0 && key is 0x10 or 0xA0 or 0xA1) ||
-        ((shortcutModifiers & HotkeyModifiers.Alt) != 0 && key is 0x12 or 0xA4 or 0xA5) ||
-        ((shortcutModifiers & HotkeyModifiers.Win) != 0 && key is 0x5B or 0x5C);
+
+    private void CheckShortcutRelease()
+    {
+        var (modifiers, key) = pressedShortcut;
+        var modifiersDown = ((modifiers & HotkeyModifiers.Control) == 0 || IsKeyDown(0x11)) &&
+            ((modifiers & HotkeyModifiers.Shift) == 0 || IsKeyDown(0x10)) &&
+            ((modifiers & HotkeyModifiers.Alt) == 0 || IsKeyDown(0x12)) &&
+            ((modifiers & HotkeyModifiers.Win) == 0 || IsKeyDown(0x5B) || IsKeyDown(0x5C));
+        FinishShortcutCheck(shortcut.ObserveKeyState(IsKeyDown(key), modifiersDown));
+    }
+
+    private void FinishShortcutCheck(DictationKeyAction action)
+    {
+        if (!shortcut.Held) shortcutMonitor?.Stop();
+        if (action == DictationKeyAction.Stop) RequestStop();
+    }
+
+    private static bool IsKeyDown(uint key) => (Native.GetAsyncKeyState((int)key) & 0x8000) != 0;
+
+    private static bool IsModifier(uint modifiers, uint key) =>
+        ((modifiers & HotkeyModifiers.Control) != 0 && key is 0x11 or 0xA2 or 0xA3) ||
+        ((modifiers & HotkeyModifiers.Shift) != 0 && key is 0x10 or 0xA0 or 0xA1) ||
+        ((modifiers & HotkeyModifiers.Alt) != 0 && key is 0x12 or 0xA4 or 0xA5) ||
+        ((modifiers & HotkeyModifiers.Win) != 0 && key is 0x5B or 0x5C);
     private void RequestStop()
     {
         if (starting) stopWhenStarted = true;
@@ -102,41 +174,52 @@ public sealed class DictationModule : CaptureModuleBase
     }
     public override void Apply()
     {
-                if (IsActive) { Cancel(); Register(); activeStore = Store; PrepareSelectedModel(); }
+        if (IsActive) { Cancel(); Register(); activeStore = Store; PrepareSelectedModel(); }
     }
     private void PrepareSelectedModel()
     {
-        var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
-        var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1);
-        var path = Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
+        var config = GetConfiguration(translateToEnglish: false);
         // Missing models are reported when recording starts, not during application startup.
-        if (File.Exists(path))
-            _ = PrepareModelAsync(new DictationConfiguration(path,
-                Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu")), default);
+        if (File.Exists(config.Model)) _ = PrepareModelAsync(config, default);
     }
+
+    private DictationConfiguration GetConfiguration(bool translateToEnglish)
+    {
+        var settings = Context.Settings;
+        var translate = translateToEnglish || settings.GetBool("output") || settings.GetString("output") == "1";
+        var model = translate ? DictationDefaults.TranslationModel :
+            DictationDefaults.ModelFiles[Math.Clamp(settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1)];
+        return new(Path.Combine(activeStore!.DirectoryPath, "models", model), settings.GetString("language", "auto"), translate, !settings.GetBool("cpu"));
+    }
+
     public override void Deactivate()
     {
-        IsActive = false; Cancel(); hotkey?.Dispose(); hotkey = null; hook?.Dispose(); hook = null;
+        IsActive = false; Cancel(); Unregister();
         client.Dispose(); overlay?.Close(); overlay = null; activeStore = null; base.Deactivate();
     }
-    private async Task StartAsync()
+    private async Task StartAsync(bool translateToEnglish = false)
     {
         if (busy || recording || !IsActive) return;
         busy = true; starting = true; operation?.Dispose(); operation = new(); var token = operation.Token;
         try
         {
-            // Capture focus immediately, but do not delay microphone startup for a slow
-            // accessibility provider. A timeout leaves clipboard/history as the fallback.
+            var config = GetConfiguration(translateToEnglish);
+            if (!File.Exists(config.Model))
+                throw new FileNotFoundException(config.Translate
+                    ? "İngilizce dikte için Large modeli gerekir. Modelleri yönet bölümünden ekleyin."
+                    : "Model bulunamadı. Modelleri yönet bölümünden ekleyin.", config.Model);
+            configuration = config;
+            // Remember the native focus while the accessibility provider resolves the editable field.
             target = null;
-            var foreground = Native.GetForegroundWindow();
-            var focusedWindow = FocusedTextOutput.FocusedWindow(foreground);
-            var captureTarget = CaptureTargetAsync(foreground, token, focusedWindow: focusedWindow);
-            var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
-            var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1);
-            if (!File.Exists(Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model])))
-                throw new FileNotFoundException("Model bulunamadı. Modelleri yönet bölümünden ekleyin.");
+            recordingWindow = Native.GetForegroundWindow();
+            recordingFocus = FocusedTextOutput.FocusedWindow(recordingWindow);
+            var captureTarget = CaptureTargetAsync(recordingWindow, token, focusedWindow: recordingFocus);
             audio.Clear();
-            ShowStatus("Mikrofon hazırlanıyor… · Esc: iptal");
+            transcript.Clear();
+            liveOffset = pastedLength = 0;
+            livePaused = liveTargetChanged = false;
+            liveTask = Task.CompletedTask;
+            ShowStatus("preparing");
             if (Context.Settings.GetBool("mute-playback", true)) playbackMute = PlaybackMuteScope.Begin();
             var selectedDevice = Context.Settings.GetString("microphone");
             var capture = new WasapiLoopbackCapture(true, selectedDevice);
@@ -152,21 +235,23 @@ public sealed class DictationModule : CaptureModuleBase
                 Context.Notify("Seçilen mikrofon açılamadı; varsayılan kullanılıyor.");
             }
             token.ThrowIfCancellationRequested();
-            recording = true; lastWaveformUpdate = DateTime.MinValue; ShowStatus("Dinleniyor… · Esc: iptal"); overlay?.BeginRecording();
-            _ = PrepareModelAsync(new DictationConfiguration(
-                Path.Combine(activeStore!.DirectoryPath, "models", DictationDefaults.ModelFiles[model]),
-                Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu")), token);
+            var recordingStarted = Stopwatch.GetTimestamp();
+            recording = true; lastWaveformUpdate = DateTime.MinValue; ShowStatus("listening");
+            _ = PrepareModelAsync(config, token);
             monitor = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             monitor.Tick += (_, _) =>
             {
                 if (microphone?.LastError is { } error) OnMicrophoneFailure(error);
-                else if (audio.Full)
+                else if (audio.Full || Stopwatch.GetElapsedTime(recordingStarted) >= TimeSpan.FromSeconds(DictationAudio.MaximumSeconds))
                 {
                     Context.Notify("Dikte beş dakikalık kayıt sınırına ulaştı; kayıt çözümleniyor.");
-                    _ = StopAsync();
+                    RequestStop();
                 }
+                else StartLiveChunk(config, token);
             }; monitor.Start();
-            target = await captureTarget;
+            var capturedTarget = await captureTarget;
+            token.ThrowIfCancellationRequested();
+            target = capturedTarget;
         }
         catch (OperationCanceledException) { }
         catch (Exception) when (token.IsCancellationRequested) { }
@@ -194,7 +279,7 @@ public sealed class DictationModule : CaptureModuleBase
     {
         try
         {
-            var result = await Task.Run(capture ?? FocusedTextOutput.Capture).WaitAsync(TimeSpan.FromMilliseconds(800), token);
+            var result = await Task.Run(capture ?? FocusedTextOutput.Capture, token).WaitAsync(TimeSpan.FromMilliseconds(800), token);
             // The accessibility query runs asynchronously. Never accept a field in a
             // different window that happened to gain focus after the shortcut.
             if (foreground == 0 || result?.Window != foreground) return null;
@@ -203,13 +288,22 @@ public sealed class DictationModule : CaptureModuleBase
         }
         catch (TimeoutException) { return null; }
     }
+
+    internal static Task<TextTarget?> RecoverTargetAsync(nint recordingWindow, nint recordingFocus, CancellationToken token,
+        Func<TextTarget?>? capture = null, Func<nint>? readForeground = null, Func<nint, nint>? readFocus = null)
+    {
+        readFocus ??= FocusedTextOutput.FocusedWindow;
+        if (recordingFocus == 0 || (readForeground ?? Native.GetForegroundWindow)() != recordingWindow ||
+            readFocus(recordingWindow) != recordingFocus) return Task.FromResult<TextTarget?>(null);
+        return CaptureTargetAsync(recordingWindow, token, capture, recordingFocus, readFocus);
+    }
     private async Task PrepareModelAsync(DictationConfiguration configuration, CancellationToken token)
     {
         try
         {
-            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var started = Stopwatch.GetTimestamp();
             await client.PrepareAsync(configuration, token);
-            Context.Log.Info($"Dictation model ready: {client.Engine}; preparation={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
+            Context.Log.Info($"Dictation model ready: {client.Engine}; preparation={Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
         }
         catch (OperationCanceledException) { }
         // The stop path reports loading errors; preparation must not interrupt microphone capture.
@@ -226,16 +320,87 @@ public sealed class DictationModule : CaptureModuleBase
         var level = Math.Clamp(peak * 100, 0, 100);
         Application.Current?.Dispatcher.BeginInvoke(() => overlay?.SetAudioLevel(level));
     }
+
+    private bool CanPasteWithHeldShift => shortcut.Held && pressedShortcut.Modifiers == HotkeyModifiers.Shift && !shiftInsertIsBound;
+
+    private void StartLiveChunk(DictationConfiguration config, CancellationToken token)
+    {
+        if (starting || !recording || target is null || livePaused || !liveTask.IsCompleted ||
+            !FocusedTextOutput.CanPasteImmediately(CanPasteWithHeldShift)) return;
+        var samples = audio.ReadLiveChunk(liveOffset, out var end);
+        if (samples is null) liveOffset = end;
+        else liveTask = TranscribeLiveChunkAsync(samples, end, config, token);
+    }
+
+    private async Task TranscribeLiveChunkAsync(float[] samples, int end, DictationConfiguration config, CancellationToken token)
+    {
+        try
+        {
+            var text = await client.TranscribeAsync(samples, config, token);
+            token.ThrowIfCancellationRequested();
+            if (text.Length == 0)
+            {
+                // Try this audio again with the rest of the recording for context.
+                livePaused = true;
+                return;
+            }
+            AppendTranscript(text);
+            liveOffset = end;
+            if (!recording) return;
+            var heldShift = CanPasteWithHeldShift;
+            if (!FocusedTextOutput.CanPasteImmediately(heldShift)) return;
+            var pending = transcript.ToString(pastedLength, transcript.Length - pastedLength);
+            var insertion = await FocusedTextOutput.PasteAsync(target, () => CopyResult(pending), token,
+                useShiftInsert: preferShiftInsert || (heldShift && !FocusedTextOutput.CanPasteImmediately()), waitForModifiers: false);
+            if (insertion == TextInsertion.Inserted)
+            {
+                pastedLength = transcript.Length;
+                // SendInput queues the shortcut. Give the target time to read the paste before reusing the clipboard.
+                await Task.Delay(250, token);
+            }
+            else
+            {
+                livePaused = true;
+                liveTargetChanged = insertion == TextInsertion.TargetChanged;
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            livePaused = true;
+            Context.Log.Error("Canlı dikte parçası çözümlenemedi.", error);
+        }
+        finally { Array.Clear(samples); }
+    }
+
+    private void AppendTranscript(string text)
+    {
+        if (text.Length == 0) return;
+        if (transcript.Length > 0) transcript.Append(' ');
+        transcript.Append(text);
+    }
+
     private async Task StopAsync()
     {
         if (!recording || busy) return;
-        recording = false; busy = true; monitor?.Stop(); monitor = null; microphone?.Dispose(); microphone = null;
-        RestorePlayback();
-        var samples = audio.Take(out var peak, trimSilence: true);
+        recording = false; busy = true; monitor?.Stop(); monitor = null;
         var token = operation!.Token; var currentStore = activeStore!;
+        var config = configuration!;
+        float[] samples = [];
         try
         {
-            if (!SpeechBuffer.ContainsSpeech(samples))
+            var capture = microphone;
+            microphone = null;
+            try { capture?.Dispose(); }
+            finally { RestorePlayback(); }
+            ShowStatus("processing");
+            // A slow provider can miss the initial lookup. Retry at stop only in the original native focus.
+            var recoveredTarget = target is null ? RecoverTargetAsync(recordingWindow, recordingFocus, token) : null;
+            await liveTask;
+            token.ThrowIfCancellationRequested();
+            samples = audio.Take(out var peak, trimSilence: true, startOffset: liveOffset);
+            var hasSpeech = SpeechBuffer.ContainsSpeech(samples);
+            if (!hasSpeech && transcript.Length == 0)
             {
                 overlay?.Hide();
                 Context.Notify(peak > 0 && peak < 0.01f
@@ -243,20 +408,32 @@ public sealed class DictationModule : CaptureModuleBase
                     : "Konuşma algılanmadı. Mikrofonu ve kayıt süresini kontrol edin.");
                 return;
             }
-            var translate = Context.Settings.GetBool("output") || Context.Settings.GetString("output") == "1";
-            var model = translate ? 1 : Math.Clamp(Context.Settings.GetInt("model"), 0, DictationDefaults.ModelFiles.Length - 1);
-            var path = Path.Combine(currentStore.DirectoryPath, "models", DictationDefaults.ModelFiles[model]);
-            if (!File.Exists(path)) throw new FileNotFoundException("Model bulunamadı. Modelleri yönet bölümünden ekleyin.", path);
-            ShowStatus("Konuşma çözümleniyor… · Esc: iptal");
-            var config = new DictationConfiguration(path, Context.Settings.GetString("language", "auto"), translate, !Context.Settings.GetBool("cpu"));
-            var started = System.Diagnostics.Stopwatch.GetTimestamp();
-            var text = await client.TranscribeAsync(samples, config, token); token.ThrowIfCancellationRequested();
-            Context.Log.Info($"Dictation transcription: {client.Engine}; audio={(double)samples.Length / DictationAudio.SampleRate:F2} s; elapsed={System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
+            if (hasSpeech)
+            {
+                var started = Stopwatch.GetTimestamp();
+                var final = await client.TranscribeAsync(samples, config, token);
+                token.ThrowIfCancellationRequested();
+                AppendTranscript(final);
+                Context.Log.Info($"Dictation transcription: {client.Engine}; audio={(double)samples.Length / DictationAudio.SampleRate:F2} s; elapsed={Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms");
+            }
+            var text = transcript.ToString();
             if (text.Length == 0) { overlay?.Hide(); Context.Notify("Metin bulunamadı."); return; }
+            var pending = text[pastedLength..];
+            uint clipboardSequence = 0;
+            var insertion = liveTargetChanged ? TextInsertion.TargetChanged : TextInsertion.Inserted;
+            if (pending.Length > 0 && !liveTargetChanged)
+            {
+                if (recoveredTarget is not null) target = await recoveredTarget;
+                insertion = await FocusedTextOutput.PasteAsync(target, () => clipboardSequence = CopyResult(pending), token,
+                    useShiftInsert: preferShiftInsert);
+            }
+            // A queued paste of the suffix needs to keep its clipboard payload. The complete text goes in history.
+            if (pending.Length == 0 || (insertion != TextInsertion.Inserted && (clipboardSequence == 0 || pastedLength > 0)))
+                clipboardSequence = CopyResult(text);
             var saved = false;
             try
             {
-                await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: DictationDefaults.ModelFiles[model], text: text); }, token);
+                await Task.Run(() => { token.ThrowIfCancellationRequested(); currentStore.Add("dictation", DateTimeOffset.UtcNow, title: Path.GetFileName(config.Model), text: text); }, token);
                 saved = true;
             }
             catch (OperationCanceledException) { throw; }
@@ -266,18 +443,13 @@ public sealed class DictationModule : CaptureModuleBase
                 Context.Notify("Dikte geçmişe kaydedilemedi; metin yine de sunulacak.");
             }
             token.ThrowIfCancellationRequested();
-            var copied = TryCopyResult(text, out var clipboardSequence);
-            var insertion = await FocusedTextOutput.InsertAsync(target, text, token);
-            if (insertion == TextInsertion.UnsupportedLineBreak && copied)
-                insertion = await FocusedTextOutput.PasteAsync(target, clipboardSequence, token);
-            copied &= clipboardSequence != 0 && FocusedTextOutput.GetClipboardSequenceNumber() == clipboardSequence;
+            var copied = clipboardSequence != 0 && FocusedTextOutput.GetClipboardSequenceNumber() == clipboardSequence;
             overlay?.Hide();
             if (insertion != TextInsertion.Inserted)
             {
                 var reason = insertion switch
                 {
                     TextInsertion.TargetChanged => "Odak değiştiği için metnin tamamı yazılamadı.",
-                    TextInsertion.UnsupportedLineBreak => "Satır sonları olan metin otomatik yazılamadı.",
                     _ => "Metin hedef alana yazılamadı."
                 };
                 Context.Notify(reason + (copied ? " Tam metin panoda." : saved ? " Metni dikte geçmişinden alabilirsiniz." : " Metin kaydedilemedi veya panoya kopyalanamadı."));
@@ -288,32 +460,29 @@ public sealed class DictationModule : CaptureModuleBase
         catch (Exception error) { overlay?.Hide(); Report(error); }
         finally { Array.Clear(samples); busy = false; }
     }
-    private static bool TryCopyResult(string text, out uint sequence)
+    private static uint CopyResult(string text)
     {
-        sequence = 0;
         try
         {
             Clipboard.SetText(text);
             var current = FocusedTextOutput.GetClipboardSequenceNumber();
-            if (current == 0 || Clipboard.GetText() != text || FocusedTextOutput.GetClipboardSequenceNumber() != current) return false;
-            sequence = current;
-            return true;
+            return current != 0 && Clipboard.GetText() == text && FocusedTextOutput.GetClipboardSequenceNumber() == current ? current : 0;
         }
-        catch (Exception error) when (error is ExternalException or InvalidOperationException) { return false; }
+        catch (Exception error) when (error is ExternalException or InvalidOperationException) { return 0; }
     }
     private void Cancel()
     {
+        shortcutMonitor?.Stop();
         shortcut.Reset(); stopWhenStarted = false; starting = false; recording = false; operation?.Cancel(); monitor?.Stop(); monitor = null;
         microphone?.Dispose(); microphone = null; client.Dispose(); audio.Clear(); overlay?.Hide();
         RestorePlayback();
     }
     private void RestorePlayback() { playbackMute?.Dispose(); playbackMute = null; }
-    private void ShowStatus(string text)
+    private void ShowStatus(string phase)
     {
         if (!IsActive) return;
-            overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
-            overlay.ShowStatus(text);
-            overlay.Place(Context.Settings.GetString("overlay-position", "bottom-center"));
+        overlay ??= new StatusOverlay((Context as IFeatureUiContext)?.FeatureUi);
+        overlay.ShowStatus(phase, Context.Settings.GetString("overlay-position", "bottom-center"));
     }
     public override IEnumerable<QuickAction> GetQuickActions(string query) => base.GetQuickActions(query).Concat(new[]
     {
@@ -324,45 +493,30 @@ public sealed class DictationModule : CaptureModuleBase
 
 internal sealed class StatusOverlay : IDisposable
 {
-    private const double StatusWidth = 252;
-    private const double StatusHeight = 72;
+    internal const double StatusWidth = 76;
+    internal const double StatusHeight = 48;
     private readonly IFeatureUiService? featureUi;
     private IFeatureUiWindow? statusWindow;
-    private string message = "";
-    private double audioLevel;
-    private bool recording;
+    private string phase = "preparing";
 
     public StatusOverlay(IFeatureUiService? featureUi)
     {
         this.featureUi = featureUi;
     }
 
-    public void BeginRecording()
-    {
-        recording = true;
-        audioLevel = 0;
-        PushStatus();
-    }
-
     public void SetAudioLevel(double value)
     {
-        audioLevel = Math.Clamp(value, 0, 100);
-        PushStatus();
+        if (phase == "listening") statusWindow?.SetState(new { phase, audioLevel = Math.Clamp(value, 0, 100) });
     }
 
-    public void ShowStatus(string text)
+    public void ShowStatus(string phase, string position)
     {
-        message = text;
-        recording = text.Contains("Dinleniyor", StringComparison.OrdinalIgnoreCase);
+        this.phase = phase;
         statusWindow ??= OpenStatusWindow();
-        statusWindow?.SetState(new { message, audioLevel, recording });
-        statusWindow?.Show();
-    }
-
-    public void Place(string position)
-    {
-        var area = CursorPanelPlacement.WorkArea;
-        PlaceWindow(statusWindow, position, StatusWidth, StatusHeight, area);
+        if (statusWindow is null) return;
+        statusWindow.SetState(new { phase, audioLevel = 0d });
+        PlaceWindow(statusWindow, position, StatusWidth, StatusHeight, CursorPanelPlacement.WorkArea);
+        statusWindow.Show();
     }
 
     public void Hide()
@@ -386,15 +540,8 @@ internal sealed class StatusOverlay : IDisposable
                 Transparent: true, ClickThrough: true));
     }
 
-    private void PushStatus()
+    private static void PlaceWindow(IFeatureUiWindow window, string position, double width, double height, Rect area)
     {
-        statusWindow ??= OpenStatusWindow();
-        statusWindow?.SetState(new { message, audioLevel, recording });
-    }
-
-    private static void PlaceWindow(IFeatureUiWindow? window, string position, double width, double height, Rect area)
-    {
-        if (window is null) return;
         const double margin = 20;
         var left = position switch
         {

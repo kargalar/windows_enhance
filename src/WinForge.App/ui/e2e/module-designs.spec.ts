@@ -7,7 +7,7 @@ import { nativeHarness } from './nativeHarness';
 
 const modules=catalog.modules as Module[];
 test('all discovered modules have a complete purpose-built design with every native key assigned exactly once',()=>{
-  expect(modules.length).toBe(47);
+  expect(modules.length).toBe(49);
   for(const module of modules){
     const {design,pages,unassigned}=resolveDesign(module);
     expect(design, module.id).toBeTruthy();

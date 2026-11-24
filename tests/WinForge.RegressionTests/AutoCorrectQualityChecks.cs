@@ -169,6 +169,8 @@ internal static class AutoCorrectQualityChecks
         string? Correct(string word, string tag = "tr-TR", string? history = null, bool context = true,
             bool deasciify = true, bool expansions = true, IReadOnlyDictionary<string, string>? custom = null) =>
             (string?)find.Invoke(engine, [word, tag, history, context, deasciify, expansions, false, custom]);
+        check(Correct("umdugjnuzu") != "umduğumuzu",
+            "Ambiguous Turkish inflection is not silently replaced with a different person ending");
         var getRankedCandidates = engineType.GetMethod("GetRankedCandidates", PrivateInstance)!;
         foreach (var (word, tag, history) in new (string, string, string?)[]
         {

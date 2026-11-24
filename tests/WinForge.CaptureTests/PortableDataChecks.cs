@@ -44,6 +44,16 @@ internal static class PortableDataChecks
         Directory.Move(target, moved);
         check(File.Exists(Path.Combine(PortableHistoryMigration.DirectoryFor(moved, id), "history.db")),
             "Custom history remains accessible after moving the data directory");
+
+        var values = settings.For("screen-history");
+        values[PortableHistoryMigration.DirectorySettingKey] = legacyHistory;
+        values["storage-directory"] = Path.Combine(root, "obsolete-path");
+        PortableHistoryMigration.Migrate(settings, target, Path.Combine(root, "old-default"));
+        using var reloaded = new SettingsStore(settings.FilePath);
+        var reloadedValues = reloaded.For("screen-history");
+        check(reloadedValues[PortableHistoryMigration.DirectorySettingKey] == legacyHistory &&
+            !reloadedValues.ContainsKey("storage-directory") && !Directory.Exists(target),
+            "An explicit live history folder survives legacy migration and restart");
     }
 
     private static void Migration(string root, Action<bool, string> check)

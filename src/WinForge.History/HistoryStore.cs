@@ -8,6 +8,7 @@ public sealed record HistoryItem(long Id, string Kind, DateTimeOffset Created, s
     string Text, string Media, double Seconds, bool Estimated, string Tags, string OcrState, string Icon, string Metadata);
 public sealed record HistoryFilter(string Kind, string Query = "", string App = "", string Tag = "",
     DateTimeOffset? From = null, DateTimeOffset? Until = null, int Limit = 200, int Offset = 0);
+public sealed record HistoryListItem(long Id, DateTimeOffset Created, string App, string Title, string Tags);
 public sealed record UsageTotal(string App, double Seconds, bool Estimated);
 public sealed record UsageDayTotal(string Date, string App, double Seconds, bool Estimated);
 public sealed record TagUsageTotal(string Tag, double Seconds, int ApplicationCount);
@@ -37,6 +38,17 @@ public sealed partial class HistoryStore
         """;
     private static readonly object MediaGate = new();
     private static readonly Dictionary<string, int> PendingMedia = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly char[] InvalidMediaCharacters = Path.GetInvalidFileNameChars();
+    private static readonly HashSet<string> ReservedWindowsNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "COM¹", "COM²", "COM³",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "LPT¹", "LPT²", "LPT³"
+    };
+    public const string CaptureImages = "Görseller";
+    public const string FullscreenFolderName = "Tam Ekran";
+    public const string FullscreenCaptures = CaptureImages + "/" + FullscreenFolderName;
+    public const string CaptureVideos = "Videolar";
     public static string DefaultDirectory => Path.Combine(Storage.PortableDataPaths.DirectoryPath, "History");
     public string DirectoryPath { get; }
     public string DatabasePath => Path.Combine(DirectoryPath, "history.db");
@@ -50,6 +62,8 @@ public sealed partial class HistoryStore
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS items({{ItemColumns}});
             CREATE INDEX IF NOT EXISTS items_time ON items(kind,created);
+            CREATE INDEX IF NOT EXISTS items_recall_estimated ON items(created) WHERE kind='recall' AND estimated=1;
+            CREATE INDEX IF NOT EXISTS items_recall_captures ON items(created) WHERE kind='recall' AND media<>'';
             CREATE INDEX IF NOT EXISTS items_media ON items(media);
             CREATE INDEX IF NOT EXISTS items_ocr ON items(ocr_state,media);
             CREATE TABLE IF NOT EXISTS app_tags(app TEXT NOT NULL,tag TEXT NOT NULL,PRIMARY KEY(app,tag));
@@ -149,14 +163,39 @@ public sealed partial class HistoryStore
         using var connection = Open(); using var command = connection.CreateCommand();
         ConfigureSearch(command, filter);
         using var reader = command.ExecuteReader(); var result = new List<HistoryItem>();
-        while (reader.Read()) result.Add(new(reader.GetInt64(0), reader.GetString(1), DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
-            reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDouble(7), reader.GetBoolean(8), reader.GetString(9), reader.GetString(10), reader.GetString(11), reader.GetString(12)));
+        while (reader.Read()) result.Add(ReadItem(reader));
         return result;
     }
 
+    public IReadOnlyList<HistoryListItem> SearchList(HistoryFilter filter)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        ConfigureSearch(command, filter, $"i.id,i.created,i.app,i.title,{ItemTagsSql}");
+        using var reader = command.ExecuteReader();
+        var result = new List<HistoryListItem>();
+        while (reader.Read())
+            result.Add(new(reader.GetInt64(0), DateTimeOffset.Parse(reader.GetString(1), CultureInfo.InvariantCulture),
+                reader.GetString(2), reader.GetString(3), reader.GetString(4)));
+        return result;
+    }
+
+    public HistoryItem? FindItem(string kind, long id)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {SearchItemColumns} FROM items i WHERE i.kind=$kind AND i.id=$id";
+        Bind(command, ("$kind", kind), ("$id", id));
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadItem(reader) : null;
+    }
+
+    private static HistoryItem ReadItem(SqliteDataReader reader) => new(reader.GetInt64(0), reader.GetString(1),
+        DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture), reader.GetString(3), reader.GetString(4),
+        reader.GetString(5), reader.GetString(6), reader.GetDouble(7), reader.GetBoolean(8), reader.GetString(9),
+        reader.GetString(10), reader.GetString(11), reader.GetString(12));
+
+    private const string ItemTagsSql = "coalesce((SELECT group_concat(tag, ', ') FROM app_tags WHERE app=i.app),'')";
+    private const string SearchItemColumns = $"i.id,i.kind,i.created,i.app,i.title,i.text,i.media,i.seconds,i.estimated,{ItemTagsSql},i.ocr_state,i.icon,i.metadata";
     private const string SearchSql = """
-            SELECT i.id,i.kind,i.created,i.app,i.title,i.text,i.media,i.seconds,i.estimated,
-            coalesce((SELECT group_concat(tag, ', ') FROM app_tags WHERE app=i.app),''),i.ocr_state,i.icon,i.metadata
             FROM items i WHERE kind=$kind
             AND ($query='' OR i.id IN (SELECT rowid FROM search WHERE search MATCH $match))
             AND ($app='' OR i.app=$app)
@@ -165,9 +204,9 @@ public sealed partial class HistoryStore
             ORDER BY created DESC,id DESC LIMIT $limit OFFSET $offset
             """;
 
-    private static void ConfigureSearch(SqliteCommand command, HistoryFilter filter)
+    private static void ConfigureSearch(SqliteCommand command, HistoryFilter filter, string columns = SearchItemColumns)
     {
-        command.CommandText = SearchSql;
+        command.CommandText = $"SELECT {columns} {SearchSql}";
         var query = filter.Query.Trim();
         Bind(command, ("$kind", filter.Kind), ("$query", query), ("$match", "\"" + query.Replace("\"", "\"\"") + "\""),
             ("$app", filter.App), ("$tag", filter.Tag), ("$from", filter.From is { } from ? Timestamp(from) : ""),
@@ -222,7 +261,10 @@ public sealed partial class HistoryStore
             """;
         Bind(command, ("$app", app), ("$start", Timestamp(start)), ("$end", Timestamp(end)), ("$seconds", seconds)); command.ExecuteNonQuery();
     }
-    public IReadOnlyList<UsageTotal> Usage(DateTimeOffset? from = null, DateTimeOffset? until = null)
+    public IReadOnlyList<UsageTotal> Usage(DateTimeOffset? from = null, DateTimeOffset? until = null) =>
+        ReadUsage(from, until, includeIdle: false);
+
+    private IReadOnlyList<UsageTotal> ReadUsage(DateTimeOffset? from, DateTimeOffset? until, bool includeIdle)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
         command.CommandText = $$"""
@@ -231,44 +273,46 @@ public sealed partial class HistoryStore
               seconds*min(1,max(0,(julianday(CASE WHEN $until<>'' AND ended>$until THEN $until ELSE ended END)-
               julianday(CASE WHEN $from<>'' AND started<$from THEN $from ELSE started END)) /
               max(0.0000000001,julianday(ended)-julianday(started)))) END seconds
-            FROM usage WHERE app<>'System Idle' AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
-            UNION ALL SELECT app,1 estimated,seconds FROM ({{ArchivedUsageSql}}) WHERE app<>'System Idle')
+            FROM usage WHERE ($includeIdle OR app<>'System Idle') AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
+            UNION ALL SELECT app,1 estimated,seconds FROM ({{ArchivedUsageSql}}) WHERE ($includeIdle OR app<>'System Idle'))
             GROUP BY app,estimated ORDER BY sum(seconds) DESC
             """;
-        Bind(command, ("$from", from is { } f ? Timestamp(f) : ""), ("$until", until is { } u ? Timestamp(u) : ""));
+        Bind(command, ("$includeIdle", includeIdle ? 1 : 0), ("$from", from is { } f ? Timestamp(f) : ""), ("$until", until is { } u ? Timestamp(u) : ""));
         using var reader = command.ExecuteReader(); var result = new List<UsageTotal>();
         while (reader.Read()) result.Add(new(reader.GetString(0), reader.GetDouble(1), reader.GetBoolean(2))); return result;
     }
-    public RecallUsageSummary RecallSummary(DateTimeOffset? from = null, DateTimeOffset? until = null)
+    public RecallUsageSummary RecallSummary(DateTimeOffset? from = null, DateTimeOffset? until = null) =>
+        RecallOverview(from, until).Summary;
+
+    public (RecallUsageSummary Summary, IReadOnlyList<UsageTotal> Applications) RecallOverview(DateTimeOffset? from = null, DateTimeOffset? until = null)
     {
-        var appUsage = Usage(from, until);
+        var usage = ReadUsage(from, until, includeIdle: true);
+        var appUsage = usage.Where(row => row.App != "System Idle").ToArray();
         var active = appUsage.Sum(row => row.Seconds);
-        var idle = SumUsage("System Idle", from, until);
+        var idle = usage.Where(row => row.App == "System Idle").Sum(row => row.Seconds);
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = "SELECT count(*) FROM items WHERE kind='recall' AND media<>'' AND ($from='' OR created >= $from) AND ($until='' OR created < $until)";
-        Bind(command, ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } end ? Timestamp(end) : ""));
+        command.CommandText = "SELECT count(*) FROM items WHERE kind='recall' AND media<>''";
+        if (from is { } start)
+        {
+            command.CommandText += " AND created >= $from";
+            command.Parameters.AddWithValue("$from", Timestamp(start));
+        }
+        if (until is { } end)
+        {
+            command.CommandText += " AND created < $until";
+            command.Parameters.AddWithValue("$until", Timestamp(end));
+        }
         var captures = Convert.ToInt64(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         var mostUsed = appUsage.GroupBy(row => row.App).OrderByDescending(group => group.Sum(row => row.Seconds)).FirstOrDefault()?.Key ?? "—";
-        return new(active, idle, captures, mostUsed);
+        return (new(active, idle, captures, mostUsed), appUsage);
     }
-    private double SumUsage(string app, DateTimeOffset? from, DateTimeOffset? until)
+
+    public IReadOnlyList<TagUsageTotal> TagUsage(DateTimeOffset? from = null, DateTimeOffset? until = null) =>
+        TagUsage(Usage(from, until));
+
+    public IReadOnlyList<TagUsageTotal> TagUsage(IReadOnlyList<UsageTotal> applicationUsage)
     {
-        using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = $$"""
-            SELECT coalesce(sum(seconds),0) FROM (
-            SELECT CASE WHEN ended<=started THEN seconds ELSE seconds*min(1,max(0,
-            julianday(CASE WHEN $until<>'' AND ended>$until THEN $until ELSE ended END)-
-            julianday(CASE WHEN $from<>'' AND started<$from THEN $from ELSE started END))/
-            max(0.0000000001,julianday(ended)-julianday(started))) END seconds
-            FROM usage WHERE app=$app AND ($from='' OR ended>$from) AND ($until='' OR started<$until)
-            UNION ALL SELECT seconds FROM ({{ArchivedUsageSql}}) WHERE app=$app)
-            """;
-        Bind(command, ("$app", app), ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } end ? Timestamp(end) : ""));
-        return Convert.ToDouble(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-    }
-    public IReadOnlyList<TagUsageTotal> TagUsage(DateTimeOffset? from = null, DateTimeOffset? until = null)
-    {
-        var appUsage = Usage(from, until).GroupBy(row => row.App, StringComparer.OrdinalIgnoreCase)
+        var appUsage = applicationUsage.GroupBy(row => row.App, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.Sum(row => row.Seconds), StringComparer.OrdinalIgnoreCase);
         using var connection = Open(); using var command = connection.CreateCommand();
         command.CommandText = "SELECT tag,app FROM app_tags ORDER BY tag,app";
@@ -330,7 +374,7 @@ public sealed partial class HistoryStore
             ORDER BY started
             """;
         Bind(command, ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } endValue ? Timestamp(endValue) : ""));
-        using var reader = command.ExecuteReader(); var totals = new Dictionary<(string Date, string App, string Type, string Context), double>();
+        using var reader = command.ExecuteReader(); var totals = new Dictionary<(DateTime Date, string App, string Type, string Context), double>();
         while (reader.Read())
         {
             var app = reader.GetString(0); var type = reader.GetString(1); var context = reader.GetString(2);
@@ -342,19 +386,18 @@ public sealed partial class HistoryStore
             var clippedEnd = until is { } untilDate && intervalEnd > untilDate ? untilDate : intervalEnd;
             while (cursor < clippedEnd)
             {
-                var local = cursor.ToLocalTime(); var nextLocalDay = new DateTimeOffset(local.Date.AddDays(1), local.Offset).ToUniversalTime();
+                var local = cursor.ToLocalTime(); var nextLocalDay = NextLocalDay(local);
                 var segmentEnd = nextLocalDay < clippedEnd ? nextLocalDay : clippedEnd;
                 Add(local.Date, seconds * (segmentEnd - cursor).TotalSeconds / fullSpan); cursor = segmentEnd;
             }
             void Add(DateTime date, double value)
             {
-                var key = (date.ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")), app, type, context);
+                var key = (date, app, type, context);
                 totals[key] = totals.GetValueOrDefault(key) + value;
             }
         }
-        return totals.Select(row => new ContextUsageDayTotal(row.Key.Date, row.Key.App, row.Key.Type, row.Key.Context, row.Value))
-            .OrderByDescending(row => DateTime.ParseExact(row.Date, "dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")))
-            .ThenByDescending(row => row.Seconds).ToArray();
+        return totals.OrderByDescending(row => row.Key.Date).ThenByDescending(row => row.Value)
+            .Select(row => new ContextUsageDayTotal(FormatUsageDate(row.Key.Date), row.Key.App, row.Key.Type, row.Key.Context, row.Value)).ToArray();
     }
     public IReadOnlyList<UsageDayTotal> UsageByDay(DateTimeOffset? from = null, DateTimeOffset? until = null) => UsageByDayCore(from, until, false);
     public IReadOnlyList<UsageDayTotal> IdleUsageByDay(DateTimeOffset? from = null, DateTimeOffset? until = null) => UsageByDayCore(from, until, true);
@@ -370,7 +413,7 @@ public sealed partial class HistoryStore
             ORDER BY started
             """;
         Bind(command, ("$idle", idleOnly ? 1 : 0), ("$from", from is { } start ? Timestamp(start) : ""), ("$until", until is { } endValue ? Timestamp(endValue) : ""));
-        using var reader = command.ExecuteReader(); var totals = new Dictionary<(string Date, string App, bool Estimated), double>();
+        using var reader = command.ExecuteReader(); var totals = new Dictionary<(DateTime Date, string App, bool Estimated), double>();
         while (reader.Read())
         {
             var app = reader.GetString(0); var intervalStart = DateTimeOffset.Parse(reader.GetString(1), CultureInfo.InvariantCulture);
@@ -381,31 +424,62 @@ public sealed partial class HistoryStore
             var end = until is { } untilDate && intervalEnd > untilDate ? untilDate : intervalEnd;
             while (cursor < end)
             {
-                var local = cursor.ToLocalTime(); var nextLocalDay = new DateTimeOffset(local.Date.AddDays(1), local.Offset).ToUniversalTime();
+                var local = cursor.ToLocalTime(); var nextLocalDay = NextLocalDay(local);
                 var segmentEnd = nextLocalDay < end ? nextLocalDay : end;
                 Add(local.Date, seconds * (segmentEnd - cursor).TotalSeconds / fullSpan); cursor = segmentEnd;
             }
             void Add(DateTime date, double value)
             {
-                var key = (date.ToString("dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")), app, estimated);
+                var key = (date, app, estimated);
                 totals[key] = totals.GetValueOrDefault(key) + value;
             }
         }
-        return totals.Select(row => new UsageDayTotal(row.Key.Date, row.Key.App, row.Value, row.Key.Estimated))
-            .OrderByDescending(row => DateTime.ParseExact(row.Date, "dd.MM.yyyy", CultureInfo.GetCultureInfo("tr-TR")))
-            .ThenByDescending(row => row.Seconds).ToArray();
+        return totals.OrderByDescending(row => row.Key.Date).ThenByDescending(row => row.Value)
+            .Select(row => new UsageDayTotal(FormatUsageDate(row.Key.Date), row.Key.App, row.Value, row.Key.Estimated)).ToArray();
     }
-    public void Delete(string kind, long? id = null, DateTimeOffset? from = null, DateTimeOffset? until = null)
+
+    private static DateTimeOffset NextLocalDay(DateTimeOffset local)
+    {
+        var midnight = local.Date.AddDays(1);
+        return new DateTimeOffset(midnight, TimeZoneInfo.Local.GetUtcOffset(midnight));
+    }
+
+    private static string FormatUsageDate(DateTime date) => date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+
+    public void Delete(string kind, long? id = null, DateTimeOffset? from = null, DateTimeOffset? until = null) =>
+        Delete(kind, id, from, until, collectWhenEmpty: true);
+
+    public void PruneRecall(DateTimeOffset until) => Delete("recall", null, null, until, collectWhenEmpty: false);
+
+    private void Delete(string kind, long? id, DateTimeOffset? from, DateTimeOffset? until, bool collectWhenEmpty)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM items WHERE kind=$kind AND ($id IS NULL OR id=$id) AND ($from='' OR created >= $from) AND ($until='' OR created < $until)";
-        Bind(command, ("$kind", kind), ("$id", (object?)id ?? DBNull.Value), ("$from", from is { } f ? Timestamp(f) : ""), ("$until", until is { } u ? Timestamp(u) : "")); command.ExecuteNonQuery();
+        command.CommandText = "DELETE FROM items WHERE kind=$kind";
+        command.Parameters.AddWithValue("$kind", kind);
+        if (id is { } item)
+        {
+            command.CommandText += " AND id=$id";
+            command.Parameters.AddWithValue("$id", item);
+        }
+        if (from is { } start)
+        {
+            command.CommandText += " AND created >= $from";
+            command.Parameters.AddWithValue("$from", Timestamp(start));
+        }
+        if (until is { } end)
+        {
+            command.CommandText += " AND created < $until";
+            command.Parameters.AddWithValue("$until", Timestamp(end));
+        }
+        var deleted = command.ExecuteNonQuery();
         if (kind == "recall" && id is null)
         {
+            command.Parameters.Clear();
             command.CommandText = "DELETE FROM usage WHERE ($from='' OR ended > $from) AND ($until='' OR started < $until); DELETE FROM context_usage WHERE ($from='' OR ended > $from) AND ($until='' OR started < $until)";
+            Bind(command, ("$from", from is { } startUsage ? Timestamp(startUsage) : ""), ("$until", until is { } endUsage ? Timestamp(endUsage) : ""));
             command.ExecuteNonQuery();
         }
-        CollectUnusedMedia();
+        if (deleted > 0 || collectWhenEmpty) CollectUnusedMedia();
     }
     public int CollectUnusedMedia()
     {
@@ -416,11 +490,32 @@ public sealed partial class HistoryStore
             using var reader = command.ExecuteReader(); var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             while (reader.Read()) used.Add(reader.GetString(0));
             var count = 0;
-            foreach (var file in Directory.EnumerateFiles(MediaDirectory))
-                if (!used.Contains(Path.GetFileName(file)) && !PendingMedia.ContainsKey(file) && !file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) { File.Delete(file); count++; }
+            foreach (var file in EnumerateMediaFiles())
+            {
+                var name = Path.GetRelativePath(MediaDirectory, file.FullName).Replace(Path.DirectorySeparatorChar, '/');
+                if (!used.Contains(name) && !PendingMedia.ContainsKey(file.FullName) && !file.Name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                { file.Delete(); count++; }
+            }
             return count;
         }
     }
+    public IEnumerable<FileInfo> EnumerateMediaFiles()
+    {
+        foreach (var file in new DirectoryInfo(MediaDirectory).EnumerateFiles()) yield return file;
+        foreach (var folder in new[] { CaptureImages, FullscreenCaptures, CaptureVideos })
+        {
+            var directory = new DirectoryInfo(Path.Combine(MediaDirectory, folder.Replace('/', Path.DirectorySeparatorChar)));
+            if (!IsMediaFolder(directory) || (folder == FullscreenCaptures && !IsMediaFolder(directory.Parent!))) continue;
+            foreach (var file in directory.EnumerateFiles()) yield return file;
+            if (folder != FullscreenCaptures) continue;
+            foreach (var application in directory.EnumerateDirectories())
+                if (IsMediaFolder(application) && IsValidMediaSegment(application.Name))
+                    foreach (var file in application.EnumerateFiles()) yield return file;
+        }
+    }
+
+    private static bool IsMediaFolder(DirectoryInfo directory) =>
+        directory.Exists && (directory.Attributes & FileAttributes.ReparsePoint) == 0;
     public void ReserveMedia(string name)
     {
         if (name.Length == 0) return;
@@ -432,12 +527,15 @@ public sealed partial class HistoryStore
         var path = ResolveMedia(name);
         lock (MediaGate) { if (PendingMedia.TryGetValue(path, out var count)) { if (count <= 1) PendingMedia.Remove(path); else PendingMedia[path] = count - 1; } }
     }
-    public async Task<string> ImportMediaAsync(string path, CancellationToken token)
+    public async Task<string> ImportMediaAsync(string path, CancellationToken token, string mediaFolder = "")
     {
         if (!File.Exists(path)) return "";
         await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 81920, true);
         var hash = Convert.ToHexString(await SHA256.HashDataAsync(input, token));
-        var name = hash + Path.GetExtension(path).ToLowerInvariant(); var destination = Path.Combine(MediaDirectory, name);
+        var filename = hash + Path.GetExtension(path).ToLowerInvariant();
+        var name = mediaFolder.Length == 0 ? filename : mediaFolder + "/" + filename;
+        var destination = ResolveMedia(name);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         ReserveMedia(name);
         if (File.Exists(destination)) return name;
         input.Position = 0; var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -452,8 +550,26 @@ public sealed partial class HistoryStore
     }
     public string ResolveMedia(string name)
     {
-        if (name.Length == 0 || Path.GetFileName(name) != name) throw new ArgumentException("Geçersiz medya adı.");
-        return Path.Combine(MediaDirectory, name);
+        var parts = name.Split('/');
+        var allowed = parts switch
+        {
+            [_] => true,
+            [CaptureImages or CaptureVideos, _] => true,
+            [CaptureImages, FullscreenFolderName, _] => true,
+            [CaptureImages, FullscreenFolderName, _, _] => true,
+            _ => false
+        };
+        if (!allowed || !parts.All(IsValidMediaSegment))
+            throw new ArgumentException("Geçersiz medya adı.", nameof(name));
+        return Path.Combine(MediaDirectory, name.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    public static bool IsValidMediaSegment(string segment)
+    {
+        if (segment.Length == 0 || segment[^1] is '.' or ' ' || segment.IndexOfAny(InvalidMediaCharacters) >= 0 ||
+            segment.Contains('\\') || segment.Contains(':')) return false;
+        var dot = segment.IndexOf('.');
+        return !ReservedWindowsNames.Contains(dot < 0 ? segment : segment[..dot].TrimEnd());
     }
     internal static void Bind(SqliteCommand command, params (string Name, object Value)[] values)
     { foreach (var (name, value) in values) command.Parameters.AddWithValue(name, value); }

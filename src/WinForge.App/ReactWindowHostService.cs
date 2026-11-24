@@ -179,6 +179,7 @@ internal sealed class ReactWindowHostService : IFeatureUiService, IDisposable
             Content = _webView;
             SourceInitialized += (_, _) => ApplyWindowStyles(options);
             Loaded += OnLoaded;
+            if (options.DismissOnDeactivate) Deactivated += (_, _) => Hide();
             Closed += (_, _) => ClosedByHost?.Invoke();
         }
 

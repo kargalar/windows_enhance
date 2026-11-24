@@ -38,7 +38,7 @@ internal static class Program
             {
                 var refreshRoot = Path.Combine(Path.GetTempPath(), "WinForge-HistoryRefreshTests", Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(refreshRoot);
-                try { HistoryRefreshChecks.Run(refreshRoot, Check); }
+                try { HistoryRefreshChecks.Run(refreshRoot, Check); PcHistoryPanelChecks(refreshRoot); }
                 finally { SqliteConnection.ClearAllPools(); Directory.Delete(refreshRoot, true); }
                 Console.WriteLine($"PASS: {checks} history refresh checks.");
                 return 0;
@@ -98,6 +98,110 @@ internal static class Program
     }
     private static void Check(bool condition, string message)
     { if (!condition) throw new InvalidOperationException(message); checks++; Console.WriteLine("PASS " + message); }
+
+    private static void PcHistoryPanelChecks(string root)
+    {
+        var context = new TestContext(root);
+        var store = new HistoryStore(context.Settings.GetString(PortableHistoryMigration.DirectorySettingKey));
+        var now = DateTimeOffset.UtcNow;
+        const int recordCount = 100_000;
+        const int width = 1200, height = 700;
+        var pixels = new byte[width * height * 4];
+        var image = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixels, width * 4);
+        var legacyMedia = "imported.webp";
+        WinForge.FileTools.UI.ImageEngine.Save(image, store.ResolveMedia(legacyMedia), "webp");
+        var ocrText = new string('x', 1024) + " Türkçe OCR";
+        using (var connection = store.Open())
+        using (var transaction = connection.BeginTransaction())
+        {
+            for (var i = 0; i < recordCount; i++)
+                store.Add("recall", now.AddMinutes(i - recordCount), "editor.exe", $"Kayıt {i}", ocrText,
+                    legacyMedia, seconds: 5, estimated: true, connection: connection, transaction: transaction);
+            transaction.Commit();
+        }
+        store.SetTags("editor.exe", ["Çalışma"]);
+        for (var day = 0; day < 130; day++)
+        {
+            var start = now.AddDays(-day);
+            store.AddContextUsage("browser.exe", "website", "https://example.test", start, start.AddSeconds(1), 1);
+        }
+
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(dispatcher));
+        try
+        {
+            var module = new RecallModule();
+            module.Initialize(context);
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            JsonElement ReadState() => JsonSerializer.SerializeToElement(module.GetPanelState(), options);
+            void Command(string action, object data) => module.HandlePanelCommand(action, JsonSerializer.SerializeToElement(data));
+            JsonElement AwaitState()
+            {
+                var frame = new DispatcherFrame();
+                var timeout = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(10) };
+                timeout.Tick += (_, _) => frame.Continue = false;
+                void OnChange()
+                {
+                    if (!ReadState().GetProperty("loading").GetBoolean()) frame.Continue = false;
+                }
+                module.PanelStateChanged += OnChange;
+                try
+                {
+                    if (ReadState().GetProperty("loading").GetBoolean())
+                    {
+                        timeout.Start();
+                        Dispatcher.PushFrame(frame);
+                    }
+                    var state = ReadState();
+                    if (state.GetProperty("loading").GetBoolean()) throw new TimeoutException("PC history panel did not finish loading.");
+                    if (state.GetProperty("error").GetString() is { } error) throw new InvalidOperationException(error);
+                    return state;
+                }
+                finally
+                {
+                    timeout.Stop();
+                    module.PanelStateChanged -= OnChange;
+                }
+            }
+
+            var first = ReadState();
+            Check(first.GetProperty("loading").GetBoolean() && first.GetProperty("rows").GetArrayLength() == 0,
+                "Opening PC History returns a loading state immediately with a 100,000-record archive");
+            var state = AwaitState();
+            Check(state.GetProperty("summary").GetProperty("captures").GetInt32() == recordCount &&
+                state.GetProperty("rows").GetArrayLength() == 200 && state.GetProperty("hasMore").GetBoolean() &&
+                state.GetProperty("statistics").GetArrayLength() == 0,
+                "The initial history panel includes a bounded list and summary without detailed statistics");
+            var rows = state.GetProperty("rows");
+            Check(!rows[0].TryGetProperty("text", out _) && state.GetProperty("selected").GetProperty("text").GetString() == ocrText,
+                "OCR text is sent only for the selected record");
+            var preview = state.GetProperty("preview").GetString()!;
+            using var stream = new MemoryStream(Convert.FromBase64String(preview["data:image/jpeg;base64,".Length..]));
+            var bitmap = new JpegBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+            Check(bitmap.PixelWidth == 1000 && bitmap.PixelHeight < height, "Imported WebP records get a size-limited preview");
+
+            Command("select", new { id = rows[1].GetProperty("id").GetInt64() });
+            Command("filter", new { search = "Türkçe", tag = "Çalışma" });
+            Command("page", new { delta = 200 });
+            state = AwaitState();
+            Check(state.GetProperty("offset").GetInt32() == 200 &&
+                state.GetProperty("rows")[0].GetProperty("title").GetString() == $"Kayıt {recordCount - 201}",
+                "A newer FTS filter and page supersede an in-flight selection");
+
+            Command("section", new { section = "contexts" });
+            state = AwaitState();
+            Check(state.GetProperty("rows").GetArrayLength() == 0 && state.GetProperty("statistics").GetArrayLength() == 100 &&
+                state.GetProperty("statisticsTotal").GetInt32() >= 130, "Site statistics load on demand and limit each response to 100 rows");
+            Command("statistics-page", new { delta = 100 });
+            state = AwaitState();
+            Check(state.GetProperty("statisticsOffset").GetInt32() == 100 &&
+                state.GetProperty("statistics").GetArrayLength() == state.GetProperty("statisticsTotal").GetInt32() - 100,
+                "Statistics paging keeps the remaining rows accessible");
+        }
+        finally { SynchronizationContext.SetSynchronizationContext(previous); }
+    }
+
     private static void StorageMigration(string root)
     {
         var store = new HistoryStore(Path.Combine(root, "old-history"));
@@ -112,12 +216,32 @@ internal static class Program
         catch (IOException) { Check(true, "Existing target is protected"); }
         var oldImages = Path.Combine(root, "old-images"); Directory.CreateDirectory(oldImages);
         var name = new string('A', 64) + ".png"; File.WriteAllText(Path.Combine(oldImages, name), "capture");
+        var fullscreen = Path.Combine(oldImages, HistoryStore.FullscreenFolderName);
+        Directory.CreateDirectory(fullscreen);
+        File.WriteAllText(Path.Combine(fullscreen, name), "fullscreen capture");
+        const string game = "Red Dead Redemption";
+        const string gameFile = game + " - 2026-11-18 14-15-16.000.png";
+        Directory.CreateDirectory(Path.Combine(fullscreen, game));
+        File.WriteAllText(Path.Combine(fullscreen, game, gameFile), "named fullscreen capture");
         File.WriteAllText(Path.Combine(oldImages, "unrelated.png"), "unrelated");
         var newImages = Path.Combine(root, "new-images");
         CaptureStorageMigration.Images(store, oldImages, newImages);
         Check(File.Exists(Path.Combine(newImages, name)) && !File.Exists(Path.Combine(newImages, "unrelated.png")), "Only exported capture files are copied");
         CaptureStorageMigration.Images(store, oldImages, "");
-        Check(store.Search(new HistoryFilter("capture")).Any(item => item.Media == name), "Exports moved to default media stay referenced by capture history");
+        Check(store.Search(new HistoryFilter("capture")).Select(item => item.Media).ToHashSet().SetEquals(
+            [HistoryStore.CaptureImages + "/" + name, HistoryStore.FullscreenCaptures + "/" + name,
+                HistoryStore.FullscreenCaptures + "/" + game + "/" + gameFile]),
+            "Regular and fullscreen exports retain their folders and history references");
+        var videoName = HistoryStore.CaptureVideos + "/recording.mp4";
+        store.Add("capture", DateTimeOffset.UtcNow, media: videoName);
+        var videoPath = store.ResolveMedia(videoName);
+        Directory.CreateDirectory(Path.GetDirectoryName(videoPath)!);
+        File.WriteAllText(videoPath, "video");
+        var exportedFromHistory = Path.Combine(root, "history-exports");
+        CaptureStorageMigration.Images(store, "", exportedFromHistory);
+        Check(File.Exists(Path.Combine(exportedFromHistory, HistoryStore.FullscreenFolderName, name)) &&
+            File.Exists(Path.Combine(exportedFromHistory, HistoryStore.FullscreenFolderName, game, gameFile)) &&
+            !File.Exists(Path.Combine(exportedFromHistory, "recording.mp4")), "Image export retains the fullscreen subfolder and excludes video");
         File.WriteAllText(Path.Combine(newImages, name), "different");
         try { CaptureStorageMigration.Images(store, oldImages, newImages); Check(false, "Conflicting files must be rejected"); }
         catch (IOException) { Check(File.ReadAllText(Path.Combine(newImages, name)) == "different", "Conflicting destination is preserved"); }
@@ -306,12 +430,56 @@ internal static class Program
         audio.Append(new float[16000], 16000);
         audio.Append(Enumerable.Repeat(0.1f, 8000).ToArray(), 16000);
         Check(audio.Take(trimSilence: true).Length == 32000, "Natural pauses and speech at recording boundaries are preserved");
+
+        audio.Append(Enumerable.Repeat(0.1f, 16000).ToArray(), 16000);
+        Check(audio.ReadLiveChunk(0, out var end) is null && end == 0, "Live dictation waits for a phrase boundary");
+        audio.Append(new float[6400], 16000);
+        audio.Append(Enumerable.Repeat(0.2f, 8000).ToArray(), 16000);
+        var phrase = audio.ReadLiveChunk(0, out end);
+        Check(phrase is { Length: 19200 } && end == 21760, "Live dictation emits the first phrase during recording after a short pause");
+        var remainder = audio.Take(out _, trimSilence: true, startOffset: end);
+        Check(remainder.Count(sample => sample == 0.2f) == 8000 && !remainder.Contains(0.1f),
+            "Stopping processes the remaining audio without repeating the live phrase");
+
+        audio.Append(Enumerable.Repeat(0.1f, 70400).ToArray(), 16000);
+        audio.Append(new float[1280], 16000);
+        audio.Append(Enumerable.Repeat(0.2f, 16000).ToArray(), 16000);
+        var bounded = audio.ReadLiveChunk(0, out end);
+        Check(bounded is not null && end == 70720 && !bounded.Contains(0.2f),
+            "A long utterance uses a short gap near the live chunk limit when available");
+        Check(audio.Take(out _, startOffset: end).Count(sample => sample == 0.2f) == 16000,
+            "Cutting a live chunk preserves the following speech");
+
+        audio.Append(new float[80000], 16000);
+        Check(audio.ReadLiveChunk(0, out end) is null && end == 76800, "Live dictation advances through extended silence without transcription");
+        audio.Append(Enumerable.Repeat(0.1f, 80000).ToArray(), 16000);
+        Check(audio.ReadLiveChunk(end, out var next) is not null && next - end == 80000,
+            "Continuous speech is transcribed while recording even without a pause");
+        audio.Clear();
+
         var keys = new DictationShortcutState();
         Check(keys.Press(false) == DictationKeyAction.Start && keys.Press(false) == DictationKeyAction.None, "Repeated keydown during one press is ignored");
         Check(keys.Release(TimeSpan.FromMilliseconds(100)) == DictationKeyAction.None, "Quick tap leaves dictation running");
         Check(keys.Press(true) == DictationKeyAction.Stop && keys.Release(TimeSpan.FromMilliseconds(100)) == DictationKeyAction.None, "Second quick tap stops dictation");
         Check(keys.Press(false) == DictationKeyAction.Start && keys.Release(DictationShortcutState.HoldThreshold) == DictationKeyAction.Stop, "Holding the shortcut stops on release");
         keys.Press(false); keys.Reset(); Check(!keys.Held && keys.Release() == DictationKeyAction.None, "Cancellation clears held shortcut state");
+
+        Check(keys.PressRegistered(false, keyDown: true) == DictationKeyAction.Start &&
+            keys.PressRegistered(true, keyDown: true) == DictationKeyAction.Stop,
+            "A second registered shortcut stops dictation when the hook did not deliver the first release");
+        keys.ObserveKeyState(keyDown: false, modifiersDown: true);
+        Check(!keys.Held, "Polling clears a missed primary key release even while the modifier stays down");
+
+        keys.PressRegistered(false, keyDown: false);
+        Check(keys.ObserveKeyState(keyDown: false, modifiersDown: true) == DictationKeyAction.None && keys.Held,
+            "A suppressed primary key can still be held");
+        keys.ObserveKeyState(keyDown: false, modifiersDown: false);
+        Check(!keys.Held, "Polling clears a missed modifier release for a suppressed shortcut");
+
+        keys.PressRegistered(false, keyDown: true);
+        Thread.Sleep(DictationShortcutState.HoldThreshold + TimeSpan.FromMilliseconds(30));
+        Check(keys.ObserveKeyState(keyDown: false, modifiersDown: true) == DictationKeyAction.Stop && !keys.Held,
+            "Polling stops a held recording even if the keyup notification was lost");
     }
     private static async Task<int> Import(string root, string kind)
     {
@@ -431,13 +599,48 @@ internal static class Program
         Check((bool)typeof(DictationModule).GetField("stopWhenStarted", flags)!.GetValue(interrupted)! && bufferedAudio.Take().Length == 8000,
             "Microphone failure retains buffered speech and schedules processing even while startup is pending");
         var capturePaths = new ScreenCaptureModule(); capturePaths.Initialize(context);
-        var export = typeof(ScreenCaptureModule).GetMethod("ExportImage", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var sample = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, new byte[16], 8);
-        var exported = (string)export.Invoke(capturePaths, [sample])!;
-        Check(File.Exists(exported) && Path.GetDirectoryName(exported) == Path.Combine(root, "captures"),
-            "Captured images use the selected output directory");
-        Check((string)export.Invoke(capturePaths, [sample])! == exported && Directory.GetFiles(Path.Combine(root, "captures")).Length == 1,
+        var capturedAt = new DateTimeOffset(2026, 11, 18, 14, 15, 16, 123, TimeSpan.FromHours(3));
+        var regularFile = new CaptureImageFile("Firefox", capturedAt);
+        var game = CaptureImageFile.DisplayName("RDR2", null, null, "");
+        var fullscreenFile = new CaptureImageFile(game, capturedAt, fullscreen: true);
+        var exported = capturePaths.ExportImage(sample, regularFile)!;
+        Check(File.Exists(exported) && exported == Path.Combine(root, "captures", "Firefox - 2026-11-18 14-15-16.123.png"),
+            "Captured images use the application name and local capture date in the selected output directory");
+        Check(capturePaths.ExportImage(sample, regularFile) == exported && Directory.GetFiles(Path.Combine(root, "captures")).Length == 1,
             "Workflow and preview resolve the same captured file without duplicate exports");
+        var edited = BitmapSource.Create(2, 2, 96, 96, PixelFormats.Bgra32, null, Enumerable.Repeat((byte)255, 16).ToArray(), 8);
+        var editedPath = capturePaths.ExportImage(edited, regularFile)!;
+        Check(editedPath.EndsWith(" (2).png", StringComparison.Ordinal) && File.Exists(exported),
+            "Different images with the same date and application keep distinct files");
+        var fullscreen = capturePaths.ExportImage(sample, fullscreenFile)!;
+        Check(fullscreen == Path.Combine(root, "captures", HistoryStore.FullscreenFolderName, "Red Dead Redemption",
+            "Red Dead Redemption - 2026-11-18 14-15-16.123.png") && File.Exists(fullscreen),
+            "Red Dead Redemption screenshots use their own fullscreen application folder");
+        Check(new CaptureImageFile("AUX.txt", capturedAt).Application == "_AUX.txt" &&
+            new CaptureImageFile(@"App: A/B", capturedAt).Application == "App- A-B",
+            "Application names are valid for Windows files and folders");
+        CaptureWindow[] visible = [new(1, new(-25, 0, 50, 100)), new(2, new(-100, 0, 200, 100))];
+        Check(CaptureServices.WindowIn(new(-100, 0, 200, 100), visible) == 2 &&
+            CaptureServices.WindowIn(new(-20, 0, 40, 100), visible) == 1,
+            "Region attribution picks the foremost application covering most of the selected pixels");
+        var mediaStore = new HistoryStore(Path.Combine(root, "capture-media"));
+        var regularMedia = regularFile.Save(mediaStore, sample);
+        var fullscreenMedia = fullscreenFile.Save(mediaStore, sample);
+        var recording = Path.Combine(root, "fixture.mp4");
+        File.WriteAllBytes(recording, [1, 2, 3]);
+        var videoMedia = mediaStore.ImportMediaAsync(recording, default, HistoryStore.CaptureVideos).GetAwaiter().GetResult();
+        mediaStore.Add("capture", DateTimeOffset.UtcNow, media: fullscreenMedia);
+        mediaStore.Add("capture", DateTimeOffset.UtcNow, media: videoMedia);
+        Check(fullscreenMedia.StartsWith(HistoryStore.FullscreenCaptures + "/Red Dead Redemption/", StringComparison.Ordinal) &&
+            mediaStore.CollectUnusedMedia() == 0 && File.Exists(mediaStore.ResolveMedia(videoMedia)) &&
+            File.Exists(mediaStore.ResolveMedia(fullscreenMedia)), "Nested capture media stays available while referenced or reserved");
+        mediaStore.Delete("capture");
+        Check(!File.Exists(mediaStore.ResolveMedia(fullscreenMedia)) && File.Exists(mediaStore.ResolveMedia(regularMedia)),
+            "History removes unreferenced media from per-application folders");
+        mediaStore.ReleasePendingMedia(regularMedia);
+        Check(mediaStore.CollectUnusedMedia() == 1 && !File.Exists(mediaStore.ResolveMedia(regularMedia)),
+            "History cleanup removes unused images from their capture folder");
         var recallPaths = new RecallModule(); recallPaths.Initialize(context);
         var selectedStore = (HistoryStore)typeof(CaptureModuleBase).GetProperty("Store", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(recallPaths)!;
         Check(selectedStore.DirectoryPath == Path.Combine(root, "history") && Directory.Exists(selectedStore.MediaDirectory),
@@ -467,11 +670,36 @@ internal static class Program
             module.Activate(); Check(module.IsActive, module.Name + " activates");
             if (module is DictationModule working)
             {
+                var normal = ModuleShortcut.Parse(DictationDefaults.Hotkey);
+                var english = ModuleShortcut.Parse(DictationDefaults.TranslationHotkey);
+                Check(context.Keys.Count == 2 && context.Keys.Callbacks.ContainsKey(normal) && context.Keys.Callbacks.ContainsKey(english),
+                    "Normal and English dictation register separate default shortcuts");
+                context.Keys.Callbacks[normal]();
+                Check(context.Notifications.Last().StartsWith("Model bulunamadı", StringComparison.Ordinal),
+                    "Normal dictation continues to use its selected model");
+                context.Keys.Callbacks[english]();
+                Check(context.Notifications.Last().StartsWith("İngilizce dikte için Large modeli gerekir", StringComparison.Ordinal),
+                    "The English shortcut selects translation and reports the required model before recording");
+
                 typeof(DictationModule).GetField("busy", flags)!.SetValue(working, true);
-                context.Keys.Callback?.Invoke();
+                context.Keys.Callbacks[english]();
                 Check(context.Notifications.Any(message => message.Contains("çözümlemesi sürüyor", StringComparison.Ordinal)),
                     "Shortcut reports an in-progress transcription");
                 typeof(DictationModule).GetField("busy", flags)!.SetValue(working, false);
+
+                context.StoredSettings.Values["translation-hotkey"] = "Ctrl+Alt+F10";
+                working.Apply();
+                Check(context.Keys.Count == 2 && !context.Keys.Callbacks.ContainsKey(english) && context.Keys.Callbacks.ContainsKey(ModuleShortcut.Parse("Ctrl+Alt+F10")),
+                    "Changing the English shortcut releases its old binding");
+                context.StoredSettings.Values["translation-hotkey"] = "";
+                working.Apply();
+                Check(context.Keys.Count == 1 && context.Keys.Callbacks.ContainsKey(normal), "Clearing the English shortcut leaves regular dictation available");
+
+                context.StoredSettings.Values.Remove("translation-hotkey");
+                context.StoredSettings.Values["hotkey"] = DictationDefaults.TranslationHotkey;
+                working.Apply();
+                Check(context.Keys.Count == 1 && context.Keys.Callbacks.ContainsKey(english), "An existing dictation shortcut takes precedence over the new default");
+                context.StoredSettings.Values.Remove("hotkey");
             }
             module.Deactivate(); module.Deactivate(); Check(!module.IsActive && context.Keys.Count == 0, module.Name + " deactivates idempotently and releases shortcuts");
         }
@@ -481,23 +709,30 @@ internal static class Program
         public List<string> Notifications { get; } = [];
         public TestHotkeys Keys { get; } = new();
         public IHotkeyService Hotkeys => Keys;
-        public IModuleSettings Settings { get; } = new TestSettings(root);
+        public TestSettings StoredSettings { get; } = new(root);
+        public IModuleSettings Settings => StoredSettings;
         public ILogger Log { get; } = new FileLogger(Path.Combine(root, "test.log"));
         public void Notify(string message) => Notifications.Add(message);
     }
     private sealed class TestSettings(string root) : IModuleSettings
     {
+        internal Dictionary<string, string> Values { get; } = new();
         public bool GetBool(string key, bool fallback = false) => fallback;
         public int GetInt(string key, int fallback = 0) => fallback;
-        public string GetString(string key, string fallback = "") => key == "storage-directory" ? Path.Combine(root, "history")
-            : key == "image-directory" ? Path.Combine(root, "captures") : fallback;
+        public string GetString(string key, string fallback = "") => key == PortableHistoryMigration.DirectorySettingKey ? Path.Combine(root, "history")
+            : key == "image-directory" ? Path.Combine(root, "captures") : Values.GetValueOrDefault(key, fallback);
         public void Set(string key, object? value) { }
     }
     private sealed class TestHotkeys : IHotkeyService
     {
-        public int Count;
-        public Action? Callback;
-        public IDisposable Register(uint modifiers, uint virtualKey, Action callback) { Count++; Callback = callback; return new Registration(() => { Count--; Callback = null; }); }
+        public Dictionary<(uint Modifiers, uint Key), Action> Callbacks { get; } = new();
+        public int Count => Callbacks.Count;
+        public IDisposable Register(uint modifiers, uint virtualKey, Action callback)
+        {
+            var chord = (modifiers, virtualKey);
+            if (!Callbacks.TryAdd(chord, callback)) throw new InvalidOperationException("Shortcut already registered.");
+            return new Registration(() => Callbacks.Remove(chord));
+        }
         private sealed class Registration(Action release) : IDisposable
         { private bool disposed; public void Dispose() { if (!disposed) { disposed = true; release(); } } }
     }
@@ -546,12 +781,12 @@ internal static class Program
         var imageData = "data:image/png;base64," + Convert.ToBase64String(imageStream.ToArray());
         var cases = new (string View, string File, double Width, double Height, object State)[]
         {
-            ("dictation-status", "dictation-listening.png", 360, 76,
-                new { message = "Dinleniyor… · Esc: iptal", audioLevel = 63, recording = true }),
-            ("dictation-status", "dictation-processing.png", 360, 76,
-                new { message = "Konuşma çözümleniyor… · Esc: iptal", audioLevel = 0, recording = false }),
-            ("dictation-status", "dictation-result.png", 480, 210,
-                new { message = "Panoya kopyalandı · metin yazıldı · CPU", result = "Merhaba dünya. İstanbul güzel bir şehir.\nBu bir sesle yazma denemesidir.", audioLevel = 0, recording = false }),
+            ("dictation-status", "dictation-preparing.png", StatusOverlay.StatusWidth, StatusOverlay.StatusHeight,
+                new { phase = "preparing", audioLevel = 0 }),
+            ("dictation-status", "dictation-listening.png", StatusOverlay.StatusWidth, StatusOverlay.StatusHeight,
+                new { phase = "listening", audioLevel = 63 }),
+            ("dictation-status", "dictation-processing.png", StatusOverlay.StatusWidth, StatusOverlay.StatusHeight,
+                new { phase = "processing", audioLevel = 0 }),
             ("nashi", "nashi.png", 1280, 860, new
             {
                 page = "home", busy = false, status = "Dosyalar bilgisayarınızda kalır.",
@@ -808,7 +1043,7 @@ internal static class Program
     {
         foreach (var display in DesktopDisplays.Enumerate())
         {
-            var window = new Window { WindowStyle = WindowStyle.None, ShowActivated = false, ShowInTaskbar = false, Width = 240, Height = 160, Background = Brushes.Magenta, Topmost = true };
+            var window = new Window { WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowActivated = false, ShowInTaskbar = false, Width = 240, Height = 160, Background = Brushes.Magenta, Topmost = true };
             window.Show(); var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
             Native.SetWindowPos(handle, Native.HWND_TOPMOST, display.Bounds.Left + 40, display.Bounds.Top + 40, 240, 160, 0x0040);
             window.UpdateLayout(); window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render); Thread.Sleep(100);
@@ -818,6 +1053,13 @@ internal static class Program
                 var pixel = new byte[4]; image.CopyPixels(new Int32Rect(image.PixelWidth / 2, image.PixelHeight / 2, 1, 1), pixel, 4, 0);
                 Check(area.Width == image.PixelWidth && area.Height == image.PixelHeight && pixel[0] > 240 && pixel[1] < 15 && pixel[2] > 240,
                     "Physical pixel capture of owned fixture on " + display.DeviceName);
+                var monitor = CaptureServices.Area(display.Bounds);
+                Native.SetWindowPos(handle, Native.HWND_TOPMOST, monitor.X, monitor.Y, monitor.Width, monitor.Height, 0x0040);
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.Render);
+                Check(SpinWait.SpinUntil(() => CaptureServices.FindFullscreenWindow(monitor, handle) == handle, 1000),
+                    "A visible borderless fullscreen app is detected on " + display.DeviceName);
+                window.WindowStyle = WindowStyle.SingleBorderWindow;
+                Check(CaptureServices.FindFullscreenWindow(monitor, handle) != handle, "A regular titled window isn't treated as fullscreen");
             }
             finally { window.Close(); }
         }

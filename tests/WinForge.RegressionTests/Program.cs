@@ -27,6 +27,13 @@ internal static class Program
     {
         if (args.Contains("--notification-activation")) return 0;
         if (args.Length == 1 && args[0] == "--window-fixture") return WindowControlParityChecks.RunFixture();
+        if (args.Length == 2 && args[0] == "--autocorrect-independent-benchmark")
+        {
+            var extras = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "modules", "WinForge.Modules.Extras.dll"));
+            AutoCorrectCorpusChecks.RunIndependentWords(args[1], extras, Check);
+            Console.WriteLine($"PASS: {_passed} independent benchmark checks.");
+            return 0;
+        }
         if (args.Length is 2 or 3 && args[0] == "--autocorrect-turkish-tweets-benchmark")
         {
             var maximumRows = args.Length == 3 && args[2].StartsWith("--max-rows=", StringComparison.OrdinalIgnoreCase)
@@ -487,7 +494,10 @@ internal static class Program
         host.Load();
         Check(host.Modules.Count >= 25 && host.Modules.Any(module => module.Id == "window-control"), "All shipped modules including the native window engine load and initialize");
         Check(host.Modules.Select(module => module.Id).Distinct().Count() == host.Modules.Count, "Module IDs are unique");
-        Check(host.Modules.All(module => module.Id is not ("workspaces" or "awake" or "advanced-paste" or "hosts-file-editor" or "environment-variables" or "clipboard-history" or "plain-paste" or "launcher" or "shortcut-guide")), "Removed modules are absent from the shipped module catalog");
+        Check(host.Modules.All(module => module.Id is not ("workspaces" or "awake" or "advanced-paste" or "hosts-file-editor" or "environment-variables" or "plain-paste" or "launcher" or "shortcut-guide")), "Removed modules are absent from the shipped module catalog");
+        var clipboardHistory = host.Modules.Single(module => module.Id == "clipboard-history");
+        Check(clipboardHistory.Settings.Any(setting => setting.Key == "retention-days" && setting.Default is 7 && setting.Min == 0),
+            "Clipboard History is discovered with a seven-day default and an unlimited option");
         var tiling = host.Modules.Single(module => module.Id == "auto-tiling");
         TilingInteractionChecks.Run(tiling.GetType(), Check);
         var fancyZones = host.Modules.Single(module => module.Id == "fancy-zones");

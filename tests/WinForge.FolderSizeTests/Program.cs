@@ -249,8 +249,9 @@ internal static class Program
             WaitUntil(() => SizeIs(handle, "nested", "2"), "displayed cached descendant size");
             SendMessage(handle, 0x8004, IntPtr.Zero, IntPtr.Zero);
             WaitUntil(() => SizeIs(handle, "WinForge fixture folder", "3"), "return to parent Explorer view");
-            WaitUntil(() => session.Status.ActiveWatchers == 1, "shared watcher for sibling folders", () => session.Status.ToString());
-            Check(session.Status.ActiveWatchers == 1, "Sibling folder sizes share one recursive directory watcher");
+            WaitUntil(() => session.Status.ActiveWatchers is > 0 and <= 2, "shared watchers for sibling folders", () => session.Status.ToString());
+            Check(session.Status.ActiveWatchers is > 0 and <= 2,
+                "Sibling folder sizes reuse a covering watcher while preserving the first watcher's pending changes");
             SendMessage(handle, 0x8002, IntPtr.Zero, IntPtr.Zero);
             WaitUntil(() => FolderOrder(handle).SequenceEqual(new[] { "Empty fixture folder", "Z small", "WinForge fixture folder", "M medium", "A large", "sparse" }),
                 "ascending folder size order", () => string.Join(", ", FolderOrder(handle)));

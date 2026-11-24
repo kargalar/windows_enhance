@@ -103,6 +103,7 @@ public sealed class SettingsStore : IDisposable
         MigrateWindowControl();
         MigrateTaskbar();
         MigrateCombinedModules();
+        MigrateClipboardHistoryShortcut();
         Enabled.Remove("peek-preview");
         Values.Remove("peek-preview");
         Enabled.Remove("keyboard-manager");
@@ -124,6 +125,24 @@ public sealed class SettingsStore : IDisposable
     public bool SetModuleEnabled(string id, bool enabled)
     {
         lock (_gate) return enabled ? Enabled.Add(id) : Enabled.Remove(id);
+    }
+
+    private void MigrateClipboardHistoryShortcut()
+    {
+        if (!Values.TryGetValue("clipboardline", out var shelves) ||
+            !shelves.TryAdd("__win-v-migrated", "1") ||
+            !Enabled.Contains("clipboardline") ||
+            !shelves.TryGetValue("hotkey", out var shortcut)) return;
+        if (shelves.TryGetValue("hotkey-enabled", out var enabled) &&
+            bool.TryParse(enabled, out var usesShortcut) && !usesShortcut) return;
+
+        var keys = shortcut.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (keys.Length != 2 || !keys.Contains("V", StringComparer.OrdinalIgnoreCase) ||
+            !keys.Any(key => key.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
+                            key.Equals("Windows", StringComparison.OrdinalIgnoreCase))) return;
+
+        shelves.Remove("hotkey");
+        Enabled.Add("clipboard-history");
     }
 
     private void MigrateWindowControl()

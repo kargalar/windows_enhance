@@ -1,9 +1,10 @@
 import { ClipboardShelfView, ClipboardSettingsView, ClipboardPromptView, ClipboardPreviewView, RecordingTrimView, type ClipboardShelfState, type ClipboardSettingsState, type ClipboardPromptState, type ClipboardPreviewState, type RecordingTrimState } from './ClipboardViews';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './features.css';
 import { OsdControls } from './OsdControls';
 import { CaptureEditorView, type CaptureEditorState } from './CaptureEditor';
 import { DefaultAppsPanel, DefaultPathsPanel } from './DefaultSettingsPanels';
+import { ClipboardHistoryView, type ClipboardHistoryState } from './ClipboardHistoryView';
 
 const islandToolViews = new Set(['nashi', 'nashi-settings', 'nashi-setup', 'nashi-metadata-editor', 'nashi-pdf-organizer', 'clipboard-shelf', 'clipboard-settings', 'clipboard-prompt', 'clipboard-preview', 'nashi-tool-editor', 'nashi-progress', 'nashi-qr-results', 'clipboard-recording-trim']);
 
@@ -92,7 +93,7 @@ type PdfOrganizerState = { uniformWidth: boolean; pages: { id: string; number: n
 type FilePreviewState = { file: string; index: number; count: number; kind: 'message' | 'image' | 'text' | 'pdf' | 'video' | 'audio'; message: string; image: string; text: string; mediaUrl: string; pdfPage: number; pdfPageCount: number; canPrevious: boolean; canNext: boolean };
 type FloatShelfState = { items: { path: string; name: string; folder: boolean; extension: string; image: string | null }[]; selected: string[]; expanded: boolean; icons: boolean; edge: string | null; notice: string | null; count: number };
 type WheelState = { externalDrag: boolean; finish: string; selected: number; center: string; subtitle: string; startAngle: number; choices: { id: string; title: string; symbol: string }[] };
-type DictationStatusState = { message: string; result?: string; audioLevel: number; recording: boolean };
+type DictationStatusState = { phase: 'preparing' | 'listening' | 'processing'; audioLevel: number };
 type ZonePreviewState = { width: number; height: number; showNumbers: boolean; activeColor: string; inactiveColor: string; borderThickness: number; zones: { index: number; x: number; y: number; width: number; height: number; active: boolean }[]; merged: { x: number; y: number; width: number; height: number } | null };
 type CropThumbnailState = { title: string; subtitle: string };
 type CropSelectionState = { hint: string };
@@ -280,18 +281,18 @@ function WheelView({ state }: { state: WheelState }) {
   </div>;
 }
 
-function DictationStatusView({ state }: { state: DictationStatusState }) {
-  const level = Math.max(0, Math.min(100, state.audioLevel));
-  const [label, hint] = (state.message || (state.recording ? 'Dinleniyor…' : 'Konuşma çözümleniyor…')).split(' · ');
-  return <div className="feature-root feature-root-dictation" role="status" aria-label={state.message || (state.recording ? 'Dinleniyor' : 'Konuşma çözümleniyor')}>
-    <div className="dictation-status-card">
-    <div className={`dictation-orb ${state.recording ? 'recording' : 'processing'}`}>
-      {state.recording
-        ? <div className="dictation-waves" aria-hidden="true">{[0.38, 0.7, 1, 0.7, 0.38].map((factor, index) =>
-          <i key={index} style={{ height: `${4 + level * factor * 0.28}px` }} />)}</div>
-        : <span className="dictation-spinner" aria-hidden="true" />}
-    </div>
-    <div className="dictation-status-copy"><strong>{label}</strong>{hint && <span>{hint}</span>}</div>
+const dictationStatusLabels = {
+  preparing: 'Mikrofon açılıyor',
+  listening: 'Dinleniyor',
+  processing: 'Çözümleniyor',
+};
+
+function DictationStatusView({ state: { phase, audioLevel } }: { state: DictationStatusState }) {
+  const amplitude = 5 + Math.sqrt(Math.max(0, Math.min(100, audioLevel)) / 100) * 12;
+  return <div className="feature-root feature-root-dictation" role="status" aria-label={dictationStatusLabels[phase]}>
+    <div className={`dictation-waves ${phase}`} aria-hidden="true">
+      {[0.34, 0.66, 1, 0.66, 0.34].map((factor, index) =>
+        <span key={index} style={phase === 'listening' ? { height: 3 + amplitude * factor } : undefined} />)}
     </div>
   </div>;
 }
@@ -622,8 +623,8 @@ export function FeatureApp({ view }: { view: string }) {
     return () => document.removeEventListener('pointerdown', beginDrag, true);
   }, []);
 
-  const send = (command: string, payload: Record<string, unknown> = {}) =>
-    window.chrome?.webview?.postMessage({ command, payload });
+  const send = useCallback((command: string, payload: Record<string, unknown> = {}) =>
+    window.chrome?.webview?.postMessage({ command, payload }), []);
 
   if (view === 'automation-active') {
     const automation = state as unknown as { active: { id: string; name: string; shortcut: string }[] } | null;
@@ -636,6 +637,10 @@ export function FeatureApp({ view }: { view: string }) {
   }
   if (view === 'default-paths') return <DefaultPathsPanel state={state} />;
   if (view === 'default-apps') return <DefaultAppsPanel state={state} />;
+  if (view === 'clipboard-history') {
+    const history = state as unknown as ClipboardHistoryState | null;
+    return history ? <ClipboardHistoryView key={history.session} state={history} send={send} /> : null;
+  }
 
   if (view === 'app-dialog') {
     const dialog = state as unknown as AppDialogState | null;
@@ -824,7 +829,7 @@ export function FeatureApp({ view }: { view: string }) {
   if (view === 'capture-tools') {
     const tools = [
       ['region', 'Bölge yakala', 'Alanı seçerek hemen yakala'], ['window', 'Pencere yakala', 'Tek bir pencereyi seç'],
-      ['monitor', 'Monitör yakala', 'Ekran seç'], ['desktop', 'Tüm ekranlar', 'Bağlı ekranları birlikte al'],
+      ['monitor', 'Monitör yakala', 'İmlecin bulunduğu monitörü yakala'], ['desktop', 'Tüm ekranlar', 'Bağlı ekranları birlikte al'],
       ['last', 'Son bölge', 'En son seçilen alanı kullan'], ['scroll', 'Kayan ekran', 'Uzun sayfayı kaydırarak al'],
       ['video', 'Video kaydı', 'Ekranı video olarak kaydet'], ['gif', 'GIF kaydı', 'Ekranı animasyonlu GIF kaydet'],
       ['annotate-text', 'Ekrana yazı yaz', 'Ekran üzerine metin ekle'], ['annotate-shape', 'Şekil çiz', 'Ekran üzerine şekil ekle'],
@@ -951,7 +956,7 @@ export function FeatureApp({ view }: { view: string }) {
 
   if (view === 'dictation-status') {
     const dictation = state as unknown as DictationStatusState | null;
-    return dictation ? <DictationStatusView state={dictation} /> : <div className="feature-root feature-root-error">Dictation is getting ready…</div>;
+    return dictation ? <DictationStatusView state={dictation} /> : <div className="feature-root feature-root-dictation" />;
   }
 
   if (view === 'tiling-zone-preview') {

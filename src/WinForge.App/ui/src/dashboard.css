@@ -21,6 +21,7 @@
 .dashboard [hidden] { display:none !important; }
 .dashboard button { -webkit-tap-highlight-color:transparent; }
 .dashboard :is(button,input,select,summary,a):focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.dashboard :is(textarea,input:where(:not([type]),[type=text],[type=search],[type=number],[type=password],[type=url],[type=date],[type=time])):focus-visible { outline:2px solid var(--muted); outline-offset:-2px; }
 .dashboard-sidebar { display:flex; flex-direction:column; min-height:0; padding:26px 14px 16px; border-right:1px solid var(--border-soft); background:var(--sidebar); }
 .dashboard-brand { display:flex; align-items:center; gap:11px; padding:0 12px 31px; }
 .app-logo { width:32px; height:32px; }
@@ -39,7 +40,7 @@
 .topbar-title { color:var(--muted); font-size:13px; }
 .dashboard-search,.settings-search { display:flex; align-items:center; gap:10px; min-height:38px; padding:0 12px; border:1px solid var(--border); border-radius:var(--control-radius); background:var(--surface); color:var(--muted); }
 .dashboard-search { flex:1; max-width:360px; min-width:120px; margin-left:auto; }
-.dashboard-search:focus-within,.settings-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.dashboard-search:focus-within,.settings-search:focus-within { border-color:var(--muted); box-shadow:inset 0 0 0 1px var(--muted); }
 .dashboard-search input,.settings-search input { width:100%; min-width:0; border:0; color:var(--text); background:transparent; outline:none; font-size:13px; }
 .dashboard-search input::placeholder,.settings-search input::placeholder { color:var(--muted); }
 .dashboard-search input:focus-visible,.settings-search input:focus-visible { outline:none; }
@@ -130,6 +131,7 @@
 .dashboard .number-input { width:70px; flex-shrink:0; padding:7px; font-variant-numeric:tabular-nums; }
 .dashboard :is(.white-control,.white-control option) { min-height:36px; border:1px solid var(--border); border-radius:var(--control-radius); color:var(--text); background:var(--surface); font-size:12px; }
 .dashboard .white-control:focus { border-color:var(--accent); box-shadow:none; }
+.dashboard :is(input,textarea).white-control:focus { border-color:var(--muted); }
 .dashboard .white-control::placeholder { color:var(--subtle); }
 .dashboard :is(.primary-button,.secondary-button,.icon-button,.tool-settings-button) { min-height:36px; padding:7px 13px; border:1px solid var(--border); border-radius:var(--control-radius); color:var(--text); background:var(--surface); font-size:12px; cursor:pointer; }
 .dashboard .primary-button { color:var(--on-accent); border-color:var(--accent); background:var(--accent); }

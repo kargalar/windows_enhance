@@ -55,7 +55,17 @@ internal static class HotkeyConflictChecks
         Require(Failure(() => media.Register(modifiers, key, () => { })).Contains("Pencere Kısayolları"),
             "Disposing a registration clears its previous owner.");
         using var desktop = hotkeys.Register(HotkeyModifiers.Alt | HotkeyModifiers.Win, 0x44, () => { });
-        return 15;
+        var clipboardOpened = 0;
+        using var clipboard = hotkeys.Register(HotkeyModifiers.Win, 'V', () => clipboardOpened++);
+        Require(!hotkeys.ProcessFallback(Native.WM_KEYDOWN, 'V', HotkeyModifiers.Control), "Clipboard history leaves Ctrl+V alone.");
+        Require(hotkeys.ProcessFallback(Native.WM_KEYDOWN, 'V', HotkeyModifiers.Win), "Win+V is intercepted regardless of the system history setting.");
+        Require(hotkeys.ProcessFallback(Native.WM_KEYDOWN, 'V', HotkeyModifiers.Win), "A held Win+V does not toggle the panel again.");
+        Require(hotkeys.ProcessFallback(Native.WM_KEYUP, 'V', 0), "The consumed chord's key-up is intercepted too.");
+        Drain();
+        Require(clipboardOpened == 1, "Only one clipboard history action is dispatched.");
+        clipboard.Dispose();
+        Require(!hotkeys.ProcessFallback(Native.WM_KEYDOWN, 'V', HotkeyModifiers.Win), "Disabling Clipboard History releases Win+V.");
+        return 21;
     }
 
     private static void Drain()

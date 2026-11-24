@@ -69,7 +69,7 @@ public sealed class SelectionOverlay : Window
         Native.GetCursorPos(out var initialCursor);
         foreach (var frame in _frames)
         {
-            var surface = new MonitorSurface(this, frame, initialCursor);
+            var surface = new MonitorSurface(this, frame);
             _surfaces.Add(surface);
             surface.Show();
         }
@@ -223,7 +223,7 @@ public sealed class SelectionOverlay : Window
     {
         private readonly SelectionOverlay _owner;
         private readonly FrozenFrame _frame;
-        private readonly Canvas _surfaceCanvas = new();
+        private readonly Canvas _surfaceCanvas = new() { Background = Brushes.Transparent };
         private readonly System.Windows.Shapes.Path _dimMask = new()
         {
             Fill = new SolidColorBrush(Color.FromArgb(92, 0, 0, 0)),
@@ -253,11 +253,10 @@ public sealed class SelectionOverlay : Window
             FontSize = 12,
             FontWeight = FontWeights.SemiBold
         };
-        private readonly Border _hintBanner;
         private Matrix _fromDevice = Matrix.Identity;
         private bool _draggingHere;
 
-        public MonitorSurface(SelectionOverlay owner, FrozenFrame frame, POINT initialCursor)
+        public MonitorSurface(SelectionOverlay owner, FrozenFrame frame)
         {
             _owner = owner;
             _frame = frame;
@@ -283,23 +282,6 @@ public sealed class SelectionOverlay : Window
             _sizeBadge.Child = _sizeText;
             _surfaceCanvas.Children.Add(_sizeBadge);
 
-            _hintBanner = new Border
-            {
-                Background = new SolidColorBrush(Color.FromArgb(225, 18, 22, 30)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(12, 8, 12, 8),
-                IsHitTestVisible = false,
-                Visibility = ContainsPhysicalPoint(initialCursor) ? Visibility.Visible : Visibility.Collapsed,
-                Child = new TextBlock
-                {
-                    Text = "Metin alanını seçmek için sürükle · Sağ tık / Esc: iptal",
-                    Foreground = Brushes.White,
-                    FontSize = 14
-                }
-            };
-            _surfaceCanvas.Children.Add(_hintBanner);
             Content = _surfaceCanvas;
 
             SourceInitialized += (_, _) =>
@@ -317,13 +299,6 @@ public sealed class SelectionOverlay : Window
                 backdrop.Height = dipH;
                 ResetDimMask(dipW, dipH);
 
-                if (_hintBanner.Visibility == Visibility.Visible)
-                {
-                    var localX = (initialCursor.X - _frame.Bounds.Left) * _fromDevice.M11;
-                    var localY = (initialCursor.Y - _frame.Bounds.Top) * _fromDevice.M22;
-                    Canvas.SetLeft(_hintBanner, Math.Clamp(localX - 120, 12, Math.Max(12, dipW - 420)));
-                    Canvas.SetTop(_hintBanner, Math.Clamp(localY - 56, 12, Math.Max(12, dipH - 56)));
-                }
             };
 
             PreviewKeyDown += (_, e) =>
@@ -378,7 +353,6 @@ public sealed class SelectionOverlay : Window
 
         public void ClearSelection()
         {
-            _hintBanner.Visibility = Visibility.Collapsed;
             _selectionBorder.Visibility = Visibility.Collapsed;
             _sizeBadge.Visibility = Visibility.Collapsed;
             ResetDimMask(_frame.Width * _fromDevice.M11, _frame.Height * _fromDevice.M22);
@@ -386,7 +360,6 @@ public sealed class SelectionOverlay : Window
 
         public void UpdateSelection(int left, int top, int right, int bottom, POINT cursor)
         {
-            _hintBanner.Visibility = Visibility.Collapsed;
             var dipW = _frame.Width * _fromDevice.M11;
             var dipH = _frame.Height * _fromDevice.M22;
 

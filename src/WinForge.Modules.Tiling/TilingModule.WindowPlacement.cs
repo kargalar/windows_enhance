@@ -72,41 +72,35 @@ public partial class TilingModule
 
     private void TileGrid(IReadOnlyList<IntPtr> windows, RECT work, int gap)
     {
-        var area = work;
-        var count = windows.Count;
-        var width = area.Right - area.Left;
-        var height = area.Bottom - area.Top;
-        var columns = (int)Math.Ceiling(Math.Sqrt(count));
-        var rows = (int)Math.Ceiling(count / (double)columns);
-        if (columns < 1 || rows < 1) return;
-
-        var heights = SplitSizes(height, rows, gap);
-        var top = area.Top;
-        var index = 0;
-
-        for (var row = 0; row < rows; row++)
-        {
-            var inRow = Math.Min(columns, count - index);
-            var widths = SplitSizes(width, inRow, gap);
-            var left = area.Left;
-
-            for (var column = 0; column < inRow; column++)
-            {
-                var right = left + widths[column];
-                Move(windows[index++], new RECT
-                {
-                    Left = left,
-                    Top = top,
-                    Right = right,
-                    Bottom = top + heights[row]
-                });
-                left = right + gap;
-            }
-
-            top += heights[row] + gap;
-        }
+        var bounds = GetGridBounds(windows.Count, work, gap);
+        for (var i = 0; i < bounds.Length; i++)
+            Move(windows[i], bounds[i]);
     }
 
+    private static RECT[] GetGridBounds(int count, RECT work, int gap)
+    {
+        if (count <= 0) return [];
+        if (count == 1) return [work];
+
+        var result = new RECT[count];
+        var widths = SplitSizes(work.Right - work.Left, 2, gap);
+        var leftCount = count >= 4 ? 2 : 1;
+        var index = 0;
+        for (var column = 0; column < 2; column++)
+        {
+            var columnCount = column == 0 ? leftCount : count - leftCount;
+            var heights = SplitSizes(work.Bottom - work.Top, columnCount, gap);
+            var left = column == 0 ? work.Left : work.Left + widths[0] + gap;
+            var top = work.Top;
+            foreach (var height in heights)
+            {
+                result[index++] = new RECT { Left = left, Top = top, Right = left + widths[column], Bottom = top + height };
+                top += height + gap;
+            }
+        }
+
+        return result;
+    }
     private static int[] SplitSizes(int total, int count, int gap)
     {
         var sizes = new int[count];
@@ -128,6 +122,7 @@ public partial class TilingModule
 
     private void Move(IntPtr hwnd, RECT target)
     {
+        if (_mode == AutoTileMode) _recordedBounds.Add(target);
         RestoreFullscreenWindow(hwnd, restorePlacement: true);
         if (!Native.GetWindowRect(hwnd, out var current)) return;
 

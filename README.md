@@ -4,6 +4,26 @@
 
 # WinForge
 
+**Verimlilik → Seçili Metni Çevir** modülünü etkinleştirin. Bir Türkçe metni seçip **Ctrl+Alt+Y** tuşlarına bastığınızda İngilizce çevirisi panoya kopyalanır. Düzenlenebilir bir metin alanında aynı seçim hâlâ etkinse çeviri seçimin yerine de yapıştırılır. Kısayolu ve hedef dili modül ayarlarından değiştirebilirsiniz. Fareyle seçilen metnin önizleme balonu için ayrı dil ayarları kullanılır. Önizleme, varsayılan olarak kaynak dili algılayıp Türkçeye çevirir. Seçim en fazla 30.000 UTF-8 bayttır. Parola alanları çeviriye gönderilmez. Varsayılan sağlayıcı Google Çeviri'nin resmî olmayan bağlantısıdır.
+
+Çeviri hizmeti istek sınırına ulaştığında veya zaman aşımına uğradığında hata gösterilir. Yanıt geldiğinde Ctrl, Shift, Alt veya Win basılıysa yapıştırma tuşlar bırakılana kadar kısa süre bekler. Bu sırada seçim veya odak değişirse sonuç panoda kalır.
+
+Anahtarsız bir alternatif olarak sağlayıcıdan **MyMemory** seçilebilir; kaynak dili örneğin `en` veya `tr` olarak seçebilirsiniz. `auto` ile algılama denemelerde çalışsa da MyMemory tarafından belgelenmemiştir ve değişebilir; sorun yaşarsanız kaynak dili açıkça seçin. Seçimler satır sınırlarında ve en fazla 500 UTF-8 baytlık parçalara ayrılır; hizmetin anonim günlük kotası vardır ve çeviri kalitesi değişebilir. Kota veya parça hatasında kısmi sonuç yazılmaz. Metin yalnızca seçili sağlayıcıya gönderilir; otomatik sağlayıcı değişimi yapılmaz. [MyMemory API sınırları](https://mymemory.translated.net/doc/spec.php) ve [kullanım kotası](https://mymemory.translated.net/doc/usagelimits.php).
+
+Kısayol, seçimi erişilebilirlik bilgileriyle veya uygulamanın kopyalama desteğiyle okur. Otomatik yapıştırma için alanın düzenlenebilirliği, odak ve seçili aralık yeniden doğrulanır. Etkileşimli Windows masaüstünde `dotnet run --project tests/WinForge.TranslationTests -c Release -p:Platform=x64 -- --copy-and-paste` kısayolu, yapıştırmayı ve çevirinin panoda kalmasını sınar. Test kısa süreliğine odak ve panoyu kullanır.
+
+Scintilla tabanlı editörlerde tek ve normal bir metin seçimi de desteklenir; birden fazla seçim, dikdörtgen seçim ve sanal boşluk içeren seçimler değiştirilmez. Scintilla denemesi için, güvenilir bir [resmî Scintilla DLL'i](https://www.scintilla.org/SciTEDownload.html) indirip `WINFORGE_TEST_SCINTILLA_DLL` ortam değişkenini DLL'in tam yoluna ayarladıktan sonra aynı `--native` testini çalıştırabilirsiniz. DLL test için kullanılır; WinForge'a dahil edilmesi gerekmez.
+
+VS Code'da seçimi doğrudan değiştirme çalışmıyorsa **Editor: Accessibility Support** seçeneğini **on** yapın (`"editor.accessibilitySupport": "on"`). Seçim doğrulanamadığında çeviriyi panodan elle yapıştırabilirsiniz. VS Code hiçbir şey seçili değilken geçerli satırı kopyalarsa, seçim bilgisi tanındığında bu satır çeviriye gönderilmez.
+
+Derlenmiş bir paket için modül keşfi, kısayol kaydı, ayarların kalıcılığı ve hatalı ayarlarda geri alma ayrıca `dotnet run --project tests/WinForge.TranslationTests -c Release -p:Platform=x64 -- --host "<paket-modules-klasörü>"` ile doğrulanabilir. Test ayarları geçici bir klasörde tutulur.
+
+Kurulu Chrome ile yerel örnek sayfada metin alanı, sayfa seçimi, normal ve yalıtılmış iframe, gölge DOM, salt okunur ve parola alanı denemesi için `dotnet run --project tests/WinForge.TranslationTests -c Release -p:Platform=x64 -- --chrome "<chrome.exe yolu>"` kullanılabilir. Test, ayrı ve geçici bir Chrome profili açar.
+
+İsteğe bağlı `dotnet run --project tests/WinForge.TranslationTests -c Release -p:Platform=x64 -- --live-native` testi gerçek çeviri hizmetine iki sabit örnek cümle gönderir ve sonuçları geçici bir Windows metin alanına yazar; internet ve etkileşimli masaüstü gerekir.
+
+İsteğe bağlı olarak çeviri sağlayıcısını **LibreTranslate** seçip sunucu adresi girebilirsiniz. Kendi bilgisayarınızdaki varsayılan adres `http://localhost:5000`'dir; uzak sunucular için HTTPS gerekir. Sunucunuz API anahtarı istiyorsa `WINFORGE_LIBRETRANSLATE_API_KEY` kullanıcı ortam değişkenini Windows'ta ayarlayıp WinForge'u yeniden başlatın; anahtar WinForge ayar dosyasına yazılmaz. Sunucu model ve kota ayarları desteklenen dilleri ve metin sınırlarını belirler. Kurulum ve API bilgileri: [LibreTranslate belgeleri](https://docs.libretranslate.com/guides/api_usage/).
+
 **Görev Çubuğu → Codex Limitleri:** AI Limit Status eklentisinin yerel listesindeki görünür Codex hesaplarını görev çubuğunda metin olarak gösterir. Her hesabın beş saatlik kalan yüzdesi ve yenilenme saati gösterilir; limit bittiğinde yenilenmeye kalan süre gösterilir. Haftalık limit ve diğer ayrıntılar hesap taşının üzerine gelince açılır. Gösterge fareyle sürüklenebilir; ayrıntı ekranında soldan uzaklık da ayarlanabilir. Hesap adları ve görünürlük yönetim ekranında düzenlenir; oturumlar eklentide yönetilir. Eklenti çalışmadığında son kaydedilen veriler gösterilir. Bu değerler Codex limitleridir.
 
 Son modül düzeltmeleri, klasör seçenekleri ve doğrulama sınırları: [Modül düzeltmeleri](docs/MODULE_FIXES.md).

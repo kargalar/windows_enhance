@@ -14,7 +14,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
     private static readonly Dictionary<string, string> WorkflowLabels = WorkflowOptions.ToDictionary(
         value => value,
         value => string.Join(" → ", value.Split('-').Select(WorkflowActionLabel)));
-    private IDisposable? shortcut;
+    private readonly List<IDisposable> shortcuts = [];
     private GlobalKeyboardHook? cancellationHook;
     private CaptureArea? lastArea;
     private CancellationTokenSource? operation;
@@ -30,7 +30,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
     protected override IEnumerable<SettingDescriptor> ModuleSettings =>
     [
         new() { Key = "image-directory", Label = "Yakalanan görsellerin klasörü", Kind = SettingKind.Text, Default = "",
-            Description = "Boş bırakılırsa geçmişin medya klasörü kullanılır." },
+            Description = "Boş bırakılırsa geçmişin Görseller klasörü kullanılır. Video ve GIF kayıtları geçmişin Videolar klasörüne yazılır." },
         new() { Key = "choose-image-directory", Label = "Yakalanan görseller için klasör seç", Kind = SettingKind.Action, Execute = () =>
         {
             var picker = new Microsoft.Win32.OpenFolderDialog { Title = "Yakalama klasörünü seç" };
@@ -44,6 +44,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
         } },
         new() { Key = "capture", Label = "Yakalama araçlarını aç", Kind = SettingKind.Action, Execute = ShowTools },
         new() { Key = "hotkey", Label = "Bölge yakalama kısayolu", Kind = SettingKind.Text, Default = "Win+Alt+S" },
+        new() { Key = "monitor-hotkey", Label = "İmleçteki monitörü yakalama kısayolu", Kind = SettingKind.Text, Default = "",
+            Description = "Fare imlecinin bulunduğu monitörün tamamını alan seçmeden yakalar. Kapatmak için boş bırakın." },
         new() { Key = "edit", Label = "Yakalama sonrası düzenle", Default = true },
         new() { Key = "copy", Label = "Yakalama sonrası panoya kopyala", Default = true },
         new() { Key = "save-history", Label = "Yakalama sonrası geçmişe kaydet", Default = true },
@@ -54,6 +56,10 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
         new() { Key = "workflow", Label = "Yakalama sonrası işlem sırası", Kind = SettingKind.Choice, Default = "save-copy-edit-upload",
             Options = WorkflowOptions, OptionLabels = WorkflowLabels },
         new() { Key = "delay", Label = "Yakalama gecikmesi (saniye)", Kind = SettingKind.Number, Min = 0, Max = 30, Default = 0 },
+        new() { Key = "video-region-hotkey", Label = "Bölge video kaydı kısayolu", Kind = SettingKind.Text, Default = "",
+            Description = "Bir alan seçtikten sonra video kaydını başlatır. Kapatmak için boş bırakın." },
+        new() { Key = "video-monitor-hotkey", Label = "Tam ekran video kaydı kısayolu", Kind = SettingKind.Text, Default = "",
+            Description = "Fare imlecinin bulunduğu monitörün tamamını kaydetmeye başlar. Kapatmak için boş bırakın." },
         new() { Key = "microphone", Label = "Video kaydında mikrofon", Default = false },
         new() { Key = "system-audio", Label = "Video kaydında sistem sesi", Default = false },
         new() { Key = "cursor", Label = "Video kaydında imleci göster", Default = true },
@@ -74,17 +80,49 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
     public override void Activate()
     {
         if (IsActive) return;
-        RegisterShortcut();
+        RegisterShortcuts();
         cancellationHook = new(); cancellationHook.KeyStateChanged += (key, down) => { if (key == 0x1B && down && busy) Cancel(); }; cancellationHook.Install();
         base.Activate();
     }
-    private void RegisterShortcut()
+    private void RegisterShortcuts()
     {
-        var configured = CaptureShortcut.Parse(Context.Settings.GetString("hotkey", "Win+Alt+S"));
-        shortcut?.Dispose(); shortcut = configured.Register(Context.Hotkeys, () => _ = CaptureAsync("region"));
+        (string Key, string Mode, string Default)[] bindings =
+        [
+            ("hotkey", "region", "Win+Alt+S"),
+            ("monitor-hotkey", "monitor", ""),
+            ("video-region-hotkey", "video", ""),
+            ("video-monitor-hotkey", "video-monitor", "")
+        ];
+        var configured = new Dictionary<CaptureShortcut, string>();
+        foreach (var (key, mode, fallback) in bindings)
+        {
+            var value = Context.Settings.GetString(key, fallback);
+            if (fallback.Length == 0 && string.IsNullOrWhiteSpace(value)) continue;
+            if (!configured.TryAdd(CaptureShortcut.Parse(value), mode))
+                throw new InvalidOperationException("Her ekran yakalama işlemi için farklı bir kısayol seçin.");
+        }
+
+        UnregisterShortcuts();
+        try
+        {
+            foreach (var (shortcut, mode) in configured)
+                shortcuts.Add(shortcut.Register(Context.Hotkeys, () => _ = CaptureAsync(mode)));
+        }
+        catch
+        {
+            UnregisterShortcuts();
+            throw;
+        }
     }
-    public override void Apply() { if (IsActive) RegisterShortcut(); }
-    public override void Deactivate() { IsActive = false; shortcut?.Dispose(); shortcut = null; cancellationHook?.Dispose(); cancellationHook = null; Cancel(); preview?.Close(); controls?.Close(); controls = null; toolsWindow?.Close(); toolsWindow = null; base.Deactivate(); }
+
+    private void UnregisterShortcuts()
+    {
+        foreach (var shortcut in shortcuts) shortcut.Dispose();
+        shortcuts.Clear();
+    }
+
+    public override void Apply() { if (IsActive) RegisterShortcuts(); }
+    public override void Deactivate() { IsActive = false; UnregisterShortcuts(); cancellationHook?.Dispose(); cancellationHook = null; Cancel(); preview?.Close(); controls?.Close(); controls = null; toolsWindow?.Close(); toolsWindow = null; base.Deactivate(); }
     private void ShowTools()
     {
         if (!IsActive) { Context.Notify("Önce Ekran Yakalama modülünü etkinleştirin."); return; }
@@ -121,13 +159,15 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
         if (busy || !IsActive) return; busy = true; operation?.Dispose(); operation = new(); var token = operation.Token;
         try
         {
+            // Use the monitor under the pointer when capture is triggered, even with a delay.
+            CaptureArea? monitorArea = mode is "monitor" or "video-monitor" ? CaptureServices.Monitor() : null;
             preview?.Close();
             await Task.Delay(200 + Math.Clamp(Context.Settings.GetInt("delay"), 0, 30) * 1000, token);
             var foreground = CaptureServices.Foreground();
             if (mode == "multi-region")
             {
                 var areas = CaptureServices.SelectMultipleAreas(out var multiSnapshot);
-                await CaptureMultipleAreasAsync(areas, multiSnapshot, foreground, token);
+                await CaptureMultipleAreasAsync(areas, multiSnapshot, token);
                 return;
             }
             var annotationTool = mode switch
@@ -140,6 +180,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
             FrozenDesktop? snapshot = null;
             CaptureAnnotations? annotations = null;
             CaptureArea? area;
+            nint selectedWindow = 0;
             if (mode == "region")
             {
                 var selection = CaptureServices.SelectAnnotatedArea();
@@ -148,8 +189,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
             else area = annotationTool is not null ? DesktopArea() : mode switch
             {
                 "last" => lastArea,
-                "monitor" => CaptureServices.Monitor(),
-                "window" => CaptureServices.SelectWindow(out snapshot),
+                "monitor" or "video-monitor" => monitorArea,
+                "window" => CaptureServices.SelectWindow(out snapshot, out selectedWindow),
                 "active-window" => CaptureServices.WindowArea(foreground.Window),
                 "desktop" => DesktopArea(),
                 _ => CaptureServices.SelectArea(true, out snapshot)
@@ -161,13 +202,23 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
             }
             token.ThrowIfCancellationRequested();
             if (annotationTool is null) lastArea = selected;
-            await Task.Delay(120, token); var store = Store;
-            if (!CaptureServices.HasSpace(store.DirectoryPath)) throw new IOException("Kayıt için yeterli disk alanı yok.");
-            if (mode is "video" or "gif")
+            await Task.Delay(120, token);
+            if (mode is "video" or "video-monitor" or "gif")
             {
-                recording = new(store.DirectoryPath, selected, Context.Settings.GetBool("microphone"), Context.Settings.GetBool("system-audio"), Context.Settings.GetBool("cursor", true), Math.Clamp(Context.Settings.GetInt("fps", 15), 5, 120));
-                ShowRecordingControls(mode == "gif", store); return;
+                var recordingStore = Store;
+                if (!CaptureServices.HasSpace(recordingStore.DirectoryPath)) throw new IOException("Kayıt için yeterli disk alanı yok.");
+                recording = new(recordingStore.DirectoryPath, selected, Context.Settings.GetBool("microphone"), Context.Settings.GetBool("system-audio"), Context.Settings.GetBool("cursor", true), Math.Clamp(Context.Settings.GetInt("fps", 15), 5, 120));
+                ShowRecordingControls(mode == "gif", recordingStore); return;
             }
+            var fullscreenWindow = mode is "monitor" or "desktop"
+                ? CaptureServices.FindFullscreenWindow(selected, foreground.Window) : 0;
+            var target = fullscreenWindow != 0 ? fullscreenWindow : selectedWindow;
+            if (mode == "active-window") target = foreground.Window;
+            if (target == 0)
+                target = CaptureServices.WindowIn(selected, snapshot?.Windows ?? CaptureServices.VisibleWindows());
+            var application = CaptureServices.DescribeWindow(target);
+            var file = new CaptureImageFile(CaptureImageFile.ApplicationName(application),
+                mode == "scroll" ? DateTimeOffset.Now : snapshot?.CapturedAt ?? DateTimeOffset.Now, fullscreenWindow != 0);
             var image = mode == "scroll" ? null : snapshot?.Crop(selected) ?? CaptureServices.Capture(selected);
             if (image is not null && annotations is { HasMarks: true }) image = annotations.Apply(image, selected);
             var title = "Ekran görüntüsü";
@@ -177,41 +228,52 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
                 title = $"Kayan yakalama · %{result.Confidence * 100:0} güven{(result.Partial ? " · KISMİ SONUÇ" : "")}"; Context.Notify(title);
             }
             token.ThrowIfCancellationRequested();
-            ShowPreview(image!);
-            if (annotationTool is null) await ProcessAfterCaptureAsync(image!, store, foreground.App, title, token);
-            else new CaptureEditor(store, image!, annotationTool, featureUi: (Context as IFeatureUiContext)?.FeatureUi).Show();
+            var store = new Lazy<HistoryStore>(() => Store);
+            ShowPreview(image!, store, file);
+            if (annotationTool is null) await ProcessAfterCaptureAsync(image!, store, application.App, title, file, token);
+            else
+            {
+                if (Context.Settings.GetBool("copy", true)) await CaptureClipboard.CopyAsync(image!, file, token);
+                new CaptureEditor(store.Value, image!, annotationTool, featureUi: (Context as IFeatureUiContext)?.FeatureUi, file: file).Show();
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception error) { Report(error); }
         finally { if (recording is null) busy = false; }
     }
-    private async Task CaptureMultipleAreasAsync(IReadOnlyList<CaptureArea> areas, FrozenDesktop? snapshot, ForegroundInfo foreground, CancellationToken token)
+    private async Task CaptureMultipleAreasAsync(IReadOnlyList<CaptureArea> areas, FrozenDesktop? snapshot, CancellationToken token)
     {
         if (areas.Count == 0) return;
-        var store = Store;
-        if (!CaptureServices.HasSpace(store.DirectoryPath)) throw new IOException("Kayıt için yeterli disk alanı yok.");
+        var store = new Lazy<HistoryStore>(() => Store);
+        var windows = snapshot?.Windows ?? CaptureServices.VisibleWindows();
         for (var index = 0; index < areas.Count; index++)
         {
             token.ThrowIfCancellationRequested();
             preview?.Close();
+            var application = CaptureServices.DescribeWindow(CaptureServices.WindowIn(areas[index], windows));
+            var file = new CaptureImageFile(CaptureImageFile.ApplicationName(application), snapshot?.CapturedAt ?? DateTimeOffset.Now);
             var image = snapshot?.Crop(areas[index]) ?? CaptureServices.Capture(areas[index]); lastArea = areas[index];
-            ShowPreview(image);
-            await ProcessAfterCaptureAsync(image, store, foreground.App, $"Çoklu bölge {index + 1}/{areas.Count}", token);
+            ShowPreview(image, store, file);
+            await ProcessAfterCaptureAsync(image, store, application.App, $"Çoklu bölge {index + 1}/{areas.Count}", file, token);
         }
         Context.Notify($"{areas.Count} bölge yakalandı.");
     }
 
-    private void ShowPreview(BitmapSource image)
+    private void ShowPreview(BitmapSource image, Lazy<HistoryStore> store, CaptureImageFile file)
     {
         preview?.Close();
-        var store = Store;
         var window = new CapturePreviewWindow(image, () =>
         {
             try
             {
-                var media = CaptureServices.Save(store, image);
-                store.ReleasePendingMedia(media);
-                var path = ExportImage(image) ?? store.ResolveMedia(media);
+                var path = ExportImage(image, file);
+                if (path is null)
+                {
+                    var history = store.Value;
+                    var media = file.Save(history, image);
+                    path = history.ResolveMedia(media);
+                    history.ReleasePendingMedia(media);
+                }
                 var info = new System.Diagnostics.ProcessStartInfo("explorer.exe") { UseShellExecute = true };
                 info.Arguments = "/select,\"" + path + "\"";
                 System.Diagnostics.Process.Start(info);
@@ -223,9 +285,11 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
         window.Show();
     }
 
-    private async Task ProcessAfterCaptureAsync(BitmapSource image, HistoryStore store, string app, string title, CancellationToken token)
+    private async Task ProcessAfterCaptureAsync(BitmapSource image, Lazy<HistoryStore> store, string app, string title,
+        CaptureImageFile file, CancellationToken token)
     {
-        ExportImage(image);
+        try { ExportImage(image, file); }
+        catch (Exception error) when (error is not OperationCanceledException) { Report(error); }
         var sequence = Context.Settings.GetString("workflow", "save-copy-edit-upload").Split('-');
         foreach (var step in sequence)
         {
@@ -233,15 +297,15 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
             switch (step)
             {
                 case "save" when Context.Settings.GetBool("save-history", true):
-                    var media = await Task.Run(() => CaptureServices.Save(store, image), token);
-                    token.ThrowIfCancellationRequested(); store.Add("capture", DateTimeOffset.UtcNow, app, title, media: media);
+                    try { await SaveHistoryAsync(image, store, app, title, file, token); }
+                    catch (Exception error) when (error is not OperationCanceledException) { Report(error); }
                     break;
                 case "copy" when Context.Settings.GetBool("copy", true):
-                    await CaptureClipboard.CopyAsync(image, token);
+                    await CaptureClipboard.CopyAsync(image, file, token);
                     break;
                 case "edit" when Context.Settings.GetBool("edit", true):
-                    var editor = new CaptureEditor(store, image, workflowCompletion: true,
-                        featureUi: (Context as IFeatureUiContext)?.FeatureUi);
+                    var editor = new CaptureEditor(store.Value, image, workflowCompletion: true,
+                        featureUi: (Context as IFeatureUiContext)?.FeatureUi, file: file);
                     BitmapSource? editedImage;
                     try { editedImage = await editor.Completion.WaitAsync(token); }
                     finally { editor.Close(); }
@@ -257,20 +321,33 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
         }
     }
 
-    private string? ExportImage(BitmapSource image)
+    private static async Task SaveHistoryAsync(BitmapSource image, Lazy<HistoryStore> store, string app, string title,
+        CaptureImageFile file, CancellationToken token)
+    {
+        await Task.Run(() =>
+        {
+            var history = store.Value;
+            if (!CaptureServices.HasSpace(history.DirectoryPath)) throw new IOException("Kayıt için yeterli disk alanı yok.");
+            var media = file.Save(history, image);
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                history.Add("capture", file.CapturedAt, app, title, media: media);
+            }
+            catch
+            {
+                history.ReleasePendingMedia(media);
+                throw;
+            }
+        }, token);
+    }
+
+    internal string? ExportImage(BitmapSource image, CaptureImageFile file)
     {
         var directory = Context.Settings.GetString("image-directory").Trim();
         if (directory.Length == 0) return null;
         directory = System.IO.Path.GetFullPath(Environment.ExpandEnvironmentVariables(directory));
-        System.IO.Directory.CreateDirectory(directory);
-        // Content addressing gives the workflow and preview the same file without duplicate exports.
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
-        using var bytes = new System.IO.MemoryStream(); encoder.Save(bytes);
-        var data = bytes.ToArray();
-        var name = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)) + ".png";
-        var path = System.IO.Path.Combine(directory, name);
-        if (!System.IO.File.Exists(path)) System.IO.File.WriteAllBytes(path, data);
-        return path;
+        return file.Export(directory, image);
     }
 
     private static string[] BuildWorkflowOptions()
@@ -347,7 +424,8 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
         try
         {
             var file = await session.FinishAsync(gif, token);
-            var media = await store.ImportMediaAsync(file, token);
+            var media = await store.ImportMediaAsync(file, token, HistoryStore.CaptureVideos);
+            if (token.IsCancellationRequested) store.ReleasePendingMedia(media);
             token.ThrowIfCancellationRequested();
             store.Add("capture", DateTimeOffset.UtcNow, title: gif ? "GIF kaydı" : "Video kaydı", media: media);
             Context.Notify(session.Error is null ? "Kayıt geçmişe kaydedildi." : "Kısmi kayıt kaydedildi: " + session.Error);
