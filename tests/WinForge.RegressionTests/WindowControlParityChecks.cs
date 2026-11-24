@@ -295,6 +295,7 @@ internal static class WindowControlParityChecks
             }
             check(WaitUntil(() => Bounds(first) == original && Bounds(second) == adjacent),
                 "Cancelling a sticky gesture restores every window actually touched by the gesture");
+            TestToggleFullscreen(first, options, errors, check);
             TestDefaultGestures(first, second, options, errors, check);
             TestTitlebarBindings(first, options, errors, check);
             TestOriginalActionSemantics(first, options, errors, check);
@@ -302,7 +303,6 @@ internal static class WindowControlParityChecks
             TestMenuAndZoom(first, options, errors, check);
             TestQueuedWheelModifiers(first, options, errors, check);
             TestPublishedModifierEdges(first, second, options, errors, check);
-            TestToggleFullscreen(first, options, errors, check);
 
             var masterMuted = false;
             var endpointWrites = 0;
