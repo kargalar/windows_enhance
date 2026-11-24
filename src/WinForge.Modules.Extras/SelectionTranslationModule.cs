@@ -32,6 +32,8 @@ public sealed class SelectionTranslationModule : ITweakModule
     private System.Windows.Threading.DispatcherTimer? _selectionTimer;
     private bool _mouseDown;
     private CursorPoint _mouseStart;
+    private IntPtr _mouseDownWindow;
+    private bool _suppressSelection;
     private long _lastClick;
     private bool _doubleClick;
 
@@ -52,8 +54,8 @@ public sealed class SelectionTranslationModule : ITweakModule
         new() { Key = "replace-shortcut", Label = "Çeviriyi kopyalama ve yapıştırma kısayolu", Kind = SettingKind.Text, Default = "Ctrl+Alt+Y", Description = "Çeviri panoya kopyalanır. Düzenlenebilir bir alanda seçimin yerine de yapıştırılır." }
     ];
     public void Initialize(IModuleContext context) => _context = context;
-    public void Activate() { IsActive = true; try { Bind(); StartSelectionMonitor(); } catch { Deactivate(); throw; } }
-    public void Deactivate() { IsActive = false; _selectionTimer?.Stop(); _selectionTimer = null; _operation?.Cancel(); _shortcutBinding?.Dispose(); _shortcutBinding = null; _resultWindow?.Close(); _resultWindow = null; }
+    public void Activate() { IsActive = true; try { Bind(); SelectionTranslationGuard.OverlayEntered += OnOverlayEntered; StartSelectionMonitor(); } catch { Deactivate(); throw; } }
+    public void Deactivate() { IsActive = false; SelectionTranslationGuard.OverlayEntered -= OnOverlayEntered; _selectionTimer?.Stop(); _selectionTimer = null; _mouseDown = false; _mouseDownWindow = IntPtr.Zero; _suppressSelection = false; _operation?.Cancel(); _shortcutBinding?.Dispose(); _shortcutBinding = null; _resultWindow?.Close(); _resultWindow = null; }
     public void Apply() { if (!IsActive) return; _operation?.Cancel(); _shortcutBinding?.Dispose(); _shortcutBinding = null; Bind(); }
     private void Bind()
     {
@@ -70,16 +72,38 @@ public sealed class SelectionTranslationModule : ITweakModule
         _shortcutBinding = _context.Hotkeys.Register(shortcut.Modifiers, (uint)shortcut.Key, () => RequestTranslation(fromShortcut: true));
     }
     private static bool IsClipboardShortcut(AutomationShortcut key) => key.Modifiers == HotkeyModifiers.Control && key.Key is 0x43 or 0x56;
+    private void OnOverlayEntered()
+    {
+        if (!_fromShortcut) _operation?.Cancel();
+    }
+
+    internal static bool ShouldTriggerAutoSelection(bool wasSuppressed, bool overlayActive, IntPtr mouseDownWindow, IntPtr foregroundWindow, bool movedOrDoubleClicked) =>
+        movedOrDoubleClicked && !wasSuppressed && !overlayActive && mouseDownWindow != IntPtr.Zero && foregroundWindow != IntPtr.Zero && mouseDownWindow == foregroundWindow;
+
+    private static IntPtr RootWindowAt(CursorPoint point)
+    {
+        var underCursor = Native.WindowFromPoint(new POINT(point.X, point.Y));
+        if (underCursor != IntPtr.Zero)
+        {
+            var root = Native.GetAncestor(underCursor, Native.GA_ROOT);
+            if (root != IntPtr.Zero) return root;
+        }
+        return GetForegroundWindow();
+    }
+
     private void StartSelectionMonitor()
     {
         _selectionTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
         _selectionTimer.Tick += (_, _) =>
         {
             var down = (GetAsyncKeyState(1) & 0x8000) != 0;
+            var overlayActive = SelectionTranslationGuard.IsOverlayActive;
             GetCursorPos(out var point);
             if (down && !_mouseDown)
             {
                 _mouseStart = point;
+                _mouseDownWindow = RootWindowAt(point);
+                _suppressSelection = overlayActive;
                 var now = Environment.TickCount64;
                 _doubleClick = now - _lastClick < 500;
                 _lastClick = now;
@@ -92,8 +116,19 @@ public sealed class SelectionTranslationModule : ITweakModule
                 }
                 else if (!_fromShortcut) _operation?.Cancel();
             }
-            if (!down && _mouseDown && (Math.Abs(point.X - _mouseStart.X) > 5 || Math.Abs(point.Y - _mouseStart.Y) > 5 || _doubleClick))
-                RequestTranslation(fromShortcut: false);
+            else if (down && overlayActive)
+            {
+                _suppressSelection = true;
+            }
+            if (!down && _mouseDown)
+            {
+                var movedOrDoubleClicked = Math.Abs(point.X - _mouseStart.X) > 5 || Math.Abs(point.Y - _mouseStart.Y) > 5 || _doubleClick;
+                var foreground = GetForegroundWindow();
+                if (ShouldTriggerAutoSelection(_suppressSelection, overlayActive, _mouseDownWindow, foreground, movedOrDoubleClicked))
+                    RequestTranslation(fromShortcut: false);
+                _mouseDownWindow = IntPtr.Zero;
+                _suppressSelection = false;
+            }
             _mouseDown = down;
         };
         _selectionTimer.Start();
@@ -294,14 +329,19 @@ public sealed class SelectionTranslationModule : ITweakModule
     }
     private static bool ModifiersDown() => (GetAsyncKeyState(0x10) & 0x8000) != 0 || (GetAsyncKeyState(0x11) & 0x8000) != 0 ||
         (GetAsyncKeyState(0x12) & 0x8000) != 0 || (GetAsyncKeyState(0x5B) & 0x8000) != 0 || (GetAsyncKeyState(0x5C) & 0x8000) != 0;
-    private static async Task<string?> CopySelection(CancellationToken token, Func<bool> sameOrigin)
+    private static Task<string?> CopySelection(CancellationToken token, Func<bool> sameOrigin) =>
+        CopySelectionWithAction(token, sameOrigin, () => Chord(0x43));
+
+    internal static async Task<string?> CopySelectionWithAction(CancellationToken token, Func<bool> sameOrigin, Action sendCopy)
     {
+        var clipboardWriteVersion = SelectionTranslationGuard.ClipboardWriteVersion;
         var saved = CaptureClipboard(out var before);
         token.ThrowIfCancellationRequested();
         if (!sameOrigin()) throw new InvalidOperationException("Pencere veya odak değişti; metin alınmadı.");
         if (ModifiersDown()) throw new InvalidOperationException("Kopyalama için değiştirici tuşları bırakın.");
-        if (GetClipboardSequenceNumber() != before) throw new InvalidOperationException("Pano değişti; metin alınmadı.");
-        Chord(0x43);
+        if (GetClipboardSequenceNumber() != before || SelectionTranslationGuard.ClipboardWriteVersion != clipboardWriteVersion)
+            throw new InvalidOperationException("Pano değişti; metin alınmadı.");
+        sendCopy();
         uint captured = before;
         try
         {
@@ -310,19 +350,27 @@ public sealed class SelectionTranslationModule : ITweakModule
             for (var i = 0; i < 30; i++)
             {
                 await Task.Delay(20);
+                if (SelectionTranslationGuard.ClipboardWriteVersion != clipboardWriteVersion)
+                    throw new InvalidOperationException("Pano değişti; metin alınmadı.");
                 captured = GetClipboardSequenceNumber();
                 if (captured == before) continue;
                 token.ThrowIfCancellationRequested();
                 if (!sameOrigin()) throw new InvalidOperationException("Pencere veya odak değişti; metin alınmadı.");
                 if (IsCopiedEmptyVsCodeSelection()) throw new InvalidOperationException("Metin seçilmedi; editörün otomatik kopyaladığı satır çevrilmedi.");
                 var text = Clipboard.ContainsText() ? Clipboard.GetText() : null;
-                if (GetClipboardSequenceNumber() != captured) throw new InvalidOperationException("Pano değişti; metin alınmadı.");
+                if (GetClipboardSequenceNumber() != captured || SelectionTranslationGuard.ClipboardWriteVersion != clipboardWriteVersion)
+                    throw new InvalidOperationException("Pano değişti; metin alınmadı.");
                 return text;
             }
             token.ThrowIfCancellationRequested();
             return null;
         }
-        finally { if (captured != before && sameOrigin() && GetClipboardSequenceNumber() == captured) RestoreClipboard(saved); }
+        finally
+        {
+            if (captured != before && SelectionTranslationGuard.ClipboardWriteVersion == clipboardWriteVersion &&
+                sameOrigin() && GetClipboardSequenceNumber() == captured)
+                RestoreClipboard(saved);
+        }
     }
     private static bool IsCopiedEmptyVsCodeSelection()
     {

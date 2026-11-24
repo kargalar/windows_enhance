@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media.Imaging;
+using WinForge.Core;
 
 namespace WinForge.Modules.Capture;
 
@@ -37,7 +38,12 @@ internal static class CaptureClipboard
         for (var attempt = 0; ; attempt++)
         {
             token.ThrowIfCancellationRequested();
-            try { Clipboard.SetDataObject(data, true); return; }
+            try
+            {
+                SelectionTranslationGuard.NotifyInternalClipboardWrite();
+                Clipboard.SetDataObject(data, true);
+                return;
+            }
             catch (ExternalException error) when (error.HResult == unchecked((int)0x800401D0) && attempt < 9)
             {
                 await Task.Delay(50, token);

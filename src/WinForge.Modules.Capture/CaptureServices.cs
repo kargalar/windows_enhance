@@ -328,6 +328,7 @@ internal sealed class RegionPicker : Window
     private readonly bool quickCapture;
     private readonly bool multiple;
     private CaptureArea? selection;
+    private IDisposable? translationGuard;
     internal FrozenDesktop? Snapshot { get; private set; }
     internal CaptureAnnotations? Annotations { get; }
     public CaptureArea? Result { get; private set; }
@@ -339,6 +340,7 @@ internal sealed class RegionPicker : Window
         Width = Height = 0; WindowStyle = WindowStyle.None; ShowInTaskbar = false; Opacity = 0;
         Loaded += (_, _) =>
         {
+            translationGuard ??= SelectionTranslationGuard.EnterOverlay();
             var displays = DesktopDisplays.Enumerate().ToArray();
             // Capture every monitor before showing any overlay, including on mixed-DPI desktops.
             Snapshot = FrozenDesktop.Capture(displays);
@@ -347,7 +349,7 @@ internal sealed class RegionPicker : Window
                 var surface = new RegionSurface(monitor, Snapshot.ForDisplay(monitor), quickCapture, Select, UpdateSelection, FinishSelected, Finish, UpdateHover, () => selection, () => regions, Annotations, RefreshAnnotations); surfaces.Add(surface); surface.Show();
             }
         };
-        Closed += (_, _) => { foreach (var surface in surfaces) surface.Close(); };
+        Closed += (_, _) => { translationGuard?.Dispose(); translationGuard = null; foreach (var surface in surfaces) surface.Close(); };
     }
     private void RefreshAnnotations() { foreach (var surface in surfaces) surface.RefreshAnnotations(); }
     private void UpdateHover(CaptureArea? area)

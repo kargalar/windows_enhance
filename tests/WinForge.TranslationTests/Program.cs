@@ -12,6 +12,7 @@ internal static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains("--selection-guard")) return SelectionGuardCheck();
         if (args.Contains("--copy-and-paste")) return CopyAndPasteCheck();
         if (args.Length == 2 && args[0] == "--host") return HostIntegrationCheck(args[1]);
         if (args.Length == 2 && args[0] == "--chrome") return ChromeIntegrationCheck(args[1]);
@@ -1242,5 +1243,173 @@ internal static partial class Program
         public IDisposable Register(uint modifiers, uint virtualKey, Action callback) { if (NativeHotkeys is not null) return NativeHotkeys.Register(modifiers, virtualKey, callback); Callbacks.Add(callback); return new Binding(); }
     }
     private sealed class Binding : IDisposable { public void Dispose() { } }
+
+    private static int SelectionGuardCheck()
+    {
+        var windowA = new IntPtr(0x1001);
+        var windowB = new IntPtr(0x2002);
+        if (SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: true, overlayActive: false, windowA, windowA, movedOrDoubleClicked: true))
+            throw new Exception("Suppressed drag must not trigger auto selection translation.");
+        if (SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: true, windowA, windowA, movedOrDoubleClicked: true))
+            throw new Exception("Active overlay must suppress auto selection translation.");
+        if (SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: false, windowA, windowB, movedOrDoubleClicked: true))
+            throw new Exception("Mouse drag ending in a different foreground window must not trigger auto selection translation.");
+        if (SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: false, IntPtr.Zero, windowA, movedOrDoubleClicked: true) ||
+            SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: false, windowA, IntPtr.Zero, movedOrDoubleClicked: true))
+            throw new Exception("Missing window handle must not trigger auto selection translation.");
+        if (SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: false, windowA, windowA, movedOrDoubleClicked: false))
+            throw new Exception("Click without drag or double-click must not trigger auto selection translation.");
+        if (!SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: false, windowA, windowA, movedOrDoubleClicked: true))
+            throw new Exception("Valid same-window drag should trigger auto selection translation.");
+        Console.WriteLine("PASS: ShouldTriggerAutoSelection rejects overlay drags and cross-window focus changes.");
+
+        var enteredCount = 0;
+        Action onEntered = () => enteredCount++;
+        SelectionTranslationGuard.OverlayEntered += onEntered;
+        try
+        {
+            if (SelectionTranslationGuard.IsOverlayActive) throw new Exception("Overlay guard should start inactive.");
+            using (var outer = SelectionTranslationGuard.EnterOverlay())
+            {
+                if (!SelectionTranslationGuard.IsOverlayActive || enteredCount != 1)
+                    throw new Exception("First overlay entry did not activate guard or fire OverlayEntered.");
+                var inner = SelectionTranslationGuard.EnterOverlay();
+                if (!SelectionTranslationGuard.IsOverlayActive || enteredCount != 1)
+                    throw new Exception("Nested overlay entry should keep guard active without re-firing OverlayEntered.");
+                inner.Dispose();
+                inner.Dispose();
+                if (!SelectionTranslationGuard.IsOverlayActive)
+                    throw new Exception("Double-disposing inner overlay scope exited outer scope.");
+            }
+            if (SelectionTranslationGuard.IsOverlayActive)
+                throw new Exception("Disposing outer overlay scope did not clear overlay guard.");
+        }
+        finally { SelectionTranslationGuard.OverlayEntered -= onEntered; }
+        Console.WriteLine("PASS: SelectionTranslationGuard tracks nested overlay scopes idempotently.");
+
+        var app = new Application();
+        var window = new Window
+        {
+            Title = "WinForge selection guard test",
+            Width = 0,
+            Height = 0,
+            WindowStyle = WindowStyle.None,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            AllowsTransparency = true,
+            Opacity = 0
+        };
+        var exit = 1;
+        window.Loaded += async (_, _) =>
+        {
+            DataObject? clipboardBefore = null;
+            try
+            {
+                clipboardBefore = SelectionTranslationModule.SnapshotClipboard();
+
+                const string oldClipboard = "WinForge old clipboard sentinel";
+                const string simulatedCtrlC = "WinForge ctrl-c text";
+                const string regionCaptureText = "WinForge internal capture sentinel";
+                await SetClipboardTextAsync(oldClipboard);
+
+                var originChecks = 0;
+                Func<bool> concurrentInternalWriteOrigin = () =>
+                {
+                    if (++originChecks == 2)
+                    {
+                        SelectionTranslationGuard.NotifyInternalClipboardWrite();
+                        SetClipboardTextSync(regionCaptureText);
+                    }
+                    return true;
+                };
+
+                try
+                {
+                    await SelectionTranslationModule.CopySelectionWithAction(
+                        CancellationToken.None,
+                        concurrentInternalWriteOrigin,
+                        () => SetClipboardTextSync(simulatedCtrlC));
+                    throw new Exception("CopySelection accepted an internal clipboard write.");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("Pano değişti")) { }
+
+                if (Clipboard.GetText() != regionCaptureText)
+                    throw new Exception($"CopySelection overwrote internal clipboard write with '{Clipboard.GetText()}'.");
+
+                await SetClipboardTextAsync(oldClipboard);
+                var delayedWriteTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+                delayedWriteTimer.Tick += (_, _) =>
+                {
+                    delayedWriteTimer.Stop();
+                    SelectionTranslationGuard.NotifyInternalClipboardWrite();
+                    SetClipboardTextSync(regionCaptureText);
+                };
+                delayedWriteTimer.Start();
+                try
+                {
+                    await SelectionTranslationModule.CopySelectionWithAction(
+                        CancellationToken.None,
+                        () => true,
+                        () => { });
+                    throw new Exception("CopySelection accepted a delayed internal clipboard write.");
+                }
+                catch (InvalidOperationException error) when (error.Message.Contains("Pano değişti")) { }
+                finally { delayedWriteTimer.Stop(); }
+
+                if (Clipboard.GetText() != regionCaptureText)
+                    throw new Exception($"CopySelection overwrote delayed internal clipboard write with '{Clipboard.GetText()}'.");
+
+                Console.WriteLine("PASS: CopySelection does not restore old clipboard over a concurrent internal clipboard write.");
+                exit = 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); }
+            finally
+            {
+                try
+                {
+                    await RestoreClipboardAsync(clipboardBefore);
+                }
+                catch (Exception error) { Console.Error.WriteLine(error); exit = 1; }
+                finally { window.Close(); }
+            }
+        };
+        app.Run(window);
+        return exit;
+
+        static async Task SetClipboardTextAsync(string text)
+        {
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                try { Clipboard.SetText(text); return; }
+                catch (System.Runtime.InteropServices.ExternalException) { await Task.Delay(40); }
+            }
+            throw new Exception("Could not initialize test clipboard.");
+        }
+
+        static void SetClipboardTextSync(string text)
+        {
+            for (var attempt = 0; attempt < 20; attempt++)
+            {
+                try { Clipboard.SetText(text); return; }
+                catch (System.Runtime.InteropServices.ExternalException) { Thread.Sleep(25); }
+            }
+            throw new Exception("Could not write simulated internal clipboard value.");
+        }
+
+        static async Task RestoreClipboardAsync(DataObject? saved)
+        {
+            for (var attempt = 0; attempt < 30; attempt++)
+            {
+                try
+                {
+                    if (saved is null || saved.GetFormats(false).Length == 0) Clipboard.Clear();
+                    else Clipboard.SetDataObject(saved, true);
+                    return;
+                }
+                catch (System.Runtime.InteropServices.ExternalException) { await Task.Delay(50); }
+            }
+            throw new Exception("Could not restore original clipboard.");
+        }
+    }
 }
 

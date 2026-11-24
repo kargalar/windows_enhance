@@ -129,6 +129,7 @@ public sealed class TextGrabberModule : ITweakModule
         {
             try
             {
+                SelectionTranslationGuard.NotifyInternalClipboardWrite();
                 Clipboard.SetText(text);
                 return true;
             }

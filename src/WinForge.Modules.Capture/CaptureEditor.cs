@@ -126,6 +126,7 @@ internal sealed class CaptureEditor
                         SetStatus("Metin bulunamadı.");
                         break;
                     }
+                    SelectionTranslationGuard.NotifyInternalClipboardWrite();
                     Clipboard.SetText(text);
                     SetStatus("OCR metni panoya kopyalandı.");
                     break;

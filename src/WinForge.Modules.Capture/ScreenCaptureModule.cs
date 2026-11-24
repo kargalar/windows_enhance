@@ -314,6 +314,7 @@ public sealed class ScreenCaptureModule : CaptureModuleBase, ISettingChangePrepa
                     break;
                 case "upload" when Context.Settings.GetBool("upload"):
                     var link = await ImageUploadService.UploadAsync(image, Context.Settings.GetString("upload-url"), token);
+                    SelectionTranslationGuard.NotifyInternalClipboardWrite();
                     Clipboard.SetText(link.AbsoluteUri);
                     Context.Notify("Görsel yüklendi; bağlantı panoya kopyalandı.");
                     break;

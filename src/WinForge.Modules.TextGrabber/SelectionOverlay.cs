@@ -18,6 +18,7 @@ public sealed class SelectionOverlay : Window
     private readonly List<MonitorSurface> _surfaces = [];
     private IReadOnlyList<FrozenFrame> _frames = [];
     private POINT? _dragOrigin;
+    private IDisposable? _translationGuard;
     private bool _closed;
 
     public Rect? Result { get; private set; }
@@ -58,6 +59,7 @@ public sealed class SelectionOverlay : Window
     private void InitializeSurfaces()
     {
         if (_closed) return;
+        _translationGuard ??= SelectionTranslationGuard.EnterOverlay();
 
         // If an owner window (such as ClipboardShelf) just hid itself, let DWM finish removing it first.
         if (Owner is not null)
@@ -208,6 +210,8 @@ public sealed class SelectionOverlay : Window
     private void CleanupSurfaces()
     {
         _closed = true;
+        _translationGuard?.Dispose();
+        _translationGuard = null;
         _escape.Dispose();
         foreach (var surface in _surfaces)
         {
