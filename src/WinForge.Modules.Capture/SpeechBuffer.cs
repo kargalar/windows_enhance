@@ -204,8 +204,7 @@ public sealed class DictationShortcutState
 
     internal DictationKeyAction PressRegistered(bool recording, bool keyDown)
     {
-        // The hotkey service suppresses repeats. A new activation supersedes a missed release.
-        Reset();
+        if (Held) return DictationKeyAction.None;
         keyObservedDown = keyDown;
         return Press(recording);
     }

@@ -10,10 +10,13 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <EmbeddedResource Include="../../src/WinForge.Modules.Extras/Resources/EnglishDialogueNgramModel.tsv.gz" LogicalName="WinForge.Modules.Extras.Resources.EnglishDialogueNgramModel.tsv.gz" />
+    <EmbeddedResource Include="../../src/WinForge.Modules.Extras/Resources/TurkishDialogueNgramModel.tsv.gz" LogicalName="WinForge.Modules.Extras.Resources.TurkishDialogueNgramModel.tsv.gz" />
     <ProjectReference Include="../../src/WinForge.Core/WinForge.Core.csproj" />
     <Compile Include="../../src/WinForge.Modules.Extras/AutomationCommands.cs" Link="AutomationCommands.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/KeyboardInputSender.cs" Link="KeyboardInputSender.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/SelectionTranslationService.cs" Link="SelectionTranslationService.cs" />
+    <Compile Include="../../src/WinForge.Modules.Extras/SelectionTranslationLanguage.cs" Link="SelectionTranslationLanguage.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/ChromiumClipboardData.cs" Link="ChromiumClipboardData.cs" />
     <Compile Include="../../src/WinForge.Modules.Extras/SelectionTranslationModule.cs" Link="SelectionTranslationModule.cs" />
   </ItemGroup>

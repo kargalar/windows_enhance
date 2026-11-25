@@ -465,8 +465,11 @@ internal static class Program
         keys.Press(false); keys.Reset(); Check(!keys.Held && keys.Release() == DictationKeyAction.None, "Cancellation clears held shortcut state");
 
         Check(keys.PressRegistered(false, keyDown: true) == DictationKeyAction.Start &&
+            keys.PressRegistered(true, keyDown: true) == DictationKeyAction.None,
+            "A repeated registered shortcut cannot stop an active hold");
+        Check(keys.Release(TimeSpan.FromMilliseconds(100)) == DictationKeyAction.None &&
             keys.PressRegistered(true, keyDown: true) == DictationKeyAction.Stop,
-            "A second registered shortcut stops dictation when the hook did not deliver the first release");
+            "A second distinct tap still stops dictation");
         keys.ObserveKeyState(keyDown: false, modifiersDown: true);
         Check(!keys.Held, "Polling clears a missed primary key release even while the modifier stays down");
 

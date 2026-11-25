@@ -242,12 +242,13 @@ internal static class ClipboardHistoryChecks
         public Task ShowMessageAsync(string title, string message, string closeLabel) => throw new NotSupportedException();
     }
 
-    private sealed class Surface : IFeatureUiAssetSurface
+    internal sealed class Surface : IFeatureUiAssetSurface
     {
         public FrameworkElement Element { get; } = new System.Windows.Controls.Border();
         public JsonElement State { get; private set; }
         public bool Disposed { get; private set; }
-        public event Action<string, JsonElement>? MessageReceived { add { } remove { } }
+        public event Action<string, JsonElement>? MessageReceived;
+        internal void Send(string command, object payload) => MessageReceived?.Invoke(command, JsonSerializer.SerializeToElement(payload));
         public void SetState(object state) => State = JsonSerializer.SerializeToElement(state, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         public Uri MapLocalAsset(string filePath) => throw new NotSupportedException();
         public void Dispose() => Disposed = true;

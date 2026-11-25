@@ -14,15 +14,15 @@ using NativeClipboard = System.Windows.Clipboard;
 
 internal static class NativeIntegrationChecks
 {
-    internal static void Run(Action<bool, string> check, bool testUia)
+    internal static void Run(Action<bool, string> check, bool testUia, bool pasteTargetOnly = false)
     {
         Exception? failure = null;
-        var thread = new Thread(() => { try { RunOnSta(check, testUia); } catch (Exception error) { failure = error; } });
+        var thread = new Thread(() => { try { RunOnSta(check, testUia, pasteTargetOnly); } catch (Exception error) { failure = error; } });
         thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
         if (failure is not null) throw new InvalidOperationException("Native feature integration failed.", failure);
     }
 
-    private static void RunOnSta(Action<bool, string> check, bool testUia)
+    private static void RunOnSta(Action<bool, string> check, bool testUia, bool pasteTargetOnly)
     {
         var root = Path.Combine(Path.GetTempPath(), "WinForge-NativeFeatureChecks-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -33,6 +33,7 @@ internal static class NativeIntegrationChecks
         {
             var context = new TestContext();
             if (testUia) PasteTargetChecks.Run(check, PumpUntil, root, context);
+            if (pasteTargetOnly) return;
             var library = new ClipboardLibrary(Path.Combine(root, "clipboard"));
             library.SetPreferences(library.Preferences with { CaptureText = true, IndexImages = false });
             using var capture = new ClipboardCapture(library, context);

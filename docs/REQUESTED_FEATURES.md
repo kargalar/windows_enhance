@@ -10,9 +10,9 @@ Kısayol alanında Tuş ata veya Tuş/fare ata, Windows işlemeden önce yerel g
 
 `userdata`, çalışan EXE’nin yanındadır; çalışma dizinine bağlı değildir. `scripts/build.ps1 -Configuration Release -Run` şu dizini kullanır:
 
-`src/WinForge.App/bin/x64/Release/net10.0-windows10.0.19041.0/userdata`
+`work/build/bin/WinForge.App/release/userdata`
 
-Bu dizindeki mevcut ayarlarda etkin 27 modül kimliğinin tamamı kaynakta mevcut. `settings.json` modül ve kısayol tercihlerini tutar; History ve ClipboardLine geçmiş verileridir, WebView2 tarayıcı profilidir; modeller ve simge/önbellek dosyaları her biri ayrı birer ayar değildir. Başka bir çıktı klasöründen (örneğin Debug, publish veya work/build) çalıştırılan EXE kendi userdata dizinini kullanır. Görünüm → Kayıt konumu alanı çalışan örneğin gerçek dizinini gösterir.
+`settings.json` modül ve kısayol tercihlerini tutar. History ve ClipboardLine geçmiş verilerini, WebView2 ise tarayıcı profilini saklar. Debug veya publish klasöründen çalıştırılan EXE kendi `userdata` dizinini kullanır. Görünüm → Kayıt konumu alanı çalışan örneğin gerçek dizinini gösterir.
 
 Mevcut günlüklerde ayarların okunmasına rağmen bazı modüllerin çalışma hataları var: Ekran Geçmişi için yanlış `SHGetFileInfo` DLL bağlantısı düzeltildi. Başlat menüsü henüz başlamamışsa modül artık etkin kalır ve menü açılınca kayıtlı görünümü otomatik uygular. Windows’un izin vermediği kayıt anahtarları ve başka uygulamanın tuttuğu kısayollar ayrıca hata üretebilir; bu durumlar kayıt klasörünün kaybolduğu anlamına gelmez. Kullanıcının mevcut userdata içeriği değiştirilmedi.
 

@@ -42,7 +42,7 @@ public sealed class SelectionTranslationModule : ITweakModule
     public string Id => "selection-translation";
     public string Name => "Seçili Metni Çevir";
     public string Category => "Verimlilik";
-    public string Description => "Seçili metni önizler. Kısayol Türkçe seçimin çevirisini panoya kopyalar ve düzenlenebilir alandaki seçimin yerine yapıştırır.";
+    public string Description => "Seçili metni önizler. Kısayol varsayılan olarak Türkçe ve İngilizce arasında otomatik çeviri yapar, sonucu panoya kopyalar ve düzenlenebilir alandaki seçimin yerine yapıştırır.";
     public string? Warning => "Seçilen metin seçtiğiniz çeviri hizmetine gönderilir. Varsayılan Google bağlantısı resmî API değildir.";
     public bool IsActive { get; private set; }
     public IReadOnlyList<SettingDescriptor> Settings { get; } = [
@@ -50,7 +50,7 @@ public sealed class SelectionTranslationModule : ITweakModule
         new() { Key = "target", Label = "Önizleme hedef dili", Kind = SettingKind.Text, Default = "tr", Options = TargetLanguages, OptionLabels = LanguageLabels, Description = "Bir dil seçin veya desteklenen başka bir dil kodu yazın." },
         new() { Key = "provider", Label = "Çeviri sağlayıcısı", Kind = SettingKind.Choice, Default = "google", Options = ["google", "libretranslate", "mymemory"], OptionLabels = new Dictionary<string, string> { ["google"] = "Google (resmî olmayan)", ["libretranslate"] = "LibreTranslate", ["mymemory"] = "MyMemory" }, Description = "MyMemory kota uygular; otomatik dil algılama belgelenmemiştir ve değişebilir. Çeviri kalitesi değişebilir." },
         new() { Key = "libre-endpoint", Label = "LibreTranslate sunucu adresi", Kind = SettingKind.Text, Default = "http://localhost:5000", Description = "LibreTranslate seçildiğinde kullanılır. API anahtarı gerekiyorsa WINFORGE_LIBRETRANSLATE_API_KEY ortam değişkenini ayarlayın." },
-        new() { Key = "translation-target", Label = "Türkçe seçimlerin hedef dili", Kind = SettingKind.Text, Default = DefaultShortcutTarget, Options = TargetLanguages.Where(language => language != ShortcutSource).ToArray(), OptionLabels = LanguageLabels, Description = "Kısayol Türkçe metni bu dile çevirir." },
+        new() { Key = "translation-target", Label = "Kısayolun çeviri dili", Kind = SettingKind.Text, Default = DefaultShortcutTarget, Options = TargetLanguages.Where(language => language != ShortcutSource).ToArray(), OptionLabels = LanguageLabels, Description = "İngilizce seçildiğinde kısayol Türkçe ve İngilizce arasında yönü otomatik belirler. Diğer seçeneklerde Türkçe metni seçilen dile çevirir." },
         new() { Key = "replace-shortcut", Label = "Çeviriyi kopyalama ve yapıştırma kısayolu", Kind = SettingKind.Text, Default = "Ctrl+Alt+Y", Description = "Çeviri panoya kopyalanır. Düzenlenebilir bir alanda seçimin yerine de yapıştırılır." }
     ];
     public void Initialize(IModuleContext context) => _context = context;
@@ -150,17 +150,32 @@ public sealed class SelectionTranslationModule : ITweakModule
         try
         {
             var focusWindow = FocusedTextOutput.FocusedWindow(window);
-            var focused = AutomationElement.FocusedElement;
-            bool SameOrigin() => window != IntPtr.Zero && GetForegroundWindow() == window &&
-                FocusedTextOutput.FocusedWindow(window) == focusWindow && SameFocus(focused);
+            var initialFocus = ReadFocus();
+            bool SameNativeOrigin() => window != IntPtr.Zero && GetForegroundWindow() == window &&
+                FocusedTextOutput.FocusedWindow(window) == focusWindow;
             await previous;
             cts.Token.ThrowIfCancellationRequested();
-            var source = fromShortcut ? ShortcutSource : _context.Settings.GetString("source", "auto");
-            var target = fromShortcut ? _context.Settings.GetString("translation-target", DefaultShortcutTarget) : _context.Settings.GetString("target", "tr");
             var provider = _context.Settings.GetString("provider", "google");
             await WaitForModifiers(cts.Token);
-            if (!SameOrigin()) throw new InvalidOperationException("Etkin pencere veya odak değişti.");
-            if (focused?.Current.IsPassword == true || IsNativePassword(window)) throw new InvalidOperationException("Parola alanları çevrilmez.");
+            if (!SameNativeOrigin()) throw new InvalidOperationException("Etkin pencere veya odak değişti.");
+            var focus = ReadFocus();
+            if (!SameNativeOrigin() || !SameReadableFocus(initialFocus.Identity, focus.Identity, focusWindow != IntPtr.Zero))
+                throw new InvalidOperationException("Etkin pencere veya odak değişti.");
+            if (initialFocus.IsPassword || focus.IsPassword || IsNativePassword(window))
+                throw new InvalidOperationException("Parola alanları çevrilmez.");
+            var focused = focus.Element;
+            // Accessibility providers can report a window or pane while resolving
+            // the focused field. Keep the native origin and any known field identity.
+            var readIdentity = focus.Identity ?? initialFocus.Identity;
+            bool SameReadOrigin()
+            {
+                if (!SameNativeOrigin()) return false;
+                var current = ReadFocus();
+                if (current.IsPassword || IsNativePassword(window) || !SameNativeOrigin() ||
+                    !SameReadableFocus(readIdentity, current.Identity, focusWindow != IntPtr.Zero)) return false;
+                readIdentity ??= current.Identity;
+                return true;
+            }
             var resultAnchor = fromShortcut ? default : SelectionAnchor(focused);
             var selection = fromShortcut ? ReadTextSelection(focused) : null;
             var editableRange = selection is not null && IsEditable(focused!, selection) ? selection.Clone() : null;
@@ -169,9 +184,12 @@ public sealed class SelectionTranslationModule : ITweakModule
             // Ask for one UTF-16 unit beyond the byte limit. The service can then
             // reject an oversized selection without materializing it in full.
             var selected = selection is not null ? selection.GetText(SelectionTranslationService.MaxInputBytes + 1)
-                : await CopySelection(cts.Token, SameOrigin);
+                : await CopySelection(cts.Token, SameReadOrigin);
             if (string.IsNullOrWhiteSpace(selected)) throw new InvalidOperationException("Seçili metin kopyalanamadı.");
-            bool SameTarget() => SameOrigin() && !IsNativePassword(window) && (nativeRange is not null
+            var (source, target) = fromShortcut
+                ? SelectionTranslationLanguage.ShortcutPair(selected, _context.Settings.GetString("translation-target", DefaultShortcutTarget).Trim())
+                : (_context.Settings.GetString("source", "auto"), _context.Settings.GetString("target", "tr"));
+            bool SameTarget() => SameNativeOrigin() && SameFocus(focused) && !IsNativePassword(window) && (nativeRange is not null
                 ? ReadNativeEditorSelection(focused!) == nativeRange
                 : editableRange is not null && SameSelection(focused, editableRange, selected));
             var canPaste = fromShortcut && SameTarget();
@@ -314,7 +332,7 @@ public sealed class SelectionTranslationModule : ITweakModule
     }
     private static bool SameFocus(AutomationElement? original)
     {
-        if (original is null) return true;
+        if (original is null) return false;
         try
         {
             var current = AutomationElement.FocusedElement;
@@ -322,6 +340,28 @@ public sealed class SelectionTranslationModule : ITweakModule
         }
         catch { return false; }
     }
+
+    private static (AutomationElement? Element, int[]? Identity, bool IsPassword) ReadFocus()
+    {
+        try
+        {
+            var element = AutomationElement.FocusedElement;
+            if (element is null) return default;
+            var info = element.Current;
+            if (info.IsPassword) return (element, null, true);
+            if (!info.HasKeyboardFocus || info.ControlType == ControlType.Window || info.ControlType == ControlType.Pane)
+                return (element, null, false);
+            var identity = element.GetRuntimeId();
+            return (element, identity is { Length: > 0 } ? identity : null, false);
+        }
+        catch (Exception error) when (error is ElementNotAvailableException or InvalidOperationException or COMException or ArgumentException)
+        {
+            return default;
+        }
+    }
+
+    internal static bool SameReadableFocus(int[]? original, int[]? current, bool hasNativeFocus) =>
+        original is not null && current is not null ? original.AsSpan().SequenceEqual(current) : hasNativeFocus;
     private static async Task WaitForModifiers(CancellationToken token)
     {
         for (var i = 0; i < 100; i++) { token.ThrowIfCancellationRequested(); if (!ModifiersDown()) return; await Task.Delay(20, token); }

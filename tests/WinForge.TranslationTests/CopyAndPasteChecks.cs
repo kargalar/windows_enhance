@@ -54,6 +54,15 @@ internal static partial class Program
                     throw new Exception("The default Turkish-to-English shortcut did not copy the translated selection.");
                 Console.WriteLine("PASS: Windows hotkey translates Turkish to English, pastes over the selection, and keeps the translation on the clipboard.");
 
+                await Task.Delay(150);
+                editor.Select(0, translated.Length);
+                SendHotkey(0x85);
+                await WaitUntil(() => editor.Text == source + "!");
+                if (Clipboard.GetText() != source || handler.LastQuery is not { } reverseQuery ||
+                    !reverseQuery.Contains("sl=en&tl=tr&", StringComparison.Ordinal) || !reverseQuery.EndsWith("q=" + Uri.EscapeDataString(translated), StringComparison.Ordinal))
+                    throw new Exception("The same shortcut did not translate the English selection to Turkish.");
+                Console.WriteLine("PASS: The same Windows hotkey detects English and copies and pastes the Turkish translation.");
+
                 Clipboard.SetText(sentinel);
                 editor.IsReadOnly = true;
                 editor.Text = source;
@@ -79,7 +88,7 @@ internal static partial class Program
                 Console.WriteLine("PASS: Translation is copied when focus changes before the response.");
                 exit = 0;
             }
-            catch (Exception ex) { Console.Error.WriteLine($"{ex}\n{context.LastError}"); }
+            catch (Exception ex) { Console.Error.WriteLine($"{ex}\n{context.LastError}\nEditor: {editor.Text}; last request: {handler.LastQuery}"); }
             finally
             {
                 module.Deactivate();
@@ -89,7 +98,7 @@ internal static partial class Program
                     {
                         try
                         {
-                            if (Clipboard.GetText() is translated or sentinel)
+                            if (Clipboard.GetText() is source or translated or sentinel)
                             {
                                 if (clipboardBefore is null) Clipboard.Clear();
                                 else Clipboard.SetDataObject(clipboardBefore, true);
@@ -153,7 +162,10 @@ internal static partial class Program
             LastQuery = request.RequestUri?.Query;
             Received?.TrySetResult();
             if (Release is not null) await Release.Task.WaitAsync(token);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[[[\"Hello world\"]],null,\"tr\"]") };
+            var body = LastQuery?.Contains("sl=en&tl=tr&", StringComparison.Ordinal) == true
+                ? "[[[\"Merhaba dünya\"]],null,\"en\"]"
+                : "[[[\"Hello world\"]],null,\"tr\"]";
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
         }
     }
 }

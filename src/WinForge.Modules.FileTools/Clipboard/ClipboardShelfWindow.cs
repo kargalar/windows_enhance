@@ -170,8 +170,10 @@ internal sealed partial class ClipboardShelfWindow : Window, IFeatureWindow, IMa
             throw;
         }
         _library.Changed += LibraryChanged;
+        IsVisibleChanged += (_, _) => _capture.PasteTargets.SetTracking(IsVisible);
         Closed += (_, _) =>
         {
+            _capture.PasteTargets.SetTracking(false);
             _activationSource?.RemoveHook(TrackActivation);
             _thumbnailLifetime.Cancel();
             _saveTimer.Stop();

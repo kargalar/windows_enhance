@@ -16,6 +16,7 @@ public sealed class DictationModule : CaptureModuleBase
     private readonly DictationClient client = new();
     private readonly SpeechBuffer audio = new();
     private readonly DictationShortcutState shortcut = new();
+    private readonly HashSet<uint> physicalKeysDown = [];
     private WasapiLoopbackCapture? microphone;
     private PlaybackMuteScope? playbackMute;
     private IDisposable? hotkey, translationHotkey;
@@ -106,8 +107,10 @@ public sealed class DictationModule : CaptureModuleBase
         shiftInsertIsBound = normal == shiftInsert || translation == shiftInsert;
         shortcutMonitor = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(25) };
         shortcutMonitor.Tick += (_, _) => CheckShortcutRelease();
-        hook = new(); hook.KeyStateChanged += (vk, down) =>
+        hook = new() { IgnoreInjectedInput = true }; hook.KeyStateChanged += (vk, down) =>
         {
+            if (down) physicalKeysDown.Add(vk);
+            else physicalKeysDown.Remove(vk);
             if (vk == 0x1B && down && (recording || busy)) Cancel();
             if (!down && shortcut.Held && (vk == pressedShortcut.Key || IsModifier(pressedShortcut.Modifiers, vk)))
                 FinishShortcutCheck(shortcut.Release());
@@ -122,8 +125,9 @@ public sealed class DictationModule : CaptureModuleBase
                 Context.Notify("Dikte çözümlemesi sürüyor. İptal etmek için Esc'ye basın.");
                 return;
             }
-            pressedShortcut = chord;
             var action = shortcut.PressRegistered(recording || starting, IsKeyDown(chord.Key));
+            if (action == DictationKeyAction.None) return;
+            pressedShortcut = chord;
             shortcutMonitor?.Start();
             if (action == DictationKeyAction.Start) _ = StartAsync(translateToEnglish);
             else RequestStop();
@@ -135,11 +139,15 @@ public sealed class DictationModule : CaptureModuleBase
         translationHotkey?.Dispose(); translationHotkey = null;
         hotkey?.Dispose(); hotkey = null;
         hook?.Dispose(); hook = null;
+        physicalKeysDown.Clear();
     }
 
     private void CheckShortcutRelease()
     {
         var (modifiers, key) = pressedShortcut;
+        // A physical press ends through the hook. Polling can see the logical
+        // key changes made by live paste or by the focused application's input.
+        if (physicalKeysDown.Contains(key)) return;
         var modifiersDown = ((modifiers & HotkeyModifiers.Control) == 0 || IsKeyDown(0x11)) &&
             ((modifiers & HotkeyModifiers.Shift) == 0 || IsKeyDown(0x10)) &&
             ((modifiers & HotkeyModifiers.Alt) == 0 || IsKeyDown(0x12)) &&

@@ -9,6 +9,7 @@ public sealed class GlobalKeyboardHook : IDisposable
     private const int VkLeftControl = 0xA2;
     private const int VkRightControl = 0xA3;
     private const int DoublePressWindowMs = 450;
+    private const uint InjectedFlag = 0x10;
 
     private KeyboardHookThread? _hook;
     private int _generation;
@@ -18,6 +19,7 @@ public sealed class GlobalKeyboardHook : IDisposable
     public event Action? DoubleControlPressed;
     public event Action<uint, bool>? KeyStateChanged;
     public Action<Exception>? ErrorHandler { get; set; }
+    public bool IgnoreInjectedInput { get; init; }
 
     public bool IsInstalled => _hook is not null;
 
@@ -32,6 +34,8 @@ public sealed class GlobalKeyboardHook : IDisposable
             {
                 // The native pointer is valid only for the duration of this callback.
                 var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(pointer);
+                if (IgnoreInjectedInput && (info.flags & InjectedFlag) != 0)
+                    return Native.CallNextHookEx(IntPtr.Zero, code, message, pointer);
                 var timestamp = Environment.TickCount64;
                 var capturing = HotkeyService.IsCapturing;
                 dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>

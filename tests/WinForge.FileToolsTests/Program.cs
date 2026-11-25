@@ -27,6 +27,12 @@ if (args.Contains("--native-only"))
     Console.WriteLine($"PASS: {checks} native clipboard and file-tools checks.");
     return;
 }
+if (args.Contains("--paste-target-only"))
+{
+    NativeIntegrationChecks.Run(Check, testUia: true, pasteTargetOnly: true);
+    Console.WriteLine($"PASS: {checks} native paste target checks.");
+    return;
+}
 if (args.Contains("--clipboard-shelf-open-only"))
 {
     ClipboardHistoryChecks.RunShelfStartup(Check);

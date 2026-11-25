@@ -13,6 +13,7 @@ internal static partial class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--selection-guard")) return SelectionGuardCheck();
+        if (args.Contains("--shortcut-languages")) return ShortcutLanguagesCheck();
         if (args.Contains("--copy-and-paste")) return CopyAndPasteCheck();
         if (args.Length == 2 && args[0] == "--host") return HostIntegrationCheck(args[1]);
         if (args.Length == 2 && args[0] == "--chrome") return ChromeIntegrationCheck(args[1]);
@@ -1000,10 +1001,6 @@ internal static partial class Program
                 if (context.LastError is not null || string.IsNullOrWhiteSpace(editor.Text) || editor.Text == "Hello world")
                     throw new Exception("Live translation replacement failed: " + context.LastError);
                 Console.WriteLine("PASS: Real online translation replaced a selected Windows text field: " + editor.Text);
-                await Task.Delay(400); // Let the module restore the clipboard.
-                context.Values["source"] = "tr";
-                context.Values["target"] = "en";
-                module.Apply();
                 editor.Text = "Merhaba dünya";
                 editor.SelectAll();
                 context.LastError = null;
@@ -1011,7 +1008,7 @@ internal static partial class Program
                 for (var i = 0; i < 220 && editor.Text == "Merhaba dünya" && context.LastError is null; i++) await Task.Delay(100);
                 if (context.LastError is not null || string.IsNullOrWhiteSpace(editor.Text) || editor.Text == "Merhaba dünya")
                     throw new Exception("Live reverse-language replacement failed: " + context.LastError);
-                Console.WriteLine("PASS: Changing languages works with real online translation: " + editor.Text);
+                Console.WriteLine("PASS: The same shortcut translates in the other direction with the real provider: " + editor.Text);
                 await Task.Delay(400);
                 exit = 0;
             }
@@ -1021,6 +1018,37 @@ internal static partial class Program
         app.Run(window);
         return exit;
     }
+    private static int ShortcutLanguagesCheck()
+    {
+        (string Text, string Source, string Target)[] samples =
+        [
+            ("Merhaba dünya", "tr", "en"),
+            ("Bugun nasilsin?", "tr", "en"),
+            ("TEŞEKKÜR EDERİM", "tr", "en"),
+            ("Bunu yarın tekrar konuşalım.", "tr", "en"),
+            ("Hello world", "en", "tr"),
+            ("hello", "en", "tr"),
+            ("THANK YOU", "en", "tr"),
+            ("I don't know when it will be ready.", "en", "tr")
+        ];
+        foreach (var (input, source, target) in samples)
+        {
+            var actual = SelectionTranslationLanguage.ShortcutPair(input, "en");
+            if (actual != (source, target))
+                throw new Exception($"Wrong shortcut direction for '{input}': {actual}.");
+        }
+        if (SelectionTranslationLanguage.ShortcutPair("Merhaba", "fr") != ("tr", "fr"))
+            throw new Exception("An existing custom shortcut target did not keep its language pair.");
+        try
+        {
+            SelectionTranslationLanguage.ShortcutPair("123 !", "en");
+            throw new Exception("A selection containing no letters was accepted.");
+        }
+        catch (InvalidOperationException error) when (error.Message.Contains("dili belirlenemedi")) { }
+        Console.WriteLine("PASS: Automatic Turkish/English shortcut direction, custom target and non-text selection.");
+        return 0;
+    }
+
     private static int HostIntegrationCheck(string modulesDirectory)
     {
         var source = System.IO.Path.GetFullPath(modulesDirectory);
@@ -1262,6 +1290,14 @@ internal static partial class Program
         if (!SelectionTranslationModule.ShouldTriggerAutoSelection(wasSuppressed: false, overlayActive: false, windowA, windowA, movedOrDoubleClicked: true))
             throw new Exception("Valid same-window drag should trigger auto selection translation.");
         Console.WriteLine("PASS: ShouldTriggerAutoSelection rejects overlay drags and cross-window focus changes.");
+
+        if (!SelectionTranslationModule.SameReadableFocus(null, [1, 2], hasNativeFocus: true) ||
+            !SelectionTranslationModule.SameReadableFocus([1, 2], null, hasNativeFocus: true) ||
+            !SelectionTranslationModule.SameReadableFocus([1, 2], [1, 2], hasNativeFocus: false) ||
+            SelectionTranslationModule.SameReadableFocus([1, 2], [1, 3], hasNativeFocus: true) ||
+            SelectionTranslationModule.SameReadableFocus([1, 2], null, hasNativeFocus: false))
+            throw new Exception("Copy must allow a transient accessibility identity only with stable native focus, and reject a confirmed field change.");
+        Console.WriteLine("PASS: Selection capture tolerates transient accessibility identities and rejects a different focused field.");
 
         var enteredCount = 0;
         Action onEntered = () => enteredCount++;

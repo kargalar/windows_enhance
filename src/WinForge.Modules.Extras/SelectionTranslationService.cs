@@ -37,14 +37,19 @@ internal sealed class SelectionTranslationService(HttpClient client)
         return builder.Uri;
     }
 
+    internal static void ValidateInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) throw new InvalidOperationException("Seçili metin boş.");
+        if (Encoding.UTF8.GetByteCount(input) > MaxInputBytes) throw new InvalidOperationException("Seçim 30.000 UTF-8 baytını aşıyor; daha kısa bir metin seçin.");
+    }
+
     internal async Task<string> TranslateAsync(string input, string source, string target, CancellationToken token,
         string provider = "google", string endpoint = "", string apiKey = "")
     {
         source = Language(source, true);
         target = Language(target);
         if (source.Equals(target, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Kaynak ve hedef dil farklı olmalı.");
-        if (string.IsNullOrWhiteSpace(input)) throw new InvalidOperationException("Seçili metin boş.");
-        if (Encoding.UTF8.GetByteCount(input) > MaxInputBytes) throw new InvalidOperationException("Seçim 30.000 UTF-8 baytını aşıyor; daha kısa bir metin seçin.");
+        ValidateInput(input);
         if (provider is not ("google" or "libretranslate" or "mymemory")) throw new FormatException("Bilinmeyen çeviri sağlayıcısı.");
         var libreUri = provider == "libretranslate" ? LibreEndpoint(endpoint) : null;
         var result = new StringBuilder();

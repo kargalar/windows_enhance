@@ -28,6 +28,7 @@ internal static class PasteTargetChecks
             check(fixtureWindow != IntPtr.Zero && ownerPid == process.Id, "The fixture window belongs to the started test process.");
             SetForegroundForTest(fixtureWindow);
             using var tracker = new PasteTargetTracker();
+            tracker.SetTracking(true);
             for (var attempt = 0; attempt < 5; attempt++)
             {
                 SetForegroundForTest(fixtureWindow); Command("locked"); Command("editable");
@@ -42,6 +43,13 @@ internal static class PasteTargetChecks
             if (target is null) throw new InvalidOperationException("Fixture target was not captured.");
             var valid = tracker.IsCurrentAsync(target); pumpUntil(() => valid.IsCompleted);
             check(valid.Result, "The actual external writable field is captured and revalidated.");
+            Command("locked");
+            pumpUntil(() => tracker.CaptureCurrent() is null);
+            check(tracker.CaptureCurrent() is null, "Focus refresh clears the cached target for a read-only control in the same window.");
+            Command("editable");
+            pumpUntil(() => tracker.CaptureCurrent()?.Window == fixtureWindow);
+            check(tracker.CaptureCurrent()?.RuntimeId.SequenceEqual(target.RuntimeId) == true,
+                "Focus refresh restores the editable target without an explicit capture.");
             CheckPasteIntoFixture(process, fixtureWindow, root, context, check, pumpUntil, Read, Command);
             PasteTarget? restored = null;
             for (var attempt = 0; attempt < 5 && restored is null; attempt++)
@@ -77,7 +85,7 @@ internal static class PasteTargetChecks
             var testContext = new NoticeContext(context, notices);
             var library = new ClipboardLibrary(Path.Combine(root, "paste-library"));
             library.SetPreferences(library.Preferences with { IndexImages = false, FetchLinkMetadata = false });
-            var text = "WinForge paste fixture " + Guid.NewGuid().ToString("N"); library.AddText(text);
+            var text = "WinForge paste fixture " + Guid.NewGuid().ToString("N"); var item = library.AddText(text);
             using var capture = new ClipboardCapture(library, testContext);
             PasteTarget? observed = null;
             for (var attempt = 0; attempt < 5 && observed?.ProcessId != process.Id; attempt++)
@@ -90,19 +98,16 @@ internal static class PasteTargetChecks
             shelf = new ClipboardShelfWindow(library, capture, testContext); shelf.BeforeShow(); shelf.Show();
             var shelfWindow = new WindowInteropHelper(shelf).Handle;
             SetForegroundForTest(shelfWindow);
-            PasteTarget? trackedTarget = null;
-            for (var attempt = 0; attempt < 5 && trackedTarget?.Window != fixtureWindow; attempt++)
-            {
-                SetForegroundForTest(fixtureWindow); command("locked"); command("editable");
-                var tracked = capture.PasteTargets.CaptureFocusedAsync(); pumpUntil(() => tracked.IsCompleted); trackedTarget = tracked.Result;
-            }
-            check(trackedTarget?.Window == fixtureWindow, "An already-open shelf can observe a newly focused external field.");
-            var observedDelay = Task.Delay(300); pumpUntil(() => observedDelay.IsCompleted);
+            SetForegroundForTest(fixtureWindow); command("locked");
+            pumpUntil(() => capture.PasteTargets.CaptureCurrent() is null);
+            command("editable");
+            pumpUntil(() => capture.PasteTargets.CaptureCurrent()?.Window == fixtureWindow);
+            check(capture.PasteTargets.CaptureCurrent()?.Window == fixtureWindow, "An already-open shelf can observe a newly focused external field.");
             SetForegroundForTest(shelfWindow);
             var activationDelay = Task.Delay(200); pumpUntil(() => activationDelay.IsCompleted);
             check(shelf.PreviousWindowForTest == fixtureWindow && shelf.PasteTargetForTest?.Window == fixtureWindow, $"Returning to the open shelf refreshes the previous editable target (previous={shelf.PreviousWindowForTest}, target={shelf.PasteTargetForTest?.Window}, observed={capture.PasteTargets.CaptureCurrent()?.Window}, fixture={fixtureWindow}, foreground={GetForegroundWindow()}, shelf={shelfWindow}).");
-            var paste = NativeIntegrationChecks.FindButton(shelf, "Yapıştır");
-            paste.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            testContext.Surface.Send("clipboard.select", new { ids = new[] { item.Id } });
+            testContext.Surface.Send("clipboard.action", new { id = 1 });
             var settle = Task.Delay(1800); pumpUntil(() => settle.IsCompleted);
             var clipboard = System.Windows.Clipboard.GetDataObject();
             if (clipboard is not null && clipboard.GetDataPresent(ClipboardCapture.OwnCopyFormat) && clipboard.GetData(System.Windows.DataFormats.UnicodeText) is string copied && copied == text)
@@ -125,11 +130,17 @@ internal static class PasteTargetChecks
         }
     }
 
-    private sealed class NoticeContext(IModuleContext inner, List<string> notices) : IModuleContext
+    private sealed class NoticeContext(IModuleContext inner, List<string> notices) : IModuleContext, IFeatureUiContext, IFeatureUiService
     {
         public IModuleSettings Settings => inner.Settings;
         public ILogger Log => inner.Log;
         public IHotkeyService Hotkeys => inner.Hotkeys;
+        public IFeatureUiService FeatureUi => this;
+        public ClipboardHistoryChecks.Surface Surface { get; } = new();
+        public IFeatureUiSurface CreateSurface(string view) => view == "clipboard-shelf" ? Surface : throw new NotSupportedException();
+        public IFeatureUiWindow Open(string key, string view, string title, FeatureUiWindowOptions options) => throw new NotSupportedException();
+        public Task<bool> ConfirmAsync(string title, string message, string confirmLabel, string cancelLabel) => throw new NotSupportedException();
+        public Task ShowMessageAsync(string title, string message, string closeLabel) => throw new NotSupportedException();
         public void Notify(string message) => notices.Add(message);
     }
 

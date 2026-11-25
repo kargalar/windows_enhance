@@ -17,10 +17,16 @@ if ($runningProcesses.Count -gt 0) {
 & (Join-Path $PSScriptRoot 'prepare-models.ps1')
 
 Write-Host "WinForge derleniyor ($Configuration)..." -ForegroundColor Cyan
-dotnet build (Join-Path $root "src\WinForge.App\WinForge.App.csproj") -c $Configuration -p:Platform=x64
+$artifacts = Join-Path $root "work\build"
+$output = Join-Path $artifacts "bin\WinForge.App\$($Configuration.ToLowerInvariant())"
+$buildArguments = @('-c', $Configuration, '-p:Platform=x64', '--artifacts-path', $artifacts)
+if ($Configuration -eq 'Release') {
+    $output = Join-Path $root 'dist'
+    $buildArguments += "-p:WinForgeAppOutputDirectory=$output"
+}
+dotnet build (Join-Path $root "src\WinForge.App\WinForge.App.csproj") @buildArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$output = Join-Path $root "src\WinForge.App\bin\x64\$Configuration\net10.0-windows10.0.19041.0"
 Write-Host "Hazır: $output\WinForge.exe" -ForegroundColor Green
 
 if ($Run) {

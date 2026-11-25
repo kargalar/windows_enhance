@@ -217,10 +217,10 @@ Derleme gereksinimleri: Windows 10/11 (x64), .NET 10 SDK, Node.js/npm ve Visual 
 .\scripts\run.ps1
 ```
 
-Çıktı: `src\WinForge.App\bin\Release\net10.0-windows10.0.19041.0\WinForge.exe`
+Release çıktısı: `dist\WinForge.exe`
 (yanındaki `modules\` klasörü modülleri içerir).
 
-Ayarlar ve log: `%APPDATA%\WinForge\settings.json`, `%APPDATA%\WinForge\winforge.log`.
+Ayarlar ve günlük, çalıştırılan EXE’nin yanındaki `userdata` klasöründedir.
 Uygulama kapatınca kapanmaz, sistem tepsisinde çalışmaya devam eder; kısayollar
 bu yüzden açık kalır. Tepsi menüsünden **Çıkış** ile tamamen kapanır.
 

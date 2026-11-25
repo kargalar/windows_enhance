@@ -44,7 +44,7 @@ internal sealed class ClipboardCapture : IDisposable
         _retention.Tick += (_, _) => { try { _library.Expire(); } catch (Exception error) { _context.Log.Error("Pano saklama süresi uygulanamadı.", error); } };
         try
         {
-            PasteTargets = new PasteTargetTracker();
+            PasteTargets = new PasteTargetTracker(error => _context.Log.Error("Pano yapıştırma hedefi izlenemedi.", error));
             _source.AddHook(WindowProcedure);
             if (!AddClipboardFormatListener(_source.Handle)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
             _lastSequence = GetClipboardSequenceNumber();
